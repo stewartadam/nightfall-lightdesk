@@ -13,9 +13,9 @@ use bevy_ecs::prelude::{MessageReader, MessageWriter, Messages};
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
 use nightfall_cues::CueLifecycleOperation;
-use nightfall_cues::prelude::{BoundCueInstruction, CueInstruction};
 use nightfall_desk::prelude::{DeskSettings, SelectionFlattenPolicy};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandError, CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome,
     CommandReply, CommandResult, CommandTracker, DataProvider, EngineOperationEnvelope,
@@ -64,8 +64,8 @@ fn test_fixture_with_elements(fixture_id: u32, element_count: usize) -> Fixture 
     }
 }
 
-fn instruction_with_red_blue() -> CueInstruction {
-    CueInstruction {
+fn instruction_with_red_blue() -> AssertionSet {
+    AssertionSet {
         blueprint_application: None,
         values: HashMap::from([
             (
@@ -134,8 +134,7 @@ fn fixture_attribute_map(programmer: &Programmer) -> HashMap<FixtureRef, HashSet
         let SelectionExpr::Resolved(fixtures) = &instruction.selection.source else {
             continue;
         };
-        let attrs: HashSet<Attribute> =
-            instruction.cue_instruction.values.keys().cloned().collect();
+        let attrs: HashSet<Attribute> = instruction.assertions.values.keys().cloned().collect();
         for fixture in fixtures {
             map.insert(fixture.clone(), attrs.clone());
         }
@@ -173,10 +172,10 @@ fn emit_programmer_command(app: &mut App, correlation_id: Uuid, payload: Program
 }
 
 /// Builds a live category Blueprint row with no copied direct values.
-fn referenced_color_instruction(fixtures: Vec<FixtureRef>) -> BoundCueInstruction {
-    BoundCueInstruction {
+fn referenced_color_instruction(fixtures: Vec<FixtureRef>) -> BoundAssertionSet {
+    BoundAssertionSet {
         selection: SelectionExpr::Resolved(fixtures).into(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: Some(BlueprintApplication {
                 blueprint_uid: Uuid::from_u128(5000),
                 selector: BlueprintSelector::Category(
@@ -209,13 +208,7 @@ fn release_unrelated_attribute_preserves_blueprint_reference() {
     let programmer = app.world().resource::<Programmer>();
     let instructions = programmer.active_instructions().iter().collect::<Vec<_>>();
     assert_eq!(instructions.len(), 1);
-    assert!(
-        instructions[0]
-            .1
-            .cue_instruction
-            .blueprint_application
-            .is_some()
-    );
+    assert!(instructions[0].1.assertions.blueprint_application.is_some());
 }
 
 /// Verifies a matching selected release removes only the matched portion of a live row.
@@ -257,13 +250,7 @@ fn release_matching_attribute_splits_blueprint_reference_selection() {
         instructions[0].1.selection.source,
         SelectionExpr::Resolved(vec![second])
     );
-    assert!(
-        instructions[0]
-            .1
-            .cue_instruction
-            .blueprint_application
-            .is_some()
-    );
+    assert!(instructions[0].1.assertions.blueprint_application.is_some());
 }
 
 /// Verifies a tracked clear-selection command succeeds only after applying its mutation.
@@ -316,9 +303,9 @@ fn tracked_clear_values_finishes_in_the_update_its_cue_release_completes() {
     let fixture = test_fixture_ref(991);
     app.world_mut()
         .resource_mut::<Programmer>()
-        .add_instruction(BoundCueInstruction {
+        .add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture]).into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     let envelope = CommandEnvelope::new(
         ProgrammerCommand::ClearProgrammer,
@@ -363,9 +350,9 @@ fn test_legacy_clear_programmer_is_handled() {
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
         programmer.set_active_selection(SelectionExpr::Resolved(vec![fixture.clone()]));
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture]).into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     }
 
@@ -417,9 +404,9 @@ fn test_legacy_clear_programmer_values_is_handled() {
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture]).into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     }
 
@@ -446,9 +433,9 @@ fn clear_programmer_values_clears_recalled_cue_timing_defaults() {
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture]).into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
         programmer.set_recalled_cue_timing_defaults(
             PartialTransition {
@@ -485,9 +472,9 @@ fn test_legacy_release_programmer_values_is_handled() {
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture.clone()]).into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     }
 
@@ -520,9 +507,9 @@ fn test_release_programmer_values_with_selection_and_attr_filter() {
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_a.clone(), fixture_b.clone()]).into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     }
 
@@ -567,13 +554,13 @@ fn test_release_programmer_values_splits_whole_fixture_for_element_clear() {
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Fixture(UnresolvedFixtureRef {
                 fixture_id: 311,
                 element_index: None,
             })
             .into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     }
 
@@ -626,13 +613,13 @@ fn test_release_programmer_values_splits_whole_fixture_for_element_attribute_cle
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Fixture(UnresolvedFixtureRef {
                 fixture_id: 311,
                 element_index: None,
             })
             .into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     }
 
@@ -686,9 +673,9 @@ fn test_release_programmer_values_without_selection_applies_globally() {
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_a.clone(), fixture_b.clone()]).into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     }
 
@@ -752,9 +739,9 @@ fn test_release_programmer_values_matches_group_selection_with_wildcard_indices(
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Group(GroupRefExpr::ById(13)).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Red,
@@ -798,9 +785,9 @@ fn test_release_programmer_values_emits_release_selection_for_full_release() {
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture.clone()]).into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     }
 
@@ -884,9 +871,9 @@ fn test_release_programmer_values_removes_fixture_from_group_range_instruction()
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Group(GroupRefExpr::RangeById { start: 13, end: 14 }).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Red,
@@ -981,9 +968,9 @@ fn test_explicitly_approved_desk_release_removes_fixture_from_group_range_instru
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Group(GroupRefExpr::RangeById { start: 13, end: 14 }).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Red,
@@ -1063,9 +1050,9 @@ fn test_prompt_policy_does_not_prompt_for_attr_only_release() {
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Group(GroupRefExpr::ById(21)).into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     }
 
@@ -1088,14 +1075,14 @@ fn test_prompt_policy_does_not_prompt_for_attr_only_release() {
     );
     assert!(
         instructions[0]
-            .cue_instruction
+            .assertions
             .values
             .contains_key(&Attribute::Blue),
         "blue should remain after red release",
     );
     assert!(
         !instructions[0]
-            .cue_instruction
+            .assertions
             .values
             .contains_key(&Attribute::Red),
         "red should be removed",
@@ -1146,7 +1133,7 @@ fn test_prompt_policy_rejects_flattening_release_and_accepts_explicit_retry() {
 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Add {
                 lhs: Box::new(SelectionExpr::Group(GroupRefExpr::ById(31))),
                 rhs: Box::new(SelectionExpr::Fixture(UnresolvedFixtureRef {
@@ -1155,7 +1142,7 @@ fn test_prompt_policy_rejects_flattening_release_and_accepts_explicit_retry() {
                 })),
             }
             .into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     }
 
@@ -1410,9 +1397,9 @@ fn stale_multi_action_plan_is_rejected_before_any_sibling_mutates() {
 
     app.world_mut()
         .resource_mut::<Programmer>()
-        .add_instruction(BoundCueInstruction {
+        .add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Group(GroupRefExpr::ById(51)).into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     let planned = app
         .world_mut()
@@ -1512,9 +1499,9 @@ fn full_release_waits_for_all_delegated_operations_before_succeeding() {
     let fixture = test_fixture_ref(9001);
     app.world_mut()
         .resource_mut::<Programmer>()
-        .add_instruction(BoundCueInstruction {
+        .add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture]).into(),
-            cue_instruction: instruction_with_red_blue(),
+            assertions: instruction_with_red_blue(),
         });
     let command_id = CommandId::new();
     app.world_mut()

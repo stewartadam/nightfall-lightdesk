@@ -31,6 +31,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 flate2 = "1.1"
+nightfall-dmx = { path = "../dmx" }
 
 [[example]]
 name = "validate"

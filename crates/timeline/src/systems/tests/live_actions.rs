@@ -504,9 +504,9 @@ fn process_actions_syncs_live_fire_cue_clock_from_timeline_position() {
                 uid: cue_uid,
                 label: "cue-1".to_owned(),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([
                         (

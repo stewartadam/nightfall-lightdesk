@@ -12,13 +12,14 @@ use std::time::Duration;
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::Messages;
 use nightfall::prelude::*;
-use nightfall_cues::cue::FixtureAttributeTransition;
 use nightfall_cues::data_provider_ext::CueDataProviderExt;
 use nightfall_cues::prelude::{
-    BoundCueInstruction, Cue, CueInstruction, CueOperation, CuePart, CuePartStoreTarget,
-    CueStoreError, CueStoreOperation, CueStoreSuccess, CueStoreTarget, Sequence,
+    Cue, CueOperation, CuePart, CuePartStoreTarget, CueStoreError, CueStoreOperation,
+    CueStoreSuccess, CueStoreTarget, Sequence,
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
+use nightfall_engine::prelude::FixtureAttributeTransition;
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome, CommandReply,
     CommandResult, CommandTracker, DataProvider, EngineOperationEnvelope, FinishedCommand,
@@ -80,8 +81,8 @@ fn fixture_with_elements(fixture_id: u32, element_count: usize) -> Fixture {
 }
 
 /// Builds a single-attribute cue instruction for test payloads.
-fn cue_instruction(attribute: Attribute, value: f32) -> CueInstruction {
-    CueInstruction {
+fn assertions(attribute: Attribute, value: f32) -> AssertionSet {
+    AssertionSet {
         blueprint_application: None,
         values: HashMap::from([(
             attribute,
@@ -95,10 +96,10 @@ fn cue_instruction(attribute: Attribute, value: f32) -> CueInstruction {
 }
 
 /// Builds a bound instruction for one resolved fixture.
-fn bound_instruction(fixture: FixtureRef, attribute: Attribute, value: f32) -> BoundCueInstruction {
-    BoundCueInstruction {
+fn bound_instruction(fixture: FixtureRef, attribute: Attribute, value: f32) -> BoundAssertionSet {
+    BoundAssertionSet {
         selection: SelectionExpr::Resolved(vec![fixture]).into(),
-        cue_instruction: cue_instruction(attribute, value),
+        assertions: assertions(attribute, value),
     }
 }
 
@@ -106,9 +107,9 @@ fn bound_instruction(fixture: FixtureRef, attribute: Attribute, value: f32) -> B
 fn add_programmer_values(app: &mut App, selection: SelectionExpr, values: &[(Attribute, f32)]) {
     app.world_mut()
         .resource_mut::<Programmer>()
-        .add_instruction(BoundCueInstruction {
+        .add_instruction(BoundAssertionSet {
             selection: selection.into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: values
                     .iter()
@@ -160,9 +161,9 @@ fn insert_multi_element_fixtures(
 
 /// Finds the stored instruction for one resolved fixture.
 fn instruction_for_fixture<'a>(
-    instructions: &'a [BoundCueInstruction],
+    instructions: &'a [BoundAssertionSet],
     fixture: &FixtureRef,
-) -> &'a BoundCueInstruction {
+) -> &'a BoundAssertionSet {
     instructions
         .iter()
         .find(|instruction| {
@@ -175,7 +176,7 @@ fn instruction_for_fixture<'a>(
 }
 
 /// Returns the single fixture ref from a flattened store-cue instruction.
-fn store_cue_instruction_fixture(instruction: &BoundCueInstruction) -> Option<&FixtureRef> {
+fn store_assertion_set_fixture(instruction: &BoundAssertionSet) -> Option<&FixtureRef> {
     let SelectionExpr::Resolved(fixtures) = &instruction.selection.source else {
         return None;
     };
@@ -187,12 +188,12 @@ fn store_cue_instruction_fixture(instruction: &BoundCueInstruction) -> Option<&F
 
 /// Asserts that an instruction stores the expected absolute value for an attribute.
 fn assert_absolute_value(
-    instruction: &BoundCueInstruction,
+    instruction: &BoundAssertionSet,
     attribute: Attribute,
     expected_value: f32,
 ) {
     let value = instruction
-        .cue_instruction
+        .assertions
         .values
         .get(&attribute)
         .expect("attribute should exist");
@@ -204,12 +205,12 @@ fn assert_absolute_value(
 
 /// Asserts that one attribute stores the expected fixed fade-in duration.
 fn assert_attribute_fixed_fade_in(
-    instruction: &BoundCueInstruction,
+    instruction: &BoundAssertionSet,
     attribute: Attribute,
     expected: Duration,
 ) {
     let fade_in = instruction
-        .cue_instruction
+        .assertions
         .transitions_by_attribute
         .get(&attribute)
         .and_then(|transition| transition.fade_in.as_ref())
@@ -253,7 +254,7 @@ fn assert_equivalent_recalled_cue_payload(expected: &Cue, actual: &Cue) {
 /// Builds a cue with stable identifiers and instructions.
 fn cue_with_instructions(
     cue_id: u32,
-    instructions: Vec<BoundCueInstruction>,
+    instructions: Vec<BoundAssertionSet>,
     parts: Vec<CuePart>,
 ) -> Cue {
     Cue {
@@ -269,7 +270,7 @@ fn cue_with_instructions(
 }
 
 /// Builds a cue part with stable identifiers and instructions.
-fn part_with_instructions(part_id: u32, instructions: Vec<BoundCueInstruction>) -> CuePart {
+fn part_with_instructions(part_id: u32, instructions: Vec<BoundAssertionSet>) -> CuePart {
     CuePart {
         identifiers: Identifiers {
             id: part_id,
@@ -823,7 +824,7 @@ fn recall_cue_with_select_sets_active_selection_to_recalled_targets() {
 fn recall_cue_then_store_cue_preserves_authored_payload() {
     let mut app = setup_app();
     let fixture = fixture_ref(1);
-    let mut instruction = cue_instruction(Attribute::Red, 10.0);
+    let mut instruction = assertions(Attribute::Red, 10.0);
     instruction.transitions_by_attribute.insert(
         Attribute::Red,
         PartialTransition {
@@ -834,9 +835,9 @@ fn recall_cue_then_store_cue_preserves_authored_payload() {
     );
     let mut source = cue_with_instructions(
         1,
-        vec![BoundCueInstruction {
+        vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture]).into(),
-            cue_instruction: instruction,
+            assertions: instruction,
         }],
         Vec::new(),
     );
@@ -885,9 +886,9 @@ fn store_cue_replace_flattens_programmer_instruction_per_fixture_reference() {
     let element_one = fixture_ref(1);
     let mut element_two = element_one.clone();
     element_two.index = Some(2);
-    let instruction = BoundCueInstruction {
+    let instruction = BoundAssertionSet {
         selection: SelectionExpr::Resolved(vec![element_one.clone(), element_two.clone()]).into(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: None,
             values: HashMap::from([(
                 Attribute::Red,
@@ -950,13 +951,13 @@ fn store_cue_replace_flattens_spatial_grid_timings_by_iteration_index() {
     let mut app = setup_app();
     insert_multi_element_fixtures(&mut app, 1..=16, 1);
     let fixtures = (1..=16).map(whole_fixture_ref).collect::<Vec<_>>();
-    let instruction = BoundCueInstruction {
+    let instruction = BoundAssertionSet {
         selection: SpatialSelection {
             source: SelectionExpr::Resolved(fixtures),
             clauses: vec![SpatialClause::Grid(GridSize::Width(4))],
             union: Vec::new(),
         },
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: None,
             values: HashMap::from([(
                 Attribute::Intensity,
@@ -1050,7 +1051,7 @@ fn store_cue_replace_coalesces_resolved_and_unresolved_programmer_rows() {
         .cue_by_sequence_id(app.world().resource::<DataProvider<Sequence>>(), 5, 1)
         .expect("cue should remain in sequence");
     assert_eq!(cue.instructions.len(), 1);
-    let values = &cue.instructions[0].cue_instruction.values;
+    let values = &cue.instructions[0].assertions.values;
     assert!(values.contains_key(&Attribute::Red));
     assert!(values.contains_key(&Attribute::Intensity));
 }
@@ -1062,9 +1063,9 @@ fn store_cue_replace_promotes_row_timings_before_coalescing_rows() {
     insert_multi_element_fixtures(&mut app, [311], 1);
     app.world_mut()
         .resource_mut::<Programmer>()
-        .add_instruction(BoundCueInstruction {
+        .add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![whole_fixture_ref(311)]).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Red,
@@ -1081,9 +1082,9 @@ fn store_cue_replace_promotes_row_timings_before_coalescing_rows() {
         });
     app.world_mut()
         .resource_mut::<Programmer>()
-        .add_instruction(BoundCueInstruction {
+        .add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Fixture(unresolved_fixture_ref(311)).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,
@@ -1115,7 +1116,7 @@ fn store_cue_replace_promotes_row_timings_before_coalescing_rows() {
     let instruction = &cue.instructions[0];
     assert_absolute_value(instruction, Attribute::Red, 100.0);
     assert_absolute_value(instruction, Attribute::Intensity, 100.0);
-    assert!(instruction.cue_instruction.transitions.fade_in.is_none());
+    assert!(instruction.assertions.transitions.fade_in.is_none());
     assert_attribute_fixed_fade_in(instruction, Attribute::Red, Duration::from_secs(1));
     assert_attribute_fixed_fade_in(instruction, Attribute::Intensity, Duration::from_secs(5));
 }
@@ -1227,12 +1228,7 @@ fn store_cue_remove_preserves_flattened_group_count_when_other_attributes_remain
     assert_eq!(cue.instructions.len(), initial_count);
     for fixture in &fixtures {
         let instruction = instruction_for_fixture(&cue.instructions, fixture);
-        assert!(
-            !instruction
-                .cue_instruction
-                .values
-                .contains_key(&Attribute::Red)
-        );
+        assert!(!instruction.assertions.values.contains_key(&Attribute::Red));
         assert_absolute_value(instruction, Attribute::Green, 100.0);
     }
 }
@@ -1385,12 +1381,7 @@ fn store_cue_remove_preserves_whole_fixture_rows_for_multi_element_fixtures() {
     assert_eq!(cue.instructions.len(), 2);
     for fixture in [whole_fixture_ref(1), whole_fixture_ref(2)] {
         let instruction = instruction_for_fixture(&cue.instructions, &fixture);
-        assert!(
-            !instruction
-                .cue_instruction
-                .values
-                .contains_key(&Attribute::Red)
-        );
+        assert!(!instruction.assertions.values.contains_key(&Attribute::Red));
         assert_absolute_value(instruction, Attribute::Green, 100.0);
     }
 }
@@ -1401,14 +1392,14 @@ fn store_cue_non_replace_modes_compact_legacy_all_element_selection_rows() {
     for mode in [StoreMode::Merge, StoreMode::Update, StoreMode::Remove] {
         let mut app = setup_app();
         insert_multi_element_fixtures(&mut app, [1], 3);
-        let legacy_all_element_row = BoundCueInstruction {
+        let legacy_all_element_row = BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![
                 element_fixture_ref(1, 1),
                 element_fixture_ref(1, 2),
                 element_fixture_ref(1, 3),
             ])
             .into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -1451,12 +1442,7 @@ fn store_cue_non_replace_modes_compact_legacy_all_element_selection_rows() {
         assert_eq!(cue.instructions.len(), 1, "{mode:?}");
         let instruction = instruction_for_fixture(&cue.instructions, &whole_fixture_ref(1));
         if mode == StoreMode::Remove {
-            assert!(
-                !instruction
-                    .cue_instruction
-                    .values
-                    .contains_key(&Attribute::Red)
-            );
+            assert!(!instruction.assertions.values.contains_key(&Attribute::Red));
             assert_absolute_value(instruction, Attribute::Green, 70.0);
         } else {
             assert_absolute_value(instruction, Attribute::Red, 10.0);
@@ -1518,8 +1504,9 @@ fn store_cue_update_preserves_count_for_extra_group_and_merge_adds_it() {
                 assert!(
                     cue.instructions
                         .iter()
-                        .all(|instruction| store_cue_instruction_fixture(instruction)
-                            != Some(fixture)),
+                        .all(
+                            |instruction| store_assertion_set_fixture(instruction) != Some(fixture)
+                        ),
                     "{fixture:?} should not be added by update"
                 );
             } else {
@@ -1661,7 +1648,7 @@ fn store_cue_merge_upserts_programmer_values_into_existing_cue() {
     );
 
     let cue = stored_cue(&actions);
-    let values = &cue.instructions[0].cue_instruction.values;
+    let values = &cue.instructions[0].assertions.values;
     assert!(values.contains_key(&Attribute::Red));
     assert!(values.contains_key(&Attribute::Blue));
 }
@@ -1674,9 +1661,9 @@ fn store_cue_merge_flattens_existing_fixture_groups_before_matching() {
     let fixture_b = fixture_ref(2);
     let cue = cue_with_instructions(
         1,
-        vec![BoundCueInstruction {
+        vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_a.clone(), fixture_b.clone()]).into(),
-            cue_instruction: cue_instruction(Attribute::Red, 10.0),
+            assertions: assertions(Attribute::Red, 10.0),
         }],
         Vec::new(),
     );
@@ -1718,12 +1705,12 @@ fn store_cue_merge_whole_fixture_updates_existing_element_rows() {
     let mut element_two = element_one.clone();
     element_two.index = Some(2);
     let whole_fixture = whole_fixture_ref(1);
-    let mut element_one_instruction = cue_instruction(Attribute::Red, 70.0);
+    let mut element_one_instruction = assertions(Attribute::Red, 70.0);
     element_one_instruction.values.insert(
         Attribute::Blue,
         ValueSource::Inline(ParameterValue::Absolute { value: 70.0 }),
     );
-    let mut element_two_instruction = cue_instruction(Attribute::Red, 70.0);
+    let mut element_two_instruction = assertions(Attribute::Red, 70.0);
     element_two_instruction.values.insert(
         Attribute::Blue,
         ValueSource::Inline(ParameterValue::Absolute { value: 70.0 }),
@@ -1731,13 +1718,13 @@ fn store_cue_merge_whole_fixture_updates_existing_element_rows() {
     let cue = cue_with_instructions(
         1,
         vec![
-            BoundCueInstruction {
+            BoundAssertionSet {
                 selection: SelectionExpr::Resolved(vec![element_one.clone()]).into(),
-                cue_instruction: element_one_instruction,
+                assertions: element_one_instruction,
             },
-            BoundCueInstruction {
+            BoundAssertionSet {
                 selection: SelectionExpr::Resolved(vec![element_two.clone()]).into(),
-                cue_instruction: element_two_instruction,
+                assertions: element_two_instruction,
             },
         ],
         Vec::new(),
@@ -1860,7 +1847,7 @@ fn store_cue_update_only_changes_existing_fixture_attributes() {
 
     let cue = stored_cue(&actions);
     assert_eq!(cue.instructions.len(), 1);
-    let values = &cue.instructions[0].cue_instruction.values;
+    let values = &cue.instructions[0].assertions.values;
     assert!(values.contains_key(&Attribute::Red));
     assert!(!values.contains_key(&Attribute::Blue));
     assert_absolute_value(&cue.instructions[0], Attribute::Red, 30.0);
@@ -1910,10 +1897,10 @@ fn store_cue_update_splits_existing_fixture_elements_before_matching() {
     element_two.index = Some(2);
     let cue = cue_with_instructions(
         1,
-        vec![BoundCueInstruction {
+        vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![element_one.clone(), element_two.clone()])
                 .into(),
-            cue_instruction: cue_instruction(Attribute::Red, 10.0),
+            assertions: assertions(Attribute::Red, 10.0),
         }],
         Vec::new(),
     );
@@ -2004,9 +1991,9 @@ fn store_cue_part_update_resolves_existing_group_selection_before_matching() {
         Vec::new(),
         vec![part_with_instructions(
             2,
-            vec![BoundCueInstruction {
+            vec![BoundAssertionSet {
                 selection: SelectionExpr::Group(GroupRefExpr::ById(13)).into(),
-                cue_instruction: cue_instruction(Attribute::Red, 10.0),
+                assertions: assertions(Attribute::Red, 10.0),
             }],
         )],
     );
@@ -2041,16 +2028,16 @@ fn store_cue_part_update_resolves_existing_group_selection_before_matching() {
 fn store_cue_remove_deletes_programmer_attributes_from_existing_cue() {
     let mut app = setup_app();
     let fixture = fixture_ref(1);
-    let mut existing = cue_instruction(Attribute::Red, 10.0);
+    let mut existing = assertions(Attribute::Red, 10.0);
     existing.values.insert(
         Attribute::Blue,
         ValueSource::Inline(ParameterValue::Absolute { value: 20.0 }),
     );
     let cue = cue_with_instructions(
         1,
-        vec![BoundCueInstruction {
+        vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture.clone()]).into(),
-            cue_instruction: existing,
+            assertions: existing,
         }],
         Vec::new(),
     );
@@ -2071,7 +2058,7 @@ fn store_cue_remove_deletes_programmer_attributes_from_existing_cue() {
     );
 
     let cue = stored_cue(&actions);
-    let values = &cue.instructions[0].cue_instruction.values;
+    let values = &cue.instructions[0].assertions.values;
     assert!(!values.contains_key(&Attribute::Red));
     assert!(values.contains_key(&Attribute::Blue));
 }
@@ -2107,7 +2094,7 @@ fn store_cue_remove_coalesces_duplicate_existing_fixture_rows() {
 
     let cue = stored_cue(&actions);
     assert_eq!(cue.instructions.len(), 1);
-    let values = &cue.instructions[0].cue_instruction.values;
+    let values = &cue.instructions[0].assertions.values;
     assert!(!values.contains_key(&Attribute::Red));
     assert!(values.contains_key(&Attribute::Blue));
 }
@@ -2120,12 +2107,12 @@ fn store_cue_remove_whole_fixture_removes_existing_element_row_attributes() {
     let mut element_two = element_one.clone();
     element_two.index = Some(2);
     let whole_fixture = whole_fixture_ref(1);
-    let mut element_one_instruction = cue_instruction(Attribute::Red, 70.0);
+    let mut element_one_instruction = assertions(Attribute::Red, 70.0);
     element_one_instruction.values.insert(
         Attribute::Blue,
         ValueSource::Inline(ParameterValue::Absolute { value: 70.0 }),
     );
-    let mut element_two_instruction = cue_instruction(Attribute::Red, 70.0);
+    let mut element_two_instruction = assertions(Attribute::Red, 70.0);
     element_two_instruction.values.insert(
         Attribute::Blue,
         ValueSource::Inline(ParameterValue::Absolute { value: 70.0 }),
@@ -2133,13 +2120,13 @@ fn store_cue_remove_whole_fixture_removes_existing_element_row_attributes() {
     let cue = cue_with_instructions(
         1,
         vec![
-            BoundCueInstruction {
+            BoundAssertionSet {
                 selection: SelectionExpr::Resolved(vec![element_one.clone()]).into(),
-                cue_instruction: element_one_instruction,
+                assertions: element_one_instruction,
             },
-            BoundCueInstruction {
+            BoundAssertionSet {
                 selection: SelectionExpr::Resolved(vec![element_two.clone()]).into(),
-                cue_instruction: element_two_instruction,
+                assertions: element_two_instruction,
             },
         ],
         Vec::new(),
@@ -2164,7 +2151,7 @@ fn store_cue_remove_whole_fixture_removes_existing_element_row_attributes() {
     assert_eq!(cue.instructions.len(), 2);
     for element in [&element_one, &element_two] {
         let values = &instruction_for_fixture(&cue.instructions, element)
-            .cue_instruction
+            .assertions
             .values;
         assert!(!values.contains_key(&Attribute::Red));
         assert!(values.contains_key(&Attribute::Blue));
@@ -2209,7 +2196,7 @@ fn store_cue_remove_drops_fixture_with_no_remaining_attributes() {
 fn store_cue_remove_drops_orphaned_fixture_attribute_transitions() {
     let mut app = setup_app();
     let fixture = fixture_ref(1);
-    let mut existing = cue_instruction(Attribute::Red, 10.0);
+    let mut existing = assertions(Attribute::Red, 10.0);
     existing
         .transitions_by_fixture_attribute
         .push(FixtureAttributeTransition {
@@ -2221,9 +2208,9 @@ fn store_cue_remove_drops_orphaned_fixture_attribute_transitions() {
         });
     let cue = cue_with_instructions(
         1,
-        vec![BoundCueInstruction {
+        vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture.clone()]).into(),
-            cue_instruction: existing,
+            assertions: existing,
         }],
         Vec::new(),
     );
@@ -2432,9 +2419,9 @@ fn store_cue_merge_materializes_existing_group_refs_before_persistence() {
     insert_group(&mut app, 9, vec![fixture.clone()]);
     let existing = cue_with_instructions(
         1,
-        vec![BoundCueInstruction {
+        vec![BoundAssertionSet {
             selection: SpatialSelection::identity(SelectionExpr::Group(GroupRefExpr::ById(9))),
-            cue_instruction: cue_instruction(Attribute::Intensity, 50.0),
+            assertions: assertions(Attribute::Intensity, 50.0),
         }],
         Vec::new(),
     );

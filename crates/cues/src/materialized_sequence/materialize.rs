@@ -7,16 +7,16 @@
  */
 
 use nightfall_dmx::prelude::AttributeCategory;
+use nightfall_engine::prelude::BoundAssertionSet;
 
 use super::*;
-use crate::cue::BoundCueInstruction;
 
 /// Returns whether an instruction currently resolves any position-category values.
 fn instruction_has_position_values(
-    instruction: &BoundCueInstruction,
+    instruction: &BoundAssertionSet,
     blueprint_data_provider: Option<&DataProvider<Blueprint>>,
 ) -> bool {
-    let values = if let Some(application) = &instruction.cue_instruction.blueprint_application {
+    let values = if let Some(application) = &instruction.assertions.blueprint_application {
         let Some(provider) = blueprint_data_provider else {
             return false;
         };
@@ -25,7 +25,7 @@ fn instruction_has_position_values(
         };
         blueprint.selected_values(&application.selector)
     } else {
-        instruction.cue_instruction.values.clone()
+        instruction.assertions.values.clone()
     };
     values
         .keys()
@@ -550,17 +550,17 @@ mod tests {
     use std::collections::HashMap;
 
     use nightfall_dmx::prelude::Attribute;
+    use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 
     use super::*;
-    use crate::cue::{BoundCueInstruction, CueInstruction};
 
     /// Builds a cue containing one absolute value for lookahead predicate tests.
     fn cue_with_attribute(attribute: Attribute, lookahead: Option<bool>) -> Cue {
         Cue {
             lookahead,
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::default(),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         attribute,
@@ -581,9 +581,9 @@ mod tests {
     ) -> Cue {
         Cue {
             lookahead,
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::default(),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: Some(BlueprintApplication {
                         blueprint_uid,
                         selector,

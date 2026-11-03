@@ -573,12 +573,12 @@ mod tests {
         TransitionMode, ValueSource,
     };
     use nightfall_dmx::prelude::{Attribute, ParameterValue};
+    use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
     use nightfall_fixture_model::prelude::*;
     use nightfall_fixtures::prelude::{Fixture, FixtureElement, Parameter, ParameterValues};
     use serde::Serialize;
 
     use super::*;
-    use crate::cue::{BoundCueInstruction, CueInstruction};
 
     /// Serializes one websocket payload through the backend CBOR codec and decodes it for assertions.
     fn cbor_payload_value<T: Serialize>(payload: &T) -> serde_json::Value {
@@ -698,9 +698,9 @@ mod tests {
                 fade_out: Some(TransitionMode::Fixed(Duration::from_millis(300))),
                 ..Default::default()
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Intensity,
@@ -811,11 +811,11 @@ mod tests {
                 uid: cue_one_uid,
                 label: "dark".to_owned(),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Intensity,
@@ -834,9 +834,9 @@ mod tests {
                 label: "lookahead source".to_owned(),
             },
             lookahead: Some(true),
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Pan,

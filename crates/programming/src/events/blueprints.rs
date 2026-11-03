@@ -30,7 +30,7 @@ pub fn rebuild_programmer_blueprint_reference_index(
     .flat_map(|(description, instructions)| {
         instructions.iter().filter_map(move |(_, instruction)| {
             instruction
-                .cue_instruction
+                .assertions
                 .blueprint_application
                 .as_ref()
                 .map(|application| (application.blueprint_uid, description.to_owned()))
@@ -218,7 +218,7 @@ fn capture_blueprint_values(
     for (_, instruction) in programmer.active_instructions().iter() {
         let resolved = spatial_selection_resolver.resolve(&instruction.selection);
         let logical_values =
-            if let Some(application) = &instruction.cue_instruction.blueprint_application {
+            if let Some(application) = &instruction.assertions.blueprint_application {
                 let blueprint = blueprint_data_provider
                     .get(application.blueprint_uid)
                     .map_err(|_| {
@@ -232,7 +232,7 @@ fn capture_blueprint_values(
                     })?;
                 blueprint.selected_values(&application.selector)
             } else {
-                instruction.cue_instruction.values.clone()
+                instruction.assertions.values.clone()
             };
 
         for (attribute, value) in logical_values {
@@ -396,9 +396,9 @@ pub fn handle_blueprint_events(
                             }
                         }
                     };
-                    instructions.push(BoundCueInstruction {
+                    instructions.push(BoundAssertionSet {
                         selection: selection.clone(),
-                        cue_instruction: CueInstruction {
+                        assertions: AssertionSet {
                             blueprint_application,
                             values,
                             transitions: transitions.clone(),

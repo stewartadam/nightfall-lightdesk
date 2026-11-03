@@ -25,7 +25,7 @@ pub use apply::{
     apply_showfile_snapshot_to_world, initialize_showfile_resources, ordered_showfile_load_domains,
 };
 /// Current schema version written into newly saved showfile metadata.
-pub const CURRENT_SHOWFILE_VERSION: u32 = 23;
+pub const CURRENT_SHOWFILE_VERSION: u32 = 24;
 pub use selection_refs::stabilize_showfile_group_refs;
 pub use snapshot::{
     RoutesSnapshot, ShowfileMetadata, ShowfileSnapshot, current_showfile_metadata,
@@ -186,6 +186,37 @@ mod tests {
         assert_eq!(parsed.metadata.showfile_version, CURRENT_SHOWFILE_VERSION);
         assert!(parsed.routes.output.is_empty());
         assert!(parsed.routes.disabled.is_empty());
+    }
+
+    /// Load a schema 23 showfile whose cue instructions use the `cue_instruction` field: the
+    /// values come back as the cue's assertion sets.
+    #[test]
+    fn schema_23_showfile_with_cue_instructions_loads() {
+        let mut snapshot = contributors::collect_save_contributions(&[]);
+        let mut assertions = nightfall_engine::prelude::AssertionSet::default();
+        assertions.values.insert(
+            nightfall_dmx::prelude::Attribute::Intensity,
+            nightfall::prelude::ValueSource::Release,
+        );
+        snapshot.cues.push(nightfall_cues::prelude::Cue {
+            instructions: vec![nightfall_engine::prelude::BoundAssertionSet {
+                assertions: assertions.clone(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+        let mut showfile = serde_json::to_value(&snapshot).unwrap();
+        showfile["metadata"]["showfileVersion"] = 23.into();
+        let instruction = showfile["cues"][0]["instructions"][0]
+            .as_object_mut()
+            .unwrap();
+        let stored = instruction.remove("assertions").unwrap();
+        instruction.insert("cue_instruction".to_string(), stored);
+
+        let parsed = parse_showfile_snapshot_json(&showfile.to_string(), "schema-23").unwrap();
+
+        assert_eq!(parsed.metadata.showfile_version, CURRENT_SHOWFILE_VERSION);
+        assert_eq!(parsed.cues[0].instructions[0].assertions, assertions);
     }
 
     /// Reject absent and malformed schema metadata instead of assuming a legacy version.

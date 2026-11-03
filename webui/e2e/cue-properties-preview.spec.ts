@@ -151,8 +151,8 @@ test("cue transition backgrounds respect fixture element overrides", async ({
     instructions: [
       {
         ...ownedInstruction([1], {}),
-        cue_instruction: {
-          ...ownedInstruction([1], {}).cue_instruction,
+        assertions: {
+          ...ownedInstruction([1], {}).assertions,
           transitions_by_fixture_attribute: [
             {
               fixture: { fixture_uid: FIXTURE_UID, index: 1 },
@@ -174,7 +174,7 @@ test("cue transition backgrounds respect fixture element overrides", async ({
       },
       clauses: [],
     },
-    cue_instruction: ownedInstruction([1], {}).cue_instruction,
+    assertions: ownedInstruction([1], {}).assertions,
   });
   await sendCommand(page, {
     module: "CueCommand",
@@ -361,7 +361,7 @@ function ownedSelection(elementIndexes: number[]): object {
 function ownedInstruction(elementIndexes: number[], transitions: object) {
   return {
     selection: ownedSelection(elementIndexes),
-    cue_instruction: {
+    assertions: {
       values: {
         Intensity: {
           type: "Inline",

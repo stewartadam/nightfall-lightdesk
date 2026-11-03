@@ -315,9 +315,9 @@ mod tests {
     use std::collections::HashMap;
 
     use nightfall_clips::{Clip, MaterializedClip};
-    use nightfall_cues::prelude::{BoundCueInstruction, CueInstruction};
     use nightfall_desk::prelude::{Master, MasterMode};
     use nightfall_dmx::prelude::{Attribute, ParameterValue};
+    use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
     use nightfall_fixture_model::prelude::*;
     use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
     use nightfall_instances::InstanceId;
@@ -434,9 +434,9 @@ mod tests {
     fn apply(world: &mut World, blueprint_uid: Uuid) {
         world
             .resource_mut::<Programmer>()
-            .add_instruction(BoundCueInstruction {
+            .add_instruction(BoundAssertionSet {
                 selection: SpatialSelection::identity(fixture_13()),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: Some(BlueprintApplication {
                         blueprint_uid,
                         selector: BlueprintSelector::All,

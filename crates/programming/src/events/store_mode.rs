@@ -14,7 +14,7 @@ use super::*;
 pub(super) fn resolved_programmer_instructions(
     programmer: &Programmer,
     spatial_selection_resolver: &SpatialSelectionResolver,
-) -> Vec<BoundCueInstruction> {
+) -> Vec<BoundAssertionSet> {
     programmer
         .active_instructions()
         .iter()
@@ -26,10 +26,10 @@ pub(super) fn resolved_programmer_instructions(
 
 /// Resolves fanned assertion values and timings for one spatial store-mode row.
 fn resolve_store_mode_instruction_fans(
-    mut instruction: CueInstruction,
+    mut instruction: AssertionSet,
     selection_index: usize,
     selection_size: usize,
-) -> CueInstruction {
+) -> AssertionSet {
     instruction.values = instruction
         .values
         .into_iter()
@@ -62,18 +62,18 @@ fn resolve_store_mode_instruction_fans(
 
 /// Resolves one instruction into rows matching its spatial iteration indexes.
 fn resolve_store_instruction_rows(
-    instruction: BoundCueInstruction,
+    instruction: BoundAssertionSet,
     spatial_selection_resolver: &SpatialSelectionResolver,
-) -> Vec<BoundCueInstruction> {
+) -> Vec<BoundAssertionSet> {
     if let SelectionExpr::Resolved(fixtures) = &instruction.selection.source {
         if instruction.selection.clauses.is_empty() {
-            return vec![BoundCueInstruction {
+            return vec![BoundAssertionSet {
                 selection: SelectionExpr::Resolved(
                     spatial_selection_resolver
                         .collapse_complete_fixture_element_sets(fixtures.clone()),
                 )
                 .into(),
-                cue_instruction: instruction.cue_instruction,
+                assertions: instruction.assertions,
             }];
         }
     }
@@ -93,22 +93,22 @@ fn resolve_store_instruction_rows(
         .collect::<Vec<_>>();
 
     if rows.is_empty() {
-        return vec![BoundCueInstruction {
+        return vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(Vec::new()).into(),
-            cue_instruction: instruction.cue_instruction,
+            assertions: instruction.assertions,
         }];
     }
 
     let row_count = rows.len();
     rows.into_iter()
         .enumerate()
-        .map(|(selection_index, fixtures)| BoundCueInstruction {
+        .map(|(selection_index, fixtures)| BoundAssertionSet {
             selection: SelectionExpr::Resolved(
                 spatial_selection_resolver.collapse_complete_fixture_element_sets(fixtures),
             )
             .into(),
-            cue_instruction: resolve_store_mode_instruction_fans(
-                instruction.cue_instruction.clone(),
+            assertions: resolve_store_mode_instruction_fans(
+                instruction.assertions.clone(),
                 selection_index,
                 row_count,
             ),
@@ -118,9 +118,9 @@ fn resolve_store_instruction_rows(
 
 /// Resolves stored instruction selections before store-mode matching.
 fn resolve_stored_instruction_selections(
-    instructions: Vec<BoundCueInstruction>,
+    instructions: Vec<BoundAssertionSet>,
     spatial_selection_resolver: &SpatialSelectionResolver,
-) -> Vec<BoundCueInstruction> {
+) -> Vec<BoundAssertionSet> {
     instructions
         .into_iter()
         .flat_map(|instruction| {
@@ -130,13 +130,10 @@ fn resolve_stored_instruction_selections(
 }
 
 /// Merges incoming instructions into matching selections and appends new selections.
-fn merge_instruction_list(
-    existing: &mut Vec<BoundCueInstruction>,
-    incoming: Vec<BoundCueInstruction>,
-) {
+fn merge_instruction_list(existing: &mut Vec<BoundAssertionSet>, incoming: Vec<BoundAssertionSet>) {
     for incoming_instruction in incoming {
         if incoming_instruction
-            .cue_instruction
+            .assertions
             .blueprint_application
             .is_some()
         {
@@ -145,11 +142,11 @@ fn merge_instruction_list(
         }
         if let Some(existing_instruction) = existing.iter_mut().find(|candidate| {
             candidate.selection == incoming_instruction.selection
-                && candidate.cue_instruction.blueprint_application.is_none()
+                && candidate.assertions.blueprint_application.is_none()
         }) {
             existing_instruction
-                .cue_instruction
-                .merge(incoming_instruction.cue_instruction);
+                .assertions
+                .merge(incoming_instruction.assertions);
         } else {
             existing.push(incoming_instruction);
         }
@@ -217,10 +214,7 @@ fn store_mode_transition_has_fields(transition: &PartialTransition) -> bool {
 }
 
 /// Applies fixture-specific transition overrides to a split instruction row.
-fn apply_split_fixture_transition_overrides(
-    instruction: &mut CueInstruction,
-    fixture: &FixtureRef,
-) {
+fn apply_split_fixture_transition_overrides(instruction: &mut AssertionSet, fixture: &FixtureRef) {
     let overrides = std::mem::take(&mut instruction.transitions_by_fixture_attribute);
 
     for fixture_transition in overrides.iter().filter(|transition| {
@@ -251,11 +245,11 @@ fn apply_split_fixture_transition_overrides(
 
 /// Resolves fanned assertion values and timings for one split store-mode row.
 fn resolve_split_store_mode_instruction(
-    mut instruction: CueInstruction,
+    mut instruction: AssertionSet,
     fixture: &FixtureRef,
     fixture_index: usize,
     total_fixtures: usize,
-) -> CueInstruction {
+) -> AssertionSet {
     instruction.values = instruction
         .values
         .into_iter()
@@ -288,7 +282,7 @@ fn resolve_split_store_mode_instruction(
 }
 
 /// Promotes row-level transitions to per-attribute transitions before row coalescing.
-fn promote_store_mode_row_transitions_to_attributes(instruction: &mut CueInstruction) {
+fn promote_store_mode_row_transitions_to_attributes(instruction: &mut AssertionSet) {
     if !store_mode_transition_has_fields(&instruction.transitions) {
         return;
     }
@@ -315,7 +309,7 @@ fn promote_store_mode_row_transitions_to_attributes(instruction: &mut CueInstruc
 }
 
 /// Returns the single fixture ref addressed by a normalized store-mode row.
-fn store_mode_fixture_ref(instruction: &BoundCueInstruction) -> Option<&FixtureRef> {
+fn store_mode_fixture_ref(instruction: &BoundAssertionSet) -> Option<&FixtureRef> {
     let SelectionExpr::Resolved(fixtures) = &instruction.selection.source else {
         return None;
     };
@@ -326,7 +320,7 @@ fn store_mode_fixture_ref(instruction: &BoundCueInstruction) -> Option<&FixtureR
 }
 
 /// Returns whether an incoming store-mode row should edit an existing row.
-fn store_mode_rows_match(existing: &BoundCueInstruction, incoming: &BoundCueInstruction) -> bool {
+fn store_mode_rows_match(existing: &BoundAssertionSet, incoming: &BoundAssertionSet) -> bool {
     let Some(existing_fixture) = store_mode_fixture_ref(existing) else {
         return existing.selection == incoming.selection;
     };
@@ -341,8 +335,8 @@ fn store_mode_rows_match(existing: &BoundCueInstruction, incoming: &BoundCueInst
 
 /// Returns whether an element store row overlaps an existing whole-fixture row.
 fn store_mode_element_store_targets_existing_whole_fixture_row(
-    existing: &[BoundCueInstruction],
-    incoming: &BoundCueInstruction,
+    existing: &[BoundAssertionSet],
+    incoming: &BoundAssertionSet,
 ) -> bool {
     let Some(incoming_fixture) = store_mode_fixture_ref(incoming) else {
         return false;
@@ -362,8 +356,8 @@ fn store_mode_element_store_targets_existing_whole_fixture_row(
 
 /// Flattens resolved instructions so each row targets one fixture or element.
 fn flatten_instruction_list_by_fixture_ref(
-    instructions: Vec<BoundCueInstruction>,
-) -> Vec<BoundCueInstruction> {
+    instructions: Vec<BoundAssertionSet>,
+) -> Vec<BoundAssertionSet> {
     let mut split = Vec::new();
     for instruction in instructions {
         match &instruction.selection.source {
@@ -372,10 +366,10 @@ fn flatten_instruction_list_by_fixture_ref(
                     split.push(instruction);
                 } else {
                     for (index, fixture) in fixtures.iter().enumerate() {
-                        split.push(BoundCueInstruction {
+                        split.push(BoundAssertionSet {
                             selection: SelectionExpr::Resolved(vec![fixture.clone()]).into(),
-                            cue_instruction: resolve_split_store_mode_instruction(
-                                instruction.cue_instruction.clone(),
+                            assertions: resolve_split_store_mode_instruction(
+                                instruction.assertions.clone(),
                                 fixture,
                                 index,
                                 fixtures.len(),
@@ -391,7 +385,7 @@ fn flatten_instruction_list_by_fixture_ref(
 }
 
 /// Coalesces duplicate fixture/element rows before applying store-mode matching.
-fn coalesce_instruction_list(instructions: Vec<BoundCueInstruction>) -> Vec<BoundCueInstruction> {
+fn coalesce_instruction_list(instructions: Vec<BoundAssertionSet>) -> Vec<BoundAssertionSet> {
     let mut coalesced = Vec::new();
     merge_instruction_list(&mut coalesced, instructions);
     coalesced
@@ -399,20 +393,20 @@ fn coalesce_instruction_list(instructions: Vec<BoundCueInstruction>) -> Vec<Boun
 
 /// Normalizes incoming programmer instructions for store-mode matching.
 pub(super) fn normalize_incoming_store_mode_instructions(
-    instructions: Vec<BoundCueInstruction>,
-) -> Vec<BoundCueInstruction> {
+    instructions: Vec<BoundAssertionSet>,
+) -> Vec<BoundAssertionSet> {
     coalesce_instruction_list(flatten_instruction_list_by_fixture_ref(instructions))
 }
 
 /// Normalizes replace-mode instructions while preserving row timing per attribute.
 pub(super) fn normalize_replace_store_mode_instructions(
-    instructions: Vec<BoundCueInstruction>,
-) -> Vec<BoundCueInstruction> {
+    instructions: Vec<BoundAssertionSet>,
+) -> Vec<BoundAssertionSet> {
     coalesce_instruction_list(
         flatten_instruction_list_by_fixture_ref(instructions)
             .into_iter()
             .map(|mut instruction| {
-                promote_store_mode_row_transitions_to_attributes(&mut instruction.cue_instruction);
+                promote_store_mode_row_transitions_to_attributes(&mut instruction.assertions);
                 instruction
             })
             .collect(),
@@ -421,9 +415,9 @@ pub(super) fn normalize_replace_store_mode_instructions(
 
 /// Normalizes existing stored instructions for store-mode matching.
 pub(super) fn normalize_existing_store_mode_instructions(
-    instructions: Vec<BoundCueInstruction>,
+    instructions: Vec<BoundAssertionSet>,
     spatial_selection_resolver: &SpatialSelectionResolver,
-) -> Vec<BoundCueInstruction> {
+) -> Vec<BoundAssertionSet> {
     normalize_incoming_store_mode_instructions(resolve_stored_instruction_selections(
         instructions,
         spatial_selection_resolver,
@@ -431,7 +425,7 @@ pub(super) fn normalize_existing_store_mode_instructions(
 }
 
 /// Updates only fixture and attribute values that already exist in one instruction.
-fn update_existing_instruction(existing: &mut CueInstruction, incoming: CueInstruction) {
+fn update_existing_instruction(existing: &mut AssertionSet, incoming: AssertionSet) {
     for (attribute, value) in incoming.values {
         if existing.values.contains_key(&attribute) {
             existing.values.insert(attribute, value);
@@ -473,7 +467,7 @@ fn update_existing_instruction(existing: &mut CueInstruction, incoming: CueInstr
 }
 
 /// Removes attributes carried by the incoming instruction from one existing instruction.
-fn remove_instruction_attributes(existing: &mut CueInstruction, incoming: CueInstruction) {
+fn remove_instruction_attributes(existing: &mut AssertionSet, incoming: AssertionSet) {
     let attributes_to_remove: HashSet<Attribute> = incoming
         .values
         .keys()
@@ -514,7 +508,7 @@ fn remove_instruction_attributes(existing: &mut CueInstruction, incoming: CueIns
 }
 
 /// Returns whether an instruction still stores any attribute data.
-fn instruction_has_attributes(instruction: &CueInstruction) -> bool {
+fn instruction_has_attributes(instruction: &AssertionSet) -> bool {
     instruction.blueprint_application.is_some()
         || !instruction.values.is_empty()
         || !instruction.transitions_by_attribute.is_empty()
@@ -526,8 +520,8 @@ fn instruction_has_attributes(instruction: &CueInstruction) -> bool {
 
 /// Applies store mode semantics to an existing instruction list.
 pub(super) fn apply_store_mode(
-    existing: &mut Vec<BoundCueInstruction>,
-    incoming: Vec<BoundCueInstruction>,
+    existing: &mut Vec<BoundAssertionSet>,
+    incoming: Vec<BoundAssertionSet>,
     mode: StoreMode,
 ) -> bool {
     let mut skipped_whole_fixture_row = false;
@@ -544,18 +538,18 @@ pub(super) fn apply_store_mode(
                     );
                 let mut matched_existing = false;
                 let incoming_is_blueprint = incoming_instruction
-                    .cue_instruction
+                    .assertions
                     .blueprint_application
                     .is_some();
                 for existing_instruction in existing.iter_mut().filter(|candidate| {
                     !incoming_is_blueprint
-                        && candidate.cue_instruction.blueprint_application.is_none()
+                        && candidate.assertions.blueprint_application.is_none()
                         && store_mode_rows_match(candidate, &incoming_instruction)
                 }) {
                     matched_existing = true;
                     existing_instruction
-                        .cue_instruction
-                        .merge(incoming_instruction.cue_instruction.clone());
+                        .assertions
+                        .merge(incoming_instruction.assertions.clone());
                 }
                 if blocked_by_whole_fixture_row {
                     skipped_whole_fixture_row = true;
@@ -574,27 +568,26 @@ pub(super) fn apply_store_mode(
                     skipped_whole_fixture_row = true;
                 }
                 if incoming_instruction
-                    .cue_instruction
+                    .assertions
                     .blueprint_application
                     .is_some()
                 {
                     for existing_instruction in existing.iter_mut().filter(|candidate| {
                         store_mode_rows_match(candidate, &incoming_instruction)
-                            && candidate.cue_instruction.blueprint_application
-                                == incoming_instruction.cue_instruction.blueprint_application
+                            && candidate.assertions.blueprint_application
+                                == incoming_instruction.assertions.blueprint_application
                     }) {
-                        existing_instruction.cue_instruction =
-                            incoming_instruction.cue_instruction.clone();
+                        existing_instruction.assertions = incoming_instruction.assertions.clone();
                     }
                     continue;
                 }
                 for existing_instruction in existing.iter_mut().filter(|candidate| {
-                    candidate.cue_instruction.blueprint_application.is_none()
+                    candidate.assertions.blueprint_application.is_none()
                         && store_mode_rows_match(candidate, &incoming_instruction)
                 }) {
                     update_existing_instruction(
-                        &mut existing_instruction.cue_instruction,
-                        incoming_instruction.cue_instruction.clone(),
+                        &mut existing_instruction.assertions,
+                        incoming_instruction.assertions.clone(),
                     );
                 }
             }
@@ -608,28 +601,28 @@ pub(super) fn apply_store_mode(
                     skipped_whole_fixture_row = true;
                 }
                 if incoming_instruction
-                    .cue_instruction
+                    .assertions
                     .blueprint_application
                     .is_some()
                 {
                     existing.retain(|candidate| {
                         !store_mode_rows_match(candidate, &incoming_instruction)
-                            || candidate.cue_instruction.blueprint_application
-                                != incoming_instruction.cue_instruction.blueprint_application
+                            || candidate.assertions.blueprint_application
+                                != incoming_instruction.assertions.blueprint_application
                     });
                     continue;
                 }
                 for existing_instruction in existing.iter_mut().filter(|candidate| {
-                    candidate.cue_instruction.blueprint_application.is_none()
+                    candidate.assertions.blueprint_application.is_none()
                         && store_mode_rows_match(candidate, &incoming_instruction)
                 }) {
                     remove_instruction_attributes(
-                        &mut existing_instruction.cue_instruction,
-                        incoming_instruction.cue_instruction.clone(),
+                        &mut existing_instruction.assertions,
+                        incoming_instruction.assertions.clone(),
                     );
                 }
             }
-            existing.retain(|instruction| instruction_has_attributes(&instruction.cue_instruction));
+            existing.retain(|instruction| instruction_has_attributes(&instruction.assertions));
         }
     }
     skipped_whole_fixture_row
@@ -660,7 +653,7 @@ fn expand_fixture_ref_for_programmer_override(
 
 /// Returns concrete element refs addressed by an instruction selection.
 fn concrete_programmer_selection_elements(
-    instruction: &BoundCueInstruction,
+    instruction: &BoundAssertionSet,
     spatial_selection_resolver: &SpatialSelectionResolver,
     fixture_data: &FixtureDataProviderExt,
 ) -> Vec<FixtureRef> {
@@ -676,7 +669,7 @@ fn concrete_programmer_selection_elements(
 
 /// Returns concrete element refs with their original spatial fan indexes.
 fn concrete_programmer_selection_element_indexes(
-    instruction: &BoundCueInstruction,
+    instruction: &BoundAssertionSet,
     spatial_selection_resolver: &SpatialSelectionResolver,
     fixture_data: &FixtureDataProviderExt,
 ) -> Vec<(FixtureRef, usize, usize)> {
@@ -700,7 +693,7 @@ fn concrete_programmer_selection_element_indexes(
 }
 
 /// Returns the attributes whose values or attribute-specific timing are stored by an instruction.
-fn instruction_attribute_set(instruction: &CueInstruction) -> HashSet<Attribute> {
+fn instruction_attribute_set(instruction: &AssertionSet) -> HashSet<Attribute> {
     instruction
         .values
         .keys()
@@ -711,9 +704,9 @@ fn instruction_attribute_set(instruction: &CueInstruction) -> HashSet<Attribute>
 
 /// Keeps only the requested attributes in an instruction while preserving shared timing defaults.
 fn instruction_for_attributes(
-    mut instruction: CueInstruction,
+    mut instruction: AssertionSet,
     attributes: &HashSet<Attribute>,
-) -> CueInstruction {
+) -> AssertionSet {
     instruction
         .values
         .retain(|attribute, _| attributes.contains(attribute));
@@ -757,7 +750,7 @@ fn transition_has_fanned_modes(transition: &PartialTransition) -> bool {
 }
 
 /// Returns whether an instruction must be split before its selection is reduced.
-fn instruction_has_selection_relative_sources(instruction: &CueInstruction) -> bool {
+fn instruction_has_selection_relative_sources(instruction: &AssertionSet) -> bool {
     instruction
         .values
         .values()
@@ -776,11 +769,11 @@ fn instruction_has_selection_relative_sources(instruction: &CueInstruction) -> b
 
 /// Projects an instruction onto concrete selection members without changing resolved values.
 fn split_programmer_rows(
-    instruction: &CueInstruction,
+    instruction: &AssertionSet,
     elements: Vec<(FixtureRef, usize, usize)>,
-) -> Vec<BoundCueInstruction> {
+) -> Vec<BoundAssertionSet> {
     if !instruction_has_selection_relative_sources(instruction) {
-        return vec![BoundCueInstruction {
+        return vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(
                 elements
                     .into_iter()
@@ -788,16 +781,16 @@ fn split_programmer_rows(
                     .collect(),
             )
             .into(),
-            cue_instruction: instruction.clone(),
+            assertions: instruction.clone(),
         }];
     }
 
     elements
         .into_iter()
         .map(
-            |(fixture_ref, selection_index, selection_size)| BoundCueInstruction {
+            |(fixture_ref, selection_index, selection_size)| BoundAssertionSet {
                 selection: SelectionExpr::Resolved(vec![fixture_ref.clone()]).into(),
-                cue_instruction: resolve_split_store_mode_instruction(
+                assertions: resolve_split_store_mode_instruction(
                     instruction.clone(),
                     &fixture_ref,
                     selection_index,
@@ -811,7 +804,7 @@ fn split_programmer_rows(
 /// Removes incoming element attributes from broader programmer rows so narrower edits can take effect.
 fn carve_overlapping_programmer_attributes(
     programmer: &mut Programmer,
-    incoming: &BoundCueInstruction,
+    incoming: &BoundAssertionSet,
     spatial_selection_resolver: &SpatialSelectionResolver,
     fixture_data: &FixtureDataProviderExt,
 ) {
@@ -823,7 +816,7 @@ fn carve_overlapping_programmer_attributes(
         return;
     }
 
-    let incoming_attributes = instruction_attribute_set(&incoming.cue_instruction);
+    let incoming_attributes = instruction_attribute_set(&incoming.assertions);
     if incoming_attributes.is_empty() {
         return;
     }
@@ -848,7 +841,7 @@ fn carve_overlapping_programmer_attributes(
             continue;
         }
 
-        let existing_attributes = instruction_attribute_set(&existing.cue_instruction);
+        let existing_attributes = instruction_attribute_set(&existing.assertions);
         let overlapping_attributes = existing_attributes
             .intersection(&incoming_attributes)
             .cloned()
@@ -864,7 +857,7 @@ fn carve_overlapping_programmer_attributes(
             continue;
         }
 
-        let original_instruction = existing.cue_instruction.clone();
+        let original_instruction = existing.assertions.clone();
         let overridden_instruction =
             instruction_for_attributes(original_instruction.clone(), &overlapping_attributes);
         let mut preserved_instruction = original_instruction.clone();
@@ -891,7 +884,7 @@ fn carve_overlapping_programmer_attributes(
 
         let first_row = partitioned_rows.remove(0);
         existing.selection = first_row.selection;
-        existing.cue_instruction = first_row.cue_instruction;
+        existing.assertions = first_row.assertions;
         additions.extend(
             partitioned_rows
                 .into_iter()
@@ -919,7 +912,7 @@ fn carve_overlapping_programmer_attributes(
 /// Adds a live programmer instruction after carving overlapping broader element attributes.
 pub(super) fn add_programmer_instruction_with_overrides(
     programmer: &mut Programmer,
-    instruction: BoundCueInstruction,
+    instruction: BoundAssertionSet,
     spatial_selection_resolver: &SpatialSelectionResolver,
     fixture_data: &FixtureDataProviderExt,
 ) {
@@ -967,10 +960,10 @@ mod programmer_override_tests {
         selection: Vec<FixtureRef>,
         attribute: Attribute,
         value: f32,
-    ) -> BoundCueInstruction {
-        BoundCueInstruction {
+    ) -> BoundAssertionSet {
+        BoundAssertionSet {
             selection: SelectionExpr::Resolved(selection).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     attribute,
@@ -999,13 +992,13 @@ mod programmer_override_tests {
             SelectionExpr::Resolved(vec![fixture])
         );
         assert_eq!(
-            normalized[0].cue_instruction.values.get(&Attribute::Red),
+            normalized[0].assertions.values.get(&Attribute::Red),
             Some(&ValueSource::Inline(ParameterValue::Absolute {
                 value: 10.0,
             }))
         );
         assert_eq!(
-            normalized[0].cue_instruction.values.get(&Attribute::Green),
+            normalized[0].assertions.values.get(&Attribute::Green),
             Some(&ValueSource::Inline(ParameterValue::Absolute {
                 value: 20.0,
             }))
@@ -1017,10 +1010,10 @@ mod programmer_override_tests {
         selection: Vec<FixtureRef>,
         attribute: Attribute,
         values: Vec<f32>,
-    ) -> BoundCueInstruction {
-        BoundCueInstruction {
+    ) -> BoundAssertionSet {
+        BoundAssertionSet {
             selection: SelectionExpr::Resolved(selection).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     attribute,
@@ -1057,7 +1050,7 @@ mod programmer_override_tests {
     fn add_with_overrides(
         world: &mut World,
         programmer: &mut Programmer,
-        instruction: BoundCueInstruction,
+        instruction: BoundAssertionSet,
     ) {
         let mut system_state =
             SystemState::<(SpatialSelectionResolver, Res<FixtureDataProviderExt>)>::new(world);
@@ -1076,7 +1069,7 @@ mod programmer_override_tests {
     fn instruction_for_element<'a>(
         programmer: &'a Programmer,
         fixture_ref: &FixtureRef,
-    ) -> &'a BoundCueInstruction {
+    ) -> &'a BoundAssertionSet {
         programmer
             .active_instructions()
             .iter()
@@ -1168,13 +1161,13 @@ mod programmer_override_tests {
             })
             .expect("remainder row should retain its complete attribute set");
         assert_eq!(
-            remainder.cue_instruction.values.get(&Attribute::Red),
+            remainder.assertions.values.get(&Attribute::Red),
             Some(&ValueSource::Inline(ParameterValue::Absolute {
                 value: 10.0
             }))
         );
         assert_eq!(
-            remainder.cue_instruction.values.get(&Attribute::Blue),
+            remainder.assertions.values.get(&Attribute::Blue),
             Some(&ValueSource::Inline(ParameterValue::Absolute {
                 value: 40.0
             }))
@@ -1188,13 +1181,13 @@ mod programmer_override_tests {
             })
             .expect("overridden row should merge preserved and incoming attributes");
         assert_eq!(
-            overridden.cue_instruction.values.get(&Attribute::Red),
+            overridden.assertions.values.get(&Attribute::Red),
             Some(&ValueSource::Inline(ParameterValue::Absolute {
                 value: 30.0
             }))
         );
         assert_eq!(
-            overridden.cue_instruction.values.get(&Attribute::Blue),
+            overridden.assertions.values.get(&Attribute::Blue),
             Some(&ValueSource::Inline(ParameterValue::Absolute {
                 value: 40.0
             }))
@@ -1223,7 +1216,7 @@ mod programmer_override_tests {
 
         let element_three = instruction_for_element(&programmer, &element_ref(1, 3));
         assert_eq!(
-            element_three.cue_instruction.values.get(&Attribute::Red),
+            element_three.assertions.values.get(&Attribute::Red),
             Some(&ValueSource::Inline(ParameterValue::Absolute {
                 value: 20.0
             }))

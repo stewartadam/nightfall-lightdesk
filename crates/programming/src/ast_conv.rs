@@ -12,7 +12,6 @@ use std::str::FromStr;
 
 use nightfall::prelude::*;
 use nightfall_cmd_parse::{ast, conv, parse_spatial_selection_text};
-use nightfall_cues::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 
@@ -330,7 +329,7 @@ impl AstConvert for ProgrammerAstConverter {
                     )]);
                 }
                 let instruction =
-                    attribute_actions_to_cue_instruction(&attr_ast.actions, &attr_ast.timings)
+                    attribute_actions_to_assertion_set(&attr_ast.actions, &attr_ast.timings)
                         .map_err(|e| {
                             DispatchError::ConversionFailed(format!("attribute parsing: {}", e))
                         })?;
@@ -361,7 +360,7 @@ impl AstConvert for ProgrammerAstConverter {
                         },
                     )]);
                 }
-                let instruction = attribute_actions_to_cue_instruction(
+                let instruction = attribute_actions_to_assertion_set(
                     &active_attr_ast.actions,
                     &active_attr_ast.timings,
                 )
@@ -590,11 +589,12 @@ fn timings_to_transitions(
     Ok((transition, attribute_transitions))
 }
 
-/// Convert attribute actions to a CueInstruction
-fn attribute_actions_to_cue_instruction(
+/// Builds the assertion set for one attribute command: every attribute action becomes a value,
+/// and the command timing becomes the set-wide and per-attribute transitions.
+fn attribute_actions_to_assertion_set(
     actions: &ast::AttributeActionsAst,
     timings: &Option<ast::TimingsAst>,
-) -> Result<CueInstruction, String> {
+) -> Result<AssertionSet, String> {
     let mut values = HashMap::new();
 
     // Convert the first attribute action
@@ -608,7 +608,7 @@ fn attribute_actions_to_cue_instruction(
     // Convert timing information (both global and per-attribute)
     let (transitions, transitions_by_attribute) = timings_to_transitions(timings)?;
 
-    Ok(CueInstruction {
+    Ok(AssertionSet {
         blueprint_application: None,
         values,
         transitions_by_attribute,

@@ -23,6 +23,7 @@ use nightfall_cmd_parse::prelude::*;
 
 use crate::prelude::*;
 
+pub mod assertions;
 pub mod blueprint;
 mod client;
 pub mod client_bridge;
@@ -85,6 +86,7 @@ pub mod prelude {
     pub use nightfall_engine_derive::EnginePayload;
 
     pub use crate::EnginePlugin;
+    pub use crate::assertions::{AssertionSet, BoundAssertionSet, FixtureAttributeTransition};
     pub use crate::blueprint::{BlueprintCommand, BlueprintDefinitionChange, BlueprintOperation};
     pub use crate::client::{
         Undo, decode_client_command, register_client_command, submit_client_command,

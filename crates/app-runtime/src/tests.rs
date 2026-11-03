@@ -31,9 +31,7 @@ use nightfall::prelude::{
 use nightfall_clips::{Clip, Source};
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_config::{RuntimeConfig, TransportConfig};
-use nightfall_cues::prelude::{
-    BoundCueInstruction, Cue, CueInstruction, MaterializedSequence, Sequence,
-};
+use nightfall_cues::prelude::{Cue, MaterializedSequence, Sequence};
 use nightfall_desk::{
     prelude::{
         FixtureMasterTarget, InstanceMasterTarget, Master, MasterKind, MasterMode, MasterTarget,
@@ -49,6 +47,7 @@ use nightfall_engine::prelude::{
     EngineClientMessage, EngineOperationEnvelope, EventHandling, FinishedCommand, Render,
     RenderPass, ReplyTarget, ToastLevel, UiNotification, UiNotificationState,
 };
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
     ConsoleDmxAddress, ConsoleDmxAddresses, Fixture, FixtureDataProviderExt, FixtureElement,
@@ -201,11 +200,11 @@ fn test_intensity_cue(
             label: label.to_owned(),
         },
         transitions,
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                 fixture_ref.clone(),
             ])),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,
@@ -1896,7 +1895,7 @@ fn named_sample_show_is_standalone_and_recoverable() {
         .expect("cue 30.30");
     assert_eq!(
         fanned_cue.instructions[0]
-            .cue_instruction
+            .assertions
             .values
             .get(&Attribute::Tilt),
         Some(&ValueSource::Inline(ParameterValue::AbsolutePercent {

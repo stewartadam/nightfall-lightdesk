@@ -1,7 +1,7 @@
 {
   "metadata": {
     "nightfallVersion": "0.1.0-alpha.4",
-    "showfileVersion": 23,
+    "showfileVersion": 24,
     "lastSavedUnixSec": 1800000000
   },
   "fixtures": [
@@ -437,7 +437,7 @@
             },
             "clauses": []
           },
-          "cue_instruction": {
+          "assertions": {
             "values": {
               "Red": {
                 "type": "Inline",

@@ -44,7 +44,7 @@ function referencedCue(): Cue {
     instructions: [
       {
         selection: {},
-        cue_instruction: {
+        assertions: {
           values: {},
           blueprint_application: {
             blueprint_uid: "blueprint-5",
@@ -110,7 +110,7 @@ setAttributeMetadata([
 /** Blueprint projection decorates each resolved value instead of row-level Source text. */
 test("projects Blueprint provenance onto cue values", () => {
   const storedBlueprint = blueprint();
-  const instruction = referencedCue().instructions[0]!.cue_instruction;
+  const instruction = referencedCue().instructions[0]!.assertions;
   const source = blueprintValueSourceForInstruction(instruction, {
     "blueprint-5": storedBlueprint,
   });
@@ -132,7 +132,7 @@ test("projects Blueprint provenance onto cue values", () => {
 /** Uniform element assertions aggregate while distinct Blueprint sources stay varied. */
 test("aggregates parent Blueprint values without conflating sources", () => {
   const source = blueprintValueSourceForInstruction(
-    referencedCue().instructions[0]!.cue_instruction,
+    referencedCue().instructions[0]!.assertions,
     { "blueprint-5": blueprint() },
   );
   const value = {
@@ -203,10 +203,10 @@ test("makes selected Blueprint instructions absolute", () => {
 
   assert.equal(changed, true);
   assert.equal(
-    cue.instructions[0]?.cue_instruction.blueprint_application,
+    cue.instructions[0]?.assertions.blueprint_application,
     undefined,
   );
-  assert.deepEqual(Object.keys(cue.instructions[0]!.cue_instruction.values), [
+  assert.deepEqual(Object.keys(cue.instructions[0]!.assertions.values), [
     "Red",
   ]);
 });

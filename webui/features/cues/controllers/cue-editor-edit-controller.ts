@@ -162,7 +162,7 @@ export function createCueEditorEditController(
             );
             if (!instructionItem) continue;
 
-            const { cue_instruction: instruction } = instructionItem;
+            const { assertions: instruction } = instructionItem;
             if (assertionStyle !== undefined) {
               const valueKey = normalizedAttributeKey(instruction.values, attr);
               const convertedSource = convertValueSourceAssertionStyle(
@@ -211,8 +211,7 @@ export function createCueEditorEditController(
                   ? updatedCue.instructions
                   : updatedCue.parts?.[target.partIndex]?.instructions;
               const instruction =
-                targetInstructionContainer?.[target.selectionIndex]
-                  ?.cue_instruction;
+                targetInstructionContainer?.[target.selectionIndex]?.assertions;
               if (!instruction) continue;
               if (
                 transitionForFixtureAttribute(
@@ -239,8 +238,7 @@ export function createCueEditorEditController(
                   ? updatedCue.instructions
                   : updatedCue.parts?.[target.partIndex]?.instructions;
               const instruction =
-                targetInstructionContainer?.[target.selectionIndex]
-                  ?.cue_instruction;
+                targetInstructionContainer?.[target.selectionIndex]?.assertions;
               if (!instruction) continue;
               upsertInstructionFixtureAttributeTiming(
                 instruction,
@@ -608,7 +606,7 @@ export function createCueEditorEditController(
           ? updatedCue.instructions
           : updatedCue.parts?.[selected.partIndex]?.instructions;
       const instruction =
-        instructionContainer?.[selected.selectionIndex]?.cue_instruction;
+        instructionContainer?.[selected.selectionIndex]?.assertions;
       if (!instruction) continue;
       for (const field of selected.fields) {
         if (

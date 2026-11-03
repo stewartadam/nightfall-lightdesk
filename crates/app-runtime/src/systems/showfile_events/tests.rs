@@ -1374,11 +1374,11 @@ fn merge_showfile_snapshots_skip_groups_retargets_fx_selection_by_id() {
         attributes: HashMap::new(),
         timebase: Default::default(),
     }];
-    incoming.sequences[0].setup_cue.instructions = vec![BoundCueInstruction {
+    incoming.sequences[0].setup_cue.instructions = vec![BoundAssertionSet {
         selection: SpatialSelection::identity(SelectionExpr::Group(GroupRefExpr::ByUid {
             uid: incoming_group_uid,
         })),
-        cue_instruction: CueInstruction::default(),
+        assertions: AssertionSet::default(),
     }];
 
     let options = ShowfileImportOptions {
@@ -1423,9 +1423,9 @@ fn merge_showfile_snapshots_skip_blueprints_retargets_cue_references_by_id() {
         },
         ..current_blueprint
     }];
-    incoming.cues[0].instructions = vec![BoundCueInstruction {
+    incoming.cues[0].instructions = vec![BoundAssertionSet {
         selection: SpatialSelection::default(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: Some(BlueprintApplication {
                 blueprint_uid: incoming_blueprint_uid,
                 selector: BlueprintSelector::Category(Attribute::Red.category()),
@@ -1446,7 +1446,7 @@ fn merge_showfile_snapshots_skip_blueprints_retargets_cue_references_by_id() {
 
     assert_eq!(
         merged.cues[0].instructions[0]
-            .cue_instruction
+            .assertions
             .blueprint_application
             .as_ref()
             .map(|application| application.blueprint_uid),
@@ -2668,9 +2668,9 @@ fn load_into_fresh_world_stabilizes_authored_group_ids() {
     let group_id = source_snapshot.groups[0].identifiers.id;
     source_snapshot.fx[0].selection =
         SpatialSelection::identity(SelectionExpr::Group(GroupRefExpr::ById(group_id)));
-    source_snapshot.sequences[0].release_cue.instructions = vec![BoundCueInstruction {
+    source_snapshot.sequences[0].release_cue.instructions = vec![BoundAssertionSet {
         selection: SpatialSelection::identity(SelectionExpr::Group(GroupRefExpr::ById(group_id))),
-        cue_instruction: CueInstruction::default(),
+        assertions: AssertionSet::default(),
     }];
 
     let mut restored_world = setup_world();
@@ -2766,9 +2766,9 @@ fn roundtrip_preserves_blueprint_applications() {
     seed_world(&mut source_world);
     let mut source_snapshot = collect_snapshot(&mut source_world);
     let blueprint_uid = source_snapshot.blueprints[0].identifiers.uid;
-    source_snapshot.cues[0].instructions = vec![BoundCueInstruction {
+    source_snapshot.cues[0].instructions = vec![BoundAssertionSet {
         selection: SpatialSelection::default(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: Some(BlueprintApplication {
                 blueprint_uid,
                 selector: BlueprintSelector::Category(Attribute::Red.category()),
@@ -2792,10 +2792,10 @@ fn roundtrip_preserves_blueprint_applications() {
     );
     assert_eq!(
         restored.cues[0].instructions[0]
-            .cue_instruction
+            .assertions
             .blueprint_application,
         source_snapshot.cues[0].instructions[0]
-            .cue_instruction
+            .assertions
             .blueprint_application,
     );
 }

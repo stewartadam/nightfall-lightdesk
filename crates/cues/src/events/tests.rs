@@ -388,10 +388,10 @@ fn submit_definition_command(app: &mut App, command: CueCommand) {
 }
 
 /// Builds one cue instruction targeting an authored group alias.
-fn group_instruction(group_id: u32) -> BoundCueInstruction {
-    BoundCueInstruction {
+fn group_instruction(group_id: u32) -> BoundAssertionSet {
+    BoundAssertionSet {
         selection: SpatialSelection::identity(SelectionExpr::Group(GroupRefExpr::ById(group_id))),
-        cue_instruction: CueInstruction::default(),
+        assertions: AssertionSet::default(),
     }
 }
 
@@ -483,11 +483,11 @@ fn rename_color_path_moves_path_and_rewrites_references() {
                 uid: uuid::Uuid::from_u128(0x2020),
                 label: "cue".to_owned(),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     color_path_id: Some(ColorPathId(101)),
                     ..Default::default()
@@ -499,11 +499,11 @@ fn rename_color_path_moves_path_and_rewrites_references() {
                     uid: uuid::Uuid::from_u128(0x3030),
                     label: "part".to_owned(),
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref.clone(),
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         color_path_id: Some(ColorPathId(101)),
                         ..Default::default()
@@ -554,11 +554,11 @@ fn rename_color_path_moves_path_and_rewrites_references() {
         .from_id(1)
         .expect("test cue should remain stored");
     assert_eq!(
-        cue.instructions[0].cue_instruction.color_path_id,
+        cue.instructions[0].assertions.color_path_id,
         Some(ColorPathId(202))
     );
     assert_eq!(
-        cue.parts[0].instructions[0].cue_instruction.color_path_id,
+        cue.parts[0].instructions[0].assertions.color_path_id,
         Some(ColorPathId(202))
     );
 
@@ -712,9 +712,9 @@ fn block_merge_does_not_absorb_direct_values_into_blueprint_rows() {
         index: None,
     }])
     .into();
-    let mut existing = vec![BoundCueInstruction {
+    let mut existing = vec![BoundAssertionSet {
         selection: selection.clone(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: Some(BlueprintApplication {
                 blueprint_uid: uuid::Uuid::new_v4(),
                 selector: BlueprintSelector::Attribute(Attribute::Red),
@@ -722,9 +722,9 @@ fn block_merge_does_not_absorb_direct_values_into_blueprint_rows() {
             ..Default::default()
         },
     }];
-    let incoming = vec![BoundCueInstruction {
+    let incoming = vec![BoundAssertionSet {
         selection,
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             values: HashMap::from([(
                 Attribute::Red,
                 ValueSource::Inline(ParameterValue::Absolute { value: 100.0 }),
@@ -736,27 +736,22 @@ fn block_merge_does_not_absorb_direct_values_into_blueprint_rows() {
     merge_block_instructions(&mut existing, incoming);
 
     assert_eq!(existing.len(), 2);
-    assert!(existing[0].cue_instruction.values.is_empty());
-    assert!(existing[1].cue_instruction.blueprint_application.is_none());
-    assert!(
-        existing[1]
-            .cue_instruction
-            .values
-            .contains_key(&Attribute::Red)
-    );
+    assert!(existing[0].assertions.values.is_empty());
+    assert!(existing[1].assertions.blueprint_application.is_none());
+    assert!(existing[1].assertions.values.contains_key(&Attribute::Red));
 }
 
 /// Verifies a whole-fixture Blueprint row does not suppress an element block assertion.
 #[test]
 fn element_block_is_not_suppressed_by_whole_fixture_blueprint_row() {
     let fixture_uid = uuid::Uuid::new_v4();
-    let mut existing = vec![BoundCueInstruction {
+    let mut existing = vec![BoundAssertionSet {
         selection: SelectionExpr::Resolved(vec![FixtureRef {
             fixture_uid,
             index: None,
         }])
         .into(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: Some(BlueprintApplication {
                 blueprint_uid: uuid::Uuid::new_v4(),
                 selector: BlueprintSelector::Attribute(Attribute::Blue),
@@ -764,13 +759,13 @@ fn element_block_is_not_suppressed_by_whole_fixture_blueprint_row() {
             ..Default::default()
         },
     }];
-    let incoming = vec![BoundCueInstruction {
+    let incoming = vec![BoundAssertionSet {
         selection: SelectionExpr::Resolved(vec![FixtureRef {
             fixture_uid,
             index: Some(1),
         }])
         .into(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             values: HashMap::from([(
                 Attribute::Blue,
                 ValueSource::Inline(ParameterValue::Absolute { value: 80.0 }),
@@ -783,7 +778,7 @@ fn element_block_is_not_suppressed_by_whole_fixture_blueprint_row() {
 
     assert_eq!(existing.len(), 2);
     assert_eq!(
-        cue_instruction_fixture(&existing[1]).and_then(|row| row.index),
+        assertion_set_fixture(&existing[1]).and_then(|row| row.index),
         Some(1)
     );
 }
@@ -820,12 +815,12 @@ fn storing_a_step_cue_syncs_release_cue_rows() {
     let mut cue = Cue::default();
     cue.identifiers.id = 1;
     cue.identifiers.uid = cue_uid;
-    cue.instructions = vec![BoundCueInstruction {
+    cue.instructions = vec![BoundAssertionSet {
         selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![FixtureRef {
             fixture_uid: Uuid::from_u128(0x452),
             index: None,
         }])),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             values: HashMap::from([(
                 Attribute::Intensity,
                 ValueSource::Inline(ParameterValue::AbsolutePercent { value: 1.0.into() }),
@@ -846,7 +841,7 @@ fn storing_a_step_cue_syncs_release_cue_rows() {
     assert_eq!(stored.release_cue.instructions.len(), 1);
     assert!(
         stored.release_cue.instructions[0]
-            .cue_instruction
+            .assertions
             .values
             .contains_key(&Attribute::Intensity)
     );

@@ -15,7 +15,7 @@ use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_cues::prelude::*;
 use nightfall_dmx::prelude::*;
-use nightfall_engine::prelude::DataProvider;
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet, DataProvider};
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_instances::{InstanceClock, Owner};
@@ -63,20 +63,20 @@ fn create_compositor_test_app() -> App {
 }
 
 /// Helper function to create a simple bound instruction for testing
-fn create_test_instruction() -> BoundCueInstruction {
+fn create_test_instruction() -> BoundAssertionSet {
     let mut values = HashMap::new();
     values.insert(
         Attribute::Intensity,
         ValueSource::Inline(ParameterValue::Absolute { value: 128.0 }),
     );
 
-    BoundCueInstruction {
+    BoundAssertionSet {
         selection: SelectionExpr::Fixture(UnresolvedFixtureRef {
             fixture_id: 1,
             element_index: None,
         })
         .into(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: None,
             values,
             transitions_by_attribute: Default::default(),
@@ -221,9 +221,9 @@ fn programmer_group_range_fade_outputs_interpolated_red_values() {
 
     app.world_mut()
         .resource_mut::<Programmer>()
-        .add_instruction(BoundCueInstruction {
+        .add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Group(GroupRefExpr::RangeById { start: 1, end: 3 }).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values,
                 transitions: PartialTransition {
@@ -276,13 +276,13 @@ fn programmer_clear_after_fade_out_releases_without_timing() {
 
     app.world_mut()
         .resource_mut::<Programmer>()
-        .add_instruction(BoundCueInstruction {
+        .add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Fixture(UnresolvedFixtureRef {
                 fixture_id: 1,
                 element_index: None,
             })
             .into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values,
                 transitions: PartialTransition {
@@ -463,13 +463,13 @@ fn test_painter_updates_existing_layer_when_instruction_changes() {
         );
 
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Fixture(UnresolvedFixtureRef {
                 fixture_id: 1,
                 element_index: None,
             })
             .into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values,
                 transitions_by_attribute: Default::default(),
@@ -536,13 +536,13 @@ fn test_painter_handles_multiple_instructions_correctly() {
         );
 
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Fixture(UnresolvedFixtureRef {
                 fixture_id: 1,
                 element_index: None,
             })
             .into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values,
                 transitions_by_attribute: Default::default(),
@@ -561,13 +561,13 @@ fn test_painter_handles_multiple_instructions_correctly() {
         );
 
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Fixture(UnresolvedFixtureRef {
                 fixture_id: 2,
                 element_index: None,
             })
             .into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values,
                 transitions_by_attribute: Default::default(),
@@ -586,13 +586,13 @@ fn test_painter_handles_multiple_instructions_correctly() {
         );
 
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Fixture(UnresolvedFixtureRef {
                 fixture_id: 3,
                 element_index: None,
             })
             .into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values,
                 transitions_by_attribute: Default::default(),

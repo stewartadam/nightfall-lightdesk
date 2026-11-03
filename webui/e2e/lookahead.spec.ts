@@ -304,7 +304,7 @@ function intensityInstruction(fixtureUid: string, value: number): object {
       },
       clauses: [],
     },
-    cue_instruction: {
+    assertions: {
       values: { Intensity: absolute(value) },
       transitions: {},
       transitions_by_attribute: {},
@@ -323,7 +323,7 @@ function tiltInstruction(fixtureUid: string, value: number): object {
       },
       clauses: [],
     },
-    cue_instruction: {
+    assertions: {
       values: { Tilt: absolute(value) },
       transitions: {},
       transitions_by_attribute: {},

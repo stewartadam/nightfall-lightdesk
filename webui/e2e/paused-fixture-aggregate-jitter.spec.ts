@@ -166,7 +166,7 @@ function pixelCue(fixtureUid: string): object {
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values: {
             Blue: absolute(40),
             Green: absolute(20),

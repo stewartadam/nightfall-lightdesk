@@ -51,9 +51,9 @@ pub(super) fn release_programmer_values(
             .into_value()
     });
 
-    let mut updates: Vec<(uuid::Uuid, BoundCueInstruction)> = Vec::new();
+    let mut updates: Vec<(uuid::Uuid, BoundAssertionSet)> = Vec::new();
     let mut removals: Vec<uuid::Uuid> = Vec::new();
-    let mut additions: Vec<BoundCueInstruction> = Vec::new();
+    let mut additions: Vec<BoundAssertionSet> = Vec::new();
 
     for (uid, instruction) in programmer.active_instructions().iter() {
         let resolved_instruction_selection = spatial_selection_resolver
@@ -86,16 +86,16 @@ pub(super) fn release_programmer_values(
             } else {
                 updates.push((
                     *uid,
-                    BoundCueInstruction {
+                    BoundAssertionSet {
                         selection: SelectionExpr::Resolved(unmatched_fixtures).into(),
-                        cue_instruction: instruction.cue_instruction.clone(),
+                        assertions: instruction.assertions.clone(),
                     },
                 ));
             }
             continue;
         }
 
-        let mut filtered_instruction = instruction.cue_instruction.clone();
+        let mut filtered_instruction = instruction.assertions.clone();
         for attribute in attributes {
             filtered_instruction.values.remove(attribute);
             filtered_instruction
@@ -121,25 +121,25 @@ pub(super) fn release_programmer_values(
             } else {
                 updates.push((
                     *uid,
-                    BoundCueInstruction {
+                    BoundAssertionSet {
                         selection: instruction.selection.clone(),
-                        cue_instruction: filtered_instruction,
+                        assertions: filtered_instruction,
                     },
                 ));
             }
         } else {
             updates.push((
                 *uid,
-                BoundCueInstruction {
+                BoundAssertionSet {
                     selection: SelectionExpr::Resolved(unmatched_fixtures).into(),
-                    cue_instruction: instruction.cue_instruction.clone(),
+                    assertions: instruction.assertions.clone(),
                 },
             ));
 
             if !filtered_instruction_is_empty {
-                additions.push(BoundCueInstruction {
+                additions.push(BoundAssertionSet {
                     selection: SelectionExpr::Resolved(matched_fixtures).into(),
-                    cue_instruction: filtered_instruction,
+                    assertions: filtered_instruction,
                 });
             }
         }

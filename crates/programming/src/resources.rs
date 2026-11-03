@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
-use nightfall_cues::prelude::*;
+use nightfall_engine::prelude::BoundAssertionSet;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -21,7 +21,7 @@ pub struct ProgrammerInstruction {
     /// Identifier for the programmer instruction, and used for generating the ephemeral cue
     pub id: Uuid,
     /// The selection and fixture values
-    pub instruction: BoundCueInstruction,
+    pub instruction: BoundAssertionSet,
 }
 
 /// Maintains insertion order while allowing efficient lookups by UUID
@@ -63,8 +63,8 @@ impl ProgrammerInstructions {
     pub fn insert(
         &mut self,
         id: Uuid,
-        instruction: BoundCueInstruction,
-    ) -> Option<BoundCueInstruction> {
+        instruction: BoundAssertionSet,
+    ) -> Option<BoundAssertionSet> {
         match self.lookup.entry(id) {
             std::collections::hash_map::Entry::Occupied(entry) => {
                 let idx = *entry.get();
@@ -82,14 +82,14 @@ impl ProgrammerInstructions {
     }
 
     /// Get an immutable reference to an instruction by ID
-    pub fn get(&self, id: &Uuid) -> Option<&BoundCueInstruction> {
+    pub fn get(&self, id: &Uuid) -> Option<&BoundAssertionSet> {
         self.lookup
             .get(id)
             .map(|&idx| &self.instructions[idx].instruction)
     }
 
     /// Get a mutable reference to an instruction by ID
-    pub fn get_mut(&mut self, id: &Uuid) -> Option<&mut BoundCueInstruction> {
+    pub fn get_mut(&mut self, id: &Uuid) -> Option<&mut BoundAssertionSet> {
         if let Some(&idx) = self.lookup.get(id) {
             Some(&mut self.instructions[idx].instruction)
         } else {
@@ -98,7 +98,7 @@ impl ProgrammerInstructions {
     }
 
     /// Remove an instruction by ID
-    pub fn remove(&mut self, id: &Uuid) -> Option<BoundCueInstruction> {
+    pub fn remove(&mut self, id: &Uuid) -> Option<BoundAssertionSet> {
         if let Some(idx) = self.lookup.remove(id) {
             // Swap with last element for O(1) removal
             let instruction = self.instructions.swap_remove(idx).instruction;
@@ -122,12 +122,12 @@ impl ProgrammerInstructions {
     }
 
     /// Iterate over all instructions
-    pub fn iter(&self) -> impl Iterator<Item = (&Uuid, &BoundCueInstruction)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Uuid, &BoundAssertionSet)> {
         self.instructions.iter().map(|i| (&i.id, &i.instruction))
     }
 
     /// Iterate over all instructions mutably
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&Uuid, &mut BoundCueInstruction)> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&Uuid, &mut BoundAssertionSet)> {
         self.instructions.iter_mut().map(|i| {
             let id = &i.id;
             let instruction = &mut i.instruction;
@@ -217,23 +217,20 @@ impl Programmer {
     }
 
     /// Add an instruction to the active programmer
-    pub fn add_instruction(&mut self, bound_instruction: BoundCueInstruction) -> Uuid {
+    pub fn add_instruction(&mut self, bound_instruction: BoundAssertionSet) -> Uuid {
         tracing::trace!(
             instruction = ?bound_instruction,
             "Adding instruction to active programmer"
         );
 
         // Check if the instruction with this selection already exists
-        let incoming_is_blueprint = bound_instruction
-            .cue_instruction
-            .blueprint_application
-            .is_some();
+        let incoming_is_blueprint = bound_instruction.assertions.blueprint_application.is_some();
         let maybe_existing = self
             .active_instructions_mut()
             .iter_mut()
             .find(|(_, instruction)| {
                 !incoming_is_blueprint
-                    && instruction.cue_instruction.blueprint_application.is_none()
+                    && instruction.assertions.blueprint_application.is_none()
                     && instruction.selection == bound_instruction.selection
             });
 
@@ -241,8 +238,8 @@ impl Programmer {
             Some((uid, existing_instruction)) => {
                 let uid = *uid;
                 existing_instruction
-                    .cue_instruction
-                    .merge(bound_instruction.cue_instruction);
+                    .assertions
+                    .merge(bound_instruction.assertions);
 
                 // Move the instruction to the end so it's applied last
                 self.active_instructions_mut().reorder_to_end(&uid);
@@ -338,7 +335,7 @@ impl Programmer {
 
 #[cfg(test)]
 mod tests {
-    use nightfall_cues::cue::CueInstruction;
+    use nightfall_engine::prelude::AssertionSet;
 
     use super::*;
 
@@ -359,23 +356,23 @@ mod tests {
         });
 
         // Add first instruction with selection1
-        let instr1 = BoundCueInstruction {
+        let instr1 = BoundAssertionSet {
             selection: selection1.clone().into(),
-            cue_instruction: CueInstruction::default(),
+            assertions: AssertionSet::default(),
         };
         let uid1 = programmer.add_instruction(instr1);
 
         // Add second instruction with selection2 (different)
-        let instr2 = BoundCueInstruction {
+        let instr2 = BoundAssertionSet {
             selection: selection2.clone().into(),
-            cue_instruction: CueInstruction::default(),
+            assertions: AssertionSet::default(),
         };
         let uid2 = programmer.add_instruction(instr2);
 
         // Add third instruction with same selection as first (should merge and move to end)
-        let instr3 = BoundCueInstruction {
+        let instr3 = BoundAssertionSet {
             selection: selection1.clone().into(),
-            cue_instruction: CueInstruction::default(),
+            assertions: AssertionSet::default(),
         };
         programmer.add_instruction(instr3);
 
@@ -402,9 +399,9 @@ mod tests {
         let uuid2 = Uuid::new_v4();
         let uuid3 = Uuid::new_v4();
 
-        let instr = BoundCueInstruction {
+        let instr = BoundAssertionSet {
             selection: SelectionExpr::default().into(),
-            cue_instruction: CueInstruction::default(),
+            assertions: AssertionSet::default(),
         };
 
         // Insert three instructions

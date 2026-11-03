@@ -18,10 +18,13 @@ nightfall = { path = "../common" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine-derive = { path = "../engine-derive" }
+nightfall-selection = { path = "../selection" }
 minicbor-serde.workspace = true
 once_cell = "1.21.4"
+partially.workspace = true
 serde_json.workspace = true
 serde.workspace = true
+serde_with.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 typeshare.workspace = true

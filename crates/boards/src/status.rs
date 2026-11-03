@@ -149,7 +149,7 @@ impl BoardObjects<'_, '_> {
         let selected = self.resolve(&self.programmer.active_spatial_selection());
         let mut blueprint_fixtures: HashMap<Uuid, HashSet<FixtureRef>> = HashMap::new();
         for (_, instruction) in self.programmer.active_instructions().iter() {
-            let Some(application) = &instruction.cue_instruction.blueprint_application else {
+            let Some(application) = &instruction.assertions.blueprint_application else {
                 continue;
             };
             blueprint_fixtures

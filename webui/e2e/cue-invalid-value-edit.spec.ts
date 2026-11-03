@@ -119,7 +119,7 @@ async function storeOwnedCueInvalidEditData(
                 },
                 clauses: [],
               },
-              cue_instruction: {
+              assertions: {
                 values: {
                   Intensity: {
                     type: "Inline",
@@ -198,8 +198,7 @@ async function expectIntensityAbsoluteStored(
   await page.waitForFunction(
     ({ cueUid: targetCueUid, expected }) => {
       const cue = (window as any).appStores?.cues?.get?.()?.[targetCueUid];
-      const value =
-        cue?.instructions?.[0]?.cue_instruction?.values?.Intensity?.data;
+      const value = cue?.instructions?.[0]?.assertions?.values?.Intensity?.data;
       return value?.type === "Absolute" && value.data.value === expected;
     },
     { cueUid, expected: expectedValue },

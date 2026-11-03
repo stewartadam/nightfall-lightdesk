@@ -497,9 +497,9 @@ fn add_cue_sequence_and_clips(world: &mut World, fixture_ref: FixtureRef) -> Res
                 curve_in: Some(FadeCurve::Linear),
                 curve_out: Some(FadeCurve::Linear),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     values: HashMap::from([(
                         Attribute::Red,
                         ValueSource::Inline(ParameterValue::AbsolutePercent {

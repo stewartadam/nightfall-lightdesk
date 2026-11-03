@@ -10,9 +10,9 @@ use std::collections::HashMap;
 
 use bevy_app::prelude::*;
 use nightfall::prelude::*;
-use nightfall_cues::prelude::{BoundCueInstruction, CueInstruction};
 use nightfall_dmx::prelude::{Attribute, AttributeCategory, ParameterValue};
 use nightfall_engine::prelude::*;
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
 use nightfall_programming::events::{
@@ -172,8 +172,8 @@ fn applies_blueprints_by_reference_or_absolute_value() {
     let instructions = programmer
         .active_instructions()
         .iter()
-        .map(|(_, instruction)| &instruction.cue_instruction)
-        .collect::<Vec<&CueInstruction>>();
+        .map(|(_, instruction)| &instruction.assertions)
+        .collect::<Vec<&AssertionSet>>();
     assert_eq!(instructions.len(), 2);
     assert_eq!(
         instructions[0].blueprint_application,
@@ -426,13 +426,13 @@ fn blueprint_capture_expands_overlapping_fixture_and_element_selections() {
         .expect("fixture should be insertable");
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![FixtureRef {
                 fixture_uid,
                 index: Some(1),
             }])
             .into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 values: HashMap::from([(
                     Attribute::Red,
                     ValueSource::Inline(ParameterValue::Absolute { value: 10.0 }),
@@ -440,13 +440,13 @@ fn blueprint_capture_expands_overlapping_fixture_and_element_selections() {
                 ..Default::default()
             },
         });
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![FixtureRef {
                 fixture_uid,
                 index: None,
             }])
             .into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 values: HashMap::from([(
                     Attribute::Red,
                     ValueSource::Inline(ParameterValue::Absolute { value: 20.0 }),
@@ -605,13 +605,13 @@ fn blueprint_capture_rejects_empty_and_conflicting_values() {
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
         for (fixture_uid, value) in [(Uuid::from_u128(13), 10.0), (second_uid, 20.0)] {
-            programmer.add_instruction(BoundCueInstruction {
+            programmer.add_instruction(BoundAssertionSet {
                 selection: SelectionExpr::Resolved(vec![FixtureRef {
                     fixture_uid,
                     index: None,
                 }])
                 .into(),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     values: HashMap::from([(
                         Attribute::Red,
                         ValueSource::Inline(ParameterValue::Absolute { value }),
@@ -654,13 +654,13 @@ fn blueprint_capture_retains_fanned_intent() {
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
         programmer.clear();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![FixtureRef {
                 fixture_uid: Uuid::from_u128(13),
                 index: None,
             }])
             .into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 values: HashMap::from([(Attribute::Red, fan.clone())]),
                 ..Default::default()
             },
@@ -699,13 +699,13 @@ fn blueprint_capture_flattens_referenced_programmer_values() {
         .expect("source Blueprint should be insertable");
     app.world_mut()
         .resource_mut::<Programmer>()
-        .add_instruction(BoundCueInstruction {
+        .add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![FixtureRef {
                 fixture_uid: Uuid::from_u128(13),
                 index: None,
             }])
             .into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: Some(BlueprintApplication {
                     blueprint_uid: source_uid,
                     selector: BlueprintSelector::Category(AttributeCategory::Color),

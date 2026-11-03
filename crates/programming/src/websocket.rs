@@ -15,8 +15,8 @@ use std::collections::HashMap;
 
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
-use nightfall_cues::prelude::CueInstruction;
 use nightfall_dmx::prelude::*;
+use nightfall_engine::prelude::AssertionSet;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_selection::filter_existing_selection;
@@ -126,7 +126,7 @@ fn programmer_references_blueprint(programmer: &Programmer, blueprint_uid: Uuid)
         .iter()
         .any(|(_, instruction)| {
             instruction
-                .cue_instruction
+                .assertions
                 .blueprint_application
                 .as_ref()
                 .is_some_and(|application| application.blueprint_uid == blueprint_uid)
@@ -135,7 +135,7 @@ fn programmer_references_blueprint(programmer: &Programmer, blueprint_uid: Uuid)
 
 /// Resolves direct values or the current values behind one live Blueprint application.
 fn resolved_programmer_instruction_values(
-    instruction: &CueInstruction,
+    instruction: &AssertionSet,
     blueprint_data_provider: Option<&DataProvider<Blueprint>>,
 ) -> (
     HashMap<Attribute, ValueSource>,
@@ -253,7 +253,7 @@ pub fn send_programmer(
 
     for (_instruction_id, instruction) in instructions.iter() {
         let (attribute_map, blueprint_source) = resolved_programmer_instruction_values(
-            &instruction.cue_instruction,
+            &instruction.assertions,
             blueprint_data_provider,
         );
         if attribute_map.is_empty() {
@@ -382,9 +382,9 @@ mod tests {
     use std::collections::HashMap;
 
     use nightfall::prelude::*;
-    use nightfall_cues::prelude::{BoundCueInstruction, CueInstruction};
     use nightfall_dmx::prelude::{Attribute, ParameterValue};
     use nightfall_engine::prelude::DataProvider;
+    use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
     use uuid::Uuid;
 
     use super::OutboundBlueprintValueSource;
@@ -438,7 +438,7 @@ mod tests {
                 ..Default::default()
             })
             .expect("Blueprint should be insertable");
-        let instruction = CueInstruction {
+        let instruction = AssertionSet {
             blueprint_application: Some(BlueprintApplication {
                 blueprint_uid,
                 selector: BlueprintSelector::Category(Attribute::Blue.category()),
@@ -467,9 +467,9 @@ mod tests {
     fn blueprint_change_matches_dependent_programmer_reference() {
         let blueprint_uid = Uuid::new_v4();
         let mut programmer = Programmer::default();
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SpatialSelection::default(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: Some(BlueprintApplication {
                     blueprint_uid,
                     selector: BlueprintSelector::All,

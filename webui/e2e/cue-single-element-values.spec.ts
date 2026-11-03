@@ -101,7 +101,7 @@ async function seedSingleElementCue(page: Page): Promise<string[]> {
                   },
                   clauses: [],
                 },
-                cue_instruction: {
+                assertions: {
                   values: {
                     Intensity: inline(220),
                     Red: inline(25),
@@ -209,8 +209,8 @@ async function verifySingleElementValues(
             )
             .map((instruction: any) => ({
               refs: instruction.selection.source.data,
-              red: instruction.cue_instruction.values.Red,
-              blue: instruction.cue_instruction.values.Blue,
+              red: instruction.assertions.values.Red,
+              blue: instruction.assertions.values.Blue,
             }));
         },
         { cueUid, fixtureUid: fixtureUids[0] },

@@ -382,7 +382,7 @@ test("cue timings show inherited values and Delete clears overrides", async ({
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Red: {
                   type: "Inline",
@@ -490,8 +490,7 @@ test("cue timings show inherited values and Delete clears overrides", async ({
         page.evaluate((cueUid) => {
           const cue = (window as any).appStores.cues.get()[cueUid];
           const transition =
-            cue?.instructions?.[0]?.cue_instruction?.transitions_by_attribute
-              ?.Red;
+            cue?.instructions?.[0]?.assertions?.transitions_by_attribute?.Red;
           return {
             fadeInCleared: transition?.fade_in === undefined,
             fadeOutSecs: transition?.fade_out?.data?.secs,
@@ -512,7 +511,7 @@ test("cue timings show inherited values and Delete clears overrides", async ({
       .poll(async () =>
         page.evaluate((cueUid) => {
           const cue = (window as any).appStores.cues.get()[cueUid];
-          return cue.instructions?.[0]?.cue_instruction
+          return cue.instructions?.[0]?.assertions
             ?.transitions_by_fixture_attribute?.[0]?.transitions_by_attribute
             ?.Red?.fade_out?.data?.secs;
         }, context.cueUid),
@@ -554,7 +553,7 @@ test("cue timings show inherited values and Delete clears overrides", async ({
         page.evaluate((cueUid) => {
           const cue = (window as any).appStores.cues.get()[cueUid];
           const transition =
-            cue.instructions?.[0]?.cue_instruction
+            cue.instructions?.[0]?.assertions
               ?.transitions_by_fixture_attribute?.[0]?.transitions_by_attribute
               ?.Red;
           return {
@@ -631,7 +630,7 @@ test("cue timings grid paints preview progress behind timing cells", async ({
                 },
                 clauses: [],
               },
-              cue_instruction: {
+              assertions: {
                 values: {
                   Intensity: {
                     type: "Inline",
@@ -827,7 +826,7 @@ test("sequence timings grid paints active playback progress behind timing cells"
             },
             clauses: [],
           },
-          cue_instruction: {
+          assertions: {
             values: {
               Intensity: {
                 type: "Inline",
@@ -1189,7 +1188,7 @@ test("sequence timings grid shows cue durations and wrapped sequence total", asy
             },
             clauses: [],
           },
-          cue_instruction: {
+          assertions: {
             values: {
               [attr]: {
                 type: "Inline",
@@ -1597,7 +1596,7 @@ test("cue timings grid expands fixture rows to element timing rows", async ({
                 },
                 clauses: [],
               },
-              cue_instruction: {
+              assertions: {
                 values: {
                   [attr]: {
                     type: "Inline",
@@ -1635,7 +1634,7 @@ test("cue timings grid expands fixture rows to element timing rows", async ({
                 },
                 clauses: [],
               },
-              cue_instruction: {
+              assertions: {
                 values: {
                   [attr]: {
                     type: "Inline",
@@ -1786,7 +1785,7 @@ test("cue timings fan grouped parent rows within fixtures with Shift+Enter", asy
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 [attr]: {
                   type: "Inline",
@@ -1897,8 +1896,7 @@ test("cue timings fan grouped parent rows within fixtures with Shift+Enter", asy
         ];
         const transitions = instructions.flatMap(
           (instruction: any) =>
-            instruction?.cue_instruction?.transitions_by_fixture_attribute ??
-            [],
+            instruction?.assertions?.transitions_by_fixture_attribute ?? [],
         );
 
         /** Returns the stored fade-in duration seconds for one fixture element. */
@@ -2063,7 +2061,7 @@ test("cue timings badge varied whole-fixture parent rows within elements", async
                 },
                 clauses: [],
               },
-              cue_instruction: {
+              assertions: {
                 values: {
                   [attr]: {
                     type: "Inline",
@@ -2211,7 +2209,7 @@ test("cue timings badge varied whole-fixture parent rows within elements", async
             };
             const cue = (window as any).appStores.cues.get()[cueUid];
             const transitions =
-              cue?.instructions?.[0]?.cue_instruction
+              cue?.instructions?.[0]?.assertions
                 ?.transitions_by_fixture_attribute ?? [];
             const transitionForElement = (index: number) =>
               transitions.find(
@@ -2278,7 +2276,7 @@ test("cue timings badge varied whole-fixture parent rows within elements", async
             };
             const cue = (window as any).appStores.cues.get()[cueUid];
             const transitions =
-              cue?.instructions?.[0]?.cue_instruction
+              cue?.instructions?.[0]?.assertions
                 ?.transitions_by_fixture_attribute ?? [];
             const transitionForElement = (index: number) =>
               transitions.find(
@@ -2343,7 +2341,7 @@ test("cue timings badge varied whole-fixture parent rows within elements", async
             };
             const cue = (window as any).appStores.cues.get()[cueUid];
             const transitions =
-              cue?.instructions?.[0]?.cue_instruction
+              cue?.instructions?.[0]?.assertions
                 ?.transitions_by_fixture_attribute ?? [];
             const transitionForElement = (index: number) =>
               transitions.find(

@@ -410,7 +410,7 @@ export function applyFixedTimingToFanMember(
         ? cue.instructions
         : cue.parts?.[target.partIndex]?.instructions;
     const instruction =
-      instructionContainer?.[target.selectionIndex]?.cue_instruction;
+      instructionContainer?.[target.selectionIndex]?.assertions;
     if (!instruction) continue;
     upsertInstructionFixtureAttributeTiming(
       instruction,
@@ -613,7 +613,7 @@ export function deleteTrackedElementValues(
 
 /** Resolves current logical values for a direct or live Blueprint instruction. */
 export function resolvedBlueprintInstructionValues(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
   blueprintMap: Record<string, types.Blueprint>,
 ): Record<string, types.ValueSource> {
   const application = instruction.blueprint_application;
@@ -626,13 +626,13 @@ export function resolvedBlueprintInstructionValues(
 /** Applies one stored instruction to the tracked-value lookup. */
 export async function trackInstructionValues(
   tracked: TrackedCueValues,
-  instruction: types.BoundCueInstruction,
+  instruction: types.BoundAssertionSet,
   trackedSource: TrackedCueSource,
   blueprintMap: Record<string, types.Blueprint> = {},
 ): Promise<void> {
   const fixtures = await resolvedFixtureRefsForSelection(instruction.selection);
   const values = resolvedBlueprintInstructionValues(
-    instruction.cue_instruction,
+    instruction.assertions,
     blueprintMap,
   );
   for (const [selectionIndex, fixture] of fixtures.entries()) {
@@ -742,11 +742,11 @@ export async function trackedValuesBeforeCue(
 
 /** Builds a WASM lookahead projection instruction from one cue instruction. */
 export async function lookaheadProjectionInstruction(
-  instruction: types.BoundCueInstruction,
+  instruction: types.BoundAssertionSet,
 ): Promise<LookaheadProjectionInstruction> {
   return {
     fixtures: await resolvedFixtureRefsForSelection(instruction.selection),
-    values: instruction.cue_instruction.values,
+    values: instruction.assertions.values,
   };
 }
 
@@ -1331,7 +1331,7 @@ export function normalizedAttributeKey(
 
 /** Deletes only asserted values for an attribute while preserving timing metadata. */
 export function deleteInstructionAttributeValues(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
   attr: string,
 ): boolean {
   return deleteNormalizedAttributeKeys(instruction.values, attr);
@@ -1339,14 +1339,14 @@ export function deleteInstructionAttributeValues(
 
 /** Returns whether a cue instruction still asserts any attribute values. */
 export function instructionHasValueAssertions(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
 ): boolean {
   return Object.keys(instruction.values ?? {}).length > 0;
 }
 
 /** Returns whether a cue instruction still carries timing metadata. */
 export function instructionHasTimingMetadata(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
 ): boolean {
   if (Object.keys(instruction.transitions_by_attribute ?? {}).length > 0) {
     return true;
@@ -1360,11 +1360,11 @@ export function instructionHasTimingMetadata(
 
 /** Removes bound cue instructions that no longer assert values or carry timing. */
 export function pruneEmptyAssertionInstructions(
-  instructions: types.BoundCueInstruction[],
+  instructions: types.BoundAssertionSet[],
 ): boolean {
   let changed = false;
   for (let index = instructions.length - 1; index >= 0; index--) {
-    const instruction = instructions[index].cue_instruction;
+    const instruction = instructions[index].assertions;
     if (
       instructionHasValueAssertions(instruction) ||
       instructionHasTimingMetadata(instruction)
@@ -1379,7 +1379,7 @@ export function pruneEmptyAssertionInstructions(
 
 /** Deletes asserted values and timing metadata for one instruction attribute. */
 export function deleteInstructionAttribute(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
   attr: string,
 ): boolean {
   let changed = deleteInstructionAttributeValues(instruction, attr);
@@ -1406,7 +1406,7 @@ export function deleteInstructionAttribute(
 export function instructionContainerForPart(
   cue: types.Cue,
   partId: number,
-): types.BoundCueInstruction[] | undefined {
+): types.BoundAssertionSet[] | undefined {
   if (partId === 0) return cue.instructions;
   return cue.parts?.find((part) => part.identifiers.id === partId)
     ?.instructions;
@@ -1414,11 +1414,11 @@ export function instructionContainerForPart(
 
 /** Checks whether any instruction in the active part writes the attribute. */
 export function instructionContainerHasAttribute(
-  instructions: readonly types.BoundCueInstruction[] | undefined,
+  instructions: readonly types.BoundAssertionSet[] | undefined,
   attr: string,
 ): boolean {
   return (
-    instructions?.some(({ cue_instruction: instruction }) =>
+    instructions?.some(({ assertions: instruction }) =>
       Object.keys(instruction.values ?? {}).some(
         (key) => key === attr || normalizeAttributeName(key) === attr,
       ),
@@ -1450,7 +1450,7 @@ export function fixturesForResolvedRefs(
 
 /** Returns whether one instruction row targets exactly the supplied fixture ref. */
 export function instructionTargetsFixtureRef(
-  instruction: types.BoundCueInstruction | undefined,
+  instruction: types.BoundAssertionSet | undefined,
   fixtureRef: types.FixtureRef,
 ): boolean {
   const instructionRef = instruction
@@ -1463,11 +1463,11 @@ export function instructionTargetsFixtureRef(
 
 /** Returns an instruction item suitable for editing one exact fixture ref. */
 export function instructionForFixtureRefEdit(
-  instructions: types.BoundCueInstruction[] | undefined,
+  instructions: types.BoundAssertionSet[] | undefined,
   selectionIndex: number,
   fixtureRef: types.FixtureRef,
   options: { create: boolean },
-): types.BoundCueInstruction | undefined {
+): types.BoundAssertionSet | undefined {
   if (!instructions) return undefined;
 
   const indexedInstruction = instructions[selectionIndex];
@@ -1613,7 +1613,7 @@ export async function selectionTimingPositionsForFixtureElements(
 export async function buildTransitionValues(
   resolver: TransitionModeResolver,
   cue: types.Cue,
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
   attrs: string[],
   timingPosition: SelectionTimingPosition,
   fixtureRef: types.FixtureRef,
@@ -1643,7 +1643,7 @@ export async function buildTransitionValues(
 
 /** Returns every attribute that should have timing cells for an instruction. */
 export function timingAttributesForInstruction(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
 ): string[] {
   const attrs = new Set<string>();
   for (const attr of Object.keys(instruction.values ?? {})) {
@@ -1665,7 +1665,7 @@ export function timingAttributesForInstruction(
 export async function buildFixtureTransitionValues(
   resolver: TransitionModeResolver,
   cue: types.Cue,
-  instructionItem: types.BoundCueInstruction,
+  instructionItem: types.BoundAssertionSet,
   fixturesByUid: ReadonlyMap<string, types.Fixture>,
   fixtureUid: string,
   attrs: string[],
@@ -1685,7 +1685,7 @@ export async function buildFixtureTransitionValues(
           await buildTransitionValues(
             resolver,
             cue,
-            instructionItem.cue_instruction,
+            instructionItem.assertions,
             [attr],
             timingPosition,
             fixtureRef,
@@ -1721,21 +1721,21 @@ export async function processCueInstructions(
 
   /** Appends instruction rows for the parent cue or one cue part. */
   const processInstructions = async (
-    instructions: types.BoundCueInstruction[],
+    instructions: types.BoundAssertionSet[],
     partIndex?: number,
     partLabel?: string,
     visible = true,
   ) => {
     for (const [selectionIndex, item] of instructions.entries()) {
-      const resolvedInstruction: types.CueInstruction = {
-        ...item.cue_instruction,
+      const resolvedInstruction: types.AssertionSet = {
+        ...item.assertions,
         values: resolvedBlueprintInstructionValues(
-          item.cue_instruction,
+          item.assertions,
           blueprintMap,
         ),
       };
       const blueprintSource = blueprintValueSourceForInstruction(
-        item.cue_instruction,
+        item.assertions,
         blueprintMap,
       );
       const sourceLabel = partLabel ?? "Parent";
@@ -1943,7 +1943,7 @@ export async function processCueInstructions(
             : await buildFixtureTransitionValues(
                 transitionResolver,
                 cue,
-                { ...item, cue_instruction: resolvedInstruction },
+                { ...item, assertions: resolvedInstruction },
                 fixturesByUid,
                 fixture.identifiers.uid,
                 transitionAttrs,

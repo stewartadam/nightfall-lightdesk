@@ -68,9 +68,7 @@ pub mod prelude {
     pub use crate::CueStoreTarget;
     pub use crate::SequencePlaybackOperation;
     pub use crate::cue::cue_flags::TrackingFlags;
-    pub use crate::cue::{
-        BoundCueInstruction, Cue, CueInstruction, CuePart, Sequence, TrackingMode,
-    };
+    pub use crate::cue::{Cue, CuePart, Sequence, TrackingMode};
     pub use crate::data_provider_ext::CueDataProviderExt;
     pub use crate::duration::{CueDurationProfile, CueDurationResolver};
     pub use crate::events::{

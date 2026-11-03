@@ -199,7 +199,7 @@ test("cue parts inherit sequence default timings in table and sequence playback"
       curve_in?: "Linear" | "EaseIn" | "EaseOut" | "EaseInOut";
       curve_out?: "Linear" | "EaseIn" | "EaseOut" | "EaseInOut";
     };
-    type BoundCueInstruction = {
+    type BoundAssertionSet = {
       selection: {
         source: {
           type: "Resolved";
@@ -207,7 +207,7 @@ test("cue parts inherit sequence default timings in table and sequence playback"
         };
         clauses: [];
       };
-      cue_instruction: {
+      assertions: {
         values: Record<string, unknown>;
         transitions_by_attribute: Record<string, PartialTransition>;
         transitions: PartialTransition;
@@ -217,7 +217,7 @@ test("cue parts inherit sequence default timings in table and sequence playback"
       identifiers: { id: number; uid: string; label: string };
       transitions: PartialTransition;
       transitions_by_attribute: Record<string, PartialTransition>;
-      instructions: BoundCueInstruction[];
+      instructions: BoundAssertionSet[];
       tracking_flags: "HTP";
     };
     type Cue = {
@@ -225,7 +225,7 @@ test("cue parts inherit sequence default timings in table and sequence playback"
       trigger: { type: "Manual" };
       transitions: PartialTransition;
       transitions_by_attribute: Record<string, PartialTransition>;
-      instructions: BoundCueInstruction[];
+      instructions: BoundAssertionSet[];
       parts: CuePart[];
       tracking_flags: "HTP";
     };
@@ -336,7 +336,7 @@ test("cue parts inherit sequence default timings in table and sequence playback"
     const instruction = (
       attribute: "Red" | "Green" | "Blue",
       value: number,
-    ): BoundCueInstruction => ({
+    ): BoundAssertionSet => ({
       selection: {
         source: {
           type: "Resolved",
@@ -344,7 +344,7 @@ test("cue parts inherit sequence default timings in table and sequence playback"
         },
         clauses: [],
       },
-      cue_instruction: {
+      assertions: {
         values: { [attribute]: percent(value) },
         transitions_by_attribute: {},
         transitions: {},

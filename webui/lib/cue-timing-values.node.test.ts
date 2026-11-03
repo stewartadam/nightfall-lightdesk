@@ -171,7 +171,7 @@ test("resolveCueInstructionTiming applies precedence and resolves fanned fields"
         },
       },
     ],
-  } as unknown as types.CueInstruction;
+  } as unknown as types.AssertionSet;
 
   assert.deepEqual(
     await resolveCueInstructionTiming(
@@ -288,7 +288,7 @@ test("resolveCueInstructionTiming marks fixture-wide timing inherited on element
         },
       },
     ],
-  } as unknown as types.CueInstruction;
+  } as unknown as types.AssertionSet;
 
   assert.deepEqual(
     await resolveCueInstructionTiming(
@@ -334,7 +334,7 @@ test("resolveCueInstructionTiming marks fixture-wide timing inherited on element
 test("fixture attribute timing helpers edit only the selected fixture ref", () => {
   const instruction = {
     transitions_by_fixture_attribute: [],
-  } as unknown as types.CueInstruction;
+  } as unknown as types.AssertionSet;
   const first = { fixture_uid: "fixture-1", index: 1 };
   const second = { fixture_uid: "fixture-1", index: 2 };
 
@@ -387,7 +387,7 @@ test("deleteInstructionAttributeTiming clears only the selected field", () => {
         delay_out: fixed(4),
       },
     },
-  } as unknown as types.CueInstruction;
+  } as unknown as types.AssertionSet;
 
   deleteInstructionAttributeTiming(instruction, "Intensity", "fade_in");
   const transition = instruction.transitions_by_attribute.Intensity;
@@ -418,7 +418,7 @@ test("calculateCueTransitionDurations includes instruction fanned timings", asyn
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values: {
             Intensity: {
               type: "Inline",
@@ -490,7 +490,7 @@ test("calculateCueTransitionDurations includes cue part instruction timings", as
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Intensity: {
                   type: "Inline",
@@ -552,7 +552,7 @@ test("calculateCueTransitionDurations inherits parent cue timing into parts", as
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Intensity: {
                   type: "Inline",

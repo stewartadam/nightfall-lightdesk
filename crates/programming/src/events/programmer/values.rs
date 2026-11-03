@@ -117,9 +117,9 @@ pub(super) fn handle_instruction_command(
 
             add_programmer_instruction_with_overrides(
                 &mut state.programmer,
-                BoundCueInstruction {
+                BoundAssertionSet {
                     selection: selection.clone(),
-                    cue_instruction: instruction.to_owned(),
+                    assertions: instruction.to_owned(),
                 },
                 &state.spatial_selection_resolver,
                 &state.fixture_data,
@@ -137,9 +137,9 @@ pub(super) fn handle_instruction_command(
             let selection = state.programmer.active_spatial_selection();
             add_programmer_instruction_with_overrides(
                 &mut state.programmer,
-                BoundCueInstruction {
+                BoundAssertionSet {
                     selection,
-                    cue_instruction: instruction.to_owned(),
+                    assertions: instruction.to_owned(),
                 },
                 &state.spatial_selection_resolver,
                 &state.fixture_data,

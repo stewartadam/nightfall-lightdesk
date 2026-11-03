@@ -9,7 +9,6 @@
 //! Undo/redo implementations for programmer commands.
 
 use nightfall::prelude::*;
-use nightfall_cues::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -22,9 +21,9 @@ use crate::resources::{Programmer, ProgrammerMode, RecalledCueTimingDefaults};
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 pub struct RestoreProgrammerState {
     /// Live mode instructions
-    pub live_instructions: Vec<(Uuid, BoundCueInstruction)>,
+    pub live_instructions: Vec<(Uuid, BoundAssertionSet)>,
     /// Blind mode instructions
-    pub blind_instructions: Vec<(Uuid, BoundCueInstruction)>,
+    pub blind_instructions: Vec<(Uuid, BoundAssertionSet)>,
     /// Current programmer mode
     pub mode: ProgrammerMode,
     /// Active selection expression
@@ -248,8 +247,9 @@ mod tests {
     use nightfall::prelude::{
         Axis, PartialTransition, SelectionExpr, SpatialClause, SpatialSelection, TransitionMode,
     };
-    use nightfall_cues::prelude::{BoundCueInstruction, CueInstruction};
+    use nightfall_cues::prelude::CueLifecycleOperation;
     use nightfall_dmx::prelude::AttributeCategory;
+    use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
     use uuid::Uuid;
 
     use super::*;
@@ -282,9 +282,9 @@ mod tests {
 
         programmer.live_instructions.insert(
             instruction_id,
-            BoundCueInstruction {
+            BoundAssertionSet {
                 selection: spatial_selection.clone(),
-                cue_instruction: CueInstruction::default(),
+                assertions: AssertionSet::default(),
             },
         );
         programmer.active_selection = spatial_selection.clone();
@@ -322,9 +322,9 @@ mod tests {
 
         programmer.live_instructions.insert(
             instruction_id,
-            BoundCueInstruction {
+            BoundAssertionSet {
                 selection: SpatialSelection::default(),
-                cue_instruction: CueInstruction::default(),
+                assertions: AssertionSet::default(),
             },
         );
         programmer.set_recalled_cue_timing_defaults(
@@ -432,9 +432,9 @@ mod tests {
             let mut programmer = app.world_mut().resource_mut::<Programmer>();
             programmer.live_instructions.insert(
                 instruction_id,
-                BoundCueInstruction {
+                BoundAssertionSet {
                     selection: SpatialSelection::default(),
-                    cue_instruction: CueInstruction::default(),
+                    assertions: AssertionSet::default(),
                 },
             );
             programmer.set_recalled_cue_timing_defaults(
@@ -492,14 +492,14 @@ mod tests {
         app.world_mut()
             .resource_mut::<Programmer>()
             .live_instructions
-            .insert(first_uid, BoundCueInstruction::default());
+            .insert(first_uid, BoundAssertionSet::default());
         for restored_uid in [second_uid, Uuid::new_v4()] {
             app.world_mut()
                 .write_message(EngineOperationEnvelope::for_command_context(
                     command_id,
                     command_id.into(),
                     RestoreProgrammerState {
-                        live_instructions: vec![(restored_uid, BoundCueInstruction::default())],
+                        live_instructions: vec![(restored_uid, BoundAssertionSet::default())],
                         blind_instructions: Vec::new(),
                         mode: ProgrammerMode::Live,
                         active_selection: SpatialSelection::default(),
@@ -602,9 +602,9 @@ mod tests {
         let mut programmer = Programmer::default();
         programmer.live_instructions.insert(
             instruction_uid,
-            BoundCueInstruction {
+            BoundAssertionSet {
                 selection: SpatialSelection::default(),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: Some(application.clone()),
                     ..Default::default()
                 },
@@ -631,7 +631,7 @@ mod tests {
         assert_eq!(
             restore.live_instructions[0]
                 .1
-                .cue_instruction
+                .assertions
                 .blueprint_application,
             Some(application),
         );

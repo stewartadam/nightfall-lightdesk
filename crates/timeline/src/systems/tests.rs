@@ -560,9 +560,9 @@ fn cue_with_release_duration(app: &mut App, cue_uid: Uuid, release_duration: Dur
             fade_out: Some(TransitionMode::Fixed(release_duration)),
             ..Default::default()
         },
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,
@@ -784,11 +784,11 @@ fn setup_sequence_timeline_app_with_clip_options(
                     fade_in: Some(TransitionMode::Fixed(fade_in)),
                     ..Default::default()
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref.clone(),
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         values: HashMap::from([(
                             Attribute::Intensity,
@@ -824,11 +824,11 @@ fn setup_sequence_timeline_app_with_clip_options(
                     fade_out: Some(TransitionMode::Fixed(Duration::from_secs(1))),
                     ..Default::default()
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref.clone(),
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         values: HashMap::from([(
                             Attribute::Intensity,
@@ -1161,11 +1161,11 @@ fn setup_four_cue_auto_sequence_timeline_app_with_timebase(
                     fade_in: Some(TransitionMode::Fixed(Duration::from_secs(1))),
                     ..Default::default()
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref.clone(),
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         values: HashMap::from([(
                             Attribute::Intensity,
@@ -1181,11 +1181,11 @@ fn setup_four_cue_auto_sequence_timeline_app_with_timebase(
 
     let release_instructions = fixture_refs
         .iter()
-        .map(|fixture_ref| BoundCueInstruction {
+        .map(|fixture_ref| BoundAssertionSet {
             selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                 fixture_ref.clone(),
             ])),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,

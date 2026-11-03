@@ -25,10 +25,11 @@ use nightfall_clips::{
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_cues::events::handle_events;
 use nightfall_cues::prelude::{
-    BoundCueInstruction, Cue, CueCommand, CueInstruction, CueLifecycleOperation,
-    MaterializedSequence, Sequence, SequencePlaybackOperation,
+    Cue, CueCommand, CueLifecycleOperation, MaterializedSequence, Sequence,
+    SequencePlaybackOperation,
 };
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandError, CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome,
     CommandReply, CommandResult, CommandTracker, DataProvider, EngineOperationEnvelope,
@@ -314,13 +315,13 @@ fn start_clip_materializes_only_first_cue_of_large_sequence() {
     let sequence_uid = Uuid::new_v4();
     let cue_uids = (1..=59).map(|_| Uuid::new_v4()).collect::<Vec<_>>();
     let fixture_refs = add_clip_412_fixture_shape(&mut app);
-    let instruction = BoundCueInstruction {
+    let instruction = BoundAssertionSet {
         selection: SpatialSelection {
             source: SelectionExpr::Resolved(fixture_refs),
             clauses: Vec::new(),
             union: Vec::new(),
         },
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: None,
             values: HashMap::from([(
                 Attribute::Intensity,

@@ -14,9 +14,9 @@ use nightfall::command_types::{DmxChannelExpr, DmxChannelRef};
 use nightfall::prelude::{
     FixtureRef, Group, GroupRefExpr, Identifiers, SelectionExpr, UnresolvedFixtureRef, ValueSource,
 };
-use nightfall_cues::prelude::{BoundCueInstruction, CueInstruction};
 use nightfall_desk::prelude::{DeskSettings, SelectionFlattenPolicy};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_engine::prelude::{
     CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome, CommandReply, CommandResult,
     CommandTracker, DataProvider, FinishedCommand, PayloadEnvelope, PendingCommandBuffer,
@@ -109,9 +109,9 @@ fn rejects_multi_action_plan_atomically_when_one_action_requires_confirmation() 
     {
         let mut programmer = app.world_mut().resource_mut::<Programmer>();
         programmer.set_active_selection(SelectionExpr::Group(GroupRefExpr::ById(41)));
-        programmer.add_instruction(BoundCueInstruction {
+        programmer.add_instruction(BoundAssertionSet {
             selection: SelectionExpr::Group(GroupRefExpr::ById(41)).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Red,

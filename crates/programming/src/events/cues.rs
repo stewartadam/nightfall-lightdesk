@@ -107,7 +107,7 @@ fn recallable_cue_by_sequence_id(
 
 /// Builds the active selection represented by recalled programmer instructions.
 fn active_selection_from_recalled_instructions(
-    instructions: &[BoundCueInstruction],
+    instructions: &[BoundAssertionSet],
     spatial_selection_resolver: &SpatialSelectionResolver,
 ) -> SpatialSelection {
     let mut seen = HashSet::new();
@@ -127,7 +127,7 @@ fn active_selection_from_recalled_instructions(
 
 /// Rewrites dynamic group references in cue instructions to stable UID references before storage.
 fn stabilize_stored_cue_instructions(
-    instructions: &mut [BoundCueInstruction],
+    instructions: &mut [BoundAssertionSet],
     spatial_selection_resolver: &SpatialSelectionResolver,
 ) {
     for instruction in instructions {
@@ -469,9 +469,9 @@ pub fn handle_cue_events(
                             cue.transitions_by_attribute.clone(),
                         );
                         for instruction in &cue.instructions {
-                            programmer.add_instruction(BoundCueInstruction {
+                            programmer.add_instruction(BoundAssertionSet {
                                 selection: instruction.selection.clone(),
-                                cue_instruction: instruction.cue_instruction.clone(),
+                                assertions: instruction.assertions.clone(),
                             });
                         }
                         if *select {
@@ -511,9 +511,9 @@ pub fn handle_cue_events(
                             part.transitions_by_attribute.clone(),
                         );
                         for instruction in &part.instructions {
-                            programmer.add_instruction(BoundCueInstruction {
+                            programmer.add_instruction(BoundAssertionSet {
                                 selection: instruction.selection.clone(),
-                                cue_instruction: instruction.cue_instruction.clone(),
+                                assertions: instruction.assertions.clone(),
                             });
                         }
                         if *select {

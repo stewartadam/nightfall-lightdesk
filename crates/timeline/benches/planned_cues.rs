@@ -14,10 +14,11 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use moonshine_kind::Instance;
 use nightfall::prelude::{FixtureRef, Identifiers, SelectionExpr, SpatialSelection, ValueSource};
 use nightfall_clips::{Clip, Source};
-use nightfall_cues::prelude::{BoundCueInstruction, Cue, CueInstruction, Sequence};
+use nightfall_cues::prelude::{Cue, Sequence};
 use nightfall_cues::websocket::{CueDefinitionChange, SequenceDefinitionChange};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::DataProvider;
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
     Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
@@ -249,9 +250,9 @@ fn add_cue(app: &mut App, index: usize, selection: Vec<FixtureRef>) -> Uuid {
                 uid,
                 label: format!("cue-{index}"),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(selection)),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     values: HashMap::from([(
                         Attribute::Intensity,
                         ValueSource::Inline(ParameterValue::AbsolutePercent {

@@ -93,7 +93,7 @@ function rgbCue(
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values: {
             VirtualIntensity: inlinePercent(1),
             Red: inlinePercent(color.red),

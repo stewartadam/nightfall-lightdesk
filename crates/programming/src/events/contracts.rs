@@ -105,11 +105,11 @@ pub enum ProgrammerCommand {
         /// Spatial selection to apply instruction to.
         selection: SpatialSelection,
         /// Instruction to add.
-        instruction: CueInstruction,
+        instruction: AssertionSet,
     },
 
     /// Add an instruction to the active programmer with the current selection
-    AddProgrammerInstructionWithActiveSelection(CueInstruction),
+    AddProgrammerInstructionWithActiveSelection(AssertionSet),
 
     /// Resolve and apply ordered direct or Blueprint-backed attribute operations.
     ApplyAttributeOperations {

@@ -33,7 +33,7 @@ pub(super) fn write_cue_command_error(
 
 /// Returns resolved fixture refs touched by one stored instruction.
 pub(super) fn resolved_instruction_fixtures(
-    instruction: &BoundCueInstruction,
+    instruction: &BoundAssertionSet,
     selection_resolver: &SpatialSelectionResolver,
 ) -> Vec<FixtureRef> {
     let resolved = selection_resolver
@@ -135,7 +135,7 @@ pub(super) fn interpolate_tracked_parameter_values(
 /// Applies one instruction to the tracked-value map used by cue block planning.
 pub(super) fn track_instruction_values(
     tracked: &mut TrackedCueValues,
-    instruction: &BoundCueInstruction,
+    instruction: &BoundAssertionSet,
     blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) {
@@ -143,7 +143,7 @@ pub(super) fn track_instruction_values(
     let selection_size = fixtures.len();
     for (selection_index, fixture) in fixtures.into_iter().enumerate() {
         let logical_values = instruction
-            .cue_instruction
+            .assertions
             .blueprint_application
             .as_ref()
             .and_then(|application| {
@@ -151,7 +151,7 @@ pub(super) fn track_instruction_values(
                     .and_then(|provider| provider.get(application.blueprint_uid).ok())
                     .map(|blueprint| blueprint.selected_values(&application.selector))
             })
-            .unwrap_or_else(|| instruction.cue_instruction.values.clone());
+            .unwrap_or_else(|| instruction.assertions.values.clone());
         for (attribute, source) in &logical_values {
             let key = (fixture.clone(), attribute.clone());
             match source {
@@ -174,7 +174,7 @@ pub(super) fn track_instruction_values(
 /// Applies all instructions from a cue-like instruction list to tracked values.
 pub(super) fn track_instruction_list_values(
     tracked: &mut TrackedCueValues,
-    instructions: &[BoundCueInstruction],
+    instructions: &[BoundAssertionSet],
     blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) {
@@ -239,7 +239,7 @@ pub(super) fn block_instructions_from_tracked_values(
     tracked: &TrackedCueValues,
     existing_assertions: Option<&HashSet<TrackedFixtureAttribute>>,
     fixture_data_provider: &FixtureDataProviderExt,
-) -> Vec<BoundCueInstruction> {
+) -> Vec<BoundAssertionSet> {
     let mut grouped = HashMap::<FixtureRef, HashMap<Attribute, ValueSource>>::new();
     for (key, tracked_value) in tracked {
         if existing_assertions.is_some_and(|assertions| assertions.contains(key)) {
@@ -255,9 +255,9 @@ pub(super) fn block_instructions_from_tracked_values(
 
     let mut instructions = grouped
         .into_iter()
-        .map(|(fixture, values)| BoundCueInstruction {
+        .map(|(fixture, values)| BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture]).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values,
                 transitions_by_attribute: Default::default(),
@@ -268,7 +268,7 @@ pub(super) fn block_instructions_from_tracked_values(
         })
         .collect::<Vec<_>>();
     instructions.sort_by_key(|instruction| {
-        cue_instruction_fixture(instruction)
+        assertion_set_fixture(instruction)
             .map(|fixture| (fixture.fixture_uid, fixture.index))
             .unwrap_or_default()
     });
@@ -332,7 +332,7 @@ pub(super) fn collapse_identical_complete_fixture_blocks(
 }
 
 /// Returns the single fixture ref addressed by a normalized cue instruction row.
-pub(super) fn cue_instruction_fixture(instruction: &BoundCueInstruction) -> Option<&FixtureRef> {
+pub(super) fn assertion_set_fixture(instruction: &BoundAssertionSet) -> Option<&FixtureRef> {
     let SelectionExpr::Resolved(fixtures) = &instruction.selection.source else {
         return None;
     };
@@ -343,19 +343,16 @@ pub(super) fn cue_instruction_fixture(instruction: &BoundCueInstruction) -> Opti
 }
 
 /// Returns whether an incoming block row should edit an existing row.
-pub(super) fn block_rows_match(
-    existing: &BoundCueInstruction,
-    incoming: &BoundCueInstruction,
-) -> bool {
-    if existing.cue_instruction.blueprint_application.is_some()
-        || incoming.cue_instruction.blueprint_application.is_some()
+pub(super) fn block_rows_match(existing: &BoundAssertionSet, incoming: &BoundAssertionSet) -> bool {
+    if existing.assertions.blueprint_application.is_some()
+        || incoming.assertions.blueprint_application.is_some()
     {
         return false;
     }
-    let Some(existing_fixture) = cue_instruction_fixture(existing) else {
+    let Some(existing_fixture) = assertion_set_fixture(existing) else {
         return existing.selection == incoming.selection;
     };
-    let Some(incoming_fixture) = cue_instruction_fixture(incoming) else {
+    let Some(incoming_fixture) = assertion_set_fixture(incoming) else {
         return existing.selection == incoming.selection;
     };
 
@@ -366,10 +363,10 @@ pub(super) fn block_rows_match(
 
 /// Returns whether an element block row overlaps an existing whole-fixture row.
 pub(super) fn element_block_targets_existing_whole_fixture_row(
-    existing: &[BoundCueInstruction],
-    incoming: &BoundCueInstruction,
+    existing: &[BoundAssertionSet],
+    incoming: &BoundAssertionSet,
 ) -> bool {
-    let Some(incoming_fixture) = cue_instruction_fixture(incoming) else {
+    let Some(incoming_fixture) = assertion_set_fixture(incoming) else {
         return false;
     };
     if incoming_fixture.index.is_none() {
@@ -377,10 +374,10 @@ pub(super) fn element_block_targets_existing_whole_fixture_row(
     }
 
     existing.iter().any(|candidate| {
-        if candidate.cue_instruction.blueprint_application.is_some() {
+        if candidate.assertions.blueprint_application.is_some() {
             return false;
         }
-        let Some(existing_fixture) = cue_instruction_fixture(candidate) else {
+        let Some(existing_fixture) = assertion_set_fixture(candidate) else {
             return false;
         };
         existing_fixture.index.is_none()
@@ -390,8 +387,8 @@ pub(super) fn element_block_targets_existing_whole_fixture_row(
 
 /// Merges generated block instructions into an existing instruction list.
 pub(super) fn merge_block_instructions(
-    existing: &mut Vec<BoundCueInstruction>,
-    incoming: Vec<BoundCueInstruction>,
+    existing: &mut Vec<BoundAssertionSet>,
+    incoming: Vec<BoundAssertionSet>,
 ) {
     for incoming_instruction in incoming {
         let blocked_by_whole_fixture_row =
@@ -403,8 +400,8 @@ pub(super) fn merge_block_instructions(
         {
             matched_existing = true;
             existing_instruction
-                .cue_instruction
-                .merge(incoming_instruction.cue_instruction.clone());
+                .assertions
+                .merge(incoming_instruction.assertions.clone());
         }
         if !matched_existing && !blocked_by_whole_fixture_row {
             existing.push(incoming_instruction);
@@ -414,7 +411,7 @@ pub(super) fn merge_block_instructions(
 
 /// Adds assertions for every value tracked into the target instruction list.
 pub(super) fn block_tracked_values(
-    instructions: &mut Vec<BoundCueInstruction>,
+    instructions: &mut Vec<BoundAssertionSet>,
     tracked: &TrackedCueValues,
     overwrite: bool,
     selection_resolver: &SpatialSelectionResolver,
@@ -432,14 +429,14 @@ pub(super) fn block_tracked_values(
 
 /// Returns the fixture attributes already asserted by an instruction list.
 pub(super) fn asserted_fixture_attributes(
-    instructions: &[BoundCueInstruction],
+    instructions: &[BoundAssertionSet],
     selection_resolver: &SpatialSelectionResolver,
 ) -> HashSet<TrackedFixtureAttribute> {
     let mut asserted = HashSet::new();
     for instruction in instructions {
         let fixtures = resolved_instruction_fixtures(instruction, selection_resolver);
         for fixture in fixtures {
-            for attribute in instruction.cue_instruction.values.keys() {
+            for attribute in instruction.assertions.values.keys() {
                 asserted.insert((fixture.clone(), attribute.clone()));
             }
         }
@@ -487,7 +484,7 @@ pub(super) fn asserted_value_matches_tracked(
 
 /// Removes assertions that still correspond to tracked-in values.
 pub(super) fn unblock_tracked_values(
-    instructions: &mut Vec<BoundCueInstruction>,
+    instructions: &mut Vec<BoundAssertionSet>,
     tracked: &TrackedCueValues,
     selection_resolver: &SpatialSelectionResolver,
     fixture_data_provider: &FixtureDataProviderExt,
@@ -495,7 +492,7 @@ pub(super) fn unblock_tracked_values(
     for instruction in instructions.iter_mut() {
         let fixtures = resolved_instruction_fixtures(instruction, selection_resolver);
         let attributes_to_unblock = instruction
-            .cue_instruction
+            .assertions
             .values
             .iter()
             .filter_map(|(attribute, source)| {
@@ -523,25 +520,23 @@ pub(super) fn unblock_tracked_values(
             })
             .collect::<Vec<_>>();
         for attribute in attributes_to_unblock {
-            instruction.cue_instruction.values.remove(&attribute);
+            instruction.assertions.values.remove(&attribute);
             instruction
-                .cue_instruction
+                .assertions
                 .transitions_by_attribute
                 .remove(&attribute);
-            for fixture_transition in
-                &mut instruction.cue_instruction.transitions_by_fixture_attribute
-            {
+            for fixture_transition in &mut instruction.assertions.transitions_by_fixture_attribute {
                 fixture_transition
                     .transitions_by_attribute
                     .remove(&attribute);
             }
             instruction
-                .cue_instruction
+                .assertions
                 .transitions_by_fixture_attribute
                 .retain(|transition| !transition.transitions_by_attribute.is_empty());
         }
     }
-    instructions.retain(|instruction| instruction_has_attributes(&instruction.cue_instruction));
+    instructions.retain(|instruction| instruction_has_attributes(&instruction.assertions));
 }
 
 /// Applies a block or unblock operation to the cue or cue part target.

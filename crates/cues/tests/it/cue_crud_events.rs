@@ -15,11 +15,11 @@ use nightfall::prelude::*;
 use nightfall_cues::data_provider_ext::CueDataProviderExt;
 use nightfall_cues::events::{cue_action_events, cue_crud_events};
 use nightfall_cues::prelude::{
-    BoundCueInstruction, Cue, CueCommand, CueInstruction, CueOperation, CuePart,
-    CuePartStoreTarget, CueStoreTarget, Sequence,
+    Cue, CueCommand, CueOperation, CuePart, CuePartStoreTarget, CueStoreTarget, Sequence,
 };
 use nightfall_cues::websocket::{CueDefinitionChange, SequenceDefinitionChange};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandId, CommandNoticeReply, CommandOrigin, CommandOutcome, CommandOutput,
     CommandReply, CommandResult, CommandTracker, DataProvider, EngineOperationEnvelope,
@@ -141,8 +141,8 @@ fn insert_multi_element_fixtures(
 }
 
 /// Builds a single-attribute cue instruction for block test payloads.
-fn cue_instruction(attribute: Attribute, value: f32) -> CueInstruction {
-    CueInstruction {
+fn assertions(attribute: Attribute, value: f32) -> AssertionSet {
+    AssertionSet {
         blueprint_application: None,
         values: HashMap::from([(
             attribute,
@@ -156,10 +156,10 @@ fn cue_instruction(attribute: Attribute, value: f32) -> CueInstruction {
 }
 
 /// Builds a bound instruction for one resolved fixture.
-fn bound_instruction(fixture: FixtureRef, attribute: Attribute, value: f32) -> BoundCueInstruction {
-    BoundCueInstruction {
+fn bound_instruction(fixture: FixtureRef, attribute: Attribute, value: f32) -> BoundAssertionSet {
+    BoundAssertionSet {
         selection: SelectionExpr::Resolved(vec![fixture]).into(),
-        cue_instruction: cue_instruction(attribute, value),
+        assertions: assertions(attribute, value),
     }
 }
 
@@ -168,10 +168,10 @@ fn referenced_blueprint_instruction(
     fixture: FixtureRef,
     blueprint_uid: Uuid,
     selector: BlueprintSelector,
-) -> BoundCueInstruction {
-    BoundCueInstruction {
+) -> BoundAssertionSet {
+    BoundAssertionSet {
         selection: SelectionExpr::Resolved(vec![fixture]).into(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: Some(BlueprintApplication {
                 blueprint_uid,
                 selector,
@@ -184,7 +184,7 @@ fn referenced_blueprint_instruction(
 /// Builds a cue with stable identifiers and instructions.
 fn cue_with_instructions(
     cue_id: u32,
-    instructions: Vec<BoundCueInstruction>,
+    instructions: Vec<BoundAssertionSet>,
     parts: Vec<CuePart>,
 ) -> Cue {
     Cue {
@@ -200,7 +200,7 @@ fn cue_with_instructions(
 }
 
 /// Builds a cue part with stable identifiers and instructions.
-fn part_with_instructions(part_id: u32, instructions: Vec<BoundCueInstruction>) -> CuePart {
+fn part_with_instructions(part_id: u32, instructions: Vec<BoundAssertionSet>) -> CuePart {
     CuePart {
         identifiers: Identifiers {
             id: part_id,
@@ -239,9 +239,9 @@ fn insert_sequence(app: &mut App, sequence_id: u32, cues: &[Cue]) {
 
 /// Finds the stored instruction for one resolved fixture.
 fn instruction_for_fixture<'a>(
-    instructions: &'a [BoundCueInstruction],
+    instructions: &'a [BoundAssertionSet],
     fixture: &FixtureRef,
-) -> &'a BoundCueInstruction {
+) -> &'a BoundAssertionSet {
     instructions
         .iter()
         .find(|instruction| {
@@ -256,8 +256,8 @@ fn instruction_for_fixture<'a>(
 /// Builds an assertion instruction from explicit value sources.
 fn assertion_instruction(
     values: impl IntoIterator<Item = (Attribute, ValueSource)>,
-) -> CueInstruction {
-    CueInstruction {
+) -> AssertionSet {
+    AssertionSet {
         blueprint_application: None,
         values: values.into_iter().collect(),
         transitions: Default::default(),
@@ -275,9 +275,9 @@ fn build_rgb_cue(id: u32, uid: Uuid, label: &str, fixture: FixtureRef) -> Cue {
             uid,
             label: label.to_string(),
         },
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture]).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -308,9 +308,9 @@ fn build_cmy_cue(id: u32, uid: Uuid, label: &str, fixture: FixtureRef) -> Cue {
             uid,
             label: label.to_string(),
         },
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture]).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -341,9 +341,9 @@ fn build_scalar_color_cue(id: u32, uid: Uuid, label: &str, fixture: FixtureRef) 
             uid,
             label: label.to_string(),
         },
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture]).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::White,
@@ -476,7 +476,7 @@ fn set_cue_color_path_assigns_path_to_rgb_instruction() {
         .get(cue_uid)
         .expect("cue should exist");
     assert_eq!(
-        cue.instructions[0].cue_instruction.color_path_id,
+        cue.instructions[0].assertions.color_path_id,
         Some(ColorPathId(3))
     );
 }
@@ -515,7 +515,7 @@ fn set_cue_color_path_assigns_path_to_cmy_instruction() {
         .get(cue_uid)
         .expect("cue should exist");
     assert_eq!(
-        cue.instructions[0].cue_instruction.color_path_id,
+        cue.instructions[0].assertions.color_path_id,
         Some(ColorPathId(3))
     );
 }
@@ -554,7 +554,7 @@ fn set_cue_color_path_assigns_path_to_scalar_color_instruction() {
         .get(cue_uid)
         .expect("cue should exist");
     assert_eq!(
-        cue.instructions[0].cue_instruction.color_path_id,
+        cue.instructions[0].assertions.color_path_id,
         Some(ColorPathId(3))
     );
 }
@@ -570,7 +570,7 @@ fn set_cue_color_path_clears_existing_assignment() {
         index: Some(1),
     };
     let mut cue = build_rgb_cue(1, cue_uid, "rgb cue", fixture);
-    cue.instructions[0].cue_instruction.color_path_id = Some(ColorPathId(3));
+    cue.instructions[0].assertions.color_path_id = Some(ColorPathId(3));
 
     app.world_mut()
         .resource_mut::<DataProvider<Cue>>()
@@ -594,7 +594,7 @@ fn set_cue_color_path_clears_existing_assignment() {
         .resource::<DataProvider<Cue>>()
         .get(cue_uid)
         .expect("cue should exist");
-    assert_eq!(cue.instructions[0].cue_instruction.color_path_id, None);
+    assert_eq!(cue.instructions[0].assertions.color_path_id, None);
 }
 
 /// Verifies cue color path commands reject unknown path IDs.
@@ -630,7 +630,7 @@ fn set_cue_color_path_rejects_unknown_path() {
         .resource::<DataProvider<Cue>>()
         .get(cue_uid)
         .expect("cue should exist");
-    assert_eq!(cue.instructions[0].cue_instruction.color_path_id, None);
+    assert_eq!(cue.instructions[0].assertions.color_path_id, None);
 }
 
 /// Verifies color path definitions can be stored through cue CRUD commands.
@@ -926,16 +926,16 @@ fn delete_color_path_clears_authored_references() {
     };
     let cue_uid = Uuid::from_u128(0x2020);
     let mut cue = build_rgb_cue(1, cue_uid, "rgb cue", fixture.clone());
-    cue.instructions[0].cue_instruction.color_path_id = Some(ColorPathId(101));
+    cue.instructions[0].assertions.color_path_id = Some(ColorPathId(101));
     cue.parts.push(CuePart {
         identifiers: Identifiers {
             id: 1,
             uid: Uuid::from_u128(0x3030),
             label: "part".to_string(),
         },
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture.clone()]).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 color_path_id: Some(ColorPathId(101)),
                 ..Default::default()
@@ -972,11 +972,8 @@ fn delete_color_path_clears_authored_references() {
         .resource::<DataProvider<Cue>>()
         .get(cue_uid)
         .expect("cue should remain stored");
-    assert_eq!(cue.instructions[0].cue_instruction.color_path_id, None);
-    assert_eq!(
-        cue.parts[0].instructions[0].cue_instruction.color_path_id,
-        None
-    );
+    assert_eq!(cue.instructions[0].assertions.color_path_id, None);
+    assert_eq!(cue.parts[0].instructions[0].assertions.color_path_id, None);
     assert_eq!(
         app.world()
             .resource::<FixtureDataProviderExt>()
@@ -1760,7 +1757,7 @@ fn block_cue_part_asserts_values_tracked_into_target() {
     let part = cue.part_by_id(3).expect("part should be stored");
     let instruction = instruction_for_fixture(&part.instructions, &fixture);
     assert_eq!(
-        instruction.cue_instruction.values.get(&Attribute::Red),
+        instruction.assertions.values.get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
             value: 10.0
         }))
@@ -1814,7 +1811,7 @@ fn block_cue_tracks_edited_blueprint_values() {
     let first_block = stored_cue(&first_actions);
     assert_eq!(
         instruction_for_fixture(&first_block.instructions, &fixture)
-            .cue_instruction
+            .assertions
             .values
             .get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
@@ -1843,7 +1840,7 @@ fn block_cue_tracks_edited_blueprint_values() {
     let edited_block = stored_cue(&edited_actions);
     assert_eq!(
         instruction_for_fixture(&edited_block.instructions, &fixture)
-            .cue_instruction
+            .assertions
             .values
             .get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
@@ -1883,7 +1880,7 @@ fn block_cue_part_ignores_parent_cue_assertions() {
     let part = cue.part_by_id(3).expect("part should be stored");
     let instruction = instruction_for_fixture(&part.instructions, &fixture);
     assert_eq!(
-        instruction.cue_instruction.values.get(&Attribute::Red),
+        instruction.assertions.values.get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
             value: 10.0
         })),
@@ -1921,7 +1918,7 @@ fn block_cue_preserves_existing_assertions_without_overwrite() {
     let cue = stored_cue(&actions);
     let instruction = instruction_for_fixture(&cue.instructions, &fixture);
     assert_eq!(
-        instruction.cue_instruction.values.get(&Attribute::Red),
+        instruction.assertions.values.get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
             value: 75.0
         }))
@@ -1958,7 +1955,7 @@ fn block_cue_overwrite_replaces_existing_assertions() {
     let cue = stored_cue(&actions);
     let instruction = instruction_for_fixture(&cue.instructions, &fixture);
     assert_eq!(
-        instruction.cue_instruction.values.get(&Attribute::Red),
+        instruction.assertions.values.get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
             value: 10.0
         }))
@@ -1993,7 +1990,7 @@ fn block_cue_collapses_identical_complete_fixture_element_rows() {
     assert_eq!(cue.instructions.len(), 1);
     let instruction = instruction_for_fixture(&cue.instructions, &fixture);
     assert_eq!(
-        instruction.cue_instruction.values.get(&Attribute::Red),
+        instruction.assertions.values.get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
             value: 10.0
         }))
@@ -2032,7 +2029,7 @@ fn block_cue_preserves_different_element_values() {
     assert_eq!(cue.instructions.len(), 2);
     assert_eq!(
         instruction_for_fixture(&cue.instructions, &first_element)
-            .cue_instruction
+            .assertions
             .values
             .get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
@@ -2041,7 +2038,7 @@ fn block_cue_preserves_different_element_values() {
     );
     assert_eq!(
         instruction_for_fixture(&cue.instructions, &second_element)
-            .cue_instruction
+            .assertions
             .values
             .get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
@@ -2093,7 +2090,7 @@ fn block_setup_cue_does_not_assert_its_own_values() {
     assert_eq!(sequence.setup_cue.instructions.len(), 1);
     assert_eq!(
         sequence.setup_cue.instructions[0]
-            .cue_instruction
+            .assertions
             .values
             .get(&Attribute::Red),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
@@ -2114,9 +2111,9 @@ fn unblock_cue_removes_only_matching_tracked_assertions() {
     );
     let cue_two = cue_with_instructions(
         2,
-        vec![BoundCueInstruction {
+        vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture.clone()]).into(),
-            cue_instruction: assertion_instruction([
+            assertions: assertion_instruction([
                 (
                     Attribute::Red,
                     ValueSource::Inline(ParameterValue::Absolute { value: 10.0 }),
@@ -2142,12 +2139,9 @@ fn unblock_cue_removes_only_matching_tracked_assertions() {
 
     let cue = stored_cue(&actions);
     let instruction = instruction_for_fixture(&cue.instructions, &fixture);
+    assert_eq!(instruction.assertions.values.get(&Attribute::Red), None);
     assert_eq!(
-        instruction.cue_instruction.values.get(&Attribute::Red),
-        None
-    );
-    assert_eq!(
-        instruction.cue_instruction.values.get(&Attribute::Green),
+        instruction.assertions.values.get(&Attribute::Green),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
             value: 20.0
         }))
@@ -2166,9 +2160,9 @@ fn unblock_cue_removes_collapsed_assertions_matching_tracked_elements() {
     let cue_one = cue_with_instructions(1, element_instructions, Vec::new());
     let cue_two = cue_with_instructions(
         2,
-        vec![BoundCueInstruction {
+        vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture.clone()]).into(),
-            cue_instruction: assertion_instruction([
+            assertions: assertion_instruction([
                 (
                     Attribute::Red,
                     ValueSource::Inline(ParameterValue::Absolute { value: 10.0 }),
@@ -2194,12 +2188,9 @@ fn unblock_cue_removes_collapsed_assertions_matching_tracked_elements() {
 
     let cue = stored_cue(&actions);
     let instruction = instruction_for_fixture(&cue.instructions, &fixture);
+    assert_eq!(instruction.assertions.values.get(&Attribute::Red), None);
     assert_eq!(
-        instruction.cue_instruction.values.get(&Attribute::Red),
-        None
-    );
-    assert_eq!(
-        instruction.cue_instruction.values.get(&Attribute::Green),
+        instruction.assertions.values.get(&Attribute::Green),
         Some(&ValueSource::Inline(ParameterValue::Absolute {
             value: 20.0
         }))

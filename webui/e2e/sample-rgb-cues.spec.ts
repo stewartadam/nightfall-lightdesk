@@ -63,7 +63,7 @@ test("sample RGB cues have the requested values and labels", async ({
       (cue: any) =>
         cue.identifiers.uid.replaceAll("-", "") === uid.replaceAll("-", ""),
     );
-    const attributes = cue.instructions[0].cue_instruction.values;
+    const attributes = cue.instructions[0].assertions.values;
     expect([attributes.Red, attributes.Green, attributes.Blue]).toEqual(
       values.map((value) => ({
         type: "Inline",
