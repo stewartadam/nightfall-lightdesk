@@ -30,8 +30,8 @@ pub use network_stats::{NetworkOutputSendFailure, NetworkStats};
 use serde::{Deserialize, Serialize};
 
 pub use crate::constants::{
-    RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS, UDMX_PRODUCT_ID,
-    UDMX_VENDOR_ID,
+    OPEN_DMX_PRODUCT_ID, OPEN_DMX_VENDOR_ID, RESERVED_NETWORK_DMX_TARGET_KEYWORDS,
+    RESERVED_USB_DMX_TARGET_KEYWORDS, UDMX_PRODUCT_ID, UDMX_VENDOR_ID, is_usb_dmx_device_id,
 };
 
 /// Prelude for ergonomic IO transport imports.
@@ -44,17 +44,18 @@ pub mod prelude {
         InputUniverseVisibilityMode, IoRuntimeNotification, IoRuntimeSettings,
         MAX_DMX_OUTPUT_RATE_HZ, MIN_DMX_OUTPUT_RATE_HZ, NetworkDmxDelivery, NetworkDmxOutputTarget,
         NetworkDmxOutputTargets, NetworkDmxProtocol, NetworkInterfaceInfo, NetworkInterfaceState,
-        NetworkInterfaceStatus, NetworkOutputSendFailure, NetworkStats, OutputTransport,
-        RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS,
-        RemotePairingAttempt, RemotePairingPin, RemotePairingStatus, RouteTransport, SacnDelivery,
-        SacnOutputIdentity, TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
-        UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets, dmx_output_interval,
-        get_available_interfaces, get_default_interface, is_reserved_network_dmx_target_id,
-        is_reserved_usb_dmx_target_id, is_valid_network_dmx_target_id,
-        output_transport_to_target_id, resolve_configured_network_interface,
-        resolve_network_interface_status, sanitize_dmx_output_rate_hz,
-        sanitize_input_signal_loss_timeout, usb_dmx_device_label, usb_dmx_device_selector,
-        usb_dmx_device_selector_matches, usb_dmx_device_selector_with_tiebreaker,
+        NetworkInterfaceStatus, NetworkOutputSendFailure, NetworkStats, OPEN_DMX_PRODUCT_ID,
+        OPEN_DMX_VENDOR_ID, OutputTransport, RESERVED_NETWORK_DMX_TARGET_KEYWORDS,
+        RESERVED_USB_DMX_TARGET_KEYWORDS, RemotePairingAttempt, RemotePairingPin,
+        RemotePairingStatus, RouteTransport, SacnDelivery, SacnOutputIdentity,
+        TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UsbDmxDeviceInfo,
+        UsbDmxOutputTarget, UsbDmxOutputTargets, dmx_output_interval, get_available_interfaces,
+        get_default_interface, is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
+        is_usb_dmx_device_id, is_valid_network_dmx_target_id, output_transport_to_target_id,
+        resolve_configured_network_interface, resolve_network_interface_status,
+        sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, usb_dmx_device_label,
+        usb_dmx_device_selector, usb_dmx_device_selector_matches,
+        usb_dmx_device_selector_with_tiebreaker,
     };
 }
 

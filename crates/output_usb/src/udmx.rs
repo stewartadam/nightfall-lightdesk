@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! uDMX USB output via process-lifetime service host.
+//! USB DMX output via process-lifetime service host.
 
 use std::time::{Duration, Instant};
 
@@ -16,15 +16,15 @@ use nightfall_io::{IoRuntimeSettings, OutputTransport, TransportRuntimePolicy};
 
 use crate::service::UdmxOutputClient;
 
-/// Minimum interval between DMX frames (15Hz = ~66.66ms)
-/// See: https://www.illutzminator.de/udmx-timing.html?L=1
-const DMX_FRAME_INTERVAL: Duration = Duration::from_micros(66667);
+/// Minimum interval between frame submissions to the USB worker (40Hz), the fastest rate any
+/// supported interface refreshes at. The worker rate limits slower devices further.
+const DMX_FRAME_INTERVAL: Duration = Duration::from_millis(25);
 
-/// Submits every composed uDMX wire frame to its selected device.
+/// Submits every composed USB DMX wire frame to its selected device.
 ///
 /// Frames come from [`OutputDmxFrames`], which already combines routed console windows,
 /// direct fixture output, and input passthrough for each USB device. Submission is skipped
-/// while USB output is disabled and rate limited to the uDMX frame interval.
+/// while USB output is disabled and rate limited to [`DMX_FRAME_INTERVAL`].
 pub fn output(
     udmx_client: Option<Res<UdmxOutputClient>>,
     mut last_send: Local<Option<Instant>>,
@@ -40,7 +40,7 @@ pub fn output(
         });
     if *last_effective_output_enabled != Some(usb_output_enabled) {
         if !usb_output_enabled {
-            tracing::info!("uDMX output is disabled by effective USB output state");
+            tracing::info!("USB DMX output is disabled by effective USB output state");
         }
         *last_effective_output_enabled = Some(usb_output_enabled);
     }
@@ -52,7 +52,7 @@ pub fn output(
         return;
     };
 
-    // Rate limit to avoid flooding the uDMX worker channel.
+    // Rate limit to avoid flooding the USB DMX worker channel.
     let now = Instant::now();
     if let Some(last) = *last_send
         && now.duration_since(last) < DMX_FRAME_INTERVAL

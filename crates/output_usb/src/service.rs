@@ -18,12 +18,14 @@ use nightfall_engine::prelude::{
     DebugPanicTarget, is_process_shutdown_requested, maybe_trigger_debug_worker_panic,
 };
 use nightfall_io::prelude::{
-    DEFAULT_USB_DMX_DEVICE_SELECTOR, UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
-    usb_dmx_device_selector_matches,
+    DEFAULT_USB_DMX_DEVICE_SELECTOR, OPEN_DMX_PRODUCT_ID, OPEN_DMX_VENDOR_ID, UDMX_PRODUCT_ID,
+    UDMX_VENDOR_ID, is_usb_dmx_device_id, usb_dmx_device_selector_matches,
 };
 use nightfall_service_host::prelude::{WorkerSlot, process_singleton};
 use nusb::MaybeFuture;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
+
+use crate::open_dmx::OpenDmxPort;
 
 /// uDMX output client handle.
 #[derive(Clone, Default, Resource)]
@@ -80,6 +82,14 @@ const UDMX_WORKER_IDLE_SLEEP: Duration = Duration::from_millis(10);
 const UDMX_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 const UDMX_RECONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How long an Open DMX port may go without frames before it is closed, releasing the serial
+/// port once its target is removed or USB output is disabled.
+const OPEN_DMX_IDLE_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// Minimum interval between frames sent to a uDMX device (15Hz = ~66.66ms).
+/// See: https://www.illutzminator.de/udmx-timing.html?L=1
+const UDMX_FRAME_INTERVAL: Duration = Duration::from_micros(66667);
+
 /// Device-presence changes observed by the uDMX hotplug listener.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum UdmxHotplugEvent<DeviceId = nusb::DeviceId> {
@@ -87,19 +97,72 @@ enum UdmxHotplugEvent<DeviceId = nusb::DeviceId> {
     DeviceDisconnected(DeviceId),
 }
 
-/// Claimed uDMX USB interface and device ID used by the output worker.
-struct OpenedUdmxDevice<DeviceId = nusb::DeviceId, Interface = nusb::Interface> {
+/// Opened USB DMX device connection and device ID used by the output worker.
+struct OpenedUdmxDevice<DeviceId = nusb::DeviceId, Connection = UsbDmxConnection> {
     selector: String,
     id: DeviceId,
-    interface: Interface,
+    connection: Connection,
 }
 
-type ConnectedUdmxDevice = OpenedUdmxDevice<nusb::DeviceId, nusb::Interface>;
+/// Driver-specific handle for an opened USB DMX device.
+enum UsbDmxConnection {
+    /// uDMX interface claimed over raw USB; the device refreshes the DMX line itself.
+    Udmx {
+        interface: nusb::Interface,
+        /// When the last frame was sent, for rate limiting to [`UDMX_FRAME_INTERVAL`].
+        last_sent_at: Option<Instant>,
+        /// Latest submitted frame not yet sent.
+        pending_frame: Option<Vec<u8>>,
+    },
+    /// Open DMX serial port whose writer thread refreshes the DMX line.
+    OpenDmx {
+        port: OpenDmxPort,
+        /// When a frame was last submitted, for closing ports nothing outputs to any more.
+        last_submitted_at: Instant,
+    },
+}
+
+impl UsbDmxConnection {
+    /// Wraps a claimed uDMX interface with no frame sent yet.
+    fn udmx(interface: nusb::Interface) -> Self {
+        Self::Udmx {
+            interface,
+            last_sent_at: None,
+            pending_frame: None,
+        }
+    }
+
+    /// Hands a frame to the driver: uDMX holds it until its next send is due, while Open DMX
+    /// makes it the frame its writer thread refreshes.
+    fn queue_frame(&mut self, data: &[u8]) {
+        match self {
+            Self::Udmx { pending_frame, .. } => *pending_frame = Some(data.to_vec()),
+            Self::OpenDmx {
+                port,
+                last_submitted_at,
+            } => {
+                port.submit(data);
+                *last_submitted_at = Instant::now();
+            }
+        }
+    }
+}
+
+/// Whether an opened device should stay in the worker's device map.
+enum DeviceStatus {
+    Active,
+    /// The device is gone or its driver stopped; reopen it on a later frame.
+    Lost,
+    /// No output reaches the device any more; release it.
+    Idle,
+}
+
+type ConnectedUdmxDevice = OpenedUdmxDevice<nusb::DeviceId, UsbDmxConnection>;
 type UdmxHotplugSubscribers = Arc<Mutex<Vec<StdSender<()>>>>;
 
-/// Outcomes from attempting to open the uDMX device during startup or reconnect.
-enum InitDeviceResult<DeviceId = nusb::DeviceId, Interface = nusb::Interface> {
-    Connected(OpenedUdmxDevice<DeviceId, Interface>),
+/// Outcomes from attempting to open a USB DMX device during startup or reconnect.
+enum InitDeviceResult<DeviceId = nusb::DeviceId, Connection = UsbDmxConnection> {
+    Connected(OpenedUdmxDevice<DeviceId, Connection>),
     NotFound,
     RetryableFailure,
 }
@@ -150,17 +213,14 @@ impl UdmxWorker {
                     }
 
                     let command = match command_rx.try_recv() {
-                        Ok(command) => command,
-                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
-                            thread::sleep(UDMX_WORKER_IDLE_SLEEP);
-                            continue;
-                        }
+                        Ok(command) => Some(command),
+                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => None,
                         Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
                     };
 
-                    match command {
-                        UdmxCommand::SubmitFrame { device, data } => {
-                            let selector = normalize_device_selector(&device);
+                    match &command {
+                        Some(UdmxCommand::SubmitFrame { device, data }) => {
+                            let selector = normalize_device_selector(device);
                             if !devices.contains_key(&selector) {
                                 let retry_at = next_retry_at
                                     .get(&selector)
@@ -168,7 +228,7 @@ impl UdmxWorker {
                                     .unwrap_or_else(Instant::now);
                                 if Instant::now() >= retry_at {
                                     if let Some(opened_device) = init_device(&selector) {
-                                        tracing::info!(selector, "uDMX device connected");
+                                        tracing::info!(selector, "USB DMX device connected");
                                         devices.insert(selector.clone(), opened_device);
                                     }
                                     next_retry_at.insert(
@@ -177,22 +237,17 @@ impl UdmxWorker {
                                     );
                                 }
                             }
-                            let Some(current_device) = devices.get_mut(&selector) else {
-                                continue;
-                            };
-                            if matches!(
-                                submit_frame(current_device, &data),
-                                SubmitFrameResult::DeviceLost
-                            ) {
-                                tracing::error!(
-                                    selector,
-                                    "uDMX output worker disabling output after disconnect"
-                                );
-                                devices.remove(&selector);
-                                next_retry_at.remove(&selector);
+                            if let Some(current_device) = devices.get_mut(&selector) {
+                                current_device.connection.queue_frame(data);
                             }
                         }
-                        UdmxCommand::Shutdown => break,
+                        Some(UdmxCommand::Shutdown) => break,
+                        None => {}
+                    }
+
+                    service_devices(&mut devices, &mut next_retry_at);
+                    if command.is_none() {
+                        thread::sleep(UDMX_WORKER_IDLE_SLEEP);
                     }
                 }
                 tracing::debug!("uDMX service worker exiting");
@@ -261,8 +316,7 @@ fn spawn_hotplug_listener(
 
                             let relay_result = match event {
                                 nusb::hotplug::HotplugEvent::Connected(device)
-                                    if device.vendor_id() == UDMX_VENDOR_ID
-                                        && device.product_id() == UDMX_PRODUCT_ID =>
+                                    if is_usb_dmx_device_id(device.vendor_id(), device.product_id()) =>
                                 {
                                     notify_hotplug_subscribers(&hotplug_subscribers);
                                     event_tx.send(UdmxHotplugEvent::TargetConnected)
@@ -302,8 +356,8 @@ fn notify_hotplug_subscribers(hotplug_subscribers: &UdmxHotplugSubscribers) {
     hotplug_subscribers.retain(|subscriber| subscriber.send(()).is_ok());
 }
 
-fn handle_hotplug_events<DeviceId: Eq, Interface>(
-    devices: &mut HashMap<String, OpenedUdmxDevice<DeviceId, Interface>>,
+fn handle_hotplug_events<DeviceId: Eq, Connection>(
+    devices: &mut HashMap<String, OpenedUdmxDevice<DeviceId, Connection>>,
     hotplug_event_rx: &Option<std::sync::mpsc::Receiver<UdmxHotplugEvent<DeviceId>>>,
 ) -> bool {
     let Some(hotplug_event_rx) = hotplug_event_rx.as_ref() else {
@@ -323,7 +377,10 @@ fn handle_hotplug_events<DeviceId: Eq, Interface>(
                     .map(|(selector, _)| selector.clone())
                     .collect::<Vec<_>>();
                 for selector in removed_selectors {
-                    tracing::warn!(selector, "uDMX device disconnected; waiting for reconnect");
+                    tracing::warn!(
+                        selector,
+                        "USB DMX device disconnected; waiting for reconnect"
+                    );
                     devices.remove(&selector);
                     changed = true;
                 }
@@ -334,15 +391,66 @@ fn handle_hotplug_events<DeviceId: Eq, Interface>(
     changed
 }
 
-/// Result of writing a DMX frame to the active uDMX device.
-enum SubmitFrameResult {
-    Submitted,
-    DeviceLost,
-    Failed,
+/// Sends due frames and drops devices that were lost or no longer receive output.
+fn service_devices(
+    devices: &mut HashMap<String, ConnectedUdmxDevice>,
+    next_retry_at: &mut HashMap<String, Instant>,
+) {
+    devices.retain(|selector, device| match service_device(device) {
+        DeviceStatus::Active => true,
+        DeviceStatus::Lost => {
+            tracing::error!(
+                selector,
+                "USB DMX output worker disabling output after disconnect"
+            );
+            next_retry_at.remove(selector);
+            false
+        }
+        DeviceStatus::Idle => {
+            tracing::info!(
+                selector,
+                "Closing USB DMX device that no longer receives output"
+            );
+            false
+        }
+    });
 }
 
-/// Submit a DMX frame over USB and attempt reconnect when disconnect is detected.
-fn submit_frame(device: &mut ConnectedUdmxDevice, data: &[u8]) -> SubmitFrameResult {
+/// Sends a uDMX device's pending frame once [`UDMX_FRAME_INTERVAL`] has passed since its last
+/// send, and checks an Open DMX port's writer is alive and still receiving frames.
+fn service_device(device: &mut ConnectedUdmxDevice) -> DeviceStatus {
+    let now = Instant::now();
+    match &mut device.connection {
+        UsbDmxConnection::Udmx {
+            last_sent_at,
+            pending_frame,
+            ..
+        } => {
+            if last_sent_at
+                .is_some_and(|last_sent_at| now.duration_since(last_sent_at) < UDMX_FRAME_INTERVAL)
+            {
+                return DeviceStatus::Active;
+            }
+            let Some(frame) = pending_frame.take() else {
+                return DeviceStatus::Active;
+            };
+            *last_sent_at = Some(now);
+            send_udmx_frame(device, &frame)
+        }
+        UsbDmxConnection::OpenDmx { port, .. } if !port.is_alive() => DeviceStatus::Lost,
+        UsbDmxConnection::OpenDmx {
+            last_submitted_at, ..
+        } if now.duration_since(*last_submitted_at) > OPEN_DMX_IDLE_TIMEOUT => DeviceStatus::Idle,
+        UsbDmxConnection::OpenDmx { .. } => DeviceStatus::Active,
+    }
+}
+
+/// Send a DMX frame to a uDMX device over USB and attempt reconnect when disconnect is
+/// detected.
+fn send_udmx_frame(device: &mut ConnectedUdmxDevice, data: &[u8]) -> DeviceStatus {
+    let UsbDmxConnection::Udmx { interface, .. } = &device.connection else {
+        unreachable!("send_udmx_frame called for a non-uDMX device");
+    };
     let control_out = nusb::transfer::ControlOut {
         control_type: nusb::transfer::ControlType::Vendor,
         recipient: nusb::transfer::Recipient::Interface,
@@ -352,12 +460,11 @@ fn submit_frame(device: &mut ConnectedUdmxDevice, data: &[u8]) -> SubmitFrameRes
         data,
     };
 
-    match device
-        .interface
+    match interface
         .control_out(control_out, Duration::from_millis(500))
         .wait()
     {
-        Ok(()) => SubmitFrameResult::Submitted,
+        Ok(()) => DeviceStatus::Active,
         Err(error) => {
             tracing::warn!("uDMX USB transfer failed: {}", error);
             if error.to_string().contains("device disconnected") {
@@ -370,21 +477,21 @@ fn submit_frame(device: &mut ConnectedUdmxDevice, data: &[u8]) -> SubmitFrameRes
                 {
                     tracing::info!(selector, "uDMX reconnect succeeded");
                     *device = new_device;
-                    return SubmitFrameResult::Submitted;
+                    return DeviceStatus::Active;
                 }
-                return SubmitFrameResult::DeviceLost;
+                return DeviceStatus::Lost;
             }
-            SubmitFrameResult::Failed
+            DeviceStatus::Active
         }
     }
 }
 
 /// Retry USB device initialization until timeout elapses.
-fn reconnect_with_timeout<DeviceId, Interface>(
+fn reconnect_with_timeout<DeviceId, Connection>(
     timeout: Duration,
     retry_interval: Duration,
-    mut init_device: impl FnMut() -> Option<OpenedUdmxDevice<DeviceId, Interface>>,
-) -> Option<OpenedUdmxDevice<DeviceId, Interface>> {
+    mut init_device: impl FnMut() -> Option<OpenedUdmxDevice<DeviceId, Connection>>,
+) -> Option<OpenedUdmxDevice<DeviceId, Connection>> {
     let start_time = Instant::now();
     while start_time.elapsed() < timeout {
         if let Some(device) = init_device() {
@@ -482,11 +589,16 @@ fn try_init_device(selector: &str) -> InitDeviceResult {
         }
     };
 
-    let devices = devices
-        .filter(|device| {
-            device.vendor_id() == UDMX_VENDOR_ID && device.product_id() == UDMX_PRODUCT_ID
-        })
+    let mut devices = devices
+        .filter(|device| is_usb_dmx_device_id(device.vendor_id(), device.product_id()))
         .collect::<Vec<_>>();
+    // The default selector only takes uDMX interfaces: the FTDI chips Open DMX dongles use also
+    // sit in generic USB serial adapters, so those must be picked explicitly.
+    if selector == DEFAULT_USB_DMX_DEVICE_SELECTOR {
+        devices.retain(|device| {
+            (device.vendor_id(), device.product_id()) == (UDMX_VENDOR_ID, UDMX_PRODUCT_ID)
+        });
+    }
     let mut serial_identity_counts = HashMap::<(u16, u16, String), usize>::new();
     for device in &devices {
         if let Some(identity_key) = usb_serial_identity_key(device) {
@@ -494,19 +606,37 @@ fn try_init_device(selector: &str) -> InitDeviceResult {
         }
     }
 
-    let mut udmx_device = None;
+    let mut selected_device = None;
     for device in devices {
         if selector == DEFAULT_USB_DMX_DEVICE_SELECTOR
             || selector_matches_device(&selector, &device, &serial_identity_counts)
         {
-            udmx_device = Some(device);
+            selected_device = Some(device);
             break;
         }
     }
 
-    let Some(device) = udmx_device else {
+    let Some(device) = selected_device else {
         return InitDeviceResult::NotFound;
     };
+
+    if (device.vendor_id(), device.product_id()) == (OPEN_DMX_VENDOR_ID, OPEN_DMX_PRODUCT_ID) {
+        return match OpenDmxPort::open(
+            device.vendor_id(),
+            device.product_id(),
+            device.serial_number(),
+        ) {
+            Some(port) => InitDeviceResult::Connected(OpenedUdmxDevice {
+                selector,
+                id: device.id(),
+                connection: UsbDmxConnection::OpenDmx {
+                    port,
+                    last_submitted_at: Instant::now(),
+                },
+            }),
+            None => InitDeviceResult::RetryableFailure,
+        };
+    }
 
     let opened = match device.open().wait() {
         Ok(device) => device,
@@ -520,7 +650,7 @@ fn try_init_device(selector: &str) -> InitDeviceResult {
         Ok(interface) => InitDeviceResult::Connected(OpenedUdmxDevice {
             selector,
             id: device.id(),
-            interface,
+            connection: UsbDmxConnection::udmx(interface),
         }),
         Err(_) => {
             if let Err(error) = opened.set_configuration(1).wait() {
@@ -532,7 +662,7 @@ fn try_init_device(selector: &str) -> InitDeviceResult {
                 Ok(interface) => InitDeviceResult::Connected(OpenedUdmxDevice {
                     selector,
                     id: device.id(),
-                    interface,
+                    connection: UsbDmxConnection::udmx(interface),
                 }),
                 Err(error) => {
                     tracing::error!("failed to claim uDMX interface: {}", error);
@@ -657,7 +787,7 @@ mod tests {
             OpenedUdmxDevice {
                 selector: "device-a".to_string(),
                 id: "udmx-1",
-                interface: "iface-a",
+                connection: "iface-a",
             },
         )]);
         let changed = handle_hotplug_events(&mut devices, &Some(event_rx));
@@ -680,7 +810,7 @@ mod tests {
                 OpenedUdmxDevice {
                     selector: "device-a".to_string(),
                     id: "udmx-1",
-                    interface: "iface-a",
+                    connection: "iface-a",
                 },
             ),
             (
@@ -688,7 +818,7 @@ mod tests {
                 OpenedUdmxDevice {
                     selector: "device-b".to_string(),
                     id: "udmx-2",
-                    interface: "iface-b",
+                    connection: "iface-b",
                 },
             ),
         ]);
@@ -709,7 +839,7 @@ mod tests {
             (init_attempts == 3).then_some(OpenedUdmxDevice {
                 selector: "device-a".to_string(),
                 id: "udmx-1",
-                interface: "iface-a",
+                connection: "iface-a",
             })
         });
 

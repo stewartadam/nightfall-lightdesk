@@ -458,7 +458,7 @@ pub fn usb_dmx_device_label(
         (Some(manufacturer), Some(product)) => format!("{manufacturer} {product}"),
         (Some(manufacturer), None) => manufacturer.to_string(),
         (None, Some(product)) => product.to_string(),
-        (None, None) => "uDMX adapter".to_string(),
+        (None, None) => "USB DMX adapter".to_string(),
     };
     let identity = serial_number
         .map(str::trim)

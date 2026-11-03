@@ -6,10 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! DMX output through uDMX USB interfaces.
+//! DMX output through USB DMX interfaces: uDMX and FTDI-based Open DMX dongles.
 //!
-//! A process-lifetime worker writes the composed frame for each USB output target to its uDMX
-//! device.
+//! A process-lifetime worker writes the composed frame for each USB output target to its device,
+//! picking the driver from the device's USB vendor and product ID.
 
 #![warn(missing_docs)]
 
@@ -20,11 +20,12 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_io::prelude::{
-    AvailableUsbDmxDevices, TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
-    UsbDmxDeviceInfo, usb_dmx_device_label, usb_dmx_device_selector_with_tiebreaker,
+    AvailableUsbDmxDevices, TransportRuntimePolicy, UsbDmxDeviceInfo, is_usb_dmx_device_id,
+    usb_dmx_device_label, usb_dmx_device_selector_with_tiebreaker,
 };
 use nusb::MaybeFuture;
 
+mod open_dmx;
 mod service;
 pub mod udmx;
 
@@ -102,9 +103,7 @@ fn get_available_usb_dmx_devices() -> Vec<UsbDmxDeviceInfo> {
     };
 
     let devices = devices
-        .filter(|device| {
-            device.vendor_id() == UDMX_VENDOR_ID && device.product_id() == UDMX_PRODUCT_ID
-        })
+        .filter(|device| is_usb_dmx_device_id(device.vendor_id(), device.product_id()))
         .collect::<Vec<_>>();
     let mut serial_identity_counts = HashMap::<(u16, u16, String), usize>::new();
     for device in &devices {
