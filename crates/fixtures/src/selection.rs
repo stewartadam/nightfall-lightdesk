@@ -246,6 +246,12 @@ impl<K: Eq + Hash> ResolvedSelectionCache<K> {
             .or_insert_with(resolve_fresh);
         &entry.resolved
     }
+
+    /// Returns the selection last resolved for `key` by [`Self::resolve`], without checking it
+    /// against the rig, so callers resolve every key first and then share the results.
+    pub fn get(&self, key: &K) -> Option<&ResolvedSelection> {
+        self.entries.get(key).map(|entry| &entry.resolved)
+    }
 }
 
 impl SpatialSelectionResolution for SpatialSelectionResolver<'_> {
