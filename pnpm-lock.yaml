@@ -162,6 +162,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  dockview-core@8.7.0: df08424b3468835fd1f26e4ec2bea1b4076dec6c6d5bdf8d41b4222fcb0a8c6d
+
 importers:
 
   .:
@@ -230,11 +233,11 @@ importers:
         specifier: ^4.4.2
         version: 4.4.2
       dockview:
-        specifier: ^8.7.0
+        specifier: 8.7.0
         version: 8.7.0
       dockview-core:
-        specifier: ^8.7.0
-        version: 8.7.0
+        specifier: 8.7.0
+        version: 8.7.0(patch_hash=df08424b3468835fd1f26e4ec2bea1b4076dec6c6d5bdf8d41b4222fcb0a8c6d)
       dotenv-expand:
         specifier: ^1000.0.0
         version: 1000.0.0
@@ -3247,11 +3250,11 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  dockview-core@8.7.0: {}
+  dockview-core@8.7.0(patch_hash=df08424b3468835fd1f26e4ec2bea1b4076dec6c6d5bdf8d41b4222fcb0a8c6d): {}
 
   dockview@8.7.0:
     dependencies:
-      dockview-core: 8.7.0
+      dockview-core: 8.7.0(patch_hash=df08424b3468835fd1f26e4ec2bea1b4076dec6c6d5bdf8d41b4222fcb0a8c6d)
 
   dotenv-expand@1000.0.0: {}
 
