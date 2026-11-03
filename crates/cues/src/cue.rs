@@ -96,7 +96,7 @@ impl TrackingMode {
 ///
 /// Used by the programmer (active selection events) and palettes
 #[serde_with::serde_as]
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct CueInstruction {
     /// The values for each attribute
@@ -124,7 +124,7 @@ pub struct CueInstruction {
 
 /// Per-fixture transition overrides grouped by attribute.
 #[serde_with::serde_as]
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct FixtureAttributeTransition {
     /// Fixture or fixture element this override applies to.
@@ -230,7 +230,7 @@ fn flatten_bound_instructions(instructions: Vec<BoundCueInstruction>) -> Vec<Bou
 }
 
 /// Wrapper struct to bind a selection to the instructions
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct BoundCueInstruction {
     /// The spatial selection for the instruction
@@ -250,7 +250,7 @@ impl SelectionValidatedEntity for BoundCueInstruction {
 }
 
 /// Nested cue-like component owned by a parent cue.
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct CuePart {
     /// Identifiers for the cue part. Part IDs are scoped to their parent cue.
@@ -316,7 +316,7 @@ impl CuePart {
 }
 
 /// Definition of a cue
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct Cue {
     /// Identifiers for the cue

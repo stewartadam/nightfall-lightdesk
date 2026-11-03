@@ -8,7 +8,6 @@
 
 import { useStore } from "@nanostores/solid";
 import {
-  createEffect,
   createMemo,
   createSignal,
   Match,
@@ -271,13 +270,6 @@ export function CueEditorController(props: {
     setCueGridRevision((revision) => revision + 1);
     ctx.commitEditedCue(updatedCue);
   };
-
-  /** Persists live-projected release cue rows when the owning sequence changes. */
-  createEffect(() => {
-    const projectedCue = ctx.releaseCueProjectionUpdate();
-    if (!projectedCue) return;
-    commitCueUpdate(projectedCue);
-  });
 
   /** Logs editor component mounting for targeted diagnostics. */
   onMount(() => {

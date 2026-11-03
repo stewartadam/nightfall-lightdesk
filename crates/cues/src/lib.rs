@@ -47,6 +47,7 @@ pub mod events;
 pub mod lookahead_projection;
 pub mod materialized_cue;
 pub mod materialized_sequence;
+pub mod release_cue_rows;
 pub mod sequence_planning;
 pub mod undo;
 pub mod websocket;

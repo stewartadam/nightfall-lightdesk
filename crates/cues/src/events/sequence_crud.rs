@@ -103,3 +103,38 @@ pub fn sequence_crud_events(
         }
     }
 }
+
+/// Keeps every sequence's release cue rows in step with the values its cues assert, storing and
+/// publishing a sequence only when its rows actually change.
+pub fn sync_release_cue_rows(
+    mut sequence_data_provider: ResMut<DataProvider<Sequence>>,
+    cue_data_provider: Res<DataProvider<Cue>>,
+    mut sequence_definition_changes: MessageWriter<SequenceDefinitionChange>,
+) {
+    if !sequence_data_provider.is_changed() && !cue_data_provider.is_changed() {
+        return;
+    }
+
+    let updated: Vec<Sequence> = sequence_data_provider
+        .iter()
+        .filter_map(|entry| {
+            let sequence = entry.value();
+            let release_cue = crate::release_cue_rows::release_cue_rows_update(sequence, |uid| {
+                cue_data_provider.get(uid).ok()
+            })?;
+            Some(Sequence {
+                release_cue,
+                ..sequence.clone()
+            })
+        })
+        .collect();
+
+    for sequence in updated {
+        let label = sequence.identifiers.label.clone();
+        if let Err(err) = sequence_data_provider.add(sequence.clone()) {
+            tracing::warn!("Failed to update release cue rows of sequence {label}: {err}");
+            continue;
+        }
+        write_sequence_definition_updated(&mut sequence_definition_changes, &sequence);
+    }
+}

@@ -40,11 +40,6 @@ import {
 } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
 import { setStoreAction } from "../../../lib/nanostore-action";
-import {
-  hasCueInstructionRows,
-  projectReleaseCueFromSequence,
-  releaseCueProjectionSignature,
-} from "../../../lib/release-cue-scaffold";
 import { normalizeFixtureUid } from "../../../lib/route-utils";
 import {
   activeInstances,
@@ -81,10 +76,6 @@ export interface CueEditorContextType {
   isReleaseCue: boolean;
   /** Sequence UID whose built-in release cue is being edited, if applicable. */
   releaseSequenceUid?: string;
-  /** Live-projected release cue rows that should be persisted when they change. */
-  releaseCueProjection: Accessor<types.Cue | undefined>;
-  /** Projected release cue payload when it differs from stored sequence data. */
-  releaseCueProjectionUpdate: Accessor<types.Cue | undefined>;
   /** Label for the active part. */
   partLabel: Accessor<string>;
   /** Label for the properties panel header */
@@ -200,30 +191,6 @@ export function createCueEditorContextValue(
     return undefined;
   });
 
-  /** Derives value-bearing release cue rows from the owning sequence. */
-  const releaseCueProjection = createMemo(() => {
-    cueStoreRevision();
-    const releaseOwner = releaseSequence();
-    if (!releaseOwner) return undefined;
-
-    const projectedCue = projectReleaseCueFromSequence(
-      releaseOwner,
-      cues.get(),
-    );
-    return hasCueInstructionRows(projectedCue) ? projectedCue : undefined;
-  });
-
-  /** Returns the projected release cue only when stored sequence data is stale. */
-  const releaseCueProjectionUpdate = createMemo(() => {
-    const releaseOwner = releaseSequence();
-    const projectedCue = releaseCueProjection();
-    if (!releaseOwner || !projectedCue) return undefined;
-    return releaseCueProjectionSignature(projectedCue) ===
-      releaseCueProjectionSignature(releaseOwner.release_cue)
-      ? undefined
-      : projectedCue;
-  });
-
   /** Stops any active cue preview when the shared editor context is disposed. */
   onCleanup(() => {
     log.trace("cleaning up CueEditorContextValue");
@@ -312,7 +279,7 @@ export function createCueEditorContextValue(
     if (releaseOwner) {
       return {
         status: "loaded",
-        cue: releaseCueProjection() ?? releaseOwner.release_cue,
+        cue: releaseOwner.release_cue,
       };
     }
 
@@ -615,8 +582,6 @@ export function createCueEditorContextValue(
     isSetupCue,
     isReleaseCue,
     releaseSequenceUid: options.releaseSequenceUid,
-    releaseCueProjection,
-    releaseCueProjectionUpdate,
     partLabel,
     label,
     updateCue,
