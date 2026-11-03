@@ -22,10 +22,8 @@ nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
 nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-fixtures = { path = "../fixtures" }
-nightfall-flow = { path = "../flow", default-features = false }
 nightfall-framepace = { path = "../framepace" }
 nightfall-fx = { path = "../fx" }
-nightfall-fx-module = { path = "../fx-module", optional = true }
 nightfall-io = { path = "../io" }
 nightfall-lookahead = { path = "../lookahead" }
 nightfall-instances = { path = "../instances" }
@@ -45,7 +43,6 @@ web-time.workspace = true
 [features]
 default = []
 debug = ["nightfall-engine/debug"]
-fx-module-host = ["dep:nightfall-fx-module", "nightfall-flow/fx-module"]
 native-network-watch = ["dep:netwatcher"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

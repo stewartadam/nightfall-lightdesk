@@ -22,8 +22,6 @@ use nightfall_actions::ActionsPlugin;
 use nightfall_clips::{ClipCommand, ClipOperation, InstanceIndex, RestoreClipSource};
 use nightfall_engine::{EnginePlugin, prelude::*};
 use nightfall_framepace::FramePaceStats;
-#[cfg(feature = "fx-module-host")]
-use nightfall_fx_module::FxModuleRuntimeNotification;
 use nightfall_instances::{
     ClipInstanceAttachment, ClipInstanceRequest, InstanceCommand, InstanceControlUpdate,
     PlaybackOperation, PlaybackReleaseOperation,
@@ -116,6 +114,7 @@ impl Plugin for DeskPlugin {
         register_client_command::<DeskCommand>(app, Undo::Skipped);
         register_client_command::<ClipCommand>(app, Undo::Captured);
         register_engine_operation::<ClipOperation>(app);
+        nightfall_clips::register_clip_source_routing(app);
         register_client_command::<GroupCommand>(app, Undo::Captured);
         app.add_message::<EngineOperationEnvelope<GroupOperation>>();
         register_client_command::<MasterCommand>(app, Undo::Captured);
@@ -144,8 +143,6 @@ impl Plugin for DeskPlugin {
         app.add_message::<FaderUpdate>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
-        #[cfg(feature = "fx-module-host")]
-        app.add_message::<NotificationEnvelope<FxModuleRuntimeNotification>>();
 
         register_update_deserializer(app, "FaderUpdate", websocket::deserialize_fader_update);
         register_update_deserializer(app, "MasterUpdate", websocket::deserialize_master_update);
@@ -249,8 +246,6 @@ impl Plugin for DeskPlugin {
                 event_handlers::instance_events::handle_playback_control_updates,
                 faders::handle_fader_commands,
                 faders::handle_fader_updates,
-                #[cfg(feature = "fx-module-host")]
-                event_handlers::forward_fx_module_runtime_notifications,
                 systems::stale_inputs::clear_stale_input_channels,
             )
                 .in_set(EventHandling),
@@ -286,16 +281,7 @@ impl Plugin for DeskPlugin {
                 .in_set(EventHandling),
         );
 
-        #[cfg(feature = "fx-module-host")]
         let route_clip_playback_actions = event_handlers::clip_events::route_clip_playback_actions
-            .before(nightfall_fx::events::handle_events)
-            .before(nightfall_flow::events::handle_events)
-            .before(nightfall_fx_module::events::handle_clip_commands)
-            .before(event_handlers::instance_events::handle_playback_commands);
-        #[cfg(not(feature = "fx-module-host"))]
-        let route_clip_playback_actions = event_handlers::clip_events::route_clip_playback_actions
-            .before(nightfall_fx::events::handle_events)
-            .before(nightfall_flow::events::handle_events)
             .before(event_handlers::instance_events::handle_playback_commands);
 
         app.add_systems(

@@ -169,14 +169,16 @@ The `wasm-bridge` exports a small set of code from Nightfall crates to WASM so t
 
 The `desk` crate is the largest cross-plugin crate, at about 20,000 lines. It holds the behavior that belongs to the console as a whole rather than to one domain:
 
-- The `DeskCommand` entry point, including `Eval`, which runs a line of the desk command language, and the requests to create, save, load, and import showfiles.
-- Clip storage, and the lifecycle of running playbacks that every playback domain shares.
+- The `DeskCommand` entry point, including the requests to create, save, load, and import showfiles.
+- Clip storage, and the lifecycle of running playbacks that every playback domain shares. Clip starts and stops reach each playback plugin through the clip source registry in `clips`, where each plugin registers the source kinds it plays.
 - Masters, faders with their levels and buttons, and the actions that drive them.
 - Groups and blueprints.
 - Console settings and the showfile's shared panel layouts.
 - The adjustments after the merge: virtual dimmers, virtual relations, and each playback's intensity level.
-- User notifications, diagnostics, network statistics, and the layer stack that the **Layers** panel shows.
-- Commands that wait a set time before they run, and the release of stale input values.
+- Diagnostics, network statistics, and the layer stack that the **Layers** panel shows.
+- The release of stale input values.
+
+Running a line of the command language (`EngineCommand::Eval`), delayed commands, and user notifications live in `engine`, so any crate can use them.
 
 The plugin rules explain why this code collects in `desk`. A plugin crate can't depend on another plugin crate, so behavior that touches several plugins, such as a master that scales playbacks from any of them, needs a crate above them. The result is a crate that many others use: `programmer`, `output_artnet`, and `output_sacn` depend on it through boundary exceptions, and the browser demo compiles all of it.
 

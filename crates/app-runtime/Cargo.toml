@@ -27,7 +27,7 @@ nightfall-beat-detection = { path = "../beat-detection", optional = true }
 nightfall-composition = { path = "../composition" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-cues = { path = "../cues" }
-nightfall-desk = { path = "../desk", default-features = false, features = ["fx-module-host", "native-network-watch"] }
+nightfall-desk = { path = "../desk", default-features = false, features = ["native-network-watch"] }
 nightfall-desk-audio = { path = "../desk_audio", optional = true }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }

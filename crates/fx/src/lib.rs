@@ -17,8 +17,9 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::*;
+use nightfall_clips::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
 use nightfall_engine::prelude::*;
-use nightfall_instances::ClipInstanceAttachment;
+use nightfall_instances::{ClipInstanceAttachment, InstanceKind};
 use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -79,7 +80,16 @@ impl Plugin for FxPlugin {
         app.add_message::<events::FxPreviewUpdate>();
         app.add_message::<events::StepFxPreviewUpdate>();
         app.add_message::<events::StepFxCommandResult>();
-        register_engine_operation::<events::FxPlaybackOperation>(app);
+        for kind in [ClipSourceKind::Fx, ClipSourceKind::StepFx] {
+            app.register_clip_source(
+                kind,
+                ClipSourceDomain {
+                    playback_kind: InstanceKind::Fx,
+                    handles_clip_operations: false,
+                    restarts_on_go: false,
+                },
+            );
+        }
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
 
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FxAstConverter>();
@@ -106,7 +116,7 @@ impl Plugin for FxPlugin {
         app.add_systems(
             Update,
             (
-                events::handle_events,
+                events::handle_events.after(DeskEventSet::ClipRouting),
                 events::crud_events,
                 (
                     events::handle_step_fx_commands,

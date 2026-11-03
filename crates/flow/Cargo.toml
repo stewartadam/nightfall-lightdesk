@@ -9,6 +9,7 @@ bevy_app.workspace = true
 bevy_ecs.workspace = true
 nightfall = { path = "../common" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-clips = { path = "../clips" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
@@ -31,7 +32,6 @@ uuid.workspace = true
 async-channel.workspace = true
 moonshine-kind.workspace = true
 nightfall-desk = { path = "../desk" }
-nightfall-clips = { path = "../clips" }
 tokio.workspace = true
 wit-component.workspace = true
 nightfall-fixture-model = { path = "../fixture-model" }

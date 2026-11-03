@@ -12,6 +12,8 @@
 //! for how it plays. This crate defines the clip model, [`ClipCommand`], the bindable
 //! clip actions, lookups by identifier, and the index from clips to their running instances.
 //! It doesn't store clips; the `desk` crate does.
+//!
+//! Playback plugins register the clip source kinds they play through [`ClipSourceAppExt`].
 #![warn(missing_docs)]
 
 mod actions;
@@ -20,6 +22,7 @@ mod instance_index;
 mod lookup;
 mod model;
 mod source_reference;
+mod source_routing;
 mod undo;
 
 pub use actions::{
@@ -35,4 +38,8 @@ pub use instance_index::{
 pub use lookup::{ClipLookup, ClipLookupError, ClipLookupSnapshot, log_clip_lookup_failure};
 pub use model::{Clip, ClipOptions, ClipSourceRef, MaterializedClip, Source};
 pub use source_reference::UnsupportedClipSource;
+pub use source_routing::{
+    ClipSourceAppExt, ClipSourceDomain, ClipSourceKind, ClipSourceOperation, ClipSourceRegistry,
+    register_clip_source_routing,
+};
 pub use undo::{ClipSourceSnapshot, RestoreClipSource};

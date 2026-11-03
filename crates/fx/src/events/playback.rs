@@ -15,13 +15,13 @@ use std::{
 
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
+use nightfall_clips::{ClipSourceOperation, Source};
 use nightfall_compositor::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_instances::{
-    ClipInstanceAttachment, ClipInstanceStartContext, InstanceClock, InstanceControls,
-    InstanceDisplayKind, InstanceId, InstanceKind, InstanceMetadata, Owner,
-    PlaybackReleaseOperation, instance_clock_from_reconstruction_timing,
-    reconcile_instance_options,
+    ClipInstanceAttachment, InstanceClock, InstanceControls, InstanceDisplayKind, InstanceId,
+    InstanceKind, InstanceMetadata, Owner, PlaybackReleaseOperation,
+    instance_clock_from_reconstruction_timing, reconcile_instance_options,
 };
 use nightfall_playback_planner::PlaybackReconstructionTiming;
 use uuid::Uuid;
@@ -57,36 +57,6 @@ fn instance_clock_from_optional_reconstruction_timing(
         .unwrap_or_default()
 }
 
-/// Clip-routed playback actions owned by the FX domain.
-#[derive(Debug, Clone, EnginePayload)]
-pub enum FxPlaybackOperation {
-    /// Start or refresh an ordinary waveform FX playback for an clip.
-    StartFx {
-        /// FX source UID to materialize.
-        fx_uid: Uuid,
-        /// Shared clip metadata for the routed start.
-        context: ClipInstanceStartContext,
-    },
-    /// Start or refresh a step FX playback for an clip.
-    StartStepFx {
-        /// Step FX source UID to materialize.
-        step_fx_uid: Uuid,
-        /// Shared clip metadata for the routed start.
-        context: ClipInstanceStartContext,
-    },
-    /// Release FX-owned instances attached to an clip.
-    Stop {
-        /// Numeric clip ID whose playback slot requested the action.
-        clip_id: u32,
-        /// Runtime instances currently attached to the clip.
-        attached_instances: Vec<InstanceId>,
-        /// Optional source-local release timing.
-        timing: Option<PlaybackReconstructionTiming>,
-    },
-}
-
-impl EngineOperation for FxPlaybackOperation {}
-
 /// Mark FX-domain playback entities for release.
 fn release_fx_instances(
     commands: &mut Commands,
@@ -119,13 +89,16 @@ fn release_fx_instances(
     }
 }
 
-/// Handles clip-routed FX playback actions from the desk resolver.
+/// Starts FX and step FX clips routed to the FX domain, and releases FX playback of stopped
+/// clips.
+///
+/// Every routed stop is handled, since a retargeted clip can still own FX playback.
 pub fn handle_events(
     fx_query: Query<(Entity, &MaterializedFx, &InstanceId)>,
     step_fx_query: Query<(Entity, &StepFx)>,
     active_step_fx_query: Query<ActiveStepFxData>,
     fx_data_provider: Res<DataProvider<Fx>>,
-    mut events: MessageReader<EngineOperationEnvelope<FxPlaybackOperation>>,
+    mut events: MessageReader<EngineOperationEnvelope<ClipSourceOperation>>,
     mut attachments: MessageWriter<EventEnvelope<ClipInstanceAttachment>>,
     mut commands: Commands,
 ) {
@@ -147,10 +120,11 @@ pub fn handle_events(
 
     for event in events.read() {
         match &event.operation {
-            FxPlaybackOperation::Stop {
+            ClipSourceOperation::Stop {
                 clip_id,
                 attached_instances,
                 timing,
+                ..
             } => {
                 let attached_instances = attached_instances.iter().copied().collect::<HashSet<_>>();
                 detaching_instances.extend(attached_instances.iter().copied());
@@ -167,7 +141,10 @@ pub fn handle_events(
                     &active_step_fx_query,
                 );
             }
-            FxPlaybackOperation::StartFx { fx_uid, context } => {
+            ClipSourceOperation::Start {
+                source: Source::Fx(fx_uid),
+                context,
+            } => {
                 let context = *context;
                 let fx = fx_data_provider.get(*fx_uid).expect("failed to obtain fx");
 
@@ -283,8 +260,8 @@ pub fn handle_events(
                     ));
                 }
             }
-            FxPlaybackOperation::StartStepFx {
-                step_fx_uid,
+            ClipSourceOperation::Start {
+                source: Source::StepFx(step_fx_uid),
                 context,
             } => {
                 let context = *context;
@@ -457,6 +434,7 @@ pub fn handle_events(
                     },
                 ));
             }
+            ClipSourceOperation::Start { .. } => {}
         }
     }
 }

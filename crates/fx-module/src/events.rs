@@ -10,17 +10,16 @@ use std::time::Duration;
 
 use bevy_ecs::{prelude::*, system::SystemParam};
 use nightfall::prelude::{ObjectRef, ObjectType, SpatialSelection};
+use nightfall_clips::{ClipSourceOperation, Source};
 use nightfall_compositor::prelude::{ObjectRefMarker, ReleaseMarker};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_fx::prelude::{Fx, FxCommand, StepFx};
 use nightfall_instances::{
-    ClipInstanceStartContext, DomainInstanceReconstructionRequest, InstanceClock,
-    instance_clock_from_reconstruction_timing,
+    DomainInstanceReconstructionRequest, InstanceClock, instance_clock_from_reconstruction_timing,
 };
 use nightfall_playback_planner::{PlannedPlaybackSource, PlaybackReconstructionTiming};
 use nightfall_undo::prelude::{UndoEntry, UndoManager, Undoable};
-use uuid::Uuid;
 
 use crate::{
     ActiveFxModuleIds, ActiveFxModuleTimings, ForwardedFxModuleCommands, FxModuleClipBinding,
@@ -43,27 +42,6 @@ fn fx_module_clock_from_reconstruction_timing(
         source: timing.source,
     })
 }
-
-/// Clip-routed playback actions owned by the fx-module domain.
-#[derive(Debug, Clone, EnginePayload)]
-pub enum FxModulePlaybackOperation {
-    /// Start or refresh a stored fx module playback for an clip.
-    Start {
-        /// Stored fx module source UID to activate.
-        fx_module_uid: Uuid,
-        /// Shared clip metadata for the routed start.
-        context: ClipInstanceStartContext,
-    },
-    /// Stop a stored fx module playback for an clip.
-    Stop {
-        /// Numeric clip ID whose playback slot requested the action.
-        clip_id: u32,
-        /// Stored fx module source UID to deactivate.
-        fx_module_uid: Uuid,
-    },
-}
-
-impl EngineOperation for FxModulePlaybackOperation {}
 
 /// Stored definitions and runtime indexes mutated by FX module management commands.
 #[derive(SystemParam)]
@@ -460,18 +438,21 @@ pub fn handle_domain_playback_reconstruction_requests(
     }
 }
 
-/// Handle clip commands that target stored fx modules.
+/// Starts and stops stored fx modules for clips routed to the fx module domain.
+///
+/// Acts only on clips whose source is an fx module; other routed sources belong to other
+/// domains.
 pub fn handle_clip_commands(
     fx_module_data_provider: Res<DataProvider<StoredFxModule>>,
     mut active_fx_module_ids: ResMut<ActiveFxModuleIds>,
     mut active_fx_module_timings: Option<ResMut<ActiveFxModuleTimings>>,
     mut clip_bindings: ResMut<FxModuleClipBindings>,
-    mut events: MessageReader<EngineOperationEnvelope<FxModulePlaybackOperation>>,
+    mut events: MessageReader<EngineOperationEnvelope<ClipSourceOperation>>,
 ) {
     for event in events.read() {
         match &event.operation {
-            FxModulePlaybackOperation::Start {
-                fx_module_uid,
+            ClipSourceOperation::Start {
+                source: Source::FxModule(fx_module_uid),
                 context,
             } => {
                 let context = *context;
@@ -503,9 +484,10 @@ pub fn handle_clip_commands(
                     }
                 }
             }
-            FxModulePlaybackOperation::Stop {
+            ClipSourceOperation::Stop {
                 clip_id,
-                fx_module_uid,
+                source: Some(Source::FxModule(fx_module_uid)),
+                ..
             } => {
                 clip_bindings.0.remove(clip_id);
                 match fx_module_data_provider.get(*fx_module_uid) {
@@ -524,6 +506,7 @@ pub fn handle_clip_commands(
                     }
                 }
             }
+            ClipSourceOperation::Start { .. } | ClipSourceOperation::Stop { .. } => {}
         }
     }
 }
@@ -576,6 +559,7 @@ mod tests {
     use nightfall::prelude::{Group, GroupRefExpr, Identifiers, SelectionExpr};
     use nightfall_fixtures::prelude::FixtureDataProviderExt;
     use nightfall_fx::prelude::FxCommand;
+    use nightfall_instances::ClipInstanceStartContext;
     use uuid::Uuid;
 
     use super::*;
@@ -623,7 +607,7 @@ mod tests {
         app.insert_resource(DataProvider::<StoredFxModule>::default());
         app.insert_resource(ActiveFxModuleIds::default());
         app.insert_resource(FxModuleClipBindings::default());
-        app.add_message::<EngineOperationEnvelope<FxModulePlaybackOperation>>();
+        app.add_message::<EngineOperationEnvelope<ClipSourceOperation>>();
         app.add_systems(Update, handle_clip_commands);
         app.world_mut()
             .resource_mut::<DataProvider<StoredFxModule>>()
@@ -695,8 +679,8 @@ mod tests {
 
         app.world_mut()
             .write_message(EngineOperationEnvelope::detached(
-                FxModulePlaybackOperation::Start {
-                    fx_module_uid: module_uid,
+                ClipSourceOperation::Start {
+                    source: Source::FxModule(module_uid),
                     context: test_start_context(31, true),
                 },
             ));
@@ -734,9 +718,11 @@ mod tests {
 
         app.world_mut()
             .write_message(EngineOperationEnvelope::detached(
-                FxModulePlaybackOperation::Stop {
+                ClipSourceOperation::Stop {
                     clip_id: 31,
-                    fx_module_uid: module_uid,
+                    source: Some(Source::FxModule(module_uid)),
+                    attached_instances: Vec::new(),
+                    timing: None,
                 },
             ));
         app.update();

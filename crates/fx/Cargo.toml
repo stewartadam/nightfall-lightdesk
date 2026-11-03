@@ -11,6 +11,7 @@ bevy_state.workspace = true
 enum_dispatch.workspace = true
 orx-parallel.workspace = true
 nightfall = { path = "../common" }
+nightfall-clips = { path = "../clips" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
@@ -34,10 +35,7 @@ uuid.workspace = true
 criterion.workspace = true
 moonshine-kind.workspace = true
 nightfall-desk = { path = "../desk" }
-nightfall-clips = { path = "../clips" }
 nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
-nightfall-flow = { path = "../flow" }
-nightfall-fx-module = { path = "../fx-module" }
 nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-io = { path = "../io" }
 

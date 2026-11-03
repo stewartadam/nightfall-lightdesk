@@ -18,17 +18,15 @@ use nightfall_clips::{
     Clip, ClipCommand, ClipLookup, ClipLookupError, ClipOperation, MaterializedClip,
     RestoreClipSource, Source, clip_action_from_command, log_clip_lookup_failure,
 };
-use nightfall_clips::{ClipReleaseAfterInstance, ClipSourceRef, InstanceIndex};
+use nightfall_clips::{
+    ClipReleaseAfterInstance, ClipSourceOperation, ClipSourceRef, ClipSourceRegistry, InstanceIndex,
+};
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_engine::object_registry::{ObjectLookupError, resolve_object};
 use nightfall_engine::prelude::*;
-use nightfall_flow::events::FlowPlaybackOperation;
-use nightfall_fx::events::FxPlaybackOperation;
-#[cfg(feature = "fx-module-host")]
-use nightfall_fx_module::events::FxModulePlaybackOperation;
 use nightfall_instances::{
     ClipInstanceAttachment, ClipInstanceRequest, ClipInstanceStartContext, InstanceClock,
-    InstanceControls, InstanceId, InstanceKind, InstanceMetadata, InstanceOptions,
+    InstanceControls, InstanceId, InstanceMetadata, InstanceOptions,
 };
 use nightfall_playback_planner::PlaybackReconstructionTiming;
 use nightfall_tempo::prelude::ShowTempo;
@@ -708,18 +706,19 @@ pub fn forward_clip_playback_requests(
     }
 }
 
-/// Resolves desk-owned clip commands into domain-owned playback actions.
+/// Resolves clip operations into playback work for the domain that plays each clip's source.
+///
+/// Domains that handle clip operations themselves (the cue domain) get nothing here and report
+/// their own outcomes. Every other domain receives [`ClipSourceOperation`] and never reports
+/// back, so this router publishes the outcome for those clips.
 pub fn route_clip_playback_actions(
     mut commands: Commands,
     mut clip_events: MessageReader<EngineOperationEnvelope<ClipOperation>>,
     exec_query: Query<&Clip>,
     materialized_clips: Query<(Entity, &MaterializedClip)>,
     instance_query: Query<ClipPlaybackData>,
-    mut fx_actions: MessageWriter<EngineOperationEnvelope<FxPlaybackOperation>>,
-    mut flow_actions: MessageWriter<EngineOperationEnvelope<FlowPlaybackOperation>>,
-    #[cfg(feature = "fx-module-host")] mut fx_module_actions: Option<
-        MessageWriter<EngineOperationEnvelope<FxModulePlaybackOperation>>,
-    >,
+    registry: Res<ClipSourceRegistry>,
+    mut source_actions: MessageWriter<EngineOperationEnvelope<ClipSourceOperation>>,
     mut responder: CommandResponder,
 ) {
     for event in clip_events.read() {
@@ -741,11 +740,11 @@ pub fn route_clip_playback_actions(
                     let Some(clip) = exec_query.iter().find(|clip| clip.identifiers.id == id)
                     else {
                         log_clip_lookup_failure(id, "NoEntities", &exec_query, "StartClip");
-                        completion.defer_to_sequence_domain();
+                        completion.defer_to_reporting_domain();
                         continue;
                     };
-                    if cue_domain_reports_clip(clip) {
-                        completion.defer_to_sequence_domain();
+                    if domain_reports_clip(clip, &registry) {
+                        completion.defer_to_reporting_domain();
                     }
                     let attached_instance = attached_instance_for_clip(id, &materialized_clips);
                     release_cross_domain_retarget_playback(
@@ -753,6 +752,7 @@ pub fn route_clip_playback_actions(
                         clip,
                         attached_instance,
                         &instance_query,
+                        &registry,
                     );
                     if let Err(error) = route_start_action(
                         event,
@@ -760,10 +760,8 @@ pub fn route_clip_playback_actions(
                         timing,
                         instance_options,
                         attached_instance,
-                        &mut fx_actions,
-                        &mut flow_actions,
-                        #[cfg(feature = "fx-module-host")]
-                        fx_module_actions.as_mut(),
+                        &registry,
+                        &mut source_actions,
                     ) {
                         completion.record_failure(error);
                     }
@@ -777,30 +775,30 @@ pub fn route_clip_playback_actions(
                         log_clip_lookup_failure(id, "NoEntities", &exec_query, "GoClip");
                         continue;
                     };
-                    #[cfg(not(feature = "fx-module-host"))]
-                    let _ = clip;
-                    #[cfg(feature = "fx-module-host")]
-                    if matches!(clip.source, Some(Source::FxModule(_))) {
-                        let attached_instance = attached_instance_for_clip(id, &materialized_clips);
-                        release_cross_domain_retarget_playback(
-                            &mut commands,
-                            clip,
-                            attached_instance,
-                            &instance_query,
-                        );
-                        if let Err(error) = route_start_action(
-                            event,
-                            clip,
-                            None,
-                            None,
-                            attached_instance,
-                            &mut fx_actions,
-                            &mut flow_actions,
-                            #[cfg(feature = "fx-module-host")]
-                            fx_module_actions.as_mut(),
-                        ) {
-                            tracing::warn!(clip_id = id, ?error, "Clip go was not routed");
-                        }
+                    let restarts_on_go = registry
+                        .domain_for(clip.source.as_ref())
+                        .is_some_and(|domain| domain.restarts_on_go);
+                    if !restarts_on_go {
+                        continue;
+                    }
+                    let attached_instance = attached_instance_for_clip(id, &materialized_clips);
+                    release_cross_domain_retarget_playback(
+                        &mut commands,
+                        clip,
+                        attached_instance,
+                        &instance_query,
+                        &registry,
+                    );
+                    if let Err(error) = route_start_action(
+                        event,
+                        clip,
+                        None,
+                        None,
+                        attached_instance,
+                        &registry,
+                        &mut source_actions,
+                    ) {
+                        tracing::warn!(clip_id = id, ?error, "Clip go was not routed");
                     }
                 }
             }
@@ -817,52 +815,34 @@ pub fn route_clip_playback_actions(
                     let Some(clip) = exec_query.iter().find(|clip| clip.identifiers.id == id)
                     else {
                         log_clip_lookup_failure(id, "NoEntities", &exec_query, "StopClip");
-                        completion.defer_to_sequence_domain();
+                        completion.defer_to_reporting_domain();
                         continue;
                     };
                     let attached_instances = attached_instances_for_clip(id, &materialized_clips);
-                    let sequence_domain_stops_clip =
-                        matches!(clip.source, Some(Source::Sequence(_)))
-                            || attached_instances_include_kind(
-                                &attached_instances,
-                                InstanceKind::Sequence,
-                                &instance_query,
-                            );
-                    if sequence_domain_stops_clip {
-                        // The cue domain stops this clip in the same frame and detaches its
-                        // clip links itself, so despawning them here would despawn each twice.
-                        completion.defer_to_sequence_domain();
+                    let reporting_domain_stops_clip = registry
+                        .domain_for(clip.source.as_ref())
+                        .is_some_and(|domain| domain.handles_clip_operations)
+                        || attached_instances_from_reporting_domain(
+                            &attached_instances,
+                            &instance_query,
+                            &registry,
+                        );
+                    if reporting_domain_stops_clip {
+                        // That domain stops this clip in the same frame and detaches its clip
+                        // links itself, so despawning them here would despawn each twice.
+                        completion.defer_to_reporting_domain();
                     } else {
                         detach_stopped_clip_links(&mut commands, id, &materialized_clips);
                     }
-                    fx_actions.write(routed_playback_action(
+                    source_actions.write(routed_playback_action(
                         event,
-                        FxPlaybackOperation::Stop {
+                        ClipSourceOperation::Stop {
                             clip_id: id,
-                            attached_instances: attached_instances.clone(),
-                            timing,
-                        },
-                    ));
-                    flow_actions.write(routed_playback_action(
-                        event,
-                        FlowPlaybackOperation::Stop {
-                            clip_id: id,
+                            source: clip.source.clone(),
                             attached_instances,
                             timing,
                         },
                     ));
-                    #[cfg(feature = "fx-module-host")]
-                    if let (Some(Source::FxModule(fx_module_uid)), Some(fx_module_actions)) =
-                        (clip.source.clone(), fx_module_actions.as_mut())
-                    {
-                        fx_module_actions.write(routed_playback_action(
-                            event,
-                            FxModulePlaybackOperation::Stop {
-                                clip_id: id,
-                                fx_module_uid,
-                            },
-                        ));
-                    }
                 }
                 completion.publish(&mut responder, event.command_id);
             }
@@ -871,12 +851,12 @@ pub fn route_clip_playback_actions(
     }
 }
 
-/// Terminal outcome for one clip start or stop action whose clips route outside the cue domain.
+/// Terminal outcome for one clip start or stop action.
 ///
-/// The cue domain answers commands that touch missing clips, sequence clips or sequence playback,
-/// and starts of clips without a source. Every other clip is handed to fire-and-forget playback
-/// domains (FX, step FX, flow, or FX module) that never report back, so the router publishes the
-/// outcome for those actions.
+/// A domain registered as handling clip operations itself (the cue domain) answers commands that
+/// touch its clips or playback, plus missing and sourceless clips. Every other clip is handed to
+/// a fire-and-forget playback domain that never reports back, so the router publishes the outcome
+/// for those actions.
 #[derive(Default)]
 struct RoutedClipCompletion {
     /// Whether the cue domain publishes the outcome because at least one clip belongs to it.
@@ -886,8 +866,8 @@ struct RoutedClipCompletion {
 }
 
 impl RoutedClipCompletion {
-    /// Hands the terminal outcome to the cue domain, which reports sequence clip results.
-    fn defer_to_sequence_domain(&mut self) {
+    /// Hands the terminal outcome to the domain that reports results for one of the clips.
+    fn defer_to_reporting_domain(&mut self) {
         self.deferred = true;
     }
 
@@ -935,20 +915,27 @@ fn detach_stopped_clip_links(
     }
 }
 
-/// Returns whether the cue domain publishes command outcomes for playback actions on this clip.
-fn cue_domain_reports_clip(clip: &Clip) -> bool {
-    matches!(clip.source, None | Some(Source::Sequence(_)))
+/// Returns whether a domain other than this router publishes command outcomes for the clip.
+///
+/// Sourceless clips are reported by the cue domain, which answers them as unassigned.
+fn domain_reports_clip(clip: &Clip, registry: &ClipSourceRegistry) -> bool {
+    match registry.domain_for(clip.source.as_ref()) {
+        Some(domain) => domain.handles_clip_operations,
+        None => clip.source.is_none(),
+    }
 }
 
-/// Returns whether any attached playback instance belongs to the given playback domain.
-fn attached_instances_include_kind(
+/// Returns whether any attached playback instance belongs to a domain that handles clip
+/// operations itself.
+fn attached_instances_from_reporting_domain(
     attached_instances: &[InstanceId],
-    kind: InstanceKind,
     instance_query: &Query<ClipPlaybackData>,
+    registry: &ClipSourceRegistry,
 ) -> bool {
     instance_query.iter().any(
         |(_entity, instance_id, metadata, _controls, _release_marker)| {
-            metadata.kind == kind && attached_instances.contains(instance_id)
+            attached_instances.contains(instance_id)
+                && registry.playback_kind_handles_clip_operations(&metadata.kind)
         },
     )
 }
@@ -987,22 +974,36 @@ pub fn handle_clip_playback_attachments(
     }
 }
 
-/// Sends a start action to the domain that owns the clip source.
+/// Sends a start action to the domain registered for the clip's source.
 ///
-/// Sequence and sourceless clips are left to the cue domain. Fails when the clip targets an FX
-/// module but this runtime has no FX module host.
+/// Sourceless clips and sources whose domain handles clip operations itself are left to that
+/// domain. Fails when no domain in this runtime plays the clip's source kind.
 fn route_start_action(
     event: &EngineOperationEnvelope<ClipOperation>,
     clip: &Clip,
     timing: Option<PlaybackReconstructionTiming>,
     instance_options: Option<InstanceOptions>,
     attached_instance: Option<InstanceId>,
-    fx_actions: &mut MessageWriter<EngineOperationEnvelope<FxPlaybackOperation>>,
-    flow_actions: &mut MessageWriter<EngineOperationEnvelope<FlowPlaybackOperation>>,
-    #[cfg(feature = "fx-module-host")] fx_module_actions: Option<
-        &mut MessageWriter<EngineOperationEnvelope<FxModulePlaybackOperation>>,
-    >,
+    registry: &ClipSourceRegistry,
+    source_actions: &mut MessageWriter<EngineOperationEnvelope<ClipSourceOperation>>,
 ) -> Result<(), CommandError> {
+    let Some(source) = clip.source.clone() else {
+        return Ok(());
+    };
+    let Some(domain) = registry.domain(source.kind()) else {
+        return Err(CommandError::new(
+            "clip.source_unavailable",
+            format!(
+                "Clip '{}' targets {} playback, but this runtime cannot play it",
+                clip.identifiers.label,
+                source.kind().label()
+            ),
+        ));
+    };
+    if domain.handles_clip_operations {
+        return Ok(());
+    }
+
     let context = ClipInstanceStartContext {
         clip_id: clip.identifiers.id,
         clip_uid: clip.identifiers.uid,
@@ -1012,52 +1013,10 @@ fn route_start_action(
         attached_instance,
         auto_release_on_stop: clip.options.auto_release,
     };
-
-    match clip.source {
-        Some(Source::Fx(fx_uid)) => {
-            fx_actions.write(routed_playback_action(
-                event,
-                FxPlaybackOperation::StartFx { fx_uid, context },
-            ));
-        }
-        Some(Source::StepFx(step_fx_uid)) => {
-            fx_actions.write(routed_playback_action(
-                event,
-                FxPlaybackOperation::StartStepFx {
-                    step_fx_uid,
-                    context,
-                },
-            ));
-        }
-        Some(Source::Flow(flow_uid)) => {
-            flow_actions.write(routed_playback_action(
-                event,
-                FlowPlaybackOperation::Start { flow_uid, context },
-            ));
-        }
-        #[cfg(feature = "fx-module-host")]
-        Some(Source::FxModule(fx_module_uid)) if fx_module_actions.is_some() => {
-            let fx_module_actions =
-                fx_module_actions.expect("fx module action messages were checked");
-            fx_module_actions.write(routed_playback_action(
-                event,
-                FxModulePlaybackOperation::Start {
-                    fx_module_uid,
-                    context,
-                },
-            ));
-        }
-        Some(Source::FxModule(_)) => {
-            return Err(CommandError::new(
-                "clip.fx_module_unavailable",
-                format!(
-                    "Clip '{}' targets an FX module, but this runtime has no FX module host",
-                    clip.identifiers.label
-                ),
-            ));
-        }
-        Some(Source::Sequence(_)) | None => {}
-    }
+    source_actions.write(routed_playback_action(
+        event,
+        ClipSourceOperation::Start { source, context },
+    ));
     Ok(())
 }
 
@@ -1074,17 +1033,21 @@ fn routed_playback_action<T>(
     )
 }
 
-/// Marks an attached playback for release when an clip start retargets across domains.
+/// Marks an attached playback for release when a clip start retargets across domains.
 fn release_cross_domain_retarget_playback(
     commands: &mut Commands,
     clip: &Clip,
     attached_instance: Option<InstanceId>,
     instance_query: &Query<ClipPlaybackData>,
+    registry: &ClipSourceRegistry,
 ) {
     let Some(attached_instance) = attached_instance else {
         return;
     };
-    let Some(target_kind) = clip_source_playback_kind(clip.source.clone()) else {
+    let Some(target_kind) = registry
+        .domain_for(clip.source.as_ref())
+        .map(|domain| domain.playback_kind.clone())
+    else {
         return;
     };
     let Some((entity, _instance_id, metadata, controls, release_marker)) =
@@ -1107,18 +1070,6 @@ fn release_cross_domain_retarget_playback(
         let mut resumed_controls = controls.clone();
         resumed_controls.speed = 1.0;
         entity_commands.insert(resumed_controls);
-    }
-}
-
-/// Returns the playback kind produced by an clip source domain.
-fn clip_source_playback_kind(source: Option<Source>) -> Option<InstanceKind> {
-    match source {
-        Some(Source::Fx(_)) | Some(Source::StepFx(_)) | Some(Source::FxModule(_)) => {
-            Some(InstanceKind::Fx)
-        }
-        Some(Source::Flow(_)) => Some(InstanceKind::Flow),
-        Some(Source::Sequence(_)) => Some(InstanceKind::Sequence),
-        _ => None,
     }
 }
 
@@ -1220,6 +1171,8 @@ mod tests {
     use bevy_app::{App, Update};
     use bevy_ecs::schedule::ApplyDeferred;
     use nightfall::prelude::{IdExpr, Identifiers, ObjectRef, ObjectType};
+    use nightfall_clips::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
+    use nightfall_instances::InstanceKind;
     use uuid::Uuid;
 
     use super::*;
@@ -1262,14 +1215,28 @@ mod tests {
         app
     }
 
-    /// Builds an app that routes clip playback actions to domain playback messages.
+    /// Builds an app that routes clip playback actions to FX, flow and cue playback domains.
+    ///
+    /// No FX module domain is registered, so FX module clips have nowhere to play.
     fn setup_clip_playback_routing_app() -> App {
         let mut app = App::new();
+        app.init_resource::<EngineOperationRouter>();
         app.add_message::<EngineOperationEnvelope<ClipOperation>>();
-        app.add_message::<EngineOperationEnvelope<FxPlaybackOperation>>();
-        app.add_message::<EngineOperationEnvelope<FlowPlaybackOperation>>();
-        #[cfg(feature = "fx-module-host")]
-        app.add_message::<EngineOperationEnvelope<FxModulePlaybackOperation>>();
+        for (kind, playback_kind, handles_clip_operations) in [
+            (ClipSourceKind::Fx, InstanceKind::Fx, false),
+            (ClipSourceKind::StepFx, InstanceKind::Fx, false),
+            (ClipSourceKind::Flow, InstanceKind::Flow, false),
+            (ClipSourceKind::Sequence, InstanceKind::Sequence, true),
+        ] {
+            app.register_clip_source(
+                kind,
+                ClipSourceDomain {
+                    playback_kind,
+                    handles_clip_operations,
+                    restarts_on_go: false,
+                },
+            );
+        }
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
@@ -2257,10 +2224,9 @@ mod tests {
         assert!(!app.world().entities().contains(fx_link));
     }
 
-    /// Verifies starting an FX module clip fails instead of hanging when no module host is built.
-    #[cfg(not(feature = "fx-module-host"))]
+    /// Verifies starting a clip whose source kind no domain plays fails instead of hanging.
     #[test]
-    fn fx_module_clip_start_fails_without_module_host() {
+    fn clip_start_fails_without_registered_source_domain() {
         let mut app = setup_clip_playback_routing_app();
         let mut module_clip = clip(8, Uuid::from_u128(8), "Module");
         module_clip.source = Some(Source::FxModule(Uuid::from_u128(80)));
@@ -2273,8 +2239,52 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].command_id, command_id);
         let CommandOutcome::Failed(error) = &results[0].outcome else {
-            panic!("FX module start without a host should fail");
+            panic!("FX module start without a registered domain should fail");
         };
-        assert_eq!(error.code, "clip.fx_module_unavailable");
+        assert_eq!(error.code, "clip.source_unavailable");
+    }
+
+    /// Verifies a go restarts playback only for sources whose domain asks for it: the FX module
+    /// clip gets a routed start, the FX clip gets nothing.
+    #[test]
+    fn go_routes_start_only_for_domains_that_restart_on_go() {
+        let mut app = setup_clip_playback_routing_app();
+        app.register_clip_source(
+            ClipSourceKind::FxModule,
+            ClipSourceDomain {
+                playback_kind: InstanceKind::Fx,
+                handles_clip_operations: false,
+                restarts_on_go: true,
+            },
+        );
+        let mut module_clip = clip(8, Uuid::from_u128(8), "Module");
+        module_clip.source = Some(Source::FxModule(Uuid::from_u128(80)));
+        let mut fx_clip = clip(6, Uuid::from_u128(6), "FX");
+        fx_clip.source = Some(Source::Fx(Uuid::from_u128(60)));
+        app.world_mut().spawn_batch([module_clip, fx_clip]);
+
+        submit_clip_command(
+            &mut app,
+            ClipCommand::GoClip(IdExpr::Add {
+                lhs: Box::new(IdExpr::Single(8)),
+                rhs: Box::new(IdExpr::Single(6)),
+            }),
+        );
+        app.update();
+
+        let routed: Vec<_> = app
+            .world_mut()
+            .resource_mut::<Messages<EngineOperationEnvelope<ClipSourceOperation>>>()
+            .drain()
+            .map(|envelope| envelope.operation)
+            .collect();
+        assert_eq!(routed.len(), 1, "{routed:?}");
+        assert!(matches!(
+            &routed[0],
+            ClipSourceOperation::Start {
+                source: Source::FxModule(uid),
+                context,
+            } if *uid == Uuid::from_u128(80) && context.clip_id == 8
+        ));
     }
 }

@@ -8,6 +8,7 @@ edition.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
 nightfall = { path = "../common" }
+nightfall-clips = { path = "../clips" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-dmx = { path = "../dmx" }
