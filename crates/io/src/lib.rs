@@ -48,14 +48,13 @@ pub mod prelude {
         OPEN_DMX_VENDOR_ID, OutputTransport, RESERVED_NETWORK_DMX_TARGET_KEYWORDS,
         RESERVED_USB_DMX_TARGET_KEYWORDS, RemotePairingAttempt, RemotePairingPin,
         RemotePairingStatus, RouteTransport, SacnDelivery, SacnOutputIdentity,
-        TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UsbDmxDeviceInfo,
-        UsbDmxOutputTarget, UsbDmxOutputTargets, dmx_output_interval, get_available_interfaces,
-        get_default_interface, is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
-        is_usb_dmx_device_id, is_valid_network_dmx_target_id, output_transport_to_target_id,
-        resolve_configured_network_interface, resolve_network_interface_status,
-        sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, usb_dmx_device_label,
-        usb_dmx_device_selector, usb_dmx_device_selector_matches,
-        usb_dmx_device_selector_with_tiebreaker,
+        TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UsbDmxDeviceIdentity,
+        UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets, dmx_output_interval,
+        get_available_interfaces, get_default_interface, is_reserved_network_dmx_target_id,
+        is_reserved_usb_dmx_target_id, is_usb_dmx_device_id, is_valid_network_dmx_target_id,
+        output_transport_to_target_id, resolve_configured_network_interface,
+        resolve_network_interface_status, resolve_usb_dmx_selectors, sanitize_dmx_output_rate_hz,
+        sanitize_input_signal_loss_timeout, usb_dmx_device_label, usb_dmx_device_selector,
     };
 }
 
@@ -397,7 +396,12 @@ fn trimmed_string(value: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-/// Builds a stable selector for a USB DMX device from the strongest available identity.
+/// Builds the selector saved for a USB DMX device.
+///
+/// Devices with a serial number are identified by serial and physical location together, so the
+/// saved selector does not change when another device with the same serial is attached or
+/// removed; [`resolve_usb_dmx_selectors`] still finds a device moved to another port by its
+/// serial.
 pub fn usb_dmx_device_selector(
     vendor_id: u16,
     product_id: u16,
@@ -405,95 +409,141 @@ pub fn usb_dmx_device_selector(
     location_key: Option<&str>,
     fallback_id: &str,
 ) -> String {
-    usb_dmx_device_selector_with_tiebreaker(
-        vendor_id,
-        product_id,
-        serial_number,
-        location_key,
-        fallback_id,
-        false,
-    )
-}
-
-/// Builds a stable selector for a USB DMX device with optional serial collision disambiguation.
-pub fn usb_dmx_device_selector_with_tiebreaker(
-    vendor_id: u16,
-    product_id: u16,
-    serial_number: Option<&str>,
-    location_key: Option<&str>,
-    fallback_id: &str,
-    use_location_tiebreaker: bool,
-) -> String {
-    if let Some(serial_number) = serial_number
+    let id_field = usb_selector_id_field(vendor_id, product_id);
+    let serial_number = serial_number
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let location_field = location_key
         .map(str::trim)
         .filter(|value| !value.is_empty())
-    {
-        if use_location_tiebreaker
-            && let Some(location_key) = location_key
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-        {
-            return format!(
-                "{},serial-{serial_number},{}",
-                usb_selector_id_field(vendor_id, product_id),
-                usb_selector_location_field(location_key)
-            );
+        .map(usb_selector_location_field);
+    match (serial_number, location_field) {
+        (Some(serial_number), Some(location_field)) => {
+            format!("{id_field},serial-{serial_number},{location_field}")
         }
-        return format!(
-            "{},serial-{serial_number}",
-            usb_selector_id_field(vendor_id, product_id)
-        );
+        (Some(serial_number), None) => format!("{id_field},serial-{serial_number}"),
+        (None, Some(location_field)) => format!("{id_field},{location_field}"),
+        (None, None) => format!("{id_field},device-{fallback_id}"),
     }
-    if let Some(location_key) = location_key
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        return format!(
-            "{},{}",
-            usb_selector_id_field(vendor_id, product_id),
-            usb_selector_location_field(location_key)
-        );
-    }
-    format!(
-        "{},device-{fallback_id}",
-        usb_selector_id_field(vendor_id, product_id)
-    )
 }
 
-/// Returns whether a saved selector identifies a currently visible USB DMX device.
-pub fn usb_dmx_device_selector_matches(
-    selector: &str,
+/// Builds the serial-only selector prefix shared by every selector of a USB device with a serial.
+fn usb_dmx_serial_selector(
     vendor_id: u16,
     product_id: u16,
     serial_number: Option<&str>,
-    location_key: Option<&str>,
-    fallback_id: &str,
-    use_location_tiebreaker: bool,
-) -> bool {
-    let selector = selector.trim();
-    if selector
-        == usb_dmx_device_selector_with_tiebreaker(
-            vendor_id,
-            product_id,
-            serial_number,
-            location_key,
-            fallback_id,
-            use_location_tiebreaker,
-        )
-    {
-        return true;
-    }
-
-    !use_location_tiebreaker
-        && selector
-            == usb_dmx_device_selector_with_tiebreaker(
-                vendor_id,
-                product_id,
-                serial_number,
-                location_key,
-                fallback_id,
-                true,
+) -> Option<String> {
+    serial_number
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|serial_number| {
+            format!(
+                "{},serial-{serial_number}",
+                usb_selector_id_field(vendor_id, product_id)
             )
+        })
+}
+
+/// Identity of an attached USB DMX device, for resolving saved selectors.
+#[derive(Debug, Clone, Copy)]
+pub struct UsbDmxDeviceIdentity<'a> {
+    /// USB vendor ID.
+    pub vendor_id: u16,
+    /// USB product ID.
+    pub product_id: u16,
+    /// USB serial number descriptor, when the device reports one.
+    pub serial_number: Option<&'a str>,
+    /// Stable physical-location key, such as `port:02:1`.
+    pub location_key: Option<&'a str>,
+    /// Platform device ID used when neither serial nor location is known.
+    pub fallback_id: &'a str,
+}
+
+impl UsbDmxDeviceIdentity<'_> {
+    /// Returns the selector saved for this device.
+    pub fn selector(&self) -> String {
+        usb_dmx_device_selector(
+            self.vendor_id,
+            self.product_id,
+            self.serial_number,
+            self.location_key,
+            self.fallback_id,
+        )
+    }
+}
+
+/// Resolves saved USB DMX selectors to attached devices, returning for each selector the index
+/// of its device in `devices`. Each device resolves at most one selector.
+///
+/// A selector first resolves to the device it names exactly, or for a serial-only selector to the
+/// only attached device with that serial. Selectors left over then fall back to a device whose
+/// serial they name if it is the only attached device with that serial and no other selector
+/// already resolved to it, so a device moved to another port keeps its target while clones that
+/// share a serial stay on the targets saved for their own ports. The default selector is left
+/// to the caller.
+pub fn resolve_usb_dmx_selectors(
+    selectors: &[&str],
+    devices: &[UsbDmxDeviceIdentity<'_>],
+) -> Vec<Option<usize>> {
+    let device_selectors = devices
+        .iter()
+        .map(UsbDmxDeviceIdentity::selector)
+        .collect::<Vec<_>>();
+    let serial_selectors = devices
+        .iter()
+        .map(|device| {
+            usb_dmx_serial_selector(device.vendor_id, device.product_id, device.serial_number)
+        })
+        .collect::<Vec<_>>();
+    let unique_serial = |index: usize| {
+        serial_selectors[index]
+            .as_ref()
+            .is_some_and(|serial_selector| {
+                serial_selectors
+                    .iter()
+                    .filter(|other| other.as_ref() == Some(serial_selector))
+                    .count()
+                    == 1
+            })
+    };
+
+    let mut claimed = vec![false; devices.len()];
+    let mut resolved = vec![None; selectors.len()];
+    for (selector_index, selector) in selectors.iter().enumerate() {
+        let selector = selector.trim();
+        let exact = (0..devices.len()).find(|&index| {
+            !claimed[index]
+                && (device_selectors[index] == selector
+                    || (serial_selectors[index].as_deref() == Some(selector)
+                        && unique_serial(index)))
+        });
+        if let Some(index) = exact {
+            claimed[index] = true;
+            resolved[selector_index] = Some(index);
+        }
+    }
+    for (selector_index, selector) in selectors.iter().enumerate() {
+        if resolved[selector_index].is_some() {
+            continue;
+        }
+        let selector = selector.trim();
+        let fallback = (0..devices.len()).find(|&index| {
+            !claimed[index]
+                && unique_serial(index)
+                && serial_selectors[index]
+                    .as_ref()
+                    .is_some_and(|serial_selector| {
+                        selector
+                            .strip_prefix(serial_selector.as_str())
+                            .is_some_and(|rest| rest.starts_with(','))
+                    })
+        });
+        if let Some(index) = fallback {
+            claimed[index] = true;
+            resolved[selector_index] = Some(index);
+        }
+    }
+    resolved
 }
 
 impl UsbDmxOutputTargets {
@@ -663,48 +713,82 @@ mod tests {
         );
     }
 
-    /// Verifies duplicate serial-number selectors include a location tie breaker.
+    /// Builds an attached uDMX identity with serial `0001` on the given port.
+    fn udmx_identity(location_key: &str) -> UsbDmxDeviceIdentity<'_> {
+        UsbDmxDeviceIdentity {
+            vendor_id: UDMX_VENDOR_ID,
+            product_id: UDMX_PRODUCT_ID,
+            serial_number: Some("0001"),
+            location_key: Some(location_key),
+            fallback_id: "fallback",
+        }
+    }
+
+    /// Verifies the saved selector names both serial and physical location.
     #[test]
-    fn usb_dmx_device_selector_tiebreaks_duplicate_serials_by_location() {
+    fn usb_dmx_device_selector_includes_serial_and_location() {
         assert_eq!(
-            usb_dmx_device_selector_with_tiebreaker(
-                UDMX_VENDOR_ID,
-                UDMX_PRODUCT_ID,
-                Some("0001"),
-                Some("port:20:1.2"),
-                "fallback",
-                true,
-            ),
+            udmx_identity("port:20:1.2").selector(),
             "id-16c0:05dc,serial-0001,port-20:1.2"
         );
     }
 
-    /// Verifies saved duplicate-serial selectors still match after the duplicate disappears.
+    /// Verifies a saved device keeps resolving when a clone with the same serial is attached.
     #[test]
-    fn usb_dmx_device_selector_matches_saved_tiebreaker_without_current_duplicate() {
-        assert!(usb_dmx_device_selector_matches(
-            "id-16c0:05dc,serial-0001,port-20:1.2",
-            UDMX_VENDOR_ID,
-            UDMX_PRODUCT_ID,
-            Some("0001"),
-            Some("port:20:1.2"),
-            "fallback",
-            false,
-        ));
+    fn resolve_usb_dmx_selectors_keeps_saved_device_when_clone_attaches() {
+        let devices = [udmx_identity("port:20:1.3"), udmx_identity("port:20:1.2")];
+
+        assert_eq!(
+            resolve_usb_dmx_selectors(&["id-16c0:05dc,serial-0001,port-20:1.2"], &devices),
+            vec![Some(1)]
+        );
     }
 
-    /// Verifies serial-only selectors do not ambiguously match when a duplicate is present.
+    /// Verifies unplugging one clone leaves the other on its own target instead of letting the
+    /// unplugged clone's target take it over.
     #[test]
-    fn usb_dmx_device_selector_does_not_match_serial_only_when_duplicate_exists() {
-        assert!(!usb_dmx_device_selector_matches(
-            "id-16c0:05dc,serial-0001",
-            UDMX_VENDOR_ID,
-            UDMX_PRODUCT_ID,
-            Some("0001"),
-            Some("port:20:1.2"),
-            "fallback",
-            true,
-        ));
+    fn resolve_usb_dmx_selectors_does_not_steal_remaining_clone() {
+        let devices = [udmx_identity("port:20:1.3")];
+
+        assert_eq!(
+            resolve_usb_dmx_selectors(
+                &[
+                    "id-16c0:05dc,serial-0001,port-20:1.2",
+                    "id-16c0:05dc,serial-0001,port-20:1.3",
+                ],
+                &devices,
+            ),
+            vec![None, Some(0)]
+        );
+    }
+
+    /// Verifies a device moved to another port still resolves by its unique serial.
+    #[test]
+    fn resolve_usb_dmx_selectors_follows_unique_serial_to_new_port() {
+        let devices = [udmx_identity("port:20:4")];
+
+        assert_eq!(
+            resolve_usb_dmx_selectors(&["id-16c0:05dc,serial-0001,port-20:1.2"], &devices),
+            vec![Some(0)]
+        );
+    }
+
+    /// Verifies serial-only selectors resolve while the serial is unique and not when ambiguous.
+    #[test]
+    fn resolve_usb_dmx_selectors_matches_serial_only_selector_when_unique() {
+        let selectors = ["id-16c0:05dc,serial-0001"];
+
+        assert_eq!(
+            resolve_usb_dmx_selectors(&selectors, &[udmx_identity("port:20:1.2")]),
+            vec![Some(0)]
+        );
+        assert_eq!(
+            resolve_usb_dmx_selectors(
+                &selectors,
+                &[udmx_identity("port:20:1.2"), udmx_identity("port:20:1.3")],
+            ),
+            vec![None]
+        );
     }
 
     /// Verifies invalid custom target definitions are removed during sanitization.

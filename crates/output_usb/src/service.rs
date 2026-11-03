@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver as StdReceiver, Sender as StdSender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -19,13 +19,13 @@ use nightfall_engine::prelude::{
 };
 use nightfall_io::prelude::{
     DEFAULT_USB_DMX_DEVICE_SELECTOR, OPEN_DMX_PRODUCT_ID, OPEN_DMX_VENDOR_ID, UDMX_PRODUCT_ID,
-    UDMX_VENDOR_ID, is_usb_dmx_device_id, usb_dmx_device_selector_matches,
+    UDMX_VENDOR_ID, UsbDmxDeviceIdentity, is_usb_dmx_device_id, resolve_usb_dmx_selectors,
 };
 use nightfall_service_host::prelude::{WorkerSlot, process_singleton};
 use nusb::MaybeFuture;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
-use crate::open_dmx::{OpenDmxPort, UsbDeviceIdentity};
+use crate::open_dmx::{OpenDmxPort, UsbDeviceIdentity as SerialPortIdentity};
 
 /// uDMX output client handle.
 #[derive(Clone, Default, Resource)]
@@ -160,13 +160,6 @@ enum DeviceStatus {
 type ConnectedUdmxDevice = OpenedUdmxDevice<nusb::DeviceId, UsbDmxConnection>;
 type UdmxHotplugSubscribers = Arc<Mutex<Vec<StdSender<()>>>>;
 
-/// Outcomes from attempting to open a USB DMX device during startup or reconnect.
-enum InitDeviceResult<DeviceId = nusb::DeviceId, Connection = UsbDmxConnection> {
-    Connected(OpenedUdmxDevice<DeviceId, Connection>),
-    NotFound,
-    RetryableFailure,
-}
-
 /// Thread handle and shutdown signal for the uDMX hotplug watcher.
 struct UdmxHotplugListener {
     stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
@@ -212,41 +205,33 @@ impl UdmxWorker {
                         break;
                     }
 
-                    let command = match command_rx.try_recv() {
-                        Ok(command) => Some(command),
-                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => None,
-                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
-                    };
-
-                    match &command {
-                        Some(UdmxCommand::SubmitFrame { device, data }) => {
-                            let selector = normalize_device_selector(device);
-                            if !devices.contains_key(&selector) {
-                                let retry_at = next_retry_at
-                                    .get(&selector)
-                                    .copied()
-                                    .unwrap_or_else(Instant::now);
-                                if Instant::now() >= retry_at {
-                                    if let Some(opened_device) = init_device(&selector) {
-                                        tracing::info!(selector, "USB DMX device connected");
-                                        devices.insert(selector.clone(), opened_device);
-                                    }
-                                    next_retry_at.insert(
-                                        selector.clone(),
-                                        Instant::now() + UDMX_RETRY_INTERVAL,
-                                    );
-                                }
+                    let mut frames = HashMap::<String, Vec<u8>>::new();
+                    let mut shutdown = false;
+                    loop {
+                        match command_rx.try_recv() {
+                            Ok(UdmxCommand::SubmitFrame { device, data }) => {
+                                frames.insert(normalize_device_selector(&device), data);
                             }
-                            if let Some(current_device) = devices.get_mut(&selector) {
-                                current_device.connection.queue_frame(data);
+                            Ok(UdmxCommand::Shutdown)
+                            | Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                                shutdown = true;
+                                break;
                             }
+                            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
                         }
-                        Some(UdmxCommand::Shutdown) => break,
-                        None => {}
+                    }
+                    if shutdown {
+                        break;
                     }
 
+                    open_missing_devices(&mut devices, &mut next_retry_at, frames.keys());
+                    for (selector, data) in &frames {
+                        if let Some(device) = devices.get_mut(selector) {
+                            device.connection.queue_frame(data);
+                        }
+                    }
                     service_devices(&mut devices, &mut next_retry_at);
-                    if command.is_none() {
+                    if frames.is_empty() {
                         thread::sleep(UDMX_WORKER_IDLE_SLEEP);
                     }
                 }
@@ -389,6 +374,44 @@ fn handle_hotplug_events<DeviceId: Eq, Connection>(
     }
 
     changed
+}
+
+/// Opens devices for selectors that received frames but have no open device, at most once per
+/// [`UDMX_RETRY_INTERVAL`] each.
+///
+/// Due selectors are resolved in one batch so selectors that name a device exactly win over
+/// another selector's serial fallback.
+fn open_missing_devices<'a>(
+    devices: &mut HashMap<String, ConnectedUdmxDevice>,
+    next_retry_at: &mut HashMap<String, Instant>,
+    selectors: impl Iterator<Item = &'a String>,
+) {
+    let now = Instant::now();
+    let due_selectors = selectors
+        .filter(|selector| {
+            !devices.contains_key(*selector)
+                && next_retry_at
+                    .get(*selector)
+                    .is_none_or(|retry_at| now >= *retry_at)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if due_selectors.is_empty() {
+        return;
+    }
+
+    let open_device_ids = devices
+        .values()
+        .map(|device| device.id)
+        .collect::<HashSet<_>>();
+    let opened_devices = init_devices(&due_selectors, &open_device_ids);
+    for (selector, opened_device) in due_selectors.into_iter().zip(opened_devices) {
+        next_retry_at.insert(selector.clone(), now + UDMX_RETRY_INTERVAL);
+        if let Some(opened_device) = opened_device {
+            tracing::info!(selector, "USB DMX device connected");
+            devices.insert(selector, opened_device);
+        }
+    }
 }
 
 /// Sends due frames and drops devices that were lost or no longer receive output.
@@ -558,145 +581,137 @@ fn usb_device_port_chain(_device: &nusb::DeviceInfo) -> &[u8] {
     &[]
 }
 
-/// Returns whether a saved selector resolves to a currently visible USB device.
-fn selector_matches_device(
-    selector: &str,
-    device: &nusb::DeviceInfo,
-    serial_identity_counts: &HashMap<(u16, u16, String), usize>,
-) -> bool {
-    let location_key = usb_device_location_key(device);
-    let fallback_id = format!("{:?}", device.id());
-    let duplicate_serial = usb_serial_identity_key(device)
-        .and_then(|identity_key| serial_identity_counts.get(&identity_key).copied())
-        .is_some_and(|count| count > 1);
-    usb_dmx_device_selector_matches(
-        selector,
-        device.vendor_id(),
-        device.product_id(),
-        device.serial_number(),
-        location_key.as_deref(),
-        &fallback_id,
-        duplicate_serial,
-    )
-}
-
-/// Builds the serial-based identity key used to detect duplicate USB serial descriptors.
-fn usb_serial_identity_key(device: &nusb::DeviceInfo) -> Option<(u16, u16, String)> {
-    device
-        .serial_number()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|serial_number| {
-            (
-                device.vendor_id(),
-                device.product_id(),
-                serial_number.to_string(),
-            )
-        })
-}
-
-/// Locate and open the configured uDMX interface.
+/// Locate and open the device a single selector names, ignoring which devices other selectors
+/// hold.
 fn init_device(selector: &str) -> Option<ConnectedUdmxDevice> {
-    match try_init_device(selector) {
-        InitDeviceResult::Connected(device) => Some(device),
-        InitDeviceResult::NotFound | InitDeviceResult::RetryableFailure => None,
-    }
+    init_devices(&[normalize_device_selector(selector)], &HashSet::new())
+        .pop()
+        .flatten()
 }
 
-fn try_init_device(selector: &str) -> InitDeviceResult {
-    let selector = normalize_device_selector(selector);
+/// Locates and opens the devices for a batch of selectors, skipping devices already open.
+///
+/// Selectors are resolved together with [`resolve_usb_dmx_selectors`] so each device goes to at
+/// most one selector. The default selector then takes the first remaining uDMX interface; it never
+/// takes FTDI chips, which also sit in generic USB serial adapters, so Open DMX dongles must be
+/// picked explicitly.
+fn init_devices(
+    selectors: &[String],
+    open_device_ids: &HashSet<nusb::DeviceId>,
+) -> Vec<Option<ConnectedUdmxDevice>> {
     let devices = match nusb::list_devices().wait() {
         Ok(devices) => devices,
         Err(error) => {
             tracing::warn!("failed to enumerate USB devices: {}", error);
-            return InitDeviceResult::RetryableFailure;
+            return selectors.iter().map(|_| None).collect();
         }
     };
-
-    let mut devices = devices
-        .filter(|device| is_usb_dmx_device_id(device.vendor_id(), device.product_id()))
+    let devices = devices
+        .filter(|device| {
+            is_usb_dmx_device_id(device.vendor_id(), device.product_id())
+                && !open_device_ids.contains(&device.id())
+        })
         .collect::<Vec<_>>();
-    // The default selector only takes uDMX interfaces: the FTDI chips Open DMX dongles use also
-    // sit in generic USB serial adapters, so those must be picked explicitly.
-    if selector == DEFAULT_USB_DMX_DEVICE_SELECTOR {
-        devices.retain(|device| {
-            (device.vendor_id(), device.product_id()) == (UDMX_VENDOR_ID, UDMX_PRODUCT_ID)
+    let location_keys = devices
+        .iter()
+        .map(usb_device_location_key)
+        .collect::<Vec<_>>();
+    let fallback_ids = devices
+        .iter()
+        .map(|device| format!("{:?}", device.id()))
+        .collect::<Vec<_>>();
+    let identities = devices
+        .iter()
+        .zip(&location_keys)
+        .zip(&fallback_ids)
+        .map(
+            |((device, location_key), fallback_id)| UsbDmxDeviceIdentity {
+                vendor_id: device.vendor_id(),
+                product_id: device.product_id(),
+                serial_number: device.serial_number(),
+                location_key: location_key.as_deref(),
+                fallback_id,
+            },
+        )
+        .collect::<Vec<_>>();
+    let selector_refs = selectors.iter().map(String::as_str).collect::<Vec<_>>();
+    let mut resolved = resolve_usb_dmx_selectors(&selector_refs, &identities);
+
+    let mut claimed = resolved.iter().flatten().copied().collect::<HashSet<_>>();
+    for (selector, resolved) in selectors.iter().zip(resolved.iter_mut()) {
+        if selector != DEFAULT_USB_DMX_DEVICE_SELECTOR {
+            continue;
+        }
+        *resolved = (0..devices.len()).find(|&index| {
+            (devices[index].vendor_id(), devices[index].product_id())
+                == (UDMX_VENDOR_ID, UDMX_PRODUCT_ID)
+                && !claimed.contains(&index)
         });
-    }
-    let mut serial_identity_counts = HashMap::<(u16, u16, String), usize>::new();
-    for device in &devices {
-        if let Some(identity_key) = usb_serial_identity_key(device) {
-            *serial_identity_counts.entry(identity_key).or_default() += 1;
+        if let Some(index) = *resolved {
+            claimed.insert(index);
         }
     }
 
-    let mut selected_device = None;
-    for device in devices {
-        if selector == DEFAULT_USB_DMX_DEVICE_SELECTOR
-            || selector_matches_device(&selector, &device, &serial_identity_counts)
-        {
-            selected_device = Some(device);
-            break;
-        }
-    }
+    let mut devices = devices.into_iter().map(Some).collect::<Vec<_>>();
+    selectors
+        .iter()
+        .zip(resolved)
+        .map(|(selector, index)| {
+            let device = devices.get_mut(index?)?.take()?;
+            open_device(selector.clone(), device)
+        })
+        .collect()
+}
 
-    let Some(device) = selected_device else {
-        return InitDeviceResult::NotFound;
-    };
-
+/// Opens a located USB DMX device with the driver for its vendor and product ID.
+fn open_device(selector: String, device: nusb::DeviceInfo) -> Option<ConnectedUdmxDevice> {
     if (device.vendor_id(), device.product_id()) == (OPEN_DMX_VENDOR_ID, OPEN_DMX_PRODUCT_ID) {
-        return match OpenDmxPort::open(&UsbDeviceIdentity {
+        let port = OpenDmxPort::open(&SerialPortIdentity {
             vendor_id: device.vendor_id(),
             product_id: device.product_id(),
             serial_number: device.serial_number(),
             bus_id: usb_device_bus_id(&device),
             port_chain: usb_device_port_chain(&device),
-        }) {
-            Some(port) => InitDeviceResult::Connected(OpenedUdmxDevice {
-                selector,
-                id: device.id(),
-                connection: UsbDmxConnection::OpenDmx {
-                    port,
-                    last_submitted_at: Instant::now(),
-                },
-            }),
-            None => InitDeviceResult::RetryableFailure,
-        };
+        })?;
+        return Some(OpenedUdmxDevice {
+            selector,
+            id: device.id(),
+            connection: UsbDmxConnection::OpenDmx {
+                port,
+                last_submitted_at: Instant::now(),
+            },
+        });
     }
 
     let opened = match device.open().wait() {
         Ok(device) => device,
         Err(error) => {
             tracing::error!("failed to open uDMX device: {}", error);
-            return InitDeviceResult::RetryableFailure;
+            return None;
         }
     };
 
-    match opened.claim_interface(0).wait() {
-        Ok(interface) => InitDeviceResult::Connected(OpenedUdmxDevice {
-            selector,
-            id: device.id(),
-            connection: UsbDmxConnection::udmx(interface),
-        }),
+    let interface = match opened.claim_interface(0).wait() {
+        Ok(interface) => interface,
         Err(_) => {
             if let Err(error) = opened.set_configuration(1).wait() {
                 tracing::error!("failed to set uDMX configuration: {}", error);
-                return InitDeviceResult::RetryableFailure;
+                return None;
             }
-
             match opened.claim_interface(0).wait() {
-                Ok(interface) => InitDeviceResult::Connected(OpenedUdmxDevice {
-                    selector,
-                    id: device.id(),
-                    connection: UsbDmxConnection::udmx(interface),
-                }),
+                Ok(interface) => interface,
                 Err(error) => {
                     tracing::error!("failed to claim uDMX interface: {}", error);
-                    InitDeviceResult::RetryableFailure
+                    return None;
                 }
             }
         }
-    }
+    };
+    Some(OpenedUdmxDevice {
+        selector,
+        id: device.id(),
+        connection: UsbDmxConnection::udmx(interface),
+    })
 }
 
 /// Process-lifetime uDMX output service host.

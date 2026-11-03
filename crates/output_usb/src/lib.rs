@@ -13,7 +13,6 @@
 
 #![warn(missing_docs)]
 
-use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use bevy_app::prelude::*;
@@ -21,7 +20,7 @@ use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_io::prelude::{
     AvailableUsbDmxDevices, TransportRuntimePolicy, UsbDmxDeviceInfo, is_usb_dmx_device_id,
-    usb_dmx_device_label, usb_dmx_device_selector_with_tiebreaker,
+    usb_dmx_device_label, usb_dmx_device_selector,
 };
 use nusb::MaybeFuture;
 
@@ -49,18 +48,6 @@ fn trimmed_usb_string(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
-}
-
-/// Returns the serial-based identity key for duplicate detection.
-fn usb_serial_identity_key(
-    vendor_id: u16,
-    product_id: u16,
-    serial_number: Option<&str>,
-) -> Option<(u16, u16, String)> {
-    serial_number
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|serial_number| (vendor_id, product_id, serial_number.to_string()))
 }
 
 /// Returns stable and display physical-location labels for a USB device.
@@ -102,22 +89,8 @@ fn get_available_usb_dmx_devices() -> Vec<UsbDmxDeviceInfo> {
         }
     };
 
-    let devices = devices
-        .filter(|device| is_usb_dmx_device_id(device.vendor_id(), device.product_id()))
-        .collect::<Vec<_>>();
-    let mut serial_identity_counts = HashMap::<(u16, u16, String), usize>::new();
-    for device in &devices {
-        if let Some(identity_key) = usb_serial_identity_key(
-            device.vendor_id(),
-            device.product_id(),
-            device.serial_number(),
-        ) {
-            *serial_identity_counts.entry(identity_key).or_default() += 1;
-        }
-    }
-
     let mut devices = devices
-        .into_iter()
+        .filter(|device| is_usb_dmx_device_id(device.vendor_id(), device.product_id()))
         .map(|device| {
             let vendor_id = device.vendor_id();
             let product_id = device.product_id();
@@ -126,20 +99,12 @@ fn get_available_usb_dmx_devices() -> Vec<UsbDmxDeviceInfo> {
             let serial_number = trimmed_usb_string(device.serial_number());
             let (location_key, location) = usb_device_location(&device);
             let fallback_id = format!("{:?}", device.id());
-            let duplicate_serial = serial_number
-                .as_deref()
-                .and_then(|serial_number| {
-                    usb_serial_identity_key(vendor_id, product_id, Some(serial_number))
-                })
-                .and_then(|identity_key| serial_identity_counts.get(&identity_key).copied())
-                .is_some_and(|count| count > 1);
-            let id = usb_dmx_device_selector_with_tiebreaker(
+            let id = usb_dmx_device_selector(
                 vendor_id,
                 product_id,
                 serial_number.as_deref(),
                 location_key.as_deref(),
                 &fallback_id,
-                duplicate_serial,
             );
             let label = usb_dmx_device_label(
                 vendor_id,
