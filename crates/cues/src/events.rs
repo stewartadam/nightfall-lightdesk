@@ -25,7 +25,6 @@ use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     EditorPreviewInstance, InstanceClock, InstanceControls, InstanceId, InstanceKind,
     InstanceMetadata, InstanceOptions, Owner, instance_clock_from_reconstruction_timing,
@@ -33,6 +32,7 @@ use nightfall_instances::{
 #[cfg(test)]
 use nightfall_instances::{InstanceClockDiscontinuity, InstanceClockSource};
 use nightfall_playback_planner::{PlaybackPositionSource, PlaybackReconstructionTiming};
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use nightfall_undo::prelude::{UndoEntry, UndoManager, Undoable};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

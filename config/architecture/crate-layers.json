@@ -27,6 +27,7 @@
       "nightfall-fixtures",
       "nightfall-framepace",
       "nightfall-lookahead",
+      "nightfall-selection-runtime",
       "nightfall-service-host",
       "nightfall-tempo",
       "nightfall-timecode",

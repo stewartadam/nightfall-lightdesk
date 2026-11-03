@@ -12,7 +12,7 @@ use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_engine::object_crud::apply_object_crud_command;
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use nightfall_undo::prelude::{UndoEntry, UndoManager, Undoable};
 
 use crate::prelude::*;

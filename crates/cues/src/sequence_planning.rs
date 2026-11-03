@@ -21,12 +21,12 @@ use nightfall_dmx::prelude::Attribute;
 use nightfall_engine::prelude::DataProvider;
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, ResolvedElementParameter};
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_playback_planner::{
     PlannedPlaybackInterval, PlannedPlaybackIntervention, PlannedPlaybackInterventionKind,
     PlaybackDurationProfile, PlaybackExtent, PlaybackReconstructionTiming,
 };
 use nightfall_selection::filter_existing_selection;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use partially::Partial;
 use uuid::Uuid;
 
@@ -957,13 +957,13 @@ mod tests {
     use nightfall_fixtures::prelude::{
         Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
     };
-    use nightfall_fixtures::selection::SpatialSelectionResolver;
     use nightfall_playback_planner::PlaybackPositionSource;
     use nightfall_playback_planner::{
         PlannedPlaybackInterval, PlannedPlaybackIntervention, PlannedPlaybackInterventionKind,
         PlannedPlaybackLifecycle, PlannedPlaybackSource, PlannedPlaybackSpeedChange,
         TimelinePlaybackOwner,
     };
+    use nightfall_selection_runtime::SpatialSelectionResolver;
 
     use super::{SequenceTimelineSeekPlayback, SequenceTimelineStepTiming};
     use crate::cue::{BoundCueInstruction, Cue, CueInstruction, Sequence};

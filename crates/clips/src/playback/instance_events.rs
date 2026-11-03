@@ -13,13 +13,13 @@ use moonshine_kind::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::selection::SelectionResolver;
 #[cfg(test)]
 use nightfall_instances::InstanceKind;
 use nightfall_instances::{
     InstanceClock, InstanceCommand, InstanceControlUpdate, InstanceControls, InstanceId,
     InstanceMetadata, PlaybackOperation, PlaybackReleaseOperation, PlaybackScope,
 };
+use nightfall_selection_runtime::SelectionResolver;
 
 use crate::InstanceIndex;
 

@@ -17,8 +17,8 @@ use nightfall_desk::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
-use nightfall_fixtures::selection::{SelectionResolver, SpatialSelectionResolver};
 use nightfall_instances::{PlaybackOperation, PlaybackScope};
+use nightfall_selection_runtime::{SelectionResolver, SpatialSelectionResolver};
 use serde::{Deserialize, Serialize};
 
 use crate::action_model::{AttributeFilter, ProgrammerOperation, Scope, UserCommand};

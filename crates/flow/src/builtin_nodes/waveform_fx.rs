@@ -17,6 +17,7 @@ use nightfall::prelude::{
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_fixtures::prelude::*;
+use nightfall_selection_runtime::{ResolvedSelectionCache, SpatialSelectionResolver};
 use nightfall_waveform::prelude::*;
 
 use super::waveform::default_waveform_value;

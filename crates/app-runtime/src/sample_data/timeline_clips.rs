@@ -14,6 +14,7 @@
 
 use nightfall::prelude::Axis;
 use nightfall_clips::ClipOptions;
+use nightfall_selection_runtime::SelectionResolver;
 
 use super::*;
 

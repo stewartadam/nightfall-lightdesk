@@ -20,12 +20,12 @@ use nightfall_engine::prelude::{
     ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, EngineOperationEnvelope, RequestEnvelope,
 };
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 #[cfg(feature = "fx-module")]
 use nightfall_fx_module::prelude::StoredFxModule;
 #[cfg(test)]
 use nightfall_instances::InstanceClockSource;
 use nightfall_instances::{ClipInstanceRequest, InstanceClock, InstancePosition, InstanceStatus};
+use nightfall_selection_runtime::{ResolvedSelectionCache, SpatialSelectionResolver};
 use nightfall_tempo::prelude::ShowTempo;
 use nightfall_timecode::prelude::*;
 use serde::{Deserialize, Serialize};

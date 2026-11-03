@@ -26,10 +26,10 @@ use nightfall_cues::prelude::{
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::DataProvider;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_fixtures::testing::patch_bench_fixtures;
 use nightfall_instances::InstanceClock;
 use nightfall_io::OutputTransport;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use uuid::Uuid;
 
 const DEFAULT_FIXTURE_COUNTS: &[usize] = &[64, 512];

@@ -15,7 +15,6 @@ use nightfall::prelude::*;
 use nightfall_clips::{ClipSourceOperation, Source};
 use nightfall_compositor::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     ClipInstanceAttachment, DomainInstanceReconstructionRequest, InstanceClock, InstanceControls,
     InstanceDisplayKind, InstanceId, InstanceKind, InstanceMetadata, InstanceStatus, Owner,
@@ -23,6 +22,7 @@ use nightfall_instances::{
     reconcile_instance_options,
 };
 use nightfall_playback_planner::{PlannedPlaybackSource, PlaybackReconstructionTiming};
+use nightfall_selection_runtime::SpatialSelectionResolver;
 
 use crate::FlowCommand;
 use crate::definition::FlowDefinition;

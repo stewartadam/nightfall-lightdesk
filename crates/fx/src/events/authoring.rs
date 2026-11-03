@@ -15,11 +15,11 @@ use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     InstanceClock, InstanceControls, InstanceDisplayKind, InstanceId, InstanceKind,
     InstanceMetadata, PlaybackReleaseOperation,
 };
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use uuid::Uuid;
 
 use super::commands::StepFxCommandResult;

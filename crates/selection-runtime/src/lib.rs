@@ -6,31 +6,24 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Fixture-backed adapters for pure selection resolution.
+//! ECS adapters that resolve selections against live fixture and group storage.
+//!
+//! [`SelectionResolver`] and [`SpatialSelectionResolver`] are system params over the patched
+//! fixtures and the groups. [`ResolvedSelectionCache`] keeps resolved selections for per-frame
+//! renderers until the rig changes.
+#![warn(missing_docs)]
 
 use std::{collections::HashMap, hash::Hash};
 
 use bevy_ecs::{prelude::*, system::SystemParam};
 use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
+use nightfall_fixtures::prelude::FixtureDataProviderExt;
 use nightfall_selection::{
     SelectionDataSource, SelectionFixture, SelectionGroup,
     SelectionResolver as PureSelectionResolver, SpatialSelectionResolution,
     SpatialSelectionResolver as PureSpatialSelectionResolver, filter_existing_selection,
 };
-
-use crate::prelude::FixtureDataProviderExt;
-
-/// Converts fixture storage records into the narrow selection read model.
-fn selection_fixture_from_parts(fixture_uid: uuid::Uuid, element_count: usize) -> SelectionFixture {
-    SelectionFixture {
-        fixture_ref: FixtureRef {
-            fixture_uid,
-            index: None,
-        },
-        element_count: element_count as u32,
-    }
-}
 
 /// Converts group storage records into the narrow selection read model.
 fn selection_group_from_group(group: &Group) -> SelectionGroup {
@@ -39,20 +32,6 @@ fn selection_group_from_group(group: &Group) -> SelectionGroup {
         id: group.identifiers.id,
         label: group.identifiers.label.clone(),
         selection: group.selection.clone(),
-    }
-}
-
-impl SelectionDataSource for FixtureDataProviderExt {
-    fn fixture_by_id(&self, fixture_id: u32) -> Option<SelectionFixture> {
-        self.inner.from_id(fixture_id).ok().map(|fixture| {
-            selection_fixture_from_parts(fixture.identifiers.uid, fixture.elements.len())
-        })
-    }
-
-    fn fixture_by_ref(&self, fixture_ref: &FixtureRef) -> Option<SelectionFixture> {
-        self.inner.get(fixture_ref.fixture_uid).ok().map(|fixture| {
-            selection_fixture_from_parts(fixture.identifiers.uid, fixture.elements.len())
-        })
     }
 }
 
@@ -135,11 +114,6 @@ pub struct SpatialSelectionResolver<'w> {
 }
 
 impl SpatialSelectionResolver<'_> {
-    /// Returns the fixture metadata backing this resolver for compatibility checks.
-    pub fn fixture_data_provider(&self) -> &FixtureDataProviderExt {
-        &self.data_source.fixtures
-    }
-
     /// Collapse element refs that cover every element in a fixture into one whole-fixture ref.
     pub fn collapse_complete_fixture_element_sets(
         &self,
@@ -232,7 +206,7 @@ impl<K: Eq + Hash> ResolvedSelectionCache<K> {
             inputs_revision,
             resolved: filter_existing_selection(
                 &selection_resolver.resolve(source).into_value(),
-                selection_resolver.fixture_data_provider(),
+                &*selection_resolver.data_source.fixtures,
             ),
         };
         let entry = self
@@ -267,9 +241,9 @@ impl SpatialSelectionResolution for SpatialSelectionResolver<'_> {
 #[cfg(test)]
 mod tests {
     use bevy_ecs::{system::SystemState, world::World};
+    use nightfall_fixtures::prelude::*;
 
     use super::*;
-    use crate::prelude::*;
 
     /// Build a fixture with the requested fixture ID and element count.
     fn make_fixture(fixture_id: u32, element_count: usize) -> Fixture {

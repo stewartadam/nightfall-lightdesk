@@ -32,8 +32,8 @@ use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{InstanceClock, InstanceId, InstanceOptions};
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use uuid::Uuid;
 
 fn build_sequence(label: &str, steps: Vec<SimpleUuid>) -> Sequence {

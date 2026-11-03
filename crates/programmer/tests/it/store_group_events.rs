@@ -16,9 +16,9 @@ use nightfall_engine::prelude::{
     ReplyTarget,
 };
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_programmer::events::{ProgrammerCommand, StoreObjectWorkflows, handle_group_events};
 use nightfall_programmer::prelude::Programmer;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use nightfall_undo::prelude::UndoManager;
 use uuid::Uuid;
 

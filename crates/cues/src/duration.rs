@@ -15,9 +15,9 @@ use nightfall::prelude::{
     ValueSource,
 };
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_playback_planner::{PlaybackDurationProfile, PlaybackExtent};
 use nightfall_selection::filter_existing_selection;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use serde::{Deserialize, Serialize};
 
 use crate::cue::{BoundCueInstruction, Cue};

@@ -34,7 +34,7 @@ pub mod route_overlap;
 pub mod route_resolution;
 pub mod route_validation;
 pub mod routes;
-pub mod selection;
+mod selection_source;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 pub mod transport_holds;
@@ -144,9 +144,6 @@ pub mod prelude {
         ResolvedConsoleDestination, ResolvedConsoleTarget, ResolvedInputDestination,
         ResolvedInputRoute, ResolvedInputRoutes, ResolvedInputSource, ResolvedInputTarget,
         ResolvedOutputDestinations, ResolvedTransportTarget, retain_route_fixtures,
-    };
-    pub use crate::selection::{
-        ResolvedSelectionCache, SelectionResolver, SpatialSelectionResolver,
     };
     pub use crate::universe::{
         ConsoleChannelOrigin, ConsoleDmxUniverses, DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS,

@@ -16,8 +16,8 @@ use moonshine_kind::InstanceRef;
 use nightfall::prelude::ColorPath;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::InstanceOptions;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

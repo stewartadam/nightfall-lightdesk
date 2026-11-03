@@ -19,6 +19,7 @@ nightfall-instances = { path = "../instances" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-selection = { path = "../selection" }
 nightfall-actions = { path = "../actions" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-undo = { path = "../undo" }
 uuid.workspace = true
 serde.workspace = true

@@ -14,11 +14,11 @@ use nightfall_compositor::prelude::*;
 use nightfall_cues::prelude::*;
 use nightfall_engine::prelude::DataProvider;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     InstanceClock, InstanceControls, InstanceId, InstanceKind, InstanceMetadata, Owner,
     activation_epoch_ms,
 };
+use nightfall_selection_runtime::SpatialSelectionResolver;
 
 use crate::resources::Programmer;
 

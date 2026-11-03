@@ -18,6 +18,7 @@ nightfall-fx-module = { path = "../fx-module", optional = true }
 nightfall-instances = { path = "../instances" }
 nightfall-playback-planner = { path = "../playback-planner" }
 nightfall-selection = { path = "../selection" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-tempo = { path = "../tempo" }
 nightfall-timecode = { path = "../timecode" }
 nightfall-waveform = { path = "../waveform" }

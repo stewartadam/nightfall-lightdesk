@@ -29,6 +29,7 @@ nightfall-lookahead = { path = "../lookahead" }
 nightfall-instances = { path = "../instances" }
 nightfall-playback-planner = { path = "../playback-planner" }
 nightfall-selection = { path = "../selection" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-undo = { path = "../undo" }
 serde_json.workspace = true
 serde.workspace = true

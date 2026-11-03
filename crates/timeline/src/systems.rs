@@ -29,7 +29,6 @@ use nightfall_cues::prelude::{
 };
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_fx::prelude::{
     Fx, StepFx, spawn_reconstructed_fx_for_clip, spawn_reconstructed_step_fx_for_clip,
 };
@@ -45,6 +44,7 @@ use nightfall_playback_planner::{
     PlaybackReconstructionTiming,
 };
 use nightfall_selection::filter_existing_selection;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use nightfall_timecode::prelude::*;
 use uuid::Uuid;
 

@@ -377,7 +377,7 @@ fn start_clip_materializes_only_first_cue_of_large_sequence() {
         let mut system_state = SystemState::<(
             Res<DataProvider<Cue>>,
             Res<FixtureDataProviderExt>,
-            nightfall_fixtures::selection::SpatialSelectionResolver,
+            nightfall_selection_runtime::SpatialSelectionResolver,
             Query<InstanceRef<Parameter>>,
         )>::new(app.world_mut());
         let (cues, fixtures, selection_resolver, parameters) = system_state

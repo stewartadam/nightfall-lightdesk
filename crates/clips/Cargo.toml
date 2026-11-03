@@ -15,6 +15,7 @@ nightfall-engine = { path = "../engine" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-instances = { path = "../instances" }
 nightfall-playback-planner = { path = "../playback-planner" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-tempo = { path = "../tempo" }
 nightfall-undo = { path = "../undo" }
 serde.workspace = true

@@ -13,12 +13,12 @@ use nightfall::prelude::{ObjectRef, ObjectType, SpatialSelection};
 use nightfall_clips::{ClipSourceOperation, Source};
 use nightfall_compositor::prelude::{ObjectRefMarker, ReleaseMarker};
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_fx::prelude::{Fx, FxCommand, StepFx};
 use nightfall_instances::{
     DomainInstanceReconstructionRequest, InstanceClock, instance_clock_from_reconstruction_timing,
 };
 use nightfall_playback_planner::{PlannedPlaybackSource, PlaybackReconstructionTiming};
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use nightfall_undo::prelude::{UndoEntry, UndoManager, Undoable};
 
 use crate::{

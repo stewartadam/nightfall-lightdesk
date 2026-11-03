@@ -1851,7 +1851,7 @@ fn named_sample_show_is_standalone_and_recoverable() {
         }
     }
     let mut state = bevy::ecs::system::SystemState::<
-        nightfall_fixtures::prelude::SpatialSelectionResolver,
+        nightfall_selection_runtime::SpatialSelectionResolver,
     >::new(app.world_mut());
     let resolver = state.get(app.world()).expect("selection resolver");
     let strobe_uids: std::collections::BTreeSet<_> = snapshot

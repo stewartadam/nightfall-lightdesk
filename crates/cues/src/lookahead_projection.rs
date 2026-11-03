@@ -11,11 +11,11 @@
 use std::collections::HashMap;
 
 use nightfall::prelude::{FixtureRef, SpatialSelection, ValueSource};
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_lookahead_projection::{
     ProjectedLookaheadValue, ProjectionCue, ProjectionCuePart, ProjectionInstruction,
     SequenceLookaheadProjectionRequest, project_sequence_lookahead,
 };
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use uuid::Uuid;
 
 use crate::cue::{BoundCueInstruction, Cue, Sequence};

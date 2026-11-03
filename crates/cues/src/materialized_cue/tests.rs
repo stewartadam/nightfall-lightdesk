@@ -13,7 +13,7 @@ use bevy_ecs::system::SystemState;
 use moonshine_kind::prelude::Instance;
 use nightfall_engine::prelude::*;
 use nightfall_fixture_model::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use uuid::Uuid;
 
 use super::*;

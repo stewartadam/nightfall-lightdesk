@@ -22,7 +22,7 @@ flowchart TB
   hosts["<b>Hosts</b><br/>app-runtime · app-tauri · browser-runtime · cli · composition"]
   crossPlugin["<b>Cross-plugin</b><br/>boards · desk · desk-audio · macros · references · showfile · wasm-bridge"]
   plugins["<b>Plugins</b><br/>audio · cues · fixture-library · flow · fx · fx-module · object-library · programmer <br/> scene-objects · timeline · input-artnet · input-ltc · input-midi · input-osc <br /> input-sacn · output-artnet · output-sacn · output-usb"]
-  engineCore["<b>Engine core</b><br/>actions · clips · compositor · engine · fixtures · framepace · lookahead · service-host <br /> tempo · timecode · undo · websocket"]
+  engineCore["<b>Engine core</b><br/>actions · clips · compositor · engine · fixtures · framepace · lookahead · selection-runtime <br /> service-host · tempo · timecode · undo · websocket"]
   base["<b>Base</b><br/>nightfall · open-fixture-library · beat-detection · cmd-parse · config <br /> coremidi-hotplug · dmx · engine-derive · fixture-model · instances · io <br /> lookahead-projection · playback-planner · selection · waveform · workspace-hack"]
   hosts --> crossPlugin --> plugins --> engineCore --> base
 ```
@@ -86,6 +86,7 @@ Engine core crates build the engine's runtime that every plugin plugs into.
 | `fixtures` | Demo | Fixtures, parameters, universes, patch bindings and their validation, DMX input, and the composition of output DMX frames. |
 | `framepace` | Demo | Frame limiter that starts engine frames just before each DMX send time on the shared schedule, adapted from `bevy_framepace`. The browser demo uses only its `fps` command handling. |
 | `lookahead` | Demo | Runtime lookahead contracts shared by the playback domains. |
+| `selection-runtime` | Demo | Bevy system parameters that resolve fixture selections against the live patch, and the per-frame cache of resolved selections. |
 | `service_host` | Demo | Process-lifetime worker slots, fixed-rate worker threads, and the shared schedule of DMX send times. |
 | `tempo` | Demo | Show-wide live tempo: one BPM and beat phase, the `tempo` command, and mappable tempo actions. |
 | `timecode` | Demo | Timecode objects and the generators that advance them. |

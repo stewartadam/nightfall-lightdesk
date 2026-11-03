@@ -209,6 +209,7 @@ fn capture_blueprint_values(
     programmer: &Programmer,
     blueprint_data_provider: &DataProvider<Blueprint>,
     spatial_selection_resolver: &SpatialSelectionResolver,
+    fixture_data_provider: &FixtureDataProviderExt,
     filter: &[BlueprintSelector],
 ) -> Result<HashMap<Attribute, ValueSource>, CommandError> {
     let mut values_by_fixture: HashMap<Attribute, HashMap<FixtureRef, ValueSource>> =
@@ -246,10 +247,8 @@ fn capture_blueprint_values(
             }
             let fixture_values = values_by_fixture.entry(attribute).or_default();
             for selected_target in resolved.value.canonical_fixtures() {
-                for element_ref in selected_fixture_elements(
-                    selected_target,
-                    spatial_selection_resolver.fixture_data_provider(),
-                ) {
+                for element_ref in selected_fixture_elements(selected_target, fixture_data_provider)
+                {
                     fixture_values.insert(element_ref, value.clone());
                 }
             }
@@ -299,6 +298,8 @@ pub struct ProgrammerBlueprintState<'w> {
     _selection_resolver: SelectionResolver<'w>,
     /// Resolves active programmer selections before blueprint storage.
     spatial_selection_resolver: SpatialSelectionResolver<'w>,
+    /// Expands selected fixtures into their elements and checks blueprint compatibility.
+    fixture_data_provider: Res<'w, FixtureDataProviderExt>,
 }
 
 /// Handles events related to blueprints in the programmer
@@ -314,6 +315,7 @@ pub fn handle_blueprint_events(
         blueprint_data_provider,
         _selection_resolver,
         spatial_selection_resolver,
+        fixture_data_provider,
     } = state;
 
     for event in events_reader.read() {
@@ -380,7 +382,7 @@ pub fn handle_blueprint_events(
                                 &operation.target,
                                 &selected_values,
                                 &resolved_selection.value,
-                                spatial_selection_resolver.fixture_data_provider(),
+                                &fixture_data_provider,
                             ));
                             match resolution {
                                 BlueprintResolution::Reference => (
@@ -431,6 +433,7 @@ pub fn handle_blueprint_events(
                     &programmer,
                     &blueprint_data_provider,
                     &spatial_selection_resolver,
+                    &fixture_data_provider,
                     filter,
                 ) {
                     Ok(values) => values,

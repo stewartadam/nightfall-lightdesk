@@ -20,6 +20,7 @@ nightfall-instances = { path = "../instances" }
 nightfall-playback-planner = { path = "../playback-planner" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-selection = { path = "../selection" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-undo = { path = "../undo" }
 nightfall-waveform = { path = "../waveform" }
 thiserror = "2.0"
