@@ -8,8 +8,7 @@
 
 //! Systems for step-based FX evaluation
 
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{ops::Range, time::Duration};
 
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
@@ -21,11 +20,12 @@ use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     InstanceClock, InstanceClockDiscontinuity, InstancePosition, InstanceStatus, Timebase,
 };
-use nightfall_selection::filter_existing_selection;
+#[cfg(not(target_arch = "wasm32"))]
+use orx_parallel::*;
 
 use crate::events::PreviewStepFxDefinition;
 use crate::materialized_fx::MaterializedFx;
-use crate::step_fx::{ActiveStepFx, StepFx, StepFxLanePhaseOffsets};
+use crate::step_fx::{ActiveStepFx, FxLaneSample, StepFx, StepFxLanePhaseOffsets};
 
 /// Active playback components sampled and re-anchored by the Step FX evaluator.
 type StepFxEvaluationData = (
@@ -35,89 +35,94 @@ type StepFxEvaluationData = (
     Option<&'static mut StepFxLanePhaseOffsets>,
 );
 
-/// A step FX selection resolved against the rig, kept while its inputs are unchanged.
-struct CachedStepFxSelection {
-    /// Selection definition the entry was resolved from.
-    source: SpatialSelection,
-    /// Resolved selection filtered down to fixtures that exist.
-    resolved: ResolvedSelection,
-}
-
-/// Resolved step FX selections keyed by active FX entity.
+/// Number of selected fixtures sampled by one parallel work item.
 ///
-/// Resolution depends only on the selection definition, the patched fixtures and the groups, so
-/// entries stay valid until the definition changes or either data provider changes.
-#[derive(Default)]
-pub struct StepFxSelectionCache {
-    entries: HashMap<Entity, CachedStepFxSelection>,
+/// A fixture takes well under a microsecond, so fixtures are grouped to keep scheduling and
+/// allocation small next to the work, while one large FX still splits across threads.
+const FIXTURES_PER_WORK_ITEM: usize = 32;
+
+/// Fewest selected fixtures, over all playing step FX, that are sampled in parallel.
+///
+/// Waking the worker threads costs tens of microseconds, which is more than sampling a small rig
+/// on one thread.
+#[cfg(not(target_arch = "wasm32"))]
+const MIN_PARALLEL_FIXTURES: usize = 128;
+
+/// A playing step FX that is ready to sample this frame.
+struct StepFxPlayback<'a> {
+    /// Playback entity that receives the layer.
+    entity: Entity,
+    /// Definition being played.
+    step_fx: &'a StepFx,
+    /// Priority of the playback's layer.
+    priority: Priority,
+    /// Playback position the FX is sampled at.
+    elapsed: Duration,
+    /// Lane phase offsets kept from a re-anchored launch, or the default offsets when there are
+    /// none or a reposition discarded them.
+    lane_phase_offsets: &'a StepFxLanePhaseOffsets,
+    /// Selection resolved against the rig.
+    selection: &'a ResolvedSelection,
+    /// Number of non-empty spans in the selection, which spreads the FX phase.
+    span_count: usize,
 }
 
-impl StepFxSelectionCache {
-    /// Returns the resolved selection for `entity`, resolving again only when `source` changed.
-    fn resolve(
-        &mut self,
-        entity: Entity,
-        source: &SpatialSelection,
-        selection_resolver: &SpatialSelectionResolver,
-        fixture_data_provider: &FixtureDataProviderExt,
-    ) -> &ResolvedSelection {
-        let entry = self
-            .entries
-            .entry(entity)
-            .and_modify(|cached| {
-                if cached.source != *source {
-                    *cached = resolve_step_fx_selection(
-                        source,
-                        selection_resolver,
-                        fixture_data_provider,
-                    );
-                }
-            })
-            .or_insert_with(|| {
-                resolve_step_fx_selection(source, selection_resolver, fixture_data_provider)
-            });
-        &entry.resolved
-    }
+/// A run of members of one selection span.
+struct SpanSegment<'a> {
+    /// Position of the span among the selection's non-empty spans.
+    span_index: usize,
+    /// The span.
+    span: &'a SelectionIndex,
+    /// Indexes of the members to sample.
+    members: Range<usize>,
 }
 
-/// Resolves a step FX selection and drops fixtures that no longer exist.
-fn resolve_step_fx_selection(
-    source: &SpatialSelection,
-    selection_resolver: &SpatialSelectionResolver,
-    fixture_data_provider: &FixtureDataProviderExt,
-) -> CachedStepFxSelection {
-    CachedStepFxSelection {
-        source: source.clone(),
-        resolved: filter_existing_selection(
-            &selection_resolver.resolve(source).into_value(),
-            fixture_data_provider,
-        ),
-    }
+/// Consecutive selected fixtures of one playback, sampled together on one thread.
+struct StepFxWorkItem<'a> {
+    /// Index of the playback in the frame's playback list.
+    playback: usize,
+    /// The members to sample, in selection order.
+    segments: Vec<SpanSegment<'a>>,
 }
+
+/// Read-only rig data used to turn step FX samples into parameter assertions.
+struct StepFxRig<'a, 'w, 's> {
+    /// Patched fixtures and their parameter index.
+    fixtures: &'a FixtureDataProviderExt,
+    /// Blueprints that step targets may reference.
+    blueprints: &'a DataProvider<Blueprint>,
+    /// Parameter components, read for their value metadata.
+    parameters: &'a Query<'w, 's, &'static Parameter>,
+}
+
+/// One value a step FX asserts on a parameter.
+type StepFxAssertion = (ParameterRef, ParameterValue);
 
 /// Evaluates all active step-based FX and generates layers for compositor
 ///
 /// Resolved selections are cached per active FX and resolved again only when the FX selection,
 /// the patched fixtures or the groups change, since resolution dominates evaluation cost.
+///
+/// Sampling and parameter lookup run in parallel on native targets, split into runs of selected
+/// fixtures so that both many small FX and one large FX use every core. Each run's assertions are
+/// collected in input order and inserted into the layers on the system's thread, so every layer
+/// is identical to a sequential evaluation.
 pub fn evaluate_step_fx(
     fx_query: Query<&StepFx>,
     preview_fx_query: Query<&PreviewStepFxDefinition>,
     mut active_fx_query: Query<StepFxEvaluationData, Without<ReleaseMarker>>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
-    group_data_provider: Res<DataProvider<Group>>,
     blueprint_data_provider: Res<DataProvider<Blueprint>>,
-    parameter_query: Query<&Parameter>,
+    parameter_query: Query<&'static Parameter>,
     selection_resolver: SpatialSelectionResolver,
-    mut selection_cache: Local<StepFxSelectionCache>,
+    mut selection_cache: Local<ResolvedSelectionCache<Entity>>,
     mut commands: Commands,
 ) {
-    if fixture_data_provider.is_changed() || group_data_provider.is_changed() {
-        selection_cache.entries.clear();
-    }
-    selection_cache
-        .entries
-        .retain(|entity, _| active_fx_query.contains(*entity));
+    selection_cache.retain(|entity| active_fx_query.contains(*entity));
 
+    // Re-anchoring lane phase offsets is the only write to playback components, so it runs before
+    // everything else reads them.
+    let mut playing = Vec::new();
     for (entity, active_fx, clock, mut lane_phase_offsets) in active_fx_query.iter_mut() {
         if !active_fx.is_playing {
             continue;
@@ -132,13 +137,17 @@ pub fn evaluate_step_fx(
         } else if let (Some(offsets), Some(clock)) = (lane_phase_offsets.as_deref_mut(), clock) {
             offsets.last_clock_position = clock.position;
         }
-        let lane_phase_offsets = (!reset_offsets)
-            .then_some(lane_phase_offsets.as_deref())
-            .flatten();
+        playing.push((entity, reset_offsets));
+    }
 
-        let elapsed = step_fx_elapsed(active_fx, clock);
-
-        // Get the StepFx definition
+    // Resolving fills the selection cache, so every selection is resolved before sampling borrows
+    // the cache.
+    let default_offsets = StepFxLanePhaseOffsets::default();
+    let mut resolved = Vec::with_capacity(playing.len());
+    for (entity, reset_offsets) in playing {
+        let Ok((_, active_fx, clock, lane_phase_offsets)) = active_fx_query.get(entity) else {
+            continue;
+        };
         let definition = fx_query.get(active_fx.fx_entity).or_else(|_| {
             preview_fx_query
                 .get(active_fx.fx_entity)
@@ -149,12 +158,7 @@ pub fn evaluate_step_fx(
             continue;
         };
 
-        let selection = selection_cache.resolve(
-            entity,
-            &step_fx.selection,
-            &selection_resolver,
-            &fixture_data_provider,
-        );
+        let selection = selection_cache.resolve(entity, &step_fx.selection, &selection_resolver);
         if selection.is_empty() {
             tracing::warn!(
                 fx_id = step_fx.identifiers.id,
@@ -163,93 +167,210 @@ pub fn evaluate_step_fx(
             );
             continue;
         }
-
-        tracing::trace!(
-            fx_id = step_fx.identifiers.id,
-            elapsed_secs = elapsed.as_secs_f32(),
-            fixture_count = selection.canonical_fixtures().len(),
-            span_count = selection.iter_non_empty_indexes().count(),
-            "Evaluating step FX"
-        );
-
-        // Create layer for this FX
-        let mut layer = Layer::new(
-            format!("StepFx: {}", step_fx.identifiers.label),
+        resolved.push((
+            entity,
+            step_fx,
             active_fx.priority,
-        );
+            step_fx_elapsed(active_fx, clock),
+            lane_phase_offsets
+                .filter(|_| !reset_offsets)
+                .unwrap_or(&default_offsets),
+        ));
+    }
 
-        let span_count = selection.iter_non_empty_indexes().count();
+    let playbacks: Vec<StepFxPlayback> = resolved
+        .into_iter()
+        .filter_map(|(entity, step_fx, priority, elapsed, lane_phase_offsets)| {
+            let selection = selection_cache.get(&entity)?;
+            let span_count = selection.iter_non_empty_indexes().count();
+            tracing::trace!(
+                fx_id = step_fx.identifiers.id,
+                elapsed_secs = elapsed.as_secs_f32(),
+                fixture_count = selection.canonical_fixtures().len(),
+                span_count,
+                "Evaluating step FX"
+            );
+            Some(StepFxPlayback {
+                entity,
+                step_fx,
+                priority,
+                elapsed,
+                lane_phase_offsets,
+                selection,
+                span_count,
+            })
+        })
+        .collect();
+    let work_items = plan_work_items(&playbacks);
 
-        for (span_index, selection_index) in selection.iter_non_empty_indexes().enumerate() {
-            for indexed_fixture in &selection_index.members {
-                let fixture_ref = &indexed_fixture.fixture;
-                // Whole-fixture selections address every element, including the sole element.
-                if fixture_ref.index.is_none() {
-                    if let Some(element_count) =
-                        fixture_data_provider.element_count(fixture_ref.fixture_uid)
-                    {
-                        if element_count > 0 {
-                            for idx in 1..=element_count {
-                                let element_ref = FixtureRef {
-                                    fixture_uid: fixture_ref.fixture_uid,
-                                    index: Some(idx as u32),
-                                };
-                                apply_fx_to_fixture(
-                                    step_fx,
-                                    &element_ref,
-                                    elapsed,
-                                    lane_phase_offsets,
-                                    span_index,
-                                    span_count,
-                                    selection_index.invert,
-                                    selection,
-                                    &fixture_data_provider,
-                                    &blueprint_data_provider,
-                                    &parameter_query,
-                                    &mut layer,
-                                );
-                            }
-                            continue;
-                        }
-                    }
-                }
-                // Single-element fixture or specific element ref
-                apply_fx_to_fixture(
-                    step_fx,
-                    fixture_ref,
-                    elapsed,
-                    lane_phase_offsets,
-                    span_index,
-                    span_count,
-                    selection_index.invert,
-                    selection,
-                    &fixture_data_provider,
-                    &blueprint_data_provider,
-                    &parameter_query,
-                    &mut layer,
-                );
+    let rig = StepFxRig {
+        fixtures: &fixture_data_provider,
+        blueprints: &blueprint_data_provider,
+        parameters: &parameter_query,
+    };
+    let sample = |item: &StepFxWorkItem| sample_work_item(item, &playbacks[item.playback], &rig);
+    #[cfg(target_arch = "wasm32")]
+    let sampled: Vec<Vec<StepFxAssertion>> = work_items.iter().map(sample).collect();
+    #[cfg(not(target_arch = "wasm32"))]
+    let sampled: Vec<Vec<StepFxAssertion>> = {
+        let fixture_count: usize = work_items
+            .iter()
+            .flat_map(|item| &item.segments)
+            .map(|segment| segment.members.len())
+            .sum();
+        if fixture_count >= MIN_PARALLEL_FIXTURES {
+            work_items.par().map(sample).collect()
+        } else {
+            work_items.iter().map(sample).collect()
+        }
+    };
+
+    let mut layers: Vec<Layer> = playbacks
+        .iter()
+        .map(|playback| {
+            Layer::new(
+                format!("StepFx: {}", playback.step_fx.identifiers.label),
+                playback.priority,
+            )
+        })
+        .collect();
+    for (item, assertions) in work_items.iter().zip(sampled) {
+        let layer = &mut layers[item.playback];
+        for (parameter, value) in assertions {
+            if value.is_relative() {
+                layer.relative.insert(parameter, (value, None));
+            } else {
+                layer.absolute.insert(parameter, (value, None));
             }
         }
+    }
 
+    for (playback, layer) in playbacks.iter().zip(layers) {
         tracing::trace!(
-            fx_id = step_fx.identifiers.id,
+            fx_id = playback.step_fx.identifiers.id,
             absolute_params = layer.absolute.len(),
             relative_params = layer.relative.len(),
             "Generated layer for step FX"
         );
-        // Insert layer component on the ActiveStepFx entity
-        commands.entity(entity).insert(layer);
         let marker = ObjectRefMarker(ObjectRef::ByUid {
             object_type: ObjectType::StepFx,
-            uid: step_fx.identifiers.uid,
+            uid: playback.step_fx.identifiers.uid,
         });
-        commands.entity(entity).insert(marker);
-        commands.entity(entity).insert(InstanceStatus {
-            position: InstancePosition::Time { elapsed },
+        let status = InstanceStatus {
+            position: InstancePosition::Time {
+                elapsed: playback.elapsed,
+            },
             source_activation_epoch_ms: None,
-            transition_elapsed: Some(elapsed),
-        });
+            transition_elapsed: Some(playback.elapsed),
+        };
+        commands
+            .entity(playback.entity)
+            .insert((layer, marker, status));
     }
+}
+
+/// Splits the selections of all playbacks into work items of at most
+/// [`FIXTURES_PER_WORK_ITEM`] fixtures, in selection order, so a span with many members can be
+/// spread over several threads.
+fn plan_work_items<'a>(playbacks: &[StepFxPlayback<'a>]) -> Vec<StepFxWorkItem<'a>> {
+    let mut items = Vec::new();
+    for (playback_index, playback) in playbacks.iter().enumerate() {
+        let mut segments = Vec::new();
+        let mut fixtures_in_item = 0;
+        for (span_index, span) in playback.selection.iter_non_empty_indexes().enumerate() {
+            let mut start = 0;
+            while start < span.members.len() {
+                let end = span
+                    .members
+                    .len()
+                    .min(start + FIXTURES_PER_WORK_ITEM - fixtures_in_item);
+                segments.push(SpanSegment {
+                    span_index,
+                    span,
+                    members: start..end,
+                });
+                fixtures_in_item += end - start;
+                start = end;
+                if fixtures_in_item == FIXTURES_PER_WORK_ITEM {
+                    items.push(StepFxWorkItem {
+                        playback: playback_index,
+                        segments: std::mem::take(&mut segments),
+                    });
+                    fixtures_in_item = 0;
+                }
+            }
+        }
+        if !segments.is_empty() {
+            items.push(StepFxWorkItem {
+                playback: playback_index,
+                segments,
+            });
+        }
+    }
+    items
+}
+
+/// Samples one work item and returns the parameter assertions it produces, in the order a
+/// sequential evaluation would insert them.
+fn sample_work_item(
+    item: &StepFxWorkItem,
+    playback: &StepFxPlayback,
+    rig: &StepFxRig,
+) -> Vec<StepFxAssertion> {
+    // One read guard per work item: taking the lock per lookup makes the threads contend on it.
+    let parameter_index = rig.fixtures.parameter_index();
+    let mut assertions = Vec::new();
+    for segment in &item.segments {
+        // A sample depends on the span, not on the fixture, so one sample serves every member.
+        let samples = playback
+            .step_fx
+            .sample_for_selection_index_with_offsets_and_blueprints(
+                playback.elapsed,
+                segment.span_index,
+                playback.span_count,
+                playback.lane_phase_offsets,
+                Some(rig.blueprints),
+            );
+        for indexed_fixture in &segment.span.members[segment.members.clone()] {
+            let fixture_ref = &indexed_fixture.fixture;
+            // Whole-fixture selections address every element, including the sole element.
+            let element_count = fixture_ref
+                .index
+                .is_none()
+                .then(|| rig.fixtures.element_count(fixture_ref.fixture_uid))
+                .flatten()
+                .filter(|count| *count > 0);
+            if let Some(element_count) = element_count {
+                for idx in 1..=element_count {
+                    let element_ref = FixtureRef {
+                        fixture_uid: fixture_ref.fixture_uid,
+                        index: Some(idx as u32),
+                    };
+                    apply_samples_to_element(
+                        playback,
+                        &samples,
+                        &element_ref,
+                        segment.span.invert,
+                        rig,
+                        &parameter_index,
+                        &mut assertions,
+                    );
+                }
+            } else {
+                // Single-element fixture or specific element ref
+                apply_samples_to_element(
+                    playback,
+                    &samples,
+                    fixture_ref,
+                    segment.span.invert,
+                    rig,
+                    &parameter_index,
+                    &mut assertions,
+                );
+            }
+        }
+    }
+    assertions
 }
 
 /// Detects clock movement that cannot be explained by the current frame delta.
@@ -270,43 +391,32 @@ fn step_fx_elapsed(active_fx: &ActiveStepFx, clock: Option<&InstanceClock>) -> D
     Duration::from_secs_f64(base_elapsed.as_secs_f64() * f64::from(active_fx.speed.max(0.0)))
 }
 
-/// Apply FX sample values for a single fixture to a layer
-fn apply_fx_to_fixture(
-    step_fx: &StepFx,
+/// Appends the assertions a span's samples make on one fixture element, inverting values where
+/// the selection span asks for it and converting absolute values to the parameter's raw range.
+fn apply_samples_to_element(
+    playback: &StepFxPlayback,
+    samples: &[FxLaneSample],
     fixture_ref: &FixtureRef,
-    elapsed: Duration,
-    lane_phase_offsets: Option<&StepFxLanePhaseOffsets>,
-    selection_index: usize,
-    selection_index_count: usize,
     invert: bool,
-    selection: &ResolvedSelection,
-    fixture_data_provider: &FixtureDataProviderExt,
-    blueprint_data_provider: &DataProvider<Blueprint>,
-    parameter_query: &Query<&Parameter>,
-    layer: &mut Layer,
+    rig: &StepFxRig,
+    parameter_index: &ParameterIndex,
+    assertions: &mut Vec<StepFxAssertion>,
 ) {
-    let default_offsets = StepFxLanePhaseOffsets::default();
-    let samples = step_fx.sample_for_selection_index_with_offsets_and_blueprints(
-        elapsed,
-        selection_index,
-        selection_index_count,
-        lane_phase_offsets.unwrap_or(&default_offsets),
-        Some(blueprint_data_provider),
-    );
-
     for sample in samples {
-        let Some(resolved_parameter) = fixture_data_provider
-            .try_parameter_for_logical_attribute(fixture_ref, &sample.attribute)
+        let Some((concrete_attribute, parameter_entity)) =
+            parameter_index.parameter_for_logical_attribute(fixture_ref, &sample.attribute)
         else {
             continue;
         };
-        let concrete_attribute = resolved_parameter.attribute;
-        let parameter_entity = resolved_parameter.instance;
 
-        let parameter = parameter_query.get(parameter_entity.entity()).ok();
+        let parameter = rig.parameters.get(parameter_entity.entity()).ok();
 
         for value in [sample.absolute, sample.relative].into_iter().flatten() {
-            let value = if invert && selection.should_invert_attribute(&concrete_attribute) {
+            let value = if invert
+                && playback
+                    .selection
+                    .should_invert_attribute(concrete_attribute)
+            {
                 if let Some(parameter) = parameter {
                     value.inverted(
                         parameter.metadata.logical_min(),
@@ -319,13 +429,10 @@ fn apply_fx_to_fixture(
             } else {
                 value
             };
-            let value = step_fx_output_value_for_parameter(value, parameter);
-
-            if value.is_relative() {
-                layer.relative.insert(parameter_entity, (value, None));
-            } else {
-                layer.absolute.insert(parameter_entity, (value, None));
-            }
+            assertions.push((
+                parameter_entity.into(),
+                step_fx_output_value_for_parameter(value, parameter),
+            ));
         }
     }
 }
@@ -678,6 +785,113 @@ mod tests {
             layer_parameters(&app, active_entity),
             vec![second_parameter.entity()]
         );
+    }
+
+    /// Verifies a selection of one fixture per span, large enough to sample in parallel, gives
+    /// every fixture the value its own span samples, so splitting into work items never shifts
+    /// phases or reorders spans.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn evaluate_step_fx_samples_each_span_when_selection_spans_many_work_items() {
+        assert_eq!(assert_parallel_layer_matches_span_samples(Vec::new()), 1);
+    }
+
+    /// Verifies spans of several fixtures, split across work item boundaries, still give every
+    /// member the value of its span.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn evaluate_step_fx_samples_spans_split_across_work_items() {
+        let largest_span = assert_parallel_layer_matches_span_samples(vec![SpatialClause::Group {
+            axis: Axis::X,
+            amount: 3,
+        }]);
+        assert!(
+            largest_span > 1,
+            "grouping should put several fixtures in a span"
+        );
+    }
+
+    /// Evaluates a two-step intensity FX, with the default phase spread, over enough fixtures to
+    /// sample in parallel and with the selection shaped by `clauses`, then asserts every member
+    /// of every span carries the value sampled for that span. Returns the size of the largest
+    /// span.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn assert_parallel_layer_matches_span_samples(clauses: Vec<SpatialClause>) -> usize {
+        let mut app = step_fx_test_app();
+        let fixture_count = MIN_PARALLEL_FIXTURES.max(FIXTURES_PER_WORK_ITEM * 2) + 5;
+        let fixtures: std::collections::HashMap<FixtureRef, Instance<Parameter>> = (1
+            ..=fixture_count as u32)
+            .map(|id| add_intensity_fixture(&mut app, id))
+            .collect();
+        let mut fixture_refs: Vec<_> = fixtures.keys().cloned().collect();
+        fixture_refs.sort_by_key(|fixture_ref| fixture_ref.fixture_uid);
+        let selection = SpatialSelection::pipeline(SelectionExpr::Resolved(fixture_refs), clauses);
+        let mut step_fx = intensity_step_fx(
+            ParameterValue::AbsolutePercent { value: 0.0.into() },
+            selection.clone(),
+        );
+        step_fx.phase = StepFxPhase::default();
+        let track = step_fx.lanes[0]
+            .absolute
+            .as_mut()
+            .expect("absolute intensity track");
+        let mut full = track.steps[0].clone();
+        full.uid = uuid::Uuid::new_v4();
+        full.target = ParameterValue::AbsolutePercent { value: 1.0.into() };
+        track.steps.push(full);
+
+        let active_entity = evaluate_test_step_fx(&mut app, step_fx.clone());
+        let resolved = app
+            .world_mut()
+            .run_system_once(move |resolver: SpatialSelectionResolver| {
+                resolver.resolve(&selection).into_value()
+            })
+            .expect("selection should resolve");
+
+        let layer = app
+            .world()
+            .entity(active_entity)
+            .get::<Layer>()
+            .expect("active Step FX should receive a generated layer");
+        assert_eq!(layer.absolute.len(), fixture_count);
+        let spans: Vec<_> = resolved.iter_non_empty_indexes().collect();
+        let mut distinct_values = Vec::new();
+        for (span_index, span) in spans.iter().enumerate() {
+            let sample = step_fx
+                .sample_for_selection_index_with_offsets_and_blueprints(
+                    Duration::ZERO,
+                    span_index,
+                    spans.len(),
+                    &StepFxLanePhaseOffsets::default(),
+                    None,
+                )
+                .remove(0);
+            for member in &span.members {
+                let parameter = fixtures[&member.fixture];
+                let metadata = app
+                    .world()
+                    .get::<Parameter>(parameter.entity())
+                    .expect("test parameter should exist");
+                let expected = step_fx_output_value_for_parameter(
+                    sample.absolute.expect("absolute sample"),
+                    Some(metadata),
+                );
+                let actual = layer.absolute.get(parameter).map(|(value, _)| *value);
+                assert_eq!(actual, Some(expected), "span {span_index}");
+                if !distinct_values.contains(&expected) {
+                    distinct_values.push(expected);
+                }
+            }
+        }
+        assert!(
+            distinct_values.len() > 1,
+            "the phase spread should give spans different values"
+        );
+        spans
+            .iter()
+            .map(|span| span.members.len())
+            .max()
+            .unwrap_or(0)
     }
 
     /// Creates a minimal app world with resources needed by the Step FX evaluator.

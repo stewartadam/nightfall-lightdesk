@@ -11,11 +11,12 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use nightfall::prelude::{FixtureRef, Priority, ResolvedSelection, SelectionExpr};
+use nightfall::prelude::{
+    FixtureRef, Priority, ResolvedSelection, SelectionExpr, SpatialSelection,
+};
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_selection::prelude::*;
 use nightfall_waveform::prelude::*;
 
 use super::waveform::default_waveform_value;
@@ -129,20 +130,28 @@ impl FlowNode for WaveformFxNode {
 }
 
 /// Build a waveform layer from node inputs and state.
+///
+/// The node's selection is resolved through `resolved_selections`, so it is only resolved again
+/// when the selection input or the rig changes.
 pub fn build_waveform_layer(
     node_def: &FlowNodeDefinition,
     frame_delta: std::time::Duration,
     inputs: &crate::nodes::FlowPortValues,
     selection_resolver: &SpatialSelectionResolver,
     fixture_data_provider: &FixtureDataProviderExt,
+    resolved_selections: &mut ResolvedSelectionCache<FlowNodeId>,
     selection_cache: &mut HashMap<FlowNodeId, HashSet<FixtureRef>>,
     attribute_cache: &mut HashMap<FlowNodeId, HashSet<String>>,
     phase_cache: &mut HashMap<FlowNodeId, f32>,
     layer_creator: &str,
 ) -> Option<Layer> {
+    let default_selection: SpatialSelection;
     let selection = match inputs.get(&WAVEFORM_FX_IN_SELECTION) {
-        Some(FlowValue::Selection(selection)) => selection.clone(),
-        _ => SelectionExpr::default().into(),
+        Some(FlowValue::Selection(selection)) => selection,
+        _ => {
+            default_selection = SelectionExpr::default().into();
+            &default_selection
+        }
     };
     let waveform = match inputs.get(&WAVEFORM_FX_IN_WAVEFORM) {
         Some(FlowValue::Waveform(waveform)) => *waveform,
@@ -154,11 +163,9 @@ pub fn build_waveform_layer(
         _ => vec!["Intensity".to_string()],
     };
 
-    let resolved_selection = filter_existing_selection(
-        &selection_resolver.resolve(&selection).into_value(),
-        fixture_data_provider,
-    );
-    let selection_indexes = waveform_selection_indexes(&resolved_selection);
+    let resolved_selection =
+        resolved_selections.resolve(node_def.node_id, selection, selection_resolver);
+    let selection_indexes = waveform_selection_indexes(resolved_selection);
     let current_set: HashSet<FixtureRef> = selection_indexes
         .iter()
         .flat_map(|index| index.iter().cloned())

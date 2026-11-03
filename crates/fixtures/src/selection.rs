@@ -8,13 +8,15 @@
 
 //! Fixture-backed adapters for pure selection resolution.
 
+use std::{collections::HashMap, hash::Hash};
+
 use bevy_ecs::{prelude::*, system::SystemParam};
 use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_selection::{
     SelectionDataSource, SelectionFixture, SelectionGroup,
     SelectionResolver as PureSelectionResolver, SpatialSelectionResolution,
-    SpatialSelectionResolver as PureSpatialSelectionResolver,
+    SpatialSelectionResolver as PureSpatialSelectionResolver, filter_existing_selection,
 };
 
 use crate::prelude::FixtureDataProviderExt;
@@ -159,6 +161,97 @@ impl SpatialSelectionResolver<'_> {
     ) -> PartialResult<SpatialSelection> {
         PureSelectionResolver::new(&self.data_source).stabilize_group_refs_selection(selection)
     }
+
+    /// Returns the revisions of the patched fixtures and the groups, the only inputs to
+    /// resolution. A selection resolved at one revision resolves the same way until it changes.
+    pub fn inputs_revision(&self) -> SelectionInputsRevision {
+        SelectionInputsRevision {
+            fixtures: self.data_source.fixtures.inner.revision(),
+            groups: self.data_source.groups.revision(),
+        }
+    }
+}
+
+/// Point in the fixture and group change history a selection was resolved at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SelectionInputsRevision {
+    /// Revision of the patched fixtures.
+    fixtures: DataRevision,
+    /// Revision of the groups.
+    groups: DataRevision,
+}
+
+/// A selection resolved against the rig, kept while its definition and the rig are unchanged.
+struct CachedResolvedSelection {
+    /// Selection definition the entry was resolved from.
+    source: SpatialSelection,
+    /// Fixture and group revisions the entry was resolved at.
+    inputs_revision: SelectionInputsRevision,
+    /// Resolved selection filtered down to fixtures that exist.
+    resolved: ResolvedSelection,
+}
+
+/// Resolved selections for per-frame renderers such as FX and flow nodes, keyed by whatever
+/// identifies one renderer instance.
+///
+/// Resolution walks groups, projections and shuffles, which costs far more than rendering the
+/// resolved fixtures, yet its result only changes when the selection definition, the patch or
+/// the groups change. Each entry records the fixture and group revisions it was resolved at, so
+/// an entry is never served after the rig changed, however long its renderer went unevaluated.
+pub struct ResolvedSelectionCache<K> {
+    entries: HashMap<K, CachedResolvedSelection>,
+}
+
+impl<K> Default for ResolvedSelectionCache<K> {
+    /// Creates an empty cache.
+    fn default() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+}
+
+impl<K: Eq + Hash> ResolvedSelectionCache<K> {
+    /// Keeps only the entries whose key satisfies `keep`, so finished renderers do not pin memory.
+    pub fn retain(&mut self, mut keep: impl FnMut(&K) -> bool) {
+        self.entries.retain(|key, _| keep(key));
+    }
+
+    /// Returns `source` resolved and filtered to existing fixtures, resolving again only when
+    /// `key` has no entry yet, or its entry was resolved from a different definition or before
+    /// the patch or the groups last changed.
+    pub fn resolve(
+        &mut self,
+        key: K,
+        source: &SpatialSelection,
+        selection_resolver: &SpatialSelectionResolver,
+    ) -> &ResolvedSelection {
+        let inputs_revision = selection_resolver.inputs_revision();
+        let resolve_fresh = || CachedResolvedSelection {
+            source: source.clone(),
+            inputs_revision,
+            resolved: filter_existing_selection(
+                &selection_resolver.resolve(source).into_value(),
+                selection_resolver.fixture_data_provider(),
+            ),
+        };
+        let entry = self
+            .entries
+            .entry(key)
+            .and_modify(|cached| {
+                if cached.inputs_revision != inputs_revision || cached.source != *source {
+                    *cached = resolve_fresh();
+                }
+            })
+            .or_insert_with(resolve_fresh);
+        &entry.resolved
+    }
+
+    /// Returns the selection last resolved for `key` by [`Self::resolve`], without checking it
+    /// against the rig, so callers resolve every key first and then share the results.
+    pub fn get(&self, key: &K) -> Option<&ResolvedSelection> {
+        self.entries.get(key).map(|entry| &entry.resolved)
+    }
 }
 
 impl SpatialSelectionResolution for SpatialSelectionResolver<'_> {
@@ -257,5 +350,79 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// Resolves `selection` through `cache` against the world's current fixtures and groups.
+    fn resolve_through_cache(
+        world: &World,
+        system_state: &mut SystemState<SpatialSelectionResolver>,
+        cache: &mut ResolvedSelectionCache<u32>,
+        selection: &SpatialSelection,
+    ) -> Vec<FixtureRef> {
+        let resolver = system_state.get(world).unwrap();
+        cache
+            .resolve(0, selection, &resolver)
+            .canonical_fixtures()
+            .to_vec()
+    }
+
+    /// The cache keeps a resolved selection while the rig is unchanged and resolves again when
+    /// the definition, the groups or the patch change, including changes made between visits.
+    #[test]
+    fn resolved_selection_cache_resolves_again_when_inputs_change() {
+        let mut fixtures = FixtureDataProviderExt::default();
+        fixtures.inner.add(make_fixture(1, 1)).unwrap();
+        fixtures.inner.add(make_fixture(2, 1)).unwrap();
+        let mut groups = DataProvider::<Group>::default();
+        groups.add(make_group(7, 1)).unwrap();
+
+        let mut world = World::new();
+        world.insert_resource(fixtures);
+        world.insert_resource(groups);
+        let mut system_state = SystemState::<SpatialSelectionResolver>::new(&mut world);
+        let mut cache = ResolvedSelectionCache::default();
+        let group_selection = SpatialSelection::pipeline(
+            SelectionExpr::Group(GroupRefExpr::ByLabel("Group 7".to_owned())),
+            Vec::new(),
+        );
+        let whole_fixture = |fixture_id: u128| FixtureRef {
+            fixture_uid: uuid::Uuid::from_u128(fixture_id),
+            index: None,
+        };
+
+        let first = resolve_through_cache(&world, &mut system_state, &mut cache, &group_selection);
+        assert_eq!(first, vec![whole_fixture(1)]);
+        let first_revision = cache.entries[&0].inputs_revision;
+        resolve_through_cache(&world, &mut system_state, &mut cache, &group_selection);
+        assert_eq!(cache.entries[&0].inputs_revision, first_revision);
+
+        {
+            let mut groups = world.resource_mut::<DataProvider<Group>>();
+            groups.remove(&uuid::Uuid::from_u128(10_007)).unwrap();
+            groups.add(make_group(7, 2)).unwrap();
+        }
+        let after_group_change =
+            resolve_through_cache(&world, &mut system_state, &mut cache, &group_selection);
+        assert_eq!(after_group_change, vec![whole_fixture(2)]);
+
+        world
+            .resource_mut::<FixtureDataProviderExt>()
+            .inner
+            .remove(&uuid::Uuid::from_u128(2))
+            .unwrap();
+        let after_unpatch =
+            resolve_through_cache(&world, &mut system_state, &mut cache, &group_selection);
+        assert!(after_unpatch.is_empty());
+
+        let fixture_selection = SpatialSelection::pipeline(
+            SelectionExpr::Fixture(UnresolvedFixtureRef {
+                fixture_id: 1,
+                element_index: None,
+            }),
+            Vec::new(),
+        );
+        let after_definition_change =
+            resolve_through_cache(&world, &mut system_state, &mut cache, &fixture_selection);
+        assert_eq!(after_definition_change, vec![whole_fixture(1)]);
     }
 }

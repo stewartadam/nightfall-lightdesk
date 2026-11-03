@@ -59,6 +59,31 @@ impl ParameterIndex {
         self.by_element.get(element).map_or(&[], Vec::as_slice)
     }
 
+    /// Returns the parameter of `element` that a logical `attribute` writes to, with the concrete
+    /// attribute it controls.
+    ///
+    /// The exact attribute wins. Intensity on an element without a dimmer falls back to its
+    /// `VirtualIntensity` parameter.
+    pub fn parameter_for_logical_attribute(
+        &self,
+        element: &FixtureRef,
+        attribute: &Attribute,
+    ) -> Option<(&Attribute, Instance<Parameter>)> {
+        let parameters = self.element_parameters(element);
+        let find = |wanted: &Attribute| {
+            parameters
+                .iter()
+                .find(|(candidate, _)| candidate == wanted)
+                .map(|(attribute, instance)| (attribute, *instance))
+        };
+
+        find(attribute).or_else(|| {
+            (*attribute == Attribute::Intensity)
+                .then(|| find(&Attribute::VirtualIntensity))
+                .flatten()
+        })
+    }
+
     /// Returns the element and attribute that `parameter` controls.
     pub fn location(&self, parameter: &Instance<Parameter>) -> Option<&ParameterLocation> {
         self.by_parameter.get(parameter)

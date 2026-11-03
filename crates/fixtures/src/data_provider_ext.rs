@@ -164,23 +164,12 @@ impl FixtureDataProviderExt {
         element_ref: &FixtureRef,
         attribute: &Attribute,
     ) -> Option<ResolvedElementParameter> {
-        let index = self.parameter_index();
-        let parameters = index.element_parameters(element_ref);
-        let find = |wanted: &Attribute| {
-            parameters
-                .iter()
-                .find(|(candidate, _)| candidate == wanted)
-                .map(|(attribute, instance)| ResolvedElementParameter {
-                    instance: *instance,
-                    attribute: attribute.clone(),
-                })
-        };
-
-        find(attribute).or_else(|| {
-            (*attribute == Attribute::Intensity)
-                .then(|| find(&Attribute::VirtualIntensity))
-                .flatten()
-        })
+        self.parameter_index()
+            .parameter_for_logical_attribute(element_ref, attribute)
+            .map(|(attribute, instance)| ResolvedElementParameter {
+                instance,
+                attribute: attribute.clone(),
+            })
     }
 
     /// Sets or clears the default color path for a fixture or fixture element.
