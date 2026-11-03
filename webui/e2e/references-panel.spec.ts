@@ -339,7 +339,7 @@ test("references panel surfaces missing output transport targets", async ({
   page,
 }, testInfo) => {
   const originalOutputs = await page.evaluate(
-    () => (window as any).appStores.ioSettings.get().network_dmx_outputs,
+    () => (window as any).appStores.settings.get().io.network_dmx_outputs,
   );
   try {
     await sendCommand(page, {

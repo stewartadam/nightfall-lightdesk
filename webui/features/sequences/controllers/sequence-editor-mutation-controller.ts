@@ -78,7 +78,7 @@ export function createSequenceEditorMutationController(
     }
     const updatedSequence = { ...sequence, steps: nextSteps };
     const policy =
-      source.settings().sequence_reorder_renumber_policy ??
+      source.settings().ui.sequence_reorder_renumber_policy ??
       SequenceReorderRenumberPolicy.Preserve;
     if (shouldRenumberAfterReorder(policy)) {
       for (const [index, cueUid] of nextSteps.entries()) {

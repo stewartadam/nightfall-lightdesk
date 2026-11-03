@@ -63,7 +63,7 @@ export async function revertNamedLayout(
  * first and show it before the next settings snapshot arrives.
  */
 interface LayoutEdit {
-  command: types.SettingsCommand;
+  command: types.PanelLayoutCommand;
   apply: (layouts: StoredPanelLayout[]) => StoredPanelLayout[] | null;
 }
 
@@ -107,7 +107,10 @@ async function persistLayoutEdit(
   )
     return false;
   try {
-    const result = await commandClient.invoke("SettingsCommand", edit.command);
+    const result = await commandClient.invoke(
+      "PanelLayoutCommand",
+      edit.command,
+    );
     if (result.outcome.type === "Failed") {
       log.warn("Layout edit refused", result.outcome.data);
       pushToast("error", result.outcome.data.message);
@@ -164,7 +167,7 @@ export function addStoredLayout(
 ): Promise<boolean> {
   return editLayouts(
     {
-      command: { type: "CreatePanelLayout", data: wireLayout(layout) },
+      command: { type: "Create", data: wireLayout(layout) },
       apply: (layouts) =>
         layouts.some((existing) => existing.id === layout.id)
           ? null
@@ -189,7 +192,7 @@ export async function saveNamedLayout(
   const saved = await editLayouts(
     {
       command: {
-        type: "SavePanelLayoutArrangement",
+        type: "SaveArrangement",
         data: { id, ...fields },
       },
       apply: updateLayout(id, (layout) => ({
@@ -228,7 +231,7 @@ export function setLayoutShown(id: string, shown: boolean): Promise<boolean> {
   return editLayouts(
     {
       command: {
-        type: "SetPanelLayoutVisibility",
+        type: "SetVisibility",
         data: { id, shownInSwitcher: shown },
       },
       apply: updateLayout(id, (layout) => ({
@@ -244,7 +247,7 @@ export function setLayoutShown(id: string, shown: boolean): Promise<boolean> {
 export function deleteNamedLayout(id: string): Promise<boolean> {
   return editLayouts(
     {
-      command: { type: "DeletePanelLayout", data: id },
+      command: { type: "Delete", data: id },
       apply: (layouts) =>
         layouts.some((layout) => layout.id === id)
           ? layouts.filter((layout) => layout.id !== id)
@@ -260,7 +263,7 @@ export function renameNamedLayout(id: string, name: string): Promise<boolean> {
   if (!trimmed) return Promise.resolve(false);
   return editLayouts(
     {
-      command: { type: "RenamePanelLayout", data: { id, name: trimmed } },
+      command: { type: "Rename", data: { id, name: trimmed } },
       apply: updateLayout(id, (layout) => ({
         ...layout,
         name: trimmed,
@@ -274,8 +277,8 @@ export function renameNamedLayout(id: string, name: string): Promise<boolean> {
 /** Makes a layout the one devices open when they have no arrangement for this showfile. */
 export async function setDefaultLayout(id: string | null): Promise<boolean> {
   try {
-    const result = await commandClient.invoke("SettingsCommand", {
-      type: "SetDefaultPanelLayout",
+    const result = await commandClient.invoke("PanelLayoutCommand", {
+      type: "SetDefault",
       data: id ?? undefined,
     });
     if (result.outcome.type === "Failed")
@@ -310,7 +313,7 @@ export function duplicateNamedLayout(
 /** Reorders visible layouts in place while preserving hidden layouts and working arrangements. */
 export function reorderLayouts(ids: string[]): Promise<boolean> {
   return editLayouts({
-    command: { type: "ReorderPanelLayouts", data: ids },
+    command: { type: "Reorder", data: ids },
     apply: (layouts) => {
       const visible = layouts.filter((layout) => layout.shownInSwitcher);
       if (

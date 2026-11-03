@@ -35,6 +35,7 @@ pub mod events;
 pub mod groups;
 pub mod painter;
 pub mod resources;
+pub mod settings;
 pub mod undo;
 pub mod websocket;
 
@@ -53,6 +54,9 @@ pub mod prelude {
     };
     pub use crate::groups::{GroupCommand, GroupOperation};
     pub use crate::resources::{Programmer, ProgrammerMode};
+    pub use crate::settings::{
+        ProgrammingSettings, ProgrammingSettingsCommand, SelectionFlattenPolicy,
+    };
     pub use crate::undo::{RemoveProgrammerInstructionByUuid, RestoreProgrammerState};
 }
 
@@ -64,6 +68,8 @@ pub const PROGRAMMER_CLEAR_ACTION_ID: &str = "programmer.clear";
 impl Plugin for ProgrammingPlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering ProgrammingPlugin");
+        app.register_settings_section(settings::ProgrammingSettings::SECTION);
+        app.add_settings_command(settings::apply);
         register_client_command::<events::ProgrammerCommand>(app, Undo::Captured);
         register_client_command::<UserCommand>(app, Undo::Captured);
         register_engine_operation::<ProgrammerOperation>(app);

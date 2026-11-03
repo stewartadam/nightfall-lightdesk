@@ -12,7 +12,12 @@ use bevy::ecs::system::RunSystemOnce;
 use nightfall_clips::Clip;
 use nightfall_cues::prelude::*;
 use nightfall_dmx::prelude::Attribute;
+use nightfall_engine::prelude::{
+    PanelLayouts, UiPreferences, register_settings_section, sync_settings_values,
+};
 use nightfall_fixture_model::prelude::*;
+use nightfall_fixtures::IO_SETTINGS_SECTION;
+use nightfall_fixtures::prelude::ParameterStreamSettings;
 use nightfall_flow::prelude::*;
 use nightfall_fx::prelude::*;
 #[cfg(feature = "midi")]
@@ -25,8 +30,11 @@ use nightfall_io::{InputSignalLossPolicy, IoRuntimeSettings, TransportRuntimePol
 use nightfall_object_library::manager::{decode_object_path, encode_showfile_object_path};
 #[cfg(feature = "object-library")]
 use nightfall_object_library::showfile::{SHOWFILE_OBJECT_SNAPSHOTS_DIR, scene_object_model_path};
+use nightfall_programming::prelude::{ProgrammingSettings, SelectionFlattenPolicy};
 use nightfall_scene_objects::prelude::*;
-use nightfall_showfile::{CURRENT_SHOWFILE_VERSION, parse_showfile_snapshot_json};
+use nightfall_showfile::{
+    CURRENT_SHOWFILE_VERSION, ShowfileSettings, parse_showfile_snapshot_json,
+};
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 use uuid::Uuid;
@@ -36,6 +44,17 @@ use crate::systems::showfile_events::listing::{
     AvailableShowfileValidationStatus, available_showfile_draft_for_name_in_root,
     list_available_showfiles_in_root,
 };
+
+/// Registers the settings sections a full app saves with the show, so test worlds save and load
+/// them the same way.
+fn register_show_settings(world: &mut World) {
+    register_settings_section(world, UiPreferences::SECTION);
+    register_settings_section(world, PanelLayouts::SECTION);
+    register_settings_section(world, ProgrammingSettings::SECTION);
+    register_settings_section(world, ParameterStreamSettings::SECTION);
+    register_settings_section(world, ShowfileSettings::SECTION);
+    register_settings_section(world, IO_SETTINGS_SECTION);
+}
 
 fn identifiers(id: u32, label: &str) -> Identifiers {
     Identifiers {
@@ -71,9 +90,8 @@ fn setup_world() -> World {
     world.insert_resource(MidiMappings::default());
     #[cfg(feature = "osc")]
     world.insert_resource(OscMappings::default());
-    world.insert_resource(DeskSettings::default());
+    register_show_settings(&mut world);
     world.insert_resource(Faders::default());
-    world.insert_resource(IoRuntimeSettings::default());
     world.insert_resource(GlobalVariables::default());
     world.insert_resource(PendingCommandBuffer::default());
     world.insert_resource(Messages::<UiNotification>::default());
@@ -2404,12 +2422,15 @@ fn seed_world(world: &mut World) {
         }]);
 
     {
-        let mut desk_settings = world.resource_mut::<DeskSettings>();
-        desk_settings.programmer_auto_select = true;
-        desk_settings.audio_device = Some("Built-in Output".to_string());
-        desk_settings.selection_flatten_policy = SelectionFlattenPolicy::Prompt;
-        desk_settings.default_panel_layout_id = Some("operator-layout".to_string());
-        desk_settings.panel_layouts = vec![StoredPanelLayout {
+        let mut programming = world.resource_mut::<ProgrammingSettings>();
+        programming.auto_select = true;
+        programming.selection_flatten_policy = SelectionFlattenPolicy::Prompt;
+    }
+    world.resource_mut::<ShowfileSettings>().backup_retention = 5;
+    {
+        let mut panel_layouts = world.resource_mut::<PanelLayouts>();
+        panel_layouts.default_layout_id = Some("operator-layout".to_string());
+        panel_layouts.layouts = vec![StoredPanelLayout {
             shown_in_switcher: true,
             id: "operator-layout".to_string(),
             name: "Operator".to_string(),
@@ -2438,6 +2459,7 @@ fn seed_world(world: &mut World) {
 }
 
 fn collect_snapshot(world: &mut World) -> ShowfileSnapshot {
+    sync_settings_values(world);
     world
         .run_system_once(|showfile_save_state: ShowfileSaveState| {
             snapshot_from_save_state(&showfile_save_state)
@@ -2810,37 +2832,30 @@ fn roundtrip_preserves_desk_settings() {
     apply_snapshot(&mut restored_world, source_snapshot.clone());
     let restored_snapshot = collect_snapshot(&mut restored_world);
 
+    assert_eq!(restored_snapshot.settings, source_snapshot.settings);
+    let programming = restored_snapshot.settings_section(&ProgrammingSettings::SECTION);
+    assert!(programming.auto_select);
     assert_eq!(
-        restored_snapshot.settings.programmer_auto_select,
-        source_snapshot.settings.programmer_auto_select
+        programming.selection_flatten_policy,
+        SelectionFlattenPolicy::Prompt
+    );
+    let io_settings = restored_snapshot.settings_section(&IO_SETTINGS_SECTION);
+    assert_eq!(io_settings.network_interface.as_deref(), Some("en0"));
+    assert_eq!(
+        io_settings.input_signal_loss_policy,
+        InputSignalLossPolicy::ClearAfterTimeout {}
     );
     assert_eq!(
-        restored_snapshot.io_settings.network_interface,
-        source_snapshot.io_settings.network_interface
+        restored_snapshot
+            .settings_section(&ShowfileSettings::SECTION)
+            .backup_retention,
+        5
     );
+    let panel_layouts = restored_snapshot.settings_section(&PanelLayouts::SECTION);
+    assert_eq!(panel_layouts.layouts.len(), 1);
     assert_eq!(
-        restored_snapshot.settings.audio_device,
-        source_snapshot.settings.audio_device
-    );
-    assert_eq!(
-        restored_snapshot.io_settings.input_signal_loss_policy,
-        source_snapshot.io_settings.input_signal_loss_policy
-    );
-    assert_eq!(
-        restored_snapshot.settings.selection_flatten_policy,
-        source_snapshot.settings.selection_flatten_policy
-    );
-    assert_eq!(
-        restored_snapshot.settings.showfile_backup_retention,
-        source_snapshot.settings.showfile_backup_retention
-    );
-    assert_eq!(
-        restored_snapshot.settings.panel_layouts,
-        source_snapshot.settings.panel_layouts
-    );
-    assert_eq!(
-        restored_snapshot.settings.default_panel_layout_id,
-        source_snapshot.settings.default_panel_layout_id
+        panel_layouts.default_layout_id.as_deref(),
+        Some("operator-layout")
     );
 }
 
@@ -2932,8 +2947,8 @@ fn roundtrip_preserves_desk_state_contributor_slice() {
 
     let mut restored_world = setup_world();
     {
-        let mut stale_settings = restored_world.resource_mut::<DeskSettings>();
-        stale_settings.programmer_auto_select = false;
+        let mut stale_settings = restored_world.resource_mut::<ProgrammingSettings>();
+        stale_settings.auto_select = false;
     }
     {
         let mut stale_settings = restored_world.resource_mut::<IoRuntimeSettings>();
@@ -3152,8 +3167,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
             clips: vec![],
             boards: vec![],
             macros: vec![],
-            settings: DeskSettings::default(),
-            io_settings: IoRuntimeSettings::default(),
+            settings: Default::default(),
             tempo: Default::default(),
         },
     );
@@ -3235,8 +3249,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             clips: vec![],
             boards: vec![],
             macros: vec![],
-            settings: DeskSettings::default(),
-            io_settings: IoRuntimeSettings::default(),
+            settings: Default::default(),
             tempo: Default::default(),
         },
     );
@@ -3306,8 +3319,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             clips: vec![],
             boards: vec![],
             macros: vec![],
-            settings: DeskSettings::default(),
-            io_settings: IoRuntimeSettings::default(),
+            settings: Default::default(),
             tempo: Default::default(),
         },
     );
@@ -3968,9 +3980,8 @@ fn load_in_place_replaces_stale_world_state() {
         .add(stale_blueprint)
         .expect("stale blueprint should be added");
     {
-        let mut stale_settings = target_world.resource_mut::<DeskSettings>();
-        stale_settings.programmer_auto_select = false;
-        stale_settings.audio_device = Some("stale-speaker".to_string());
+        let mut stale_settings = target_world.resource_mut::<ProgrammingSettings>();
+        stale_settings.auto_select = false;
         stale_settings.selection_flatten_policy = SelectionFlattenPolicy::Silent;
     }
     {
@@ -3989,26 +4000,21 @@ fn load_in_place_replaces_stale_world_state() {
     assert_eq!(restored_snapshot.clips[0].identifiers.id, 11);
     assert_eq!(restored_snapshot.blueprints[0].identifiers.id, 6);
     assert!(!restored_snapshot.variables.contains_key("stale-only"));
-    assert!(restored_snapshot.settings.programmer_auto_select);
+    let programming = restored_snapshot.settings_section(&ProgrammingSettings::SECTION);
+    assert!(programming.auto_select);
     assert_eq!(
-        restored_snapshot.io_settings.network_interface.as_deref(),
-        Some("en0")
+        programming.selection_flatten_policy,
+        SelectionFlattenPolicy::Prompt
     );
+    let io_settings = restored_snapshot.settings_section(&IO_SETTINGS_SECTION);
+    assert_eq!(io_settings.network_interface.as_deref(), Some("en0"));
     assert_eq!(
-        restored_snapshot.settings.audio_device.as_deref(),
-        Some("Built-in Output")
-    );
-    assert_eq!(
-        restored_snapshot.io_settings.input_signal_loss_policy,
+        io_settings.input_signal_loss_policy,
         InputSignalLossPolicy::ClearAfterTimeout {}
     );
     assert_eq!(
-        restored_snapshot.io_settings.input_signal_loss_timeout,
+        io_settings.input_signal_loss_timeout,
         std::time::Duration::from_millis(777)
-    );
-    assert_eq!(
-        restored_snapshot.settings.selection_flatten_policy,
-        SelectionFlattenPolicy::Prompt
     );
 
     let mut transport_layer_query = target_world.query_filtered::<(), With<TransportInputLayer>>();
@@ -4093,8 +4099,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         clips: vec![],
         boards: vec![],
         macros: vec![],
-        settings: DeskSettings::default(),
-        io_settings: IoRuntimeSettings::default(),
+        settings: Default::default(),
         tempo: Default::default(),
     };
 
@@ -4149,8 +4154,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture],
             variables: HashMap::new(),
-            settings: DeskSettings::default(),
-            io_settings: IoRuntimeSettings::default(),
+            settings: Default::default(),
             tempo: Default::default(),
             routes: RoutesSnapshot {
                 input: vec![],
@@ -4249,8 +4253,7 @@ fn load_materializes_timecodes_and_timelines() {
             metadata: ShowfileMetadata::default(),
             fixtures: vec![],
             variables: HashMap::new(),
-            settings: DeskSettings::default(),
-            io_settings: IoRuntimeSettings::default(),
+            settings: Default::default(),
             tempo: Default::default(),
             routes: RoutesSnapshot {
                 input: vec![],

@@ -304,8 +304,8 @@ test("downloads browser diagnostics with selected showfile references", async ({
   writeFileSync(join(source, "extra.txt"), "local diagnostic reference");
   const changed = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
-      module: "SettingsCommand",
-      command: { type: "SetShowfileBackupRetention", data: 37 },
+      module: "ShowfileSettingsCommand",
+      command: { type: "SetBackupRetention", data: 37 },
     }),
   );
   expect(changed.outcome.type).toBe("Succeeded");
@@ -371,7 +371,7 @@ test("downloads browser diagnostics with selected showfile references", async ({
           { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
         ),
       );
-      expect(snapshot.settings.showfile_backup_retention).toBe(37);
+      expect(snapshot.settings.showfile.backup_retention).toBe(37);
       expect(manifest.showfileSource).toBe("current engine state");
     }
     warningCount = manifest.warnings.length;

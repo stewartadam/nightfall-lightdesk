@@ -13,7 +13,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_cues::prelude::*;
-use nightfall_desk::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
@@ -26,6 +25,7 @@ use crate::blueprints::BlueprintOperation;
 use crate::command_planner::{ProgrammerCommandPlanner, ProgrammerPlanContext};
 use crate::groups::GroupOperation;
 use crate::resources::Programmer;
+use crate::settings::SelectionFlattenPolicy;
 
 mod blueprints;
 mod contracts;

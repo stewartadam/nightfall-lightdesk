@@ -31,6 +31,7 @@ use nightfall_macros::prelude::MacrosPlugin;
 use nightfall_programming::prelude::ProgrammingPlugin;
 use nightfall_references::ReferencesPlugin;
 use nightfall_scene_objects::prelude::SceneObjectPlugin;
+use nightfall_showfile::ShowfileSettingsPlugin;
 use nightfall_tempo::prelude::TempoPlugin;
 use nightfall_timecode::prelude::TimecodePlugin;
 use nightfall_timeline::prelude::TimelinePlugin;
@@ -87,7 +88,7 @@ pub struct DeskPlugins {
 }
 
 impl PluginGroup for DeskPlugins {
-    /// Adds the desk first, since the programmer, cues, boards and macros register against it.
+    /// Adds the desk first, since the programmer, cues, boards and macros register against it. The showfile settings go with the desk, which saves and loads shows.
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
             .add(DeskPlugin {
@@ -95,6 +96,7 @@ impl PluginGroup for DeskPlugins {
             })
             .add(ProgrammingPlugin)
             .add(CuePlugin)
+            .add(ShowfileSettingsPlugin)
             .add(BoardsPlugin)
             .add(MacrosPlugin)
     }

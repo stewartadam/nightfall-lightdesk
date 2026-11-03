@@ -114,7 +114,6 @@ pub(super) fn merge_showfile_snapshots(
         variables: merge_variables(current.variables, incoming.variables, options.variables),
         faders: merge_single(current.faders, incoming.faders, options.settings),
         settings: merge_single(current.settings, incoming.settings, options.settings),
-        io_settings: merge_single(current.io_settings, incoming.io_settings, options.settings),
         tempo: merge_single(current.tempo, incoming.tempo, options.settings),
         routes: merge_routes(current.routes, incoming.routes, options.routes)?,
         #[cfg(feature = "midi")]

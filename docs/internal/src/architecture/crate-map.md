@@ -78,7 +78,7 @@ Engine core crates build the engine's runtime that every plugin plugs into.
 
 | Crate | WASM | Description |
 |-------|------|-------------|
-| `engine` | Demo | Core of the Bevy app: app states, schedules and their ordering, the `Render` schedule, the command and update protocol, the client bridge, object stores, and runtime capabilities. |
+| `engine` | Demo | Core of the Bevy app: app states, schedules and their ordering, the `Render` schedule, the command and update protocol, the client bridge, object stores, runtime capabilities, the settings registry, and the UI preference and panel layout settings sections. |
 | `undo` | Demo | Undo and redo: captures undoable commands and stores their inverses. |
 | `actions` | Demo | Registry of bindable actions and how each one turns into a command or an update. |
 | `clips` | Demo | Clip model, clip commands, lookups by identifier, and clip playback: routing clip starts and stops to the plugin registered for each clip source, launch quantize, and the lifecycle and clocks of running playbacks. |
@@ -166,6 +166,12 @@ The `wasm-bridge` exports a small set of code from Nightfall crates to WASM so t
 | Board placement | `BoardPlacement`, `board_max_dimension` | `common` |
 | Output target names | `output_target_ids`, `reserved_network_dmx_target_keywords`, `reserved_usb_dmx_target_keywords` | `io`, without its `ecs` feature |
 
+## Where settings live
+
+Each setting belongs to the crate whose behavior it changes. That crate defines a settings section, which is one resource with a key, and its own command to change it. For example, `programming` owns the auto-select setting and `ProgrammingSettingsCommand`. The registry in `engine` collects the sections, saves them in the showfile's `settings` map under their keys, and sends the changed ones to clients in one `Settings` message.
+
+To add a setting, add a field to its owner's section. Register a new section with `register_settings_section` and its command with `add_settings_command`.
+
 ## What lives in `desk` and why
 
 The `desk` crate is the largest cross-plugin crate. It holds the behavior that belongs to the console as a whole rather than to one domain:
@@ -173,7 +179,7 @@ The `desk` crate is the largest cross-plugin crate. It holds the behavior that b
 - The `DeskCommand` entry point, including the requests to create, save, load, and import showfiles.
 - Masters, faders with their levels and buttons, and the actions that drive them.
 - The client feeds for group and Blueprint definitions. The stores, commands, and undo for groups and Blueprints live in `programming`.
-- Console settings and the showfile's shared panel layouts.
+- Host settings: network interface, telemetry, external control, and the device lists.
 - The adjustments after the merge: virtual dimmers, virtual relations, and each playback's intensity level.
 - Diagnostics, network statistics, and the layer stack that the **Layers** panel shows.
 - The release of stale input values.

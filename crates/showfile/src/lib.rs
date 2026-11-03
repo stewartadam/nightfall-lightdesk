@@ -17,6 +17,7 @@ mod apply;
 mod contributors;
 mod migrations;
 mod selection_refs;
+pub mod settings;
 mod snapshot;
 mod world;
 
@@ -25,8 +26,12 @@ pub use apply::{
     apply_showfile_snapshot_to_world, initialize_showfile_resources, ordered_showfile_load_domains,
 };
 /// Current schema version written into newly saved showfile metadata.
-pub const CURRENT_SHOWFILE_VERSION: u32 = 24;
+pub const CURRENT_SHOWFILE_VERSION: u32 = 25;
 pub use selection_refs::stabilize_showfile_group_refs;
+pub use settings::{
+    DEFAULT_SHOWFILE_BACKUP_RETENTION, ShowfileSettings, ShowfileSettingsCommand,
+    ShowfileSettingsPlugin, apply_showfile_settings_command,
+};
 pub use snapshot::{
     RoutesSnapshot, ShowfileMetadata, ShowfileSnapshot, current_showfile_metadata,
     validate_showfile_asset_versions,
@@ -217,6 +222,30 @@ mod tests {
 
         assert_eq!(parsed.metadata.showfile_version, CURRENT_SHOWFILE_VERSION);
         assert_eq!(parsed.cues[0].instructions[0].assertions, assertions);
+    }
+
+    /// A schema 24 show with flat desk settings and separate IO settings loads them as sections.
+    #[test]
+    fn schema_24_showfile_with_flat_settings_loads() {
+        let snapshot = contributors::collect_save_contributions(&[]);
+        let mut showfile = serde_json::to_value(&snapshot).unwrap();
+        showfile["metadata"]["showfileVersion"] = 24.into();
+        showfile["settings"] = serde_json::json!({
+            "programmer_auto_select": true,
+            "showfile_backup_retention": 3
+        });
+        showfile["ioSettings"] = serde_json::json!({ "dmx_output_rate_hz": 30 });
+
+        let parsed = parse_showfile_snapshot_json(&showfile.to_string(), "schema-24").unwrap();
+
+        assert_eq!(parsed.settings["programming"]["auto_select"], true);
+        assert_eq!(
+            parsed
+                .settings_section(&crate::ShowfileSettings::SECTION)
+                .backup_retention,
+            3
+        );
+        assert_eq!(parsed.settings["io"]["dmx_output_rate_hz"], 30);
     }
 
     /// Reject absent and malformed schema metadata instead of assuming a legacy version.

@@ -42,8 +42,6 @@ pub(super) fn reset_showfile_state(state: &mut ShowfileLoadState<'_, '_>, comman
                     midi_mappings: _,
                 #[cfg(feature = "osc")]
                     osc_mappings: _,
-                desk_settings: _,
-                io_settings: _,
             },
         active_fx_module_ids,
         all_entities,

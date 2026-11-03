@@ -5277,8 +5277,10 @@ dependencies = [
  "nightfall-service-host",
  "nightfall-workspace-hack",
  "rodio",
+ "serde",
  "tokio",
  "tracing",
+ "typeshare",
 ]
 
 [[package]]
@@ -5440,6 +5442,7 @@ dependencies = [
  "nightfall-programming",
  "nightfall-references",
  "nightfall-scene-objects",
+ "nightfall-showfile",
  "nightfall-tempo",
  "nightfall-timecode",
  "nightfall-timeline",
@@ -6239,6 +6242,7 @@ dependencies = [
 name = "nightfall-showfile"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "bevy_app",
  "bevy_ecs",
  "flate2",
  "moonshine-kind",
@@ -6264,6 +6268,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+ "typeshare",
  "uuid",
 ]
 

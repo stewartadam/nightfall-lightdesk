@@ -28,6 +28,7 @@ pub mod output_frames;
 pub mod parameter;
 pub mod parameter_index;
 pub mod parameter_state;
+pub mod parameter_stream_settings;
 pub mod physical;
 pub mod placement;
 pub mod route_overlap;
@@ -132,6 +133,9 @@ pub mod prelude {
     pub use crate::parameter::{Parameter, ParameterValues};
     pub use crate::parameter_index::{ParameterIndex, ParameterLocation};
     pub use crate::parameter_state::ParameterStateProjection;
+    pub use crate::parameter_stream_settings::{
+        ParameterStreamSettings, ParameterStreamSettingsCommand,
+    };
     pub use crate::physical::{BeamOptics, BeamType, DEFAULT_LUMENS, FixturePhysical};
     pub use crate::placement::FixturePlacement;
     pub use crate::route_validation::{
@@ -156,6 +160,10 @@ pub mod prelude {
         ManualDmxChannelState, RouteEndpoint,
     };
 }
+
+/// Section the showfile's input and output transport settings are saved and sent under.
+pub const IO_SETTINGS_SECTION: SettingsSection<nightfall_io::IoRuntimeSettings> =
+    SettingsSection::new("io");
 
 /// Plugin for fixtures
 pub struct FixturePlugin;
@@ -186,6 +194,15 @@ impl Plugin for FixturePlugin {
         app.init_resource::<routes::ConsoleDmxAddresses>();
         app.init_resource::<route_validation::RouteValidationSettings>();
         app.init_resource::<parameter_state::ParameterStateProjection>();
+        app.register_settings_section(parameter_stream_settings::ParameterStreamSettings::SECTION);
+        app.register_settings_section(IO_SETTINGS_SECTION);
+        app.add_settings_command(parameter_stream_settings::apply);
+        app.add_systems(
+            Update,
+            parameter_stream_settings::sync_parameter_stream
+                .in_set(EventHandling)
+                .after(SettingsCommandHandling),
+        );
         app.init_resource::<websocket::ParameterStateRequests>();
         app.init_resource::<universe::ConsoleDmxUniverses>();
         app.init_resource::<universe::InputDmxUniverses>();

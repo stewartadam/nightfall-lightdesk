@@ -468,7 +468,7 @@ for (const succeedWorldSwap of [false, true]) {
       const settings = (await window.__nightfallHarness.load("app")).settings;
       const snapshots = (await window.__nightfallHarness.load("app"))
         .ioSnapshots;
-      snapshots.applySettingsSnapshot(settings.$settings.get());
+      snapshots.applySettingsSnapshot({ sections: settings.$settings.get() });
     });
     await picker
       .getByRole("button", { name: "Show revisions for tour" })

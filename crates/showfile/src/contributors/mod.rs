@@ -125,7 +125,6 @@ fn apply_save_contribution(
             snapshot.faders = contribution.faders.into_owned();
             snapshot.variables = contribution.variables.into_owned();
             snapshot.settings = contribution.settings.into_owned();
-            snapshot.io_settings = contribution.io_settings.into_owned();
             snapshot.tempo = contribution.tempo.into_owned();
         }
         ShowfileContribution::FixturesPatch(contribution) => {
@@ -190,7 +189,6 @@ fn load_contribution_for_domain(
                 faders: Cow::Borrowed(&snapshot.faders),
                 variables: Cow::Borrowed(&snapshot.variables),
                 settings: Cow::Borrowed(&snapshot.settings),
-                io_settings: Cow::Borrowed(&snapshot.io_settings),
                 tempo: Cow::Borrowed(&snapshot.tempo),
             }))
         }

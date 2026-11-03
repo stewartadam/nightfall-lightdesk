@@ -205,9 +205,11 @@ pub(super) fn init_bevy_with_transport_policy(
                 .after(InputHandling)
                 .before(EventHandling),
             EventHandling.run_if(in_state(CommandProcessingState::Running)),
+            // Saves see settings changed by this frame's commands.
             ShowfileHandling
                 .run_if(in_state(CommandProcessingState::Running))
-                .after(EventHandling),
+                .after(EventHandling)
+                .after(SettingsSync),
             ObjectChangePublication
                 .run_if(in_state(CommandProcessingState::Running))
                 .after(ShowfileHandling),

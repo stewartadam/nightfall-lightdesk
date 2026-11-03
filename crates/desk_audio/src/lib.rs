@@ -18,12 +18,14 @@ use std::time::{Duration, Instant};
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use nightfall_audio::prelude::AudioSettings;
 use nightfall_audio::{
     AudioController, AudioPlugin, available_output_devices, default_output_device,
 };
-use nightfall_desk::prelude::{AvailableAudioDevices, DeskPlugin, DeskSettings};
-use nightfall_desk::systems::event_handlers;
-use nightfall_engine::prelude::{EventHandling, ToastLevel, UiNotification};
+use nightfall_desk::prelude::{AvailableAudioDevices, DeskPlugin};
+use nightfall_engine::prelude::{
+    EventHandling, SettingsCommandHandling, ToastLevel, UiNotification,
+};
 
 const AUDIO_DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -142,7 +144,7 @@ impl Plugin for DeskAudioPlugin {
         tracing::debug!("Registering DeskAudioPlugin");
         assert!(
             app.is_plugin_added::<DeskPlugin>(),
-            "DeskAudioPlugin requires DeskPlugin (provides desk settings and websocket resources)"
+            "DeskAudioPlugin requires DeskPlugin (provides the available audio device list)"
         );
         assert!(
             app.is_plugin_added::<AudioPlugin>(),
@@ -153,8 +155,8 @@ impl Plugin for DeskAudioPlugin {
         app.add_systems(
             Update,
             monitor_audio_output_changes
-                .after(event_handlers::settings_events::handle_events)
-                .in_set(EventHandling),
+                .in_set(EventHandling)
+                .after(SettingsCommandHandling),
         );
     }
 }
@@ -183,11 +185,11 @@ impl AudioOutputDeviceSnapshot {
 
 /// Resolves the configured output device when it is currently available.
 fn desired_audio_output_device(
-    settings: &DeskSettings,
+    settings: &AudioSettings,
     devices: &HashMap<String, String>,
 ) -> Option<String> {
     settings
-        .audio_device
+        .output_device
         .as_ref()
         .filter(|device_id| devices.contains_key(*device_id))
         .cloned()
@@ -195,11 +197,11 @@ fn desired_audio_output_device(
 
 /// Returns whether the selected output device disappeared from the available set.
 fn selected_audio_device_missing(
-    settings: &DeskSettings,
+    settings: &AudioSettings,
     devices: &HashMap<String, String>,
 ) -> bool {
     settings
-        .audio_device
+        .output_device
         .as_ref()
         .is_some_and(|device_id| !devices.contains_key(device_id))
 }
@@ -228,7 +230,7 @@ fn changed_audio_device_names(
 
 /// Builds the monitor side effects for a single observed audio-device snapshot.
 fn plan_audio_output_monitor_changes(
-    settings: &DeskSettings,
+    settings: &AudioSettings,
     previous_devices: &HashMap<String, String>,
     snapshot: AudioOutputDeviceSnapshot,
     state: &AudioOutputMonitorState,
@@ -243,11 +245,11 @@ fn plan_audio_output_monitor_changes(
 
     if selected_device_missing && !state.selected_device_missing {
         let missing_name = settings
-            .audio_device
+            .output_device
             .as_ref()
             .and_then(|device_id| previous_devices.get(device_id))
             .cloned()
-            .or_else(|| settings.audio_device.clone())
+            .or_else(|| settings.output_device.clone())
             .unwrap_or_else(|| "selected audio output".to_string());
         immediate_toasts.push(AudioOutputToast {
             level: ToastLevel::Warning,
@@ -260,7 +262,7 @@ fn plan_audio_output_monitor_changes(
 
     if !selected_device_missing && state.selected_device_missing {
         let restored_name = settings
-            .audio_device
+            .output_device
             .as_ref()
             .and_then(|device_id| snapshot.devices.get(device_id))
             .cloned()
@@ -283,7 +285,7 @@ fn plan_audio_output_monitor_changes(
         devices: snapshot.devices,
         devices_changed,
         default_device_id: snapshot.default_device_id,
-        selected_device_id: settings.audio_device.clone(),
+        selected_device_id: settings.output_device.clone(),
         selected_device_missing,
         reroute_device: should_reroute.then_some(desired_device),
         immediate_toasts,
@@ -301,7 +303,7 @@ fn write_audio_output_toast(
 
 /// Consumes background device discovery and queues routing changes without waiting on OS audio APIs.
 fn monitor_audio_output_changes(
-    settings: Res<DeskSettings>,
+    settings: Res<AudioSettings>,
     mut available_audio_devices: ResMut<AvailableAudioDevices>,
     mut audio_controller: ResMut<AudioController>,
     mut ui_notifications: MessageWriter<UiNotification>,
@@ -309,7 +311,7 @@ fn monitor_audio_output_changes(
     mut discovery: ResMut<AudioOutputDiscovery>,
 ) {
     let snapshot_updated = discovery.poll(Instant::now());
-    let selected_device_changed = state.last_selected_device != settings.audio_device;
+    let selected_device_changed = state.last_selected_device != settings.output_device;
 
     if state.initialized && !selected_device_changed && !snapshot_updated {
         return;
@@ -388,7 +390,7 @@ mod tests {
 
         let mut app = App::new();
         app.insert_resource(discovery)
-            .init_resource::<DeskSettings>()
+            .init_resource::<AudioSettings>()
             .init_resource::<AvailableAudioDevices>()
             .init_resource::<UpdateCount>()
             .insert_resource(AudioController::new(Default::default()))
@@ -415,7 +417,9 @@ mod tests {
         app.world_mut()
             .resource_mut::<AudioOutputDiscovery>()
             .poll_interval = Duration::MAX;
-        app.world_mut().resource_mut::<DeskSettings>().audio_device = Some("usb".to_string());
+        app.world_mut()
+            .resource_mut::<AudioSettings>()
+            .output_device = Some("usb".to_string());
         release_tx.send(()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
         while !app
@@ -453,7 +457,7 @@ mod tests {
             last_poll_at: Some(Instant::now()),
             ..manual_discovery()
         })
-        .init_resource::<DeskSettings>()
+        .init_resource::<AudioSettings>()
         .init_resource::<AvailableAudioDevices>()
         .insert_resource(AudioController::new(Default::default()))
         .add_message::<UiNotification>()
@@ -463,13 +467,17 @@ mod tests {
             .world()
             .resource::<Messages<UiNotification>>()
             .get_cursor();
-        app.world_mut().resource_mut::<DeskSettings>().audio_device = Some("missing".to_string());
+        app.world_mut()
+            .resource_mut::<AudioSettings>()
+            .output_device = Some("missing".to_string());
         app.update();
         let notifications = app.world().resource::<Messages<UiNotification>>();
         assert!(cursor.read(notifications).any(|notification| matches!(notification,
             UiNotification::ShowToast { level: ToastLevel::Warning, message, .. } if message.contains("unavailable")
         )));
-        app.world_mut().resource_mut::<DeskSettings>().audio_device = Some("usb".to_string());
+        app.world_mut()
+            .resource_mut::<AudioSettings>()
+            .output_device = Some("usb".to_string());
         app.update();
         let notifications = app.world().resource::<Messages<UiNotification>>();
         assert!(cursor.read(notifications).any(|notification| matches!(notification,
@@ -560,9 +568,9 @@ mod tests {
     /// Verifies selected audio output resolution prefers an available setting.
     #[test]
     fn desired_audio_output_device_prefers_available_selection() {
-        let settings = DeskSettings {
-            audio_device: Some("device-b".to_string()),
-            ..DeskSettings::default()
+        let settings = AudioSettings {
+            output_device: Some("device-b".to_string()),
+            ..AudioSettings::default()
         };
 
         assert_eq!(
@@ -577,9 +585,9 @@ mod tests {
     /// Verifies selected audio output resolution falls back when the setting is missing.
     #[test]
     fn desired_audio_output_device_falls_back_when_selection_is_missing() {
-        let settings = DeskSettings {
-            audio_device: Some("device-missing".to_string()),
-            ..DeskSettings::default()
+        let settings = AudioSettings {
+            output_device: Some("device-missing".to_string()),
+            ..AudioSettings::default()
         };
 
         assert_eq!(
@@ -607,7 +615,7 @@ mod tests {
     /// Verifies a simulated system-default device change requests default re-routing.
     #[test]
     fn monitor_plan_reroutes_system_default_when_default_device_changes() {
-        let settings = DeskSettings::default();
+        let settings = AudioSettings::default();
         let mut available_devices = devices(&[]);
         let mut state = AudioOutputMonitorState::default();
 
@@ -667,9 +675,9 @@ mod tests {
     /// Verifies a simulated selected-device unplug and replug emits fallback notifications.
     #[test]
     fn monitor_plan_reports_selected_device_disappearing_and_returning() {
-        let settings = DeskSettings {
-            audio_device: Some("usb".to_string()),
-            ..DeskSettings::default()
+        let settings = AudioSettings {
+            output_device: Some("usb".to_string()),
+            ..AudioSettings::default()
         };
         let mut available_devices = devices(&[]);
         let mut state = AudioOutputMonitorState::default();

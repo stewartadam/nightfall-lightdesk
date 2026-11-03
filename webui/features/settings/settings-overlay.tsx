@@ -46,6 +46,7 @@ import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
 import { durationToMs, msToDuration } from "../../lib/duration";
 import { commandClient } from "../../lib/engine-commands";
+import { getLogger } from "../../lib/logger";
 import { setStoreAction } from "../../lib/nanostore-action";
 import {
   routeValidationSettings,
@@ -99,6 +100,7 @@ import {
 import { AppearanceSettings } from "./appearance-settings";
 import { PrivacySettings } from "./privacy-settings";
 
+const log = getLogger(import.meta.url);
 const DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS = 2000;
 const DEFAULT_SHOWFILE_BACKUP_RETENTION = 20;
 /** Largest value a Rust `u32` command field accepts. */
@@ -296,15 +298,13 @@ export function SettingsOverlay() {
   });
 
   let dmxOutputRateInput: HTMLInputElement | undefined;
-  // Rewrites the rate field from every IO settings snapshot, even an unchanged one, so a value the
-  // backend clamped back to the rate it already had still replaces what the user typed.
-  onCleanup(
-    $ioSettings.listen((settings) => {
-      if (dmxOutputRateInput) {
-        dmxOutputRateInput.value = String(settings.dmx_output_rate_hz);
-      }
-    }),
-  );
+  /** Writes the saved DMX output rate into the rate field, replacing whatever the user typed. */
+  const showDmxOutputRate = () => {
+    if (dmxOutputRateInput) {
+      dmxOutputRateInput.value = String($ioSettings.get().dmx_output_rate_hz);
+    }
+  };
+  onCleanup($ioSettings.listen(showDmxOutputRate));
 
   /** Refresh cached model information on entry and stop polling when settings closes. */
   createEffect(() => {
@@ -316,16 +316,16 @@ export function SettingsOverlay() {
   });
 
   const setProgrammerAutoSelect = (value: boolean) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetProgrammerAutoSelect",
+    commandClient.emit("ProgrammingSettingsCommand", {
+      type: "SetAutoSelect",
       data: value,
     });
   };
 
   /** Chooses whether clients receive only changed parameter values or every value each frame. */
   const setParameterKeyframesOnly = (value: boolean) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetParameterKeyframesOnly",
+    commandClient.emit("ParameterStreamSettingsCommand", {
+      type: "SetKeyframesOnly",
       data: value,
     });
   };
@@ -338,8 +338,8 @@ export function SettingsOverlay() {
   };
 
   const setAudioDevice = (value: string | null) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetAudioDevice",
+    commandClient.emit("AudioSettingsCommand", {
+      type: "SetOutputDevice",
       data: value,
     });
   };
@@ -363,22 +363,22 @@ export function SettingsOverlay() {
   const setSequenceReorderRenumberPolicy = (
     value: SequenceReorderRenumberPolicy,
   ) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("UiPreferencesCommand", {
       type: "SetSequenceReorderRenumberPolicy",
       data: value,
     });
   };
 
   const setSelectionFlattenPolicy = (value: SelectionFlattenPolicy) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("ProgrammingSettingsCommand", {
       type: "SetSelectionFlattenPolicy",
       data: value,
     });
   };
 
   const setTimeDisplayPreference = (value: TimeDisplayPreference) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetTimeDisplayPreference",
+    commandClient.emit("UiPreferencesCommand", {
+      type: "SetTimeDisplay",
       data: value,
     });
   };
@@ -386,8 +386,8 @@ export function SettingsOverlay() {
   const setTimelinePlacementPreference = (
     value: TimelinePlacementPreference,
   ) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetTimelinePlacementPreference",
+    commandClient.emit("UiPreferencesCommand", {
+      type: "SetTimelinePlacement",
       data: value,
     });
   };
@@ -397,8 +397,8 @@ export function SettingsOverlay() {
     const retention = Number.isFinite(value)
       ? Math.max(0, Math.trunc(value))
       : DEFAULT_SHOWFILE_BACKUP_RETENTION;
-    commandClient.emit("SettingsCommand", {
-      type: "SetShowfileBackupRetention",
+    commandClient.emit("ShowfileSettingsCommand", {
+      type: "SetBackupRetention",
       data: retention,
     });
   };
@@ -414,7 +414,7 @@ export function SettingsOverlay() {
     ioSettings().input_signal_loss_policy ?? { type: "Hold" };
 
   const sequenceReorderRenumberPolicy = (): SequenceReorderRenumberPolicy =>
-    settings().sequence_reorder_renumber_policy ??
+    settings().ui.sequence_reorder_renumber_policy ??
     SequenceReorderRenumberPolicy.Preserve;
 
   const inputUniverseVisibilityMode = (): InputUniverseVisibilityMode =>
@@ -422,18 +422,18 @@ export function SettingsOverlay() {
     InputUniverseVisibilityMode.ExternalOnly;
 
   const selectionFlattenPolicy = (): SelectionFlattenPolicy =>
-    settings().selection_flatten_policy ?? SelectionFlattenPolicy.Silent;
+    settings().programming.selection_flatten_policy ??
+    SelectionFlattenPolicy.Silent;
 
   const timeDisplayPreference = (): TimeDisplayPreference =>
-    settings().time_display_preference ?? TimeDisplayPreference.Auto;
+    settings().ui.time_display ?? TimeDisplayPreference.Auto;
 
   const timelinePlacementPreference = (): TimelinePlacementPreference =>
-    settings().timeline_placement_preference ??
-    TimelinePlacementPreference.Playhead;
+    settings().ui.timeline_placement ?? TimelinePlacementPreference.Playhead;
 
   /** Returns the current showfile backup retention count for the settings input. */
   const showfileBackupRetention = (): number =>
-    settings().showfile_backup_retention ?? DEFAULT_SHOWFILE_BACKUP_RETENTION;
+    settings().showfile.backup_retention ?? DEFAULT_SHOWFILE_BACKUP_RETENTION;
 
   const inputSignalLossTimeoutMs = (): number => {
     const timeout = ioSettings().input_signal_loss_timeout;
@@ -453,17 +453,20 @@ export function SettingsOverlay() {
   };
 
   /** Sends the requested network DMX output rate; the backend clamps it to its supported range. */
-  const setDmxOutputRate = (value: number) => {
-    if (!Number.isFinite(value)) {
-      if (dmxOutputRateInput) {
-        dmxOutputRateInput.value = String(ioSettings().dmx_output_rate_hz);
-      }
-      return;
+  const setDmxOutputRate = async (value: number) => {
+    if (Number.isFinite(value)) {
+      // The backend sends no settings change when it clamps back to the rate it already had, so
+      // the field is rewritten once the command finishes either way.
+      await commandClient
+        .invoke("SettingsCommand", {
+          type: "SetDmxOutputRate",
+          data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
+        })
+        .catch((error: unknown) =>
+          log.warn("Could not set the DMX output rate", error),
+        );
     }
-    commandClient.emit("SettingsCommand", {
-      type: "SetDmxOutputRate",
-      data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
-    });
+    showDmxOutputRate();
   };
 
   const setInputSignalLossTimeout = (value: number) => {
@@ -554,7 +557,7 @@ export function SettingsOverlay() {
                         describedBy={field.describedBy}
                         ariaLabel="Auto-select on attribute set"
                         layout="switch-only"
-                        checked={settings().programmer_auto_select}
+                        checked={settings().programming.auto_select}
                         onChange={setProgrammerAutoSelect}
                       />
                     )}
@@ -580,31 +583,33 @@ export function SettingsOverlay() {
                     )}
                   </SettingsRow>
                 </SettingsSection>
-                <SettingsSection title="Audio">
-                  <SettingsRow
-                    label="Output Device"
-                    description="Where timeline audio plays."
-                  >
-                    {(field) => (
-                      <NativeSelect
-                        id={field.id}
-                        aria-describedby={field.describedBy}
-                        value={settings().audio_device ?? ""}
-                        onChange={(e) =>
-                          setAudioDevice(e.currentTarget.value || null)
-                        }
-                      >
-                        <option value="">System Default</option>
-                        <For
-                          each={Object.entries(audioDevices())}
-                          fallback={null}
+                <Show when={capabilities()?.runtime_mode !== "EmbeddedDemo"}>
+                  <SettingsSection title="Audio">
+                    <SettingsRow
+                      label="Output Device"
+                      description="Where timeline audio plays."
+                    >
+                      {(field) => (
+                        <NativeSelect
+                          id={field.id}
+                          aria-describedby={field.describedBy}
+                          value={settings().audio.output_device ?? ""}
+                          onChange={(e) =>
+                            setAudioDevice(e.currentTarget.value || null)
+                          }
                         >
-                          {([id, name]) => <option value={id}>{name}</option>}
-                        </For>
-                      </NativeSelect>
-                    )}
-                  </SettingsRow>
-                </SettingsSection>
+                          <option value="">System Default</option>
+                          <For
+                            each={Object.entries(audioDevices())}
+                            fallback={null}
+                          >
+                            {([id, name]) => <option value={id}>{name}</option>}
+                          </For>
+                        </NativeSelect>
+                      )}
+                    </SettingsRow>
+                  </SettingsSection>
+                </Show>
                 <SettingsSection title="Showfile">
                   <SettingsRow
                     label="Backups to keep"
@@ -887,7 +892,7 @@ export function SettingsOverlay() {
                         step="1"
                         value={ioSettings().dmx_output_rate_hz}
                         onChange={(e) =>
-                          setDmxOutputRate(e.currentTarget.valueAsNumber)
+                          void setDmxOutputRate(e.currentTarget.valueAsNumber)
                         }
                       />
                     )}
@@ -971,7 +976,7 @@ export function SettingsOverlay() {
                         describedBy={field.describedBy}
                         ariaLabel="Send only changed parameters (recommended)"
                         layout="switch-only"
-                        checked={!settings().parameter_keyframes_only}
+                        checked={!settings().parameterStream.keyframes_only}
                         onChange={(enabled) =>
                           setParameterKeyframesOnly(!enabled)
                         }

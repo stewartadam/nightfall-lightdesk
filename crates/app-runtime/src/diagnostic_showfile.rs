@@ -104,24 +104,25 @@ mod tests {
     /// Requests capture unsaved state from whichever world is active without modifying desk settings.
     #[test]
     fn queued_requests_follow_the_active_world_after_a_swap() {
-        use nightfall_desk::prelude::DeskSettings;
+        use nightfall_engine::prelude::{PanelLayouts, register_settings_section};
         let (sender, receiver) = mpsc::sync_channel(1);
         for device in ["unsaved first world", "replacement world"] {
             let mut world = bevy::prelude::World::new();
             nightfall_showfile::initialize_showfile_resources(&mut world);
-            world.resource_mut::<DeskSettings>().audio_device = Some(device.to_string());
-            let before = serde_json::to_value(world.resource::<DeskSettings>()).unwrap();
+            register_settings_section(&mut world, PanelLayouts::SECTION);
+            world.resource_mut::<PanelLayouts>().default_layout_id = Some(device.to_string());
+            let before = serde_json::to_value(world.resource::<PanelLayouts>()).unwrap();
             let (reply, mut response) = tokio::sync::oneshot::channel();
             sender.try_send(reply).unwrap();
             respond_to_requests(&receiver, &mut world);
             let snapshot = response.try_recv().unwrap().unwrap();
             assert_eq!(
-                snapshot.snapshot.settings.audio_device.as_deref(),
-                Some(device)
+                snapshot.snapshot.settings["panelLayouts"]["default_layout_id"],
+                device
             );
             assert_eq!(snapshot.source, "current engine state");
             assert_eq!(
-                serde_json::to_value(world.resource::<DeskSettings>()).unwrap(),
+                serde_json::to_value(world.resource::<PanelLayouts>()).unwrap(),
                 before
             );
         }

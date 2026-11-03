@@ -382,7 +382,10 @@ mod tests {
         super::super::backup::backup_show_data_directory(&directory, 2).unwrap();
         let draft = root.path().join("drafts/Tour.nightfall-show");
         let mut edited = snapshot.clone();
-        edited.settings.audio_device = Some("draft selection".to_string());
+        edited.settings.insert(
+            "audio".to_string(),
+            serde_json::json!({ "output_device": "draft selection" }),
+        );
         let edited_hash = hash_showfile_snapshot_with_metadata(&edited, &edited.metadata).unwrap();
         write_showfile_snapshot_with_manifest_to_dir(&edited, &draft, edited_hash, Some(hash))
             .unwrap();
@@ -392,12 +395,8 @@ mod tests {
         let revision = Path::new(&shows[0].revisions[0].path);
         assert_eq!(read_showfile_json_from_path(revision).unwrap(), json);
         assert_eq!(
-            read_showfile_snapshot_from_path(&draft)
-                .unwrap()
-                .settings
-                .audio_device
-                .as_deref(),
-            Some("draft selection")
+            read_showfile_snapshot_from_path(&draft).unwrap().settings["audio"]["output_device"],
+            "draft selection"
         );
         let diagnostic =
             crate::diagnostic_showfile::read_stored_showfile(directory.clone()).unwrap();

@@ -13,6 +13,7 @@
 
 mod action_references;
 mod assertion_sets;
+mod settings_sections;
 mod speed_names;
 
 use nightfall_fixtures::routes::{DmxRange, OutputSource};
@@ -38,6 +39,7 @@ pub(crate) fn migrate_showfile_json(showfile: &mut Value, version: u32) -> Resul
             21 => speed_names::migrate_v21_to_v22(showfile)?,
             22 => control_slots_to_faders(showfile)?,
             23 => assertion_sets::migrate_v23_to_v24(showfile)?,
+            24 => settings_sections::migrate_v24_to_v25(showfile)?,
             _ => return Err(format!("no migration from showfile version {version}")),
         }
         version += 1;

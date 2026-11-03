@@ -150,7 +150,7 @@ pub fn plan_pending_user_commands(
     mut pending_buffer: ResMut<PendingCommandBuffer>,
     mut pending_actions: ResMut<PendingEngineOperationBuffer>,
     programmer: Res<Programmer>,
-    settings: Res<DeskSettings>,
+    settings: Res<crate::settings::ProgrammingSettings>,
     selection_resolver: SelectionResolver,
     spatial_selection_resolver: SpatialSelectionResolver,
     fixture_data: Res<FixtureDataProviderExt>,

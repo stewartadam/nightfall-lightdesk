@@ -86,7 +86,7 @@ export function CueEditorController(props: {
     Record<string, RichTimeDisplayUnit>
   >({});
   const defaultTimingDisplayUnit = createMemo(() =>
-    timeDisplayUnitFromPreference(settings().time_display_preference),
+    timeDisplayUnitFromPreference(settings().ui.time_display),
   );
   const [cueGridRevision, setCueGridRevision] = createSignal(0);
   const [cellTooltip, setCellTooltip] = createSignal<CueCellTooltipState>();

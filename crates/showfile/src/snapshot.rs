@@ -7,7 +7,7 @@
  */
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -15,6 +15,7 @@ use nightfall::prelude::*;
 use nightfall_clips::Clip;
 use nightfall_cues::prelude::*;
 use nightfall_desk::prelude::*;
+use nightfall_engine::prelude::SettingsSection;
 use nightfall_fixtures::prelude::*;
 use nightfall_flow::prelude::*;
 use nightfall_fx::prelude::*;
@@ -22,7 +23,6 @@ use nightfall_fx::prelude::*;
 use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
-use nightfall_io::IoRuntimeSettings;
 use nightfall_scene_objects::prelude::*;
 use nightfall_selection::ReferenceSource;
 use nightfall_tempo::prelude::*;
@@ -53,15 +53,12 @@ pub struct ShowfileSnapshot {
     pub fixtures: Vec<Fixture>,
     /// Showfile-scoped global variables.
     pub variables: HashMap<String, VariableValue>,
-    /// Operator-facing desk settings.
+    /// Settings sections saved with the show, keyed by section.
     #[serde(default)]
-    pub settings: DeskSettings,
+    pub settings: BTreeMap<String, serde_json::Value>,
     /// Ordered fader assignments and button modes, excluding levels and pickup state.
     #[serde(default, rename = "faders")]
     pub faders: Vec<FaderConfig>,
-    /// Showfile-scoped input and output transport preferences.
-    #[serde(default, rename = "ioSettings")]
-    pub io_settings: IoRuntimeSettings,
     /// Show tempo and bar length, restored when the show opens.
     #[serde(default)]
     pub tempo: TempoSettings,
@@ -124,6 +121,18 @@ pub struct ShowfileSnapshot {
 }
 
 impl ShowfileSnapshot {
+    /// Returns the settings section saved under `section`'s key, or its default when the show
+    /// has none or it no longer parses.
+    pub fn settings_section<T>(&self, section: &SettingsSection<T>) -> T
+    where
+        T: Clone + Default + serde::de::DeserializeOwned,
+    {
+        self.settings
+            .get(section.key())
+            .and_then(|value| T::deserialize(value).ok())
+            .unwrap_or_default()
+    }
+
     /// Returns every object in the snapshot that stores selections, for edits applied to all of
     /// them such as group-reference stabilizing.
     pub fn reference_sources_mut(&mut self) -> impl Iterator<Item = &mut dyn ReferenceSource> {

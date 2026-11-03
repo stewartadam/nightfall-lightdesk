@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Desk-wide settings and settings command types
+//! Host and transport settings commands, telemetry consent, and device lists
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -18,235 +18,10 @@ use nightfall_io::prelude::{
     NetworkDmxOutputTargets, UsbDmxOutputTargets,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-
-/// Default number of timestamped showfile backups retained after each save.
-pub const DEFAULT_SHOWFILE_BACKUP_RETENTION: u32 = 20;
-
-/// Serialized Dockview panel metadata stored alongside a named panel layout.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[typeshare::typeshare]
-#[serde(rename_all = "camelCase")]
-pub struct StoredPanelLayoutPanel {
-    /// Stable panel id inside the serialized Dockview layout.
-    pub id: String,
-    /// User-visible panel title captured when the layout was stored.
-    pub title: String,
-    /// Panel parameters needed by Dockview to restore component state.
-    #[typeshare(serialized_as = "unknown")]
-    pub params: Value,
-}
-
-/// Panel arrangement a device saves into one named layout from its working copy.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[typeshare::typeshare]
-#[serde(rename_all = "camelCase")]
-pub struct PanelLayoutArrangement {
-    /// Named layout receiving the arrangement.
-    pub id: String,
-    /// Layout storage format version.
-    pub version: u32,
-    /// Opaque Dockview layout payload.
-    #[typeshare(serialized_as = "unknown")]
-    pub layout: Value,
-    /// Panel metadata captured with the arrangement.
-    pub panels: Vec<StoredPanelLayoutPanel>,
-}
-
-/// New user-visible name for one named layout.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[typeshare::typeshare]
-#[serde(rename_all = "camelCase")]
-pub struct PanelLayoutRename {
-    /// Named layout to rename.
-    pub id: String,
-    /// New user-visible name; surrounding whitespace is trimmed.
-    pub name: String,
-}
-
-/// Whether one named layout appears in the layout switcher.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[typeshare::typeshare]
-#[serde(rename_all = "camelCase")]
-pub struct PanelLayoutVisibility {
-    /// Named layout to show or hide.
-    pub id: String,
-    /// Whether the layout is listed in the switcher.
-    pub shown_in_switcher: bool,
-}
-
-/// Serialized Dockview panel layout that is named and saved with the showfile.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[typeshare::typeshare]
-#[serde(rename_all = "camelCase")]
-pub struct StoredPanelLayout {
-    /// Whether this layout is shown in the switcher; list order defines its position.
-    #[serde(default = "default_layout_shown_in_switcher")]
-    pub shown_in_switcher: bool,
-    /// Stable layout id used by the UI command palette and layout manager.
-    pub id: String,
-    /// User-visible layout name.
-    pub name: String,
-    /// Layout storage format version.
-    pub version: u32,
-    /// Opaque Dockview layout payload.
-    #[typeshare(serialized_as = "unknown")]
-    pub layout: Value,
-    /// Panel metadata captured when the layout was stored.
-    pub panels: Vec<StoredPanelLayoutPanel>,
-    /// Layout creation timestamp in milliseconds since Unix epoch.
-    pub created_at: f64,
-    /// Last layout update timestamp in milliseconds since Unix epoch.
-    pub updated_at: f64,
-    /// Whether this layout lives only for the current session and is left out of saved showfiles,
-    /// such as the layout the welcome guide runs lessons in.
-    #[serde(default)]
-    pub transient: bool,
-}
-
-/// Keeps saved layouts discoverable when the showfile predates explicit switcher visibility.
-fn default_layout_shown_in_switcher() -> bool {
-    true
-}
-
-/// Desk-wide settings configuration
-#[derive(bevy_ecs::prelude::Resource, Debug, Clone, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct DeskSettings {
-    /// When true, setting an attribute also updates the programmer selection
-    pub programmer_auto_select: bool,
-    /// Selected audio output device name (None = system default)
-    pub audio_device: Option<String>,
-    /// Policy for cue renumbering when sequence steps are reordered in the UI
-    #[serde(default)]
-    pub sequence_reorder_renumber_policy: SequenceReorderRenumberPolicy,
-    /// Policy for handling operations that flatten programmer selection expressions
-    #[serde(default)]
-    pub selection_flatten_policy: SelectionFlattenPolicy,
-    /// Preferred display unit for editable time values in the UI.
-    #[serde(default)]
-    pub time_display_preference: TimeDisplayPreference,
-    /// Position source for timeline insert and paste operations.
-    #[serde(default)]
-    pub timeline_placement_preference: TimelinePlacementPreference,
-    /// Number of timestamped showfile backups to retain after each save; 0 means unlimited.
-    #[serde(default = "default_showfile_backup_retention")]
-    pub showfile_backup_retention: u32,
-    /// Sends clients every parameter value each frame instead of only the changed ones, a
-    /// fallback for when the UI shows values that do not match the output.
-    #[serde(default)]
-    pub parameter_keyframes_only: bool,
-    /// Showfile-scoped named UI panel layouts.
-    #[serde(default)]
-    pub panel_layouts: Vec<StoredPanelLayout>,
-    /// Named layout a device opens when it has no arrangement of its own for this showfile.
-    #[serde(default)]
-    pub default_panel_layout_id: Option<String>,
-}
-
-impl Default for DeskSettings {
-    fn default() -> Self {
-        Self {
-            programmer_auto_select: false,
-            audio_device: None,
-            sequence_reorder_renumber_policy: SequenceReorderRenumberPolicy::default(),
-            selection_flatten_policy: SelectionFlattenPolicy::default(),
-            time_display_preference: TimeDisplayPreference::default(),
-            timeline_placement_preference: TimelinePlacementPreference::default(),
-            showfile_backup_retention: DEFAULT_SHOWFILE_BACKUP_RETENTION,
-            parameter_keyframes_only: false,
-            panel_layouts: Vec::new(),
-            default_panel_layout_id: None,
-        }
-    }
-}
-
-impl DeskSettings {
-    /// Returns the settings as a showfile stores them: without transient layouts, and without
-    /// a default layout that is one, so the show reopens in a layout it keeps.
-    pub fn for_showfile(&self) -> Self {
-        let transient: Vec<&str> = self
-            .panel_layouts
-            .iter()
-            .filter(|layout| layout.transient)
-            .map(|layout| layout.id.as_str())
-            .collect();
-        if transient.is_empty() {
-            return self.clone();
-        }
-        let mut settings = self.clone();
-        settings.panel_layouts.retain(|layout| !layout.transient);
-        if settings
-            .default_panel_layout_id
-            .as_deref()
-            .is_some_and(|id| transient.contains(&id))
-        {
-            settings.default_panel_layout_id = None;
-        }
-        settings
-    }
-}
-
-/// Returns the default showfile backup retention count for serde defaults.
-pub fn default_showfile_backup_retention() -> u32 {
-    DEFAULT_SHOWFILE_BACKUP_RETENTION
-}
 
 /// Snapshot of audio outputs currently surfaced to desk clients.
 #[derive(bevy_ecs::prelude::Resource, Debug, Default, Clone)]
 pub struct AvailableAudioDevices(pub HashMap<String, String>);
-
-/// Policy for cue ID renumbering when reordering sequence steps in the UI.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-pub enum SequenceReorderRenumberPolicy {
-    /// Preserve existing cue IDs after reordering sequence steps.
-    #[default]
-    Preserve,
-    /// Automatically renumber cues to 1..N in their new order after reordering.
-    AutoRenumber,
-    /// Prompt in UI before renumbering after reorder.
-    Prompt,
-}
-
-/// Policy for handling operations that flatten programmer selection expressions.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-pub enum SelectionFlattenPolicy {
-    /// Flatten selections immediately without prompting.
-    #[default]
-    Silent,
-    /// Prompt in UI before running operations that may flatten selections.
-    Prompt,
-}
-
-/// Preferred display unit for editable time values in the UI.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-pub enum TimeDisplayPreference {
-    /// Choose a compact unit based on the duration value.
-    #[default]
-    Auto,
-    /// Always display seconds.
-    Seconds,
-    /// Always display milliseconds.
-    Milliseconds,
-    /// Always display one-beat tempo.
-    Bpm,
-    /// Always display frequency.
-    Hertz,
-}
-
-/// Position source for timeline insert and paste operations.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-pub enum TimelinePlacementPreference {
-    /// Place timeline inserts and pastes at the current playhead.
-    #[default]
-    Playhead,
-    /// Place timeline inserts and pastes at the current timeline cursor when available.
-    Cursor,
-}
 
 /// Operator choices about anonymous telemetry, kept with the host rather than any showfile
 /// so that opening a show on another computer never changes what that computer shares.
@@ -314,14 +89,12 @@ impl GraphicsReport {
 #[derive(Debug, Default, Clone, PartialEq, Eq, bevy_ecs::prelude::Resource)]
 pub struct ReportedGraphics(pub Option<GraphicsReport>);
 
-/// Commands for modifying desk-wide settings
+/// Commands for host preferences, input and output transport settings, and device lists
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
 #[serde(deny_unknown_fields)]
 pub enum SettingsCommand {
-    /// Set the programmer auto-select behavior
-    SetProgrammerAutoSelect(bool),
     /// Set the selected network interface (None = system default)
     SetNetworkInterface(Option<String>),
     /// Sets host-owned external control permission and interface selection.
@@ -350,36 +123,8 @@ pub enum SettingsCommand {
     SetDmxOutputRate(u32),
     /// Set patch overlap validation mode
     SetRouteValidationMode(RouteValidationMode),
-    /// Set the selected audio device (None = system default)
-    SetAudioDevice(Option<String>),
-    /// Set cue renumbering behavior when sequence steps are reordered in UI
-    SetSequenceReorderRenumberPolicy(SequenceReorderRenumberPolicy),
     /// Set whether input views show only external inputs or all detected inputs
     SetInputUniverseVisibilityMode(InputUniverseVisibilityMode),
-    /// Set behavior for operations that may flatten programmer selection expressions
-    SetSelectionFlattenPolicy(SelectionFlattenPolicy),
-    /// Set preferred display unit for editable time values
-    SetTimeDisplayPreference(TimeDisplayPreference),
-    /// Set whether timeline insert and paste operations use the playhead or cursor
-    SetTimelinePlacementPreference(TimelinePlacementPreference),
-    /// Set number of timestamped showfile backups to retain; 0 means unlimited
-    SetShowfileBackupRetention(u32),
-    /// Set whether clients receive every parameter value each frame instead of only changes
-    SetParameterKeyframesOnly(bool),
-    /// Add a named UI panel layout to the showfile; its id must not already exist
-    CreatePanelLayout(StoredPanelLayout),
-    /// Replace the saved arrangement of one named layout
-    SavePanelLayoutArrangement(PanelLayoutArrangement),
-    /// Rename one named layout
-    RenamePanelLayout(PanelLayoutRename),
-    /// Show or hide one named layout in the layout switcher
-    SetPanelLayoutVisibility(PanelLayoutVisibility),
-    /// Remove one named layout, clearing the default layout if it pointed there
-    DeletePanelLayout(String),
-    /// Reorder the layouts shown in the switcher; hidden layouts keep their positions
-    ReorderPanelLayouts(Vec<String>),
-    /// Set the named layout devices open when they have no arrangement for this showfile
-    SetDefaultPanelLayout(Option<String>),
     /// Request list of available network interfaces
     GetAvailableNetworkInterfaces,
     /// Request list of available audio devices
@@ -389,35 +134,3 @@ pub enum SettingsCommand {
 }
 
 impl IngressCommand for SettingsCommand {}
-
-#[cfg(test)]
-mod tests {
-    use super::{SettingsCommand, StoredPanelLayout};
-
-    /// The web UI clears the default layout by omitting the payload, which must read as no layout.
-    #[test]
-    fn clearing_the_default_layout_needs_no_payload() {
-        let command: SettingsCommand =
-            serde_json::from_value(serde_json::json!({ "type": "SetDefaultPanelLayout" })).unwrap();
-        assert!(matches!(
-            command,
-            SettingsCommand::SetDefaultPanelLayout(None)
-        ));
-    }
-
-    /// Saved layouts without visibility metadata remain accessible, while explicit hiding survives a round trip.
-    #[test]
-    fn saved_layout_visibility_defaults_to_shown() {
-        let value = serde_json::json!({
-            "id": "saved", "name": "Saved layout", "version": 2,
-            "layout": { "panels": {}, "grid": {} }, "panels": [],
-            "createdAt": 1, "updatedAt": 1
-        });
-        let mut layout: StoredPanelLayout = serde_json::from_value(value).unwrap();
-        assert!(layout.shown_in_switcher);
-        layout.shown_in_switcher = false;
-        let restored: StoredPanelLayout =
-            serde_json::from_value(serde_json::to_value(layout).unwrap()).unwrap();
-        assert!(!restored.shown_in_switcher);
-    }
-}

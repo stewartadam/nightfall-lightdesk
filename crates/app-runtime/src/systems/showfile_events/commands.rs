@@ -28,6 +28,7 @@ pub fn handle_events(
     mut pending_world_swap_request: Option<ResMut<crate::PendingWorldSwapRequest>>,
     mut current_showfile: ResMut<CurrentShowfile>,
     mut clean_snapshot_hash: ResMut<ShowfileCleanSnapshotHash>,
+    settings_registry: Option<Res<SettingsRegistry>>,
     mut commands: Commands,
     mut events: MessageReader<CommandEnvelope<DeskCommand>>,
     mut responder: CommandResponder,
@@ -160,13 +161,19 @@ pub fn handle_events(
                     );
                     continue;
                 }
-                let snapshot = match prepare_showfile_session(&source, showfile_name.as_deref()) {
+                let mut snapshot = match prepare_showfile_session(&source, showfile_name.as_deref())
+                {
                     Ok(snapshot) => snapshot,
                     Err(error) => {
                         fail_showfile_command(&mut responder, event.command_id, error);
                         continue;
                     }
                 };
+                // The clean hash compares against snapshots of the world, where every settings
+                // section is complete.
+                if let Some(registry) = settings_registry.as_deref() {
+                    snapshot.settings = registry.canonical_saved(&snapshot.settings);
+                }
                 let mut showfile_load_state = showfile_state.p1();
                 if let Err(error) = load_showfile_snapshot_from_state(
                     snapshot.clone(),
@@ -188,6 +195,7 @@ pub fn handle_events(
                             update_clean_snapshot_hash_from_saved_show(
                                 &mut clean_snapshot_hash,
                                 showfile_name.as_deref(),
+                                settings_registry.as_deref(),
                             )
                         }
                     });

@@ -38,7 +38,7 @@ pub struct ProgrammerMutationState<'w> {
     /// Supplies fixture element metadata needed by partial releases and overrides.
     fixture_data: Res<'w, FixtureDataProviderExt>,
     /// Controls operator confirmation policy for destructive selection flattening.
-    settings: Res<'w, DeskSettings>,
+    settings: Res<'w, crate::settings::ProgrammingSettings>,
     /// Stores single-use capabilities for approved selection flattening.
     approvals: ResMut<'w, SelectionFlattenApprovals>,
     /// Retains high-level commands until their planned actions reach dispatch.

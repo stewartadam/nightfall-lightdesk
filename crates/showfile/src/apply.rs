@@ -25,7 +25,6 @@ use nightfall_fx::prelude::*;
 use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
-use nightfall_io::IoRuntimeSettings;
 use nightfall_scene_objects::prelude::*;
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
@@ -195,11 +194,8 @@ pub fn apply_showfile_snapshot(
         #[cfg(feature = "osc")]
         osc_mappings,
         global_variables,
-        desk_settings,
-        io_settings,
     } = state;
-    let mut desk_state_contributor =
-        DeskStateLoadContributor::new(global_variables, desk_settings, io_settings);
+    let mut desk_state_contributor = DeskStateLoadContributor::new(global_variables);
     let mut fixtures_patch_contributor = FixturesPatchLoadContributor::new(
         fixture_data_provider,
         input_routes,
@@ -309,10 +305,6 @@ pub struct ShowfileApplyState<'w> {
     pub osc_mappings: ResMut<'w, OscMappings>,
     /// Global variables, written through deferred commands.
     pub global_variables: Res<'w, GlobalVariables>,
-    /// Desk settings saved with the show.
-    pub desk_settings: ResMut<'w, DeskSettings>,
-    /// Input and output runtime settings saved with the show.
-    pub io_settings: ResMut<'w, IoRuntimeSettings>,
 }
 
 /// Apply a canonical snapshot to an initialized world through one deferred ECS system.
@@ -360,7 +352,5 @@ pub fn initialize_showfile_resources(world: &mut World) {
     #[cfg(feature = "osc")]
     world.init_resource::<OscMappings>();
     world.init_resource::<GlobalVariables>();
-    world.init_resource::<DeskSettings>();
     world.init_resource::<Faders>();
-    world.init_resource::<IoRuntimeSettings>();
 }

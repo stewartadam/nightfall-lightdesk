@@ -36,7 +36,6 @@ pub mod automation_actions;
 pub mod desk_command;
 pub mod faders;
 pub mod masters;
-mod panel_layouts;
 pub mod resources;
 pub mod settings;
 pub mod systems;
@@ -64,10 +63,8 @@ pub mod prelude {
     };
     pub use crate::resources::ExclusiveResource;
     pub use crate::settings::{
-        AvailableAudioDevices, DeskSettings, GraphicsReport, PanelLayoutArrangement,
-        PanelLayoutRename, PanelLayoutVisibility, ReportedGraphics, SelectionFlattenPolicy,
-        SequenceReorderRenumberPolicy, SettingsCommand, StoredPanelLayout, StoredPanelLayoutPanel,
-        TelemetryConsent, TelemetryState, TimeDisplayPreference, TimelinePlacementPreference,
+        AvailableAudioDevices, GraphicsReport, ReportedGraphics, SettingsCommand, TelemetryConsent,
+        TelemetryState,
     };
     pub use crate::systems::relations::apply_virtual_relations;
     pub use crate::systems::vdim::{
@@ -131,7 +128,6 @@ impl Plugin for DeskPlugin {
         app.init_resource::<DataProvider<Blueprint>>();
         app.init_resource::<GlobalVariables>();
         app.init_resource::<NetworkStats>();
-        app.init_resource::<DeskSettings>();
         app.init_resource::<IoRuntimeSettings>();
         app.init_resource::<nightfall_io::ExternalControlState>();
         app.init_resource::<crate::settings::TelemetryState>();
@@ -198,7 +194,6 @@ impl Plugin for DeskPlugin {
                 event_handlers::settings_events::finish_commands,
                 event_handlers::settings_events::sync_network_dmx_outputs_from_settings,
                 event_handlers::settings_events::sync_input_stale_timeout_from_settings,
-                event_handlers::settings_events::sync_parameter_stream_from_settings,
             )
                 .chain()
                 .in_set(EventHandling),
@@ -279,8 +274,7 @@ impl Plugin for DeskPlugin {
                 websocket::send_blueprint_dependencies_on_change,
                 websocket::send_clips_on_clip_change,
                 websocket::send_undo_state_on_change,
-                websocket::send_settings_on_change,
-                websocket::send_io_settings_on_change,
+                websocket::send_host_state_on_change,
                 websocket::send_available_audio_devices_on_change,
                 websocket::send_available_usb_dmx_devices_on_change,
                 // Layer stack slots refer to the parameter layout published before it.

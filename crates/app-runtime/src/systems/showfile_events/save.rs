@@ -70,7 +70,10 @@ pub(super) fn save_showfile(
     if had_existing_show_data {
         backup_show_data_directory(
             &saved_dir,
-            showfile_save_state.desk_settings.showfile_backup_retention,
+            showfile_save_state.showfile_settings.as_deref().map_or(
+                nightfall_showfile::DEFAULT_SHOWFILE_BACKUP_RETENTION,
+                |settings| settings.backup_retention,
+            ),
         )?;
     }
     replace_showfile_dir_with_temp(&temp_saved_dir, &saved_dir)?;
@@ -114,12 +117,19 @@ pub(super) fn update_clean_snapshot_hash(
 }
 
 /// Updates the clean snapshot hash from the canonical saved showfile on disk.
+///
+/// With a settings registry, the saved settings are first filled in the way loading them would,
+/// so a show saved by an older build or one with fewer settings is not dirty as soon as it loads.
 pub(super) fn update_clean_snapshot_hash_from_saved_show(
     clean_snapshot_hash: &mut ShowfileCleanSnapshotHash,
     showfile_name: Option<&str>,
+    settings_registry: Option<&SettingsRegistry>,
 ) -> Result<(), String> {
     match read_showfile_snapshot(showfile_name) {
-        Ok(snapshot) => {
+        Ok(mut snapshot) => {
+            if let Some(registry) = settings_registry {
+                snapshot.settings = registry.canonical_saved(&snapshot.settings);
+            }
             update_clean_snapshot_hash(clean_snapshot_hash, &snapshot)?;
             let saved_hash = clean_snapshot_hash
                 .hash
@@ -179,12 +189,19 @@ pub(crate) fn refresh_clean_snapshot_hash_after_showfile_bootstrap(
     if assets::paths_refer_to_same_file(source, &showfile_dir_path(showfile_name)?) {
         refresh_clean_snapshot_hash_from_world(world)
     } else {
-        let mut clean_snapshot_hash = world
-            .get_resource_mut::<ShowfileCleanSnapshotHash>()
-            .ok_or_else(|| "showfile clean hash resource is missing".to_string())?;
-        if let Err(error) =
-            update_clean_snapshot_hash_from_saved_show(&mut clean_snapshot_hash, showfile_name)
-        {
+        if !world.contains_resource::<ShowfileCleanSnapshotHash>() {
+            return Err("showfile clean hash resource is missing".to_string());
+        }
+        let result = world.resource_scope(
+            |world, mut clean_snapshot_hash: Mut<ShowfileCleanSnapshotHash>| {
+                update_clean_snapshot_hash_from_saved_show(
+                    &mut clean_snapshot_hash,
+                    showfile_name,
+                    world.get_resource::<SettingsRegistry>(),
+                )
+            },
+        );
+        if let Err(error) = result {
             tracing::warn!(
                 "Failed to update clean showfile hash after draft load: {}",
                 error

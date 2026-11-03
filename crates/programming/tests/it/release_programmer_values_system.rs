@@ -13,7 +13,6 @@ use bevy_ecs::prelude::{MessageReader, MessageWriter, Messages};
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
 use nightfall_cues::CueLifecycleOperation;
-use nightfall_desk::prelude::{DeskSettings, SelectionFlattenPolicy};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_engine::prelude::{
@@ -32,6 +31,7 @@ use nightfall_programming::events::{
 use nightfall_programming::prelude::{
     AttributeFilter, ClearCommand, ClearTarget, Programmer, ProgrammerOperation, Scope, UserCommand,
 };
+use nightfall_programming::prelude::{ProgrammingSettings, SelectionFlattenPolicy};
 use uuid::Uuid;
 
 fn test_fixture_ref(seed: u128) -> FixtureRef {
@@ -102,7 +102,7 @@ fn setup_app() -> App {
     app.init_resource::<PendingCommandBuffer>();
     app.init_resource::<PendingEngineOperationBuffer>();
     app.insert_resource(Programmer::default());
-    app.insert_resource(DeskSettings::default());
+    app.insert_resource(ProgrammingSettings::default());
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(DataProvider::<Group>::default());
     app.add_systems(
@@ -914,7 +914,7 @@ fn test_release_programmer_values_removes_fixture_from_group_range_instruction()
 fn test_explicitly_approved_desk_release_removes_fixture_from_group_range_instruction() {
     let mut app = setup_app();
     app.world_mut()
-        .resource_mut::<DeskSettings>()
+        .resource_mut::<ProgrammingSettings>()
         .selection_flatten_policy = SelectionFlattenPolicy::Prompt;
 
     let mut group_13_fixtures = Vec::new();
@@ -1016,7 +1016,7 @@ fn test_explicitly_approved_desk_release_removes_fixture_from_group_range_instru
 fn test_prompt_policy_does_not_prompt_for_attr_only_release() {
     let mut app = setup_app();
     app.world_mut()
-        .resource_mut::<DeskSettings>()
+        .resource_mut::<ProgrammingSettings>()
         .selection_flatten_policy = SelectionFlattenPolicy::Prompt;
 
     let fixture = test_fixture(601);
@@ -1094,7 +1094,7 @@ fn test_prompt_policy_does_not_prompt_for_attr_only_release() {
 fn test_prompt_policy_rejects_flattening_release_and_accepts_explicit_retry() {
     let mut app = setup_app();
     app.world_mut()
-        .resource_mut::<DeskSettings>()
+        .resource_mut::<ProgrammingSettings>()
         .selection_flatten_policy = SelectionFlattenPolicy::Prompt;
 
     let fixture_a = test_fixture(701);
@@ -1329,7 +1329,7 @@ fn test_prompt_policy_rejects_flattening_release_and_accepts_explicit_retry() {
 fn stale_multi_action_plan_is_rejected_before_any_sibling_mutates() {
     let mut app = setup_app();
     app.world_mut()
-        .resource_mut::<DeskSettings>()
+        .resource_mut::<ProgrammingSettings>()
         .selection_flatten_policy = SelectionFlattenPolicy::Prompt;
 
     let fixture_a = test_fixture(811);

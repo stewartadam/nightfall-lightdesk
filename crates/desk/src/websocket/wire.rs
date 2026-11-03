@@ -190,10 +190,6 @@ pub(super) enum DeskWsMessage<'a> {
     BlueprintDefinitions(&'a [Blueprint]),
     /// Reverse dependencies for every Blueprint with a live authored reference.
     BlueprintDependencies(&'a [OutboundBlueprintDependency]),
-    /// Current desk settings
-    Settings(&'a DeskSettings),
-    /// Current IO runtime settings
-    IoSettings(&'a IoRuntimeSettings),
     /// Host-owned external control settings and listener status.
     ExternalControlState(&'a ExternalControlState),
     /// Host-owned telemetry consent and anonymous identifier.

@@ -14,7 +14,6 @@ use nightfall::command_types::{DmxChannelExpr, DmxChannelRef};
 use nightfall::prelude::{
     FixtureRef, Group, GroupRefExpr, Identifiers, SelectionExpr, UnresolvedFixtureRef, ValueSource,
 };
-use nightfall_desk::prelude::{DeskSettings, SelectionFlattenPolicy};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_engine::prelude::{
@@ -31,6 +30,7 @@ use nightfall_programming::prelude::{
     AttributeFilter, ClearCommand, ClearTarget, Programmer, ProgrammerOperation, ReleaseCommand,
     ReleaseTarget, Scope, UserCommand,
 };
+use nightfall_programming::prelude::{ProgrammingSettings, SelectionFlattenPolicy};
 use uuid::Uuid;
 
 /// Builds the minimal planning schedule and its command/action queues.
@@ -41,7 +41,7 @@ fn setup_app() -> App {
     app.add_message::<FinishedCommand>();
     app.add_message::<CommandNoticeReply>();
     app.insert_resource(Programmer::default());
-    app.insert_resource(DeskSettings::default());
+    app.insert_resource(ProgrammingSettings::default());
     app.insert_resource(FixtureDataProviderExt::default());
     app.insert_resource(DataProvider::<Group>::default());
     app.insert_resource(PendingCommandBuffer::default());
@@ -74,7 +74,7 @@ fn test_fixture(id: u32) -> Fixture {
 fn rejects_multi_action_plan_atomically_when_one_action_requires_confirmation() {
     let mut app = setup_app();
     app.world_mut()
-        .resource_mut::<DeskSettings>()
+        .resource_mut::<ProgrammingSettings>()
         .selection_flatten_policy = SelectionFlattenPolicy::Prompt;
 
     let fixture_a = test_fixture(801);

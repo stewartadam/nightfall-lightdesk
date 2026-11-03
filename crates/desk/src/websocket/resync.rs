@@ -13,7 +13,6 @@ use super::*;
 /// Websocket request payload for resyncing runtime settings.
 #[derive(SystemParam)]
 pub(crate) struct ResyncSettingsParams<'w> {
-    settings: Res<'w, crate::settings::DeskSettings>,
     io_settings: Res<'w, IoRuntimeSettings>,
     external_control: Res<'w, ExternalControlState>,
     telemetry: Res<'w, crate::settings::TelemetryState>,
@@ -72,8 +71,6 @@ pub(crate) fn handle_resync_state(
     );
     send_blueprints(blueprint_data_provider, &broadcaster);
     send_blueprint_dependencies(&blueprint_reference_index, &broadcaster);
-    send_settings(&resync_settings.settings, &broadcaster);
-    send_io_settings(&resync_settings.io_settings, &broadcaster);
     send_external_control_state(&resync_settings.external_control, &broadcaster);
     send_telemetry_state(&resync_settings.telemetry, &broadcaster);
     send_network_interface_state(

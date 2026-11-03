@@ -43,6 +43,7 @@ pub mod reference_index;
 pub mod render_pass;
 pub mod resync;
 pub mod runtime_capabilities;
+pub mod settings;
 pub mod ui_notification;
 pub mod variables;
 
@@ -144,6 +145,19 @@ pub mod prelude {
         FxModuleCapability, LibraryCapability, RuntimeCapabilities, RuntimeMode,
         TimelineAudioCapability, disk_storage_available,
     };
+    pub use crate::settings::{
+        SettingsAppExt, SettingsCommandHandling, SettingsPlugin, SettingsRegistry, SettingsSection,
+        SettingsSync, SettingsUpdate, SettingsValue, SettingsValues, load_saved_settings,
+        panel_layouts::{
+            PanelLayoutArrangement, PanelLayoutCommand, PanelLayoutRename, PanelLayoutVisibility,
+            PanelLayouts, StoredPanelLayout, StoredPanelLayoutPanel,
+        },
+        register_settings_section, sync_settings_values,
+        ui_preferences::{
+            SequenceReorderRenumberPolicy, TimeDisplayPreference, TimelinePlacementPreference,
+            UiPreferences, UiPreferencesCommand,
+        },
+    };
     pub use crate::ui_notification::{
         ToastAction, ToastLevel, UiNotification, UiNotificationState,
     };
@@ -230,6 +244,9 @@ impl Plugin for EnginePlugin {
         register_command_deserializer::<EngineCommand>(app, eval::deserialize_engine_command);
         app.add_message::<ResyncRequested>();
         app.add_systems(Update, resync::begin_resync.in_set(InputHandling));
+
+        app.add_plugins(settings::SettingsPlugin);
+        settings::register_engine_sections(app);
 
         app.add_message::<UiNotification>();
         app.init_resource::<UiNotificationState>();

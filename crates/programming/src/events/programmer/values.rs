@@ -125,7 +125,7 @@ pub(super) fn handle_instruction_command(
                 &state.fixture_data,
             );
 
-            if state.settings.programmer_auto_select {
+            if state.settings.auto_select {
                 state
                     .programmer
                     .set_active_spatial_selection(selection.clone());

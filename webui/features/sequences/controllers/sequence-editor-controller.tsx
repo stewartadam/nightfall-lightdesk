@@ -95,7 +95,7 @@ export function SequenceEditorController(props: {
   let conflictTooltipTimeoutId: ReturnType<typeof setTimeout> | undefined;
   let conflictTooltipId = 0;
   const defaultTimingDisplayUnit = createMemo(() =>
-    timeDisplayUnitFromPreference(settings().time_display_preference),
+    timeDisplayUnitFromPreference(settings().ui.time_display),
   );
 
   /** Clears any pending or visible sequence conflict tooltip. */

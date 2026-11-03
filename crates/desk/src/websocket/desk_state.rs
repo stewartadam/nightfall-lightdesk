@@ -231,39 +231,8 @@ pub fn send_undo_state_on_change(
     }
 }
 
-/// Send current desk settings to websocket clients
-pub fn send_settings(settings: &crate::settings::DeskSettings, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &DeskWsMessage::Settings(settings),
-    );
-    tracing::trace!("Sending settings to websocket clients");
-}
-
-/// Sends current IO runtime settings to websocket clients.
-pub fn send_io_settings(settings: &IoRuntimeSettings, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &DeskWsMessage::IoSettings(settings),
-    );
-    tracing::trace!("Sending IO settings to websocket clients");
-}
-
-/// Send settings when DeskSettings changes
-pub fn send_settings_on_change(
-    settings: Res<crate::settings::DeskSettings>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if !settings.is_changed() {
-        return;
-    }
-
-    send_settings(&settings, &broadcaster);
-}
-
-/// Sends IO runtime settings when the resource changes.
-pub fn send_io_settings_on_change(
-    settings: Res<IoRuntimeSettings>,
+/// Sends host-owned external control and telemetry state when either changes.
+pub fn send_host_state_on_change(
     external_control: Res<ExternalControlState>,
     telemetry: Res<crate::settings::TelemetryState>,
     broadcaster: Res<ClientEventSink>,
@@ -274,11 +243,6 @@ pub fn send_io_settings_on_change(
     if telemetry.is_changed() {
         send_telemetry_state(&telemetry, &broadcaster);
     }
-    if !settings.is_changed() {
-        return;
-    }
-
-    send_io_settings(&settings, &broadcaster);
 }
 
 /// Send available audio devices when the desk-facing resource changes.
