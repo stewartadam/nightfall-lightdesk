@@ -146,10 +146,10 @@ impl MacroHarness {
     }
 
     /// Lists the clip launches waiting for the next beat or bar.
-    fn armed_launches(&self) -> Vec<nightfall_desk::launch_quantize::ArmedLaunch> {
+    fn armed_launches(&self) -> Vec<nightfall_clips::launch_quantize::ArmedLaunch> {
         self.app
             .world()
-            .resource::<nightfall_desk::launch_quantize::ArmedLaunches>()
+            .resource::<nightfall_clips::launch_quantize::ArmedLaunches>()
             .status()
     }
 

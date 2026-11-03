@@ -6,10 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Playback clocks for running instances, and clip state kept in step with instance despawns.
+
 use std::time::Duration;
 
 use bevy_ecs::prelude::*;
-use nightfall_clips::{ClipReleaseAfterInstance, InstanceIndex};
 use nightfall_engine::prelude::*;
 use nightfall_instances::{
     InstanceClock, InstanceClockSource, InstanceControls, InstanceId, PlaybackOperation,
@@ -18,7 +19,8 @@ use nightfall_instances::{
 use nightfall_tempo::prelude::*;
 use web_time::Instant;
 
-use crate::clips::{Clip, MaterializedClip};
+use crate::{Clip, MaterializedClip};
+use crate::{ClipReleaseAfterInstance, InstanceIndex};
 
 /// Adds default real-time playback clocks to playback entities that do not have one yet.
 pub fn add_missing_instance_clocks(
@@ -169,10 +171,10 @@ pub fn sync_active_state_on_instance_despawn(
 mod tests {
     use bevy_app::prelude::*;
     use nightfall::prelude::Identifiers;
-    use nightfall_clips::ClipOptions;
     use uuid::Uuid;
 
     use super::*;
+    use crate::ClipOptions;
 
     /// Verifies playback index insertion, lookup, and removal behavior.
     #[test]

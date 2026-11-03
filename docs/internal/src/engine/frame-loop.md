@@ -254,7 +254,7 @@ Acknowledgements of input go in `ClientFeedback` in `PostUpdate`. Render-derived
 | Default, minimum, and maximum DMX output rate | `crates/io/src/settings.rs` |
 | Pausing input and output during show loads | `crates/app-runtime/src/swap_orchestrator.rs` |
 | Undo capture in `PendingCommandProcessing` | `crates/undo/src/lib.rs` |
-| Clock, playback level, and master systems | `crates/desk/src/lib.rs`, `crates/desk/src/instances.rs` |
+| Clock, playback level, and master systems | `crates/clips/src/playback.rs`, `crates/clips/src/playback/clocks.rs`, `crates/desk/src/lib.rs` |
 | Compositor and its removal observers | `crates/compositor/src/lib.rs`, `crates/compositor/src/system.rs` |
 | Virtual dimmers and virtual relations | `crates/desk/src/systems/vdim.rs`, `crates/desk/src/systems/relations.rs` |
 | DMX packing and output frames | `crates/fixtures/src/lib.rs`, `crates/fixtures/src/output_frames.rs` |

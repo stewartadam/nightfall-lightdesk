@@ -81,7 +81,7 @@ Engine core crates build the engine's runtime that every plugin plugs into.
 | `engine` | Demo | Core of the Bevy app: app states, schedules and their ordering, the `Render` schedule, the command and update protocol, the client bridge, object stores, and runtime capabilities. |
 | `undo` | Demo | Undo and redo: captures undoable commands and stores their inverses. |
 | `actions` | Demo | Registry of bindable actions and how each one turns into a command or an update. |
-| `clips` | Demo | Clip model, clip commands, and lookups by identifier. The `desk` crate stores clips. |
+| `clips` | Demo | Clip model, clip commands, lookups by identifier, and clip playback: routing clip starts and stops to the plugin registered for each clip source, launch quantize, and the lifecycle and clocks of running playbacks. |
 | `compositor` | Demo | Layer compositing pipeline: builds the layer stack and merges layers by priority and merge rule. |
 | `fixtures` | Demo | Fixtures, parameters, universes, patch bindings and their validation, DMX input, and the composition of output DMX frames. |
 | `framepace` | Demo | Frame limiter that starts engine frames just before each DMX send time on the shared schedule, adapted from `bevy_framepace`. The browser demo uses only its `fps` command handling. |
@@ -167,10 +167,9 @@ The `wasm-bridge` exports a small set of code from Nightfall crates to WASM so t
 
 ## What lives in `desk` and why
 
-The `desk` crate is the largest cross-plugin crate, at about 20,000 lines. It holds the behavior that belongs to the console as a whole rather than to one domain:
+The `desk` crate is the largest cross-plugin crate. It holds the behavior that belongs to the console as a whole rather than to one domain:
 
 - The `DeskCommand` entry point, including the requests to create, save, load, and import showfiles.
-- Clip storage, and the lifecycle of running playbacks that every playback domain shares. Clip starts and stops reach each playback plugin through the clip source registry in `clips`, where each plugin registers the source kinds it plays.
 - Masters, faders with their levels and buttons, and the actions that drive them.
 - Groups and blueprints.
 - Console settings and the showfile's shared panel layouts.

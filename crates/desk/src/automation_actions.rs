@@ -24,6 +24,7 @@ use nightfall_clips::{
     CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipGotoActionArguments,
     ClipSpeedActionArguments,
 };
+use nightfall_clips::{Clip, ClipCommand};
 use nightfall_engine::prelude::*;
 use nightfall_playback_planner::{
     PlannedPlaybackInterventionKind, TimelineEvalActionPlan, TimelinePlaybackActionKind,
@@ -32,7 +33,6 @@ use nightfall_playback_planner::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::clips::{Clip, ClipCommand};
 use crate::faders::{FaderCommand, FaderUpdate, Faders, clip_live_state, master_contributes};
 use crate::masters::{
     Master, MasterCommand, MasterKind, MasterMode, MasterUpdate, clamp_master_level,

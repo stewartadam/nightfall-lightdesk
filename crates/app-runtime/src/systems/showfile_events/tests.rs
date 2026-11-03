@@ -2592,7 +2592,7 @@ fn loading_a_show_drops_armed_launches() {
 
     let mut world = setup_world();
     let command_id = CommandId::new();
-    let mut armed = nightfall_desk::launch_quantize::ArmedLaunches::default();
+    let mut armed = nightfall_clips::launch_quantize::ArmedLaunches::default();
     armed.arm(
         4.0,
         EngineOperationEnvelope::with_context(
@@ -2614,7 +2614,7 @@ fn loading_a_show_drops_armed_launches() {
         .expect("load system should run")
         .expect("load should succeed");
 
-    let mut armed = world.resource_mut::<nightfall_desk::launch_quantize::ArmedLaunches>();
+    let mut armed = world.resource_mut::<nightfall_clips::launch_quantize::ArmedLaunches>();
     assert!(armed.is_empty());
     assert!(armed.take_due(f64::INFINITY).is_empty());
     assert_eq!(armed.take_dropped(), vec![Some(command_id)]);

@@ -8,15 +8,13 @@
 
 use bevy_ecs::{prelude::*, system::SystemParam};
 use nightfall::prelude::*;
+use nightfall_clips::{Clip, ClipCommand, ClipOperation, MaterializedClip};
 use nightfall_clips::{InstanceIndex, Source};
 use nightfall_engine::prelude::*;
 use nightfall_instances::{InstanceControlUpdate, InstanceControls, InstanceId};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    clips::{Clip, ClipCommand, ClipOperation, MaterializedClip},
-    masters::{Master, MasterCommand, MasterMode, MasterUpdate},
-};
+use crate::masters::{Master, MasterCommand, MasterMode, MasterUpdate};
 
 mod held_buttons;
 

@@ -14,11 +14,11 @@
 use std::collections::HashMap;
 
 use bevy_ecs::prelude::*;
+use nightfall_clips::MaterializedClip;
 use nightfall_instances::{EditorPreviewInstance, InstanceId, InstanceKind, InstanceMetadata};
 use serde::{Deserialize, Serialize};
 
 use super::Faders;
-use crate::clips::MaterializedClip;
 
 /// How a held fader button changes one playback.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

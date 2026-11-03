@@ -6,20 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Handles clip events
+//! Clip commands, clip CRUD, and routing of clip playback to the domain that plays each source.
 
 use std::collections::{HashMap, HashSet};
 
 use bevy_ecs::{
     prelude::*,
     system::{SystemParam, SystemState},
-};
-use nightfall_clips::{
-    Clip, ClipCommand, ClipLookup, ClipLookupError, ClipOperation, MaterializedClip,
-    RestoreClipSource, Source, clip_action_from_command, log_clip_lookup_failure,
-};
-use nightfall_clips::{
-    ClipReleaseAfterInstance, ClipSourceOperation, ClipSourceRef, ClipSourceRegistry, InstanceIndex,
 };
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_engine::object_registry::{ObjectLookupError, resolve_object};
@@ -32,6 +25,13 @@ use nightfall_playback_planner::PlaybackReconstructionTiming;
 use nightfall_tempo::prelude::ShowTempo;
 
 use crate::launch_quantize::{ArmedLaunches, origin_follows_launch_quantize, quantized_action};
+use crate::{
+    Clip, ClipCommand, ClipLookup, ClipLookupError, ClipOperation, MaterializedClip,
+    RestoreClipSource, Source, clip_action_from_command, log_clip_lookup_failure,
+};
+use crate::{
+    ClipReleaseAfterInstance, ClipSourceOperation, ClipSourceRef, ClipSourceRegistry, InstanceIndex,
+};
 
 /// Playback identity and control state used to resolve clip actions.
 type ClipPlaybackData = (
@@ -1171,11 +1171,11 @@ mod tests {
     use bevy_app::{App, Update};
     use bevy_ecs::schedule::ApplyDeferred;
     use nightfall::prelude::{IdExpr, Identifiers, ObjectRef, ObjectType};
-    use nightfall_clips::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
     use nightfall_instances::InstanceKind;
     use uuid::Uuid;
 
     use super::*;
+    use crate::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
 
     /// Build a minimal clip for CRUD event tests.
     fn clip(id: u32, uid: Uuid, label: &str) -> Clip {

@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
+use nightfall_clips::MaterializedClip;
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
@@ -21,8 +22,6 @@ use nightfall_selection::{HeldReference, ReferenceSource};
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use uuid::Uuid;
-
-use crate::clips::MaterializedClip;
 
 /// Intensity attributes controlled by inhibitive masters.
 pub const MASTER_INTENSITY_ATTRIBUTES: &[Attribute] =

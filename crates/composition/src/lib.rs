@@ -20,6 +20,7 @@
 use bevy_app::{PluginGroup, PluginGroupBuilder};
 use nightfall_actions::ActionsPlugin;
 use nightfall_boards::prelude::BoardsPlugin;
+use nightfall_clips::ClipsPlugin;
 use nightfall_cues::prelude::CuePlugin;
 use nightfall_desk::{prelude::DeskPlugin, resources::log_config::LogConfig};
 use nightfall_engine::{EnginePlugin, prelude::ClientBridgePlugin};
@@ -59,13 +60,13 @@ impl PluginGroup for ShowPlugins {
     }
 }
 
-/// Engine infrastructure, fixtures, scene objects and the fixture compositor.
+/// Engine infrastructure, fixtures, scene objects, the fixture compositor and clip playback.
 pub struct CorePlugins;
 
 impl PluginGroup for CorePlugins {
     /// Lists the core plugins in build order. Engine, undo, client bridge and actions come first
     /// because later plugins assert they are present; fixtures and scene objects precede the
-    /// compositor that reads them.
+    /// compositor that reads them. Clip playback comes last, since the desk asserts it is present.
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
             .add(EnginePlugin)
@@ -75,6 +76,7 @@ impl PluginGroup for CorePlugins {
             .add(FixturePlugin)
             .add(SceneObjectPlugin)
             .add(FixtureCompositorPlugin)
+            .add(ClipsPlugin)
     }
 }
 

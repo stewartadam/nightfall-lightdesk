@@ -6,9 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Instance commands: releasing playbacks by scope, and applying per-instance control updates.
+
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
-use nightfall_clips::InstanceIndex;
 use nightfall_compositor::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
@@ -19,6 +20,8 @@ use nightfall_instances::{
     InstanceClock, InstanceCommand, InstanceControlUpdate, InstanceControls, InstanceId,
     InstanceMetadata, PlaybackOperation, PlaybackReleaseOperation, PlaybackScope,
 };
+
+use crate::InstanceIndex;
 
 /// Applies typed playback actions to materialized parameters and DMX state.
 pub fn handle_events(

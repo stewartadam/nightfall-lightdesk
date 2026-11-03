@@ -11,13 +11,13 @@ use std::time::Duration;
 use bevy_app::prelude::*;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
+use nightfall_clips::playback::clocks::sync_active_state_on_instance_despawn;
+use nightfall_clips::playback::instance_events::handle_playback_commands;
 use nightfall_clips::{
     Clip, ClipOperation, ClipSourceAppExt, ClipSourceDomain, ClipSourceKind, InstanceIndex,
     MaterializedClip, Source, add_instances_to_index, remove_instances_from_index,
 };
 use nightfall_compositor::prelude::{Layer, ReleaseMarker};
-use nightfall_desk::instances::sync_active_state_on_instance_despawn;
-use nightfall_desk::systems::event_handlers::instance_events::handle_playback_commands;
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandNoticeReply, CommandOrigin, CommandReply, CommandResult,
@@ -131,9 +131,9 @@ fn duplicate_start_clip_in_same_tick_does_not_duplicate_fx_materialization() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -213,9 +213,9 @@ fn fx_clips_with_same_target_keep_distinct_priorities() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -292,9 +292,9 @@ fn start_clip_without_target_does_not_panic_or_materialize_fx() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -349,9 +349,9 @@ fn stop_clip_releases_running_fx_after_target_changes_to_sequence() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -426,9 +426,9 @@ fn stop_clip_ignores_non_fx_materialized_clip_bindings() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -479,9 +479,9 @@ fn stop_and_restart_clip_in_same_tick_rebinds_fx_without_stale_entity_insert() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -552,10 +552,10 @@ fn retarget_running_step_fx_clip_to_fx_replaces_playback_binding() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_playback_commands,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -665,9 +665,9 @@ fn start_fx_clip_retargeted_from_existing_playback_replaces_binding() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -760,9 +760,9 @@ fn retarget_running_fx_clip_to_step_fx_replaces_playback_binding() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -869,9 +869,9 @@ fn start_clip_for_step_fx_spawns_single_active_fx_and_binding() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -939,9 +939,9 @@ fn step_fx_clips_with_same_target_keep_distinct_priorities() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -1012,9 +1012,9 @@ fn timed_start_clip_for_step_fx_seeds_instance_clock() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -1086,9 +1086,9 @@ fn timed_stop_clip_for_step_fx_seeds_release_instance_clock() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -1161,9 +1161,9 @@ fn timed_start_clip_for_fx_seeds_instance_clock() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -1240,9 +1240,9 @@ fn timed_stop_clip_for_fx_seeds_release_instance_clock() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );
@@ -1491,9 +1491,9 @@ fn stop_clip_for_step_fx_marks_release_and_removes_binding() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::clip_events::route_clip_playback_actions,
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
             handle_events,
-            nightfall_desk::systems::event_handlers::clip_events::handle_clip_playback_attachments,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
         )
             .chain(),
     );

@@ -5385,11 +5385,15 @@ version = "0.1.0-alpha.5"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
+ "moonshine-kind",
  "nightfall",
  "nightfall-actions",
+ "nightfall-compositor",
  "nightfall-engine",
+ "nightfall-fixtures",
  "nightfall-instances",
  "nightfall-playback-planner",
+ "nightfall-tempo",
  "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",
@@ -5397,6 +5401,7 @@ dependencies = [
  "tracing",
  "typeshare",
  "uuid",
+ "web-time",
 ]
 
 [[package]]
@@ -5421,6 +5426,7 @@ dependencies = [
  "bevy_app",
  "nightfall-actions",
  "nightfall-boards",
+ "nightfall-clips",
  "nightfall-cues",
  "nightfall-desk",
  "nightfall-engine",
@@ -5546,7 +5552,6 @@ dependencies = [
  "nightfall-playback-planner",
  "nightfall-programmer",
  "nightfall-selection",
- "nightfall-tempo",
  "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",

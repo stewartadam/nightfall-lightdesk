@@ -22,6 +22,7 @@ use bevy_diagnostic::{
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use nightfall::prelude::*;
+use nightfall_clips::launch_quantize::{ArmedLaunch, ArmedLaunches};
 use nightfall_clips::{Clip, ClipCommand, InstanceIndex, MaterializedClip};
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
@@ -50,7 +51,6 @@ use serde_json::Value;
 use uuid::Uuid;
 use web_time::Instant;
 
-use crate::launch_quantize::{ArmedLaunch, ArmedLaunches};
 use crate::prelude::*;
 use crate::{BlueprintCommand, DeskCommand, GroupCommand};
 

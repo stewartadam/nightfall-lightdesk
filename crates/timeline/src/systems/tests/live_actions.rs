@@ -8,10 +8,10 @@
 
 use nightfall_actions::{ActionInvocation, ActionReference, ActionSurface, ActionsPlugin};
 use nightfall_clips::InstanceIndex;
-use nightfall_clips::{CLIP_START_ACTION_ID, start_clip_action};
-use nightfall_desk::systems::event_handlers::clip_events::{
+use nightfall_clips::playback::clip_events::{
     PendingClipPlaybackSpeeds, handle_clip_speed_commands,
 };
+use nightfall_clips::{CLIP_START_ACTION_ID, start_clip_action};
 
 use super::*;
 use crate::TimelineNondeterministicSeekBehavior;

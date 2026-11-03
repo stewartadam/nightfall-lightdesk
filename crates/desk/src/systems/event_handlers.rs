@@ -10,12 +10,10 @@ use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::{NotificationEnvelope, ToastLevel, UiNotification};
 
 pub mod blueprint_events;
-pub mod clip_events;
 pub mod debug_events;
 pub mod desk_events;
 pub mod fixture_events;
 pub mod group_events;
-pub mod instance_events;
 pub mod master_events;
 pub mod settings_events;
 

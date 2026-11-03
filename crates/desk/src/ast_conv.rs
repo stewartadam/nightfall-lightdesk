@@ -9,13 +9,13 @@
 //! AST converter for desk commands
 use std::str::FromStr;
 
+use nightfall_clips::{Clip, ClipCommand, ClipSourceRef};
 use nightfall_cmd_parse::ast;
 use nightfall_cmd_parse::conv;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_undo::prelude::*;
 
-use crate::clips::{Clip, ClipCommand, ClipSourceRef};
 use crate::desk_command::{DeskCommand, ShowfileRevisionSelection};
 use crate::group_command::GroupCommand;
 

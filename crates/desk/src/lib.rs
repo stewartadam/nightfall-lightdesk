@@ -9,23 +9,18 @@
 //! Desk behavior that spans several show domains.
 //!
 //! Plugin crates can't depend on each other, so behavior that touches several of them lives
-//! here: the `DeskCommand` entry point (including `Eval` for the command language and the
-//! showfile requests), clip storage and the shared lifecycle of running playbacks, masters and
-//! faders, groups and Blueprints, console settings and shared panel layouts, virtual
-//! dimmers and relations, per-playback intensity, notifications and diagnostics, and delayed
-//! commands. Code that concerns one domain only belongs in that domain's crate.
+//! here: the `DeskCommand` entry point (including the showfile requests), masters and faders,
+//! groups and Blueprints, console settings and shared panel layouts, virtual dimmers and
+//! relations, per-playback intensity, and diagnostics. Code that concerns one domain only
+//! belongs in that domain's crate.
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall::prelude::*;
 use nightfall_actions::ActionsPlugin;
-use nightfall_clips::{ClipCommand, ClipOperation, InstanceIndex, RestoreClipSource};
+use nightfall_clips::ClipsPlugin;
 use nightfall_engine::{EnginePlugin, prelude::*};
 use nightfall_framepace::FramePaceStats;
-use nightfall_instances::{
-    ClipInstanceAttachment, ClipInstanceRequest, InstanceCommand, InstanceControlUpdate,
-    PlaybackOperation, PlaybackReleaseOperation,
-};
 use nightfall_io::{
     AvailableUsbDmxDevices, IoRuntimeSettings, NetworkInterfaceState, NetworkStats,
 };
@@ -38,12 +33,9 @@ use crate::{
 
 pub mod ast_conv;
 pub mod automation_actions;
-mod clips;
 pub mod desk_command;
 pub mod faders;
 pub mod group_command;
-pub mod instances;
-pub mod launch_quantize;
 pub mod masters;
 mod panel_layouts;
 pub mod resources;
@@ -94,8 +86,6 @@ pub struct DeskPlugin {
 impl Plugin for DeskPlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering DeskPlugin");
-        app.init_resource::<event_handlers::clip_events::PendingClipPlaybackSpeeds>();
-        app.init_resource::<launch_quantize::ArmedLaunches>();
         assert!(
             app.is_plugin_added::<EnginePlugin>(),
             "DeskPlugin requires EnginePlugin (provides CommandIngressRouter)"
@@ -108,13 +98,14 @@ impl Plugin for DeskPlugin {
             app.is_plugin_added::<ActionsPlugin>(),
             "DeskPlugin requires ActionsPlugin (provides registered action invocation)"
         );
+        assert!(
+            app.is_plugin_added::<ClipsPlugin>(),
+            "DeskPlugin requires ClipsPlugin (provides clip and instance playback)"
+        );
 
         automation_actions::register_desk_actions(app);
 
         register_client_command::<DeskCommand>(app, Undo::Skipped);
-        register_client_command::<ClipCommand>(app, Undo::Captured);
-        register_engine_operation::<ClipOperation>(app);
-        nightfall_clips::register_clip_source_routing(app);
         register_client_command::<GroupCommand>(app, Undo::Captured);
         app.add_message::<EngineOperationEnvelope<GroupOperation>>();
         register_client_command::<MasterCommand>(app, Undo::Captured);
@@ -135,14 +126,8 @@ impl Plugin for DeskPlugin {
         );
         register_client_command::<SettingsCommand>(app, Undo::Skipped);
         app.add_message::<event_handlers::settings_events::SettingsCommandResult>();
-        register_client_command::<InstanceCommand>(app, Undo::Captured);
-        register_engine_operation::<PlaybackOperation>(app);
-        register_engine_operation::<PlaybackReleaseOperation>(app);
-        app.add_message::<InstanceControlUpdate>();
         register_client_command::<FaderCommand>(app, Undo::Captured);
         app.add_message::<FaderUpdate>();
-        app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
-        app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
 
         register_update_deserializer(app, "FaderUpdate", websocket::deserialize_fader_update);
         register_update_deserializer(app, "MasterUpdate", websocket::deserialize_master_update);
@@ -153,7 +138,6 @@ impl Plugin for DeskPlugin {
         app.init_resource::<DataProvider<Group>>();
         app.init_resource::<DataProvider<Master>>();
         app.init_resource::<DataProvider<Blueprint>>();
-        app.init_resource::<InstanceIndex>();
         app.init_resource::<GlobalVariables>();
         app.init_resource::<NetworkStats>();
         app.init_resource::<DeskSettings>();
@@ -176,12 +160,7 @@ impl Plugin for DeskPlugin {
             registry.register::<BlueprintCommand>();
             registry.register::<GroupCommand>();
             registry.register::<MasterCommand>();
-            registry.register::<ClipCommand>();
-            registry.register_operation::<RestoreClipSource>();
         }
-
-        // Register event dispatchers for undo helper commands
-        register_engine_operation::<RestoreClipSource>(app);
 
         app.add_message::<ClientDisconnected>();
         app.add_systems(
@@ -195,42 +174,19 @@ impl Plugin for DeskPlugin {
                 .in_set(PendingCommandExpansion),
         );
 
-        // Maintain InstanceIndex on spawn/despawn, and sync clip active state
-        app.add_systems(
-            Update,
-            (
-                nightfall_clips::add_instances_to_index,
-                nightfall_clips::remove_instances_from_index,
-                // Must run after both index systems so new instances are indexed
-                // and removed instances are de-indexed before we check for orphans
-                instances::sync_active_state_on_instance_despawn
-                    .after(nightfall_clips::add_instances_to_index)
-                    .after(nightfall_clips::remove_instances_from_index),
-            ),
-        );
+        // Speed masters scale playback speed after new instances get their clocks and before
+        // clocks advance.
         app.add_systems(
             Render,
-            (
-                instances::add_missing_instance_clocks,
-                ApplyDeferred,
-                masters::apply_playback_speed_masters,
-                instances::advance_realtime_instance_clocks,
-            )
-                .chain()
+            masters::apply_playback_speed_masters
                 .in_set(ClockUpdate)
-                .after(nightfall_tempo::TempoUpdate),
+                .after(nightfall_clips::playback::clocks::add_missing_instance_clocks)
+                .before(nightfall_clips::playback::clocks::advance_realtime_instance_clocks),
         );
 
         app.add_systems(
             Update,
             (
-                event_handlers::clip_events::forward_clip_ingress_actions
-                    .in_set(DeskEventSet::ClipForwarding)
-                    .before(event_handlers::clip_events::handle_clip_speed_commands)
-                    .before(event_handlers::clip_events::route_clip_playback_actions),
-                event_handlers::clip_events::handle_configuration_commands,
-                event_handlers::clip_events::crud_events,
-                event_handlers::clip_events::handle_restore_clip_source,
                 event_handlers::fixture_events::crud_events,
                 event_handlers::group_events::crud_events,
                 event_handlers::group_events::action_events.in_set(DeskEventSet::GroupActions),
@@ -238,12 +194,6 @@ impl Plugin for DeskPlugin {
                 event_handlers::blueprint_events::action_events
                     .in_set(DeskEventSet::BlueprintActions),
                 event_handlers::debug_events::handle_events,
-                event_handlers::instance_events::handle_events,
-                event_handlers::instance_events::handle_playback_commands
-                    .in_set(DeskEventSet::InstancePlayback),
-                event_handlers::clip_events::handle_clip_speed_commands
-                    .before(event_handlers::instance_events::handle_playback_control_updates),
-                event_handlers::instance_events::handle_playback_control_updates,
                 faders::handle_fader_commands,
                 faders::handle_fader_updates,
                 systems::stale_inputs::clear_stale_input_channels,
@@ -279,27 +229,6 @@ impl Plugin for DeskPlugin {
                 .chain()
                 .after(faders::handle_fader_commands)
                 .in_set(EventHandling),
-        );
-
-        let route_clip_playback_actions = event_handlers::clip_events::route_clip_playback_actions
-            .before(event_handlers::instance_events::handle_playback_commands);
-
-        app.add_systems(
-            Update,
-            (
-                event_handlers::clip_events::forward_clip_playback_requests
-                    .in_set(DeskEventSet::ClipForwarding)
-                    .before(event_handlers::clip_events::route_clip_playback_actions),
-                route_clip_playback_actions.in_set(DeskEventSet::ClipRouting),
-            )
-                .in_set(EventHandling),
-        );
-
-        // Attachments come from input handlers and from FX module evaluation in render passes, so
-        // they are applied after both, in every update.
-        app.add_systems(
-            PostUpdate,
-            event_handlers::clip_events::handle_clip_playback_attachments.before(ClientFeedback),
         );
 
         // Apply per-playback intensity scaling to the generated layers before compositing.

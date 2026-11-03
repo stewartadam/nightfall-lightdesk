@@ -15,9 +15,10 @@
 use bevy_ecs::prelude::*;
 use nightfall::prelude::IdExpr;
 use nightfall_actions::ActionSurface;
-use nightfall_clips::ClipOperation;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
+
+use crate::ClipOperation;
 
 /// Returns whether a clip command from `origin` waits for launch quantize: anything a person
 /// sends, but not commands a timeline runs, which keep to the timeline's own grid.
