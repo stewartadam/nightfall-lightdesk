@@ -10,8 +10,8 @@ use nightfall::prelude::*;
 use nightfall_cmd_parse::generate_ast;
 use nightfall_dmx::prelude::{Attribute, AttributeCategory};
 use nightfall_engine::prelude::*;
-use nightfall_programmer::ast_conv::ProgrammerAstConverter;
-use nightfall_programmer::prelude::*;
+use nightfall_programming::ast_conv::ProgrammerAstConverter;
+use nightfall_programming::prelude::*;
 
 // ============================================================================
 // AST -> Command Conversion Tests

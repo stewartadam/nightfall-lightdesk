@@ -108,7 +108,7 @@ The **Layers** panel lists the active layers and the values each one sets. The *
 | Merge rules for same and different priorities | `crates/compositor/src/stages/merge.rs` |
 | Fades, delays, and releases inside a layer | `crates/compositor/src/stages/transition.rs` |
 | DMX input and manual channel layers | `crates/fixtures/src/compositor.rs` |
-| Programmer priority | `crates/programmer/src/painter.rs` |
+| Programmer priority | `crates/programming/src/painter.rs` |
 | Clip priority | `crates/clips/src/model.rs` |
 | Per-playback intensity level | `crates/desk/src/systems/instance_controls.rs` |
 | Intensity and rate masters | `crates/desk/src/masters.rs` |

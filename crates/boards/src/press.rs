@@ -25,7 +25,7 @@ use nightfall_clips::ClipCommand;
 use nightfall_desk::prelude::{MasterCommand, MasterMode};
 use nightfall_engine::prelude::*;
 use nightfall_macros::prelude::MacroCommand;
-use nightfall_programmer::prelude::{
+use nightfall_programming::prelude::{
     ProgrammerAttributeOperation, ProgrammerAttributeSource, ProgrammerCommand,
 };
 use serde::{Deserialize, Serialize};
@@ -321,7 +321,7 @@ mod tests {
     use nightfall_fixture_model::prelude::*;
     use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
     use nightfall_instances::InstanceId;
-    use nightfall_programmer::prelude::Programmer;
+    use nightfall_programming::prelude::Programmer;
 
     use super::*;
 

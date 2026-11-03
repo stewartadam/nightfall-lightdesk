@@ -288,7 +288,7 @@ dependencies = [
  "nightfall-output-artnet",
  "nightfall-output-sacn",
  "nightfall-output-usb",
- "nightfall-programmer",
+ "nightfall-programming",
  "nightfall-references",
  "nightfall-scene-objects",
  "nightfall-selection-runtime",
@@ -5313,7 +5313,7 @@ dependencies = [
  "nightfall-fixtures",
  "nightfall-instances",
  "nightfall-macros",
- "nightfall-programmer",
+ "nightfall-programming",
  "nightfall-selection-runtime",
  "nightfall-undo",
  "nightfall-workspace-hack",
@@ -5437,7 +5437,7 @@ dependencies = [
  "nightfall-flow",
  "nightfall-fx",
  "nightfall-macros",
- "nightfall-programmer",
+ "nightfall-programming",
  "nightfall-references",
  "nightfall-scene-objects",
  "nightfall-tempo",
@@ -5554,7 +5554,7 @@ dependencies = [
  "nightfall-io",
  "nightfall-lookahead",
  "nightfall-playback-planner",
- "nightfall-programmer",
+ "nightfall-programming",
  "nightfall-selection",
  "nightfall-selection-runtime",
  "nightfall-undo",
@@ -6122,7 +6122,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nightfall-programmer"
+name = "nightfall-programming"
 version = "0.1.0-alpha.5"
 dependencies = [
  "bevy_app",

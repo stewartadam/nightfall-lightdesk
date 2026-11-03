@@ -210,13 +210,13 @@ To add a clause to an existing command, such as a new programmer option, skip st
 | `parse_command_string` | `crates/engine/src/lib.rs` |
 | Grammar, AST, and strict parser | `crates/cmd-parse/src/slots/contracts.rs`, `crates/cmd-parse/src/command_family.rs`, `crates/cmd-parse/src/ast.rs`, `crates/cmd-parse/src/parser/strict.rs`, `crates/cmd-parse/src/parser/strict/`, `crates/cmd-parse/src/slots/catalog.rs`, `crates/cmd-parse/src/completion_groups/catalog.rs` |
 | AST converter registry and `dispatch_ast` | `crates/engine/src/protocol/dispatch_ast.rs` |
-| Programmer AST converter | `crates/programmer/src/ast_conv.rs` |
+| Programmer AST converter | `crates/programming/src/ast_conv.rs` |
 | `PendingCommandBuffer` and `PendingEngineOperationBuffer` | `crates/engine/src/protocol/erased.rs` |
 | `CommandIngressRouter` and `EngineOperationRouter` | `crates/engine/src/protocol/dispatch.rs` |
 | Command lifecycle, `CommandTracker`, `CommandResponder` | `crates/engine/src/command_lifecycle.rs`, `crates/engine/src/protocol/results.rs` |
 | Update system sets and their order | `crates/engine/src/lib.rs` |
 | Undo capture, registry, history, and replay | `crates/undo/src/dispatcher.rs`, `crates/undo/src/manager.rs`, `crates/undo/src/systems.rs` |
-| Programmer instruction handler and inverse | `crates/programmer/src/events/programmer/values.rs`, `crates/programmer/src/undo.rs` |
+| Programmer instruction handler and inverse | `crates/programming/src/events/programmer/values.rs`, `crates/programming/src/undo.rs` |
 | Render schedule and render passes | `crates/engine/src/render_pass.rs` |
 | Action lowering to commands | `crates/actions/src/lowering.rs`, `dispatch_action_invocations` in `crates/actions/src/lib.rs` |
 | Clip actions and MIDI input | `crates/desk/src/automation_actions.rs`, `crates/input_midi/src/lib.rs` |

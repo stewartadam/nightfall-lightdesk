@@ -8,7 +8,7 @@
 
 //! The programmer: the operator's working selection and live values.
 //!
-//! [`ProgrammerPlugin`] holds the active fixture selection and the values set on it, paints them
+//! [`ProgrammingPlugin`] holds the active fixture selection and the values set on it, paints them
 //! into the programmer layer that the compositor merges with playbacks, and handles clearing and
 //! releasing them. It also stores programmer contents into cues, Blueprints, and groups, and
 //! recalls them back into the programmer.
@@ -35,7 +35,7 @@ pub mod websocket;
 
 /// Prelude for ergonomic imports
 pub mod prelude {
-    pub use crate::ProgrammerPlugin;
+    pub use crate::ProgrammingPlugin;
     pub use crate::action_model::{
         AttributeFilter, ClearCommand, ClearTarget, ProgrammerOperation, ReleaseCommand,
         ReleaseTarget, Scope, UserCommand,
@@ -50,13 +50,13 @@ pub mod prelude {
 }
 
 /// Plugin for adding programmer functionality to the app
-pub struct ProgrammerPlugin;
+pub struct ProgrammingPlugin;
 /// Stable action ID for clearing the programmer.
 pub const PROGRAMMER_CLEAR_ACTION_ID: &str = "programmer.clear";
 
-impl Plugin for ProgrammerPlugin {
+impl Plugin for ProgrammingPlugin {
     fn build(&self, app: &mut App) {
-        tracing::debug!("Registering ProgrammerPlugin");
+        tracing::debug!("Registering ProgrammingPlugin");
         register_client_command::<events::ProgrammerCommand>(app, Undo::Captured);
         register_client_command::<UserCommand>(app, Undo::Captured);
         register_engine_operation::<ProgrammerOperation>(app);

@@ -28,7 +28,7 @@ use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
 use nightfall_fx::prelude::FxPlugin;
 use nightfall_macros::prelude::MacrosPlugin;
-use nightfall_programmer::prelude::ProgrammerPlugin;
+use nightfall_programming::prelude::ProgrammingPlugin;
 use nightfall_references::ReferencesPlugin;
 use nightfall_scene_objects::prelude::SceneObjectPlugin;
 use nightfall_tempo::prelude::TempoPlugin;
@@ -93,7 +93,7 @@ impl PluginGroup for DeskPlugins {
             .add(DeskPlugin {
                 log_config: self.log_config,
             })
-            .add(ProgrammerPlugin)
+            .add(ProgrammingPlugin)
             .add(CuePlugin)
             .add(BoardsPlugin)
             .add(MacrosPlugin)

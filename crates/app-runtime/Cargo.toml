@@ -51,7 +51,7 @@ nightfall-output-sacn = { path = "../output_sacn", optional = true }
 nightfall-output-usb = { path = "../output_usb", optional = true }
 nightfall-instances = { path = "../instances" }
 nightfall-fx-module = { path = "../fx-module" }
-nightfall-programmer = { path = "../programmer" }
+nightfall-programming = { path = "../programming" }
 nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-references = { path = "../references", features = ["fx-module-host"] }
 nightfall-scene-objects = { path = "../scene-objects" }

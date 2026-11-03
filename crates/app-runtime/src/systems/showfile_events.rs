@@ -26,7 +26,7 @@ use nightfall_desk::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_fx_module::prelude::*;
-use nightfall_programmer::prelude::*;
+use nightfall_programming::prelude::*;
 use nightfall_undo::prelude::*;
 
 /// External resource staged with a newly created show before its draft is published.

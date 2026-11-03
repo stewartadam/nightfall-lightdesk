@@ -24,12 +24,12 @@ use nightfall_engine::prelude::{
 };
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
 use nightfall_instances::{PlaybackOperation, PlaybackScope};
-use nightfall_programmer::events::{
+use nightfall_programming::events::{
     PendingProgrammerActionWorkflows, PendingUserCommandPlans, ProgrammerCommand,
     SelectionFlattenApprovals, finish_programmer_action_workflows, handle_programmer_events,
     plan_pending_user_commands,
 };
-use nightfall_programmer::prelude::{
+use nightfall_programming::prelude::{
     AttributeFilter, ClearCommand, ClearTarget, Programmer, ProgrammerOperation, Scope, UserCommand,
 };
 use uuid::Uuid;

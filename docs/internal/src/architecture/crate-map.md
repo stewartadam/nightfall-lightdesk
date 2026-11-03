@@ -21,7 +21,7 @@ flowchart TB
   accDescr: Five layers from hosts down to base, each listing its crates. Each layer may depend on any layer below it. Plugin crates may not depend on other plugin crates.
   hosts["<b>Hosts</b><br/>app-runtime · app-tauri · browser-runtime · cli · composition"]
   crossPlugin["<b>Cross-plugin</b><br/>boards · desk · desk-audio · macros · references · showfile · wasm-bridge"]
-  plugins["<b>Plugins</b><br/>audio · cues · fixture-library · flow · fx · fx-module · object-library · programmer <br/> scene-objects · timeline · input-artnet · input-ltc · input-midi · input-osc <br /> input-sacn · output-artnet · output-sacn · output-usb"]
+  plugins["<b>Plugins</b><br/>audio · cues · fixture-library · flow · fx · fx-module · object-library · programming <br/> scene-objects · timeline · input-artnet · input-ltc · input-midi · input-osc <br /> input-sacn · output-artnet · output-sacn · output-usb"]
   engineCore["<b>Engine core</b><br/>actions · clips · compositor · engine · fixtures · framepace · lookahead · selection-runtime <br /> service-host · tempo · timecode · undo · websocket"]
   base["<b>Base</b><br/>nightfall · open-fixture-library · beat-detection · cmd-parse · config <br /> coremidi-hotplug · dmx · engine-derive · fixture-model · instances · io <br /> lookahead-projection · playback-planner · selection · waveform · workspace-hack"]
   hosts --> crossPlugin --> plugins --> engineCore --> base
@@ -33,7 +33,7 @@ Every crate belongs to one of these architectural layers, manually assigned in `
 
 - `flow` depends on `fx-module`, because flows host FX module nodes.
 - `fx-module` depends on `fx`, to reuse the FX runtime contracts.
-- `programmer` depends on `cues` and `desk`, for storing into cues and for desk services.
+- `programming` depends on `cues` and `desk`, for storing into cues and for desk services.
 - `output_artnet` and `output_sacn` depend on `desk`, for diagnostics and notifications.
 - `object-library` depends on `scene-objects`, to import and export scene objects.
 - `timeline` depends on `audio`, `cues`, and `fx`, to plan and play what its tracks trigger.
@@ -99,7 +99,7 @@ Plugin crates each own one area of the show. They add themselves to the engine a
 | Crate | WASM | Description |
 |-------|------|-------------|
 | `cues` | Demo | Cues, sequences, tracking, release, and the runtime state that plays them. |
-| `programmer` | Demo | The programmer: live values and selection, the programmer layer, and storing into cues. |
+| `programming` | Demo | The programmer: live values and selection, the programmer layer, and storing into cues. |
 | `fx` | Demo | Procedural FX and Step FX, and their runtime state. |
 | `fx-module` | No | FX modules: the WebAssembly Interface Type (WIT) contract, Rust types for module authors, and the Wasmtime host that runs modules. |
 | `flow` | Demo | Flow node graphs: definitions, built-in nodes, and the runtime. The demo build leaves out FX module nodes. |
@@ -180,7 +180,7 @@ The `desk` crate is the largest cross-plugin crate. It holds the behavior that b
 
 Running a line of the command language (`EngineCommand::Eval`), delayed commands, and user notifications live in `engine`, so any crate can use them.
 
-The plugin rules explain why this code collects in `desk`. A plugin crate can't depend on another plugin crate, so behavior that touches several plugins, such as a master that scales playbacks from any of them, needs a crate above them. The result is a crate that many others use: `programmer`, `output_artnet`, and `output_sacn` depend on it through boundary exceptions, and the browser demo compiles all of it.
+The plugin rules explain why this code collects in `desk`. A plugin crate can't depend on another plugin crate, so behavior that touches several plugins, such as a master that scales playbacks from any of them, needs a crate above them. The result is a crate that many others use: `programming`, `output_artnet`, and `output_sacn` depend on it through boundary exceptions, and the browser demo compiles all of it.
 
 Before you add code to `desk`, check whether it concerns one plugin only. If it does, put it in that plugin's crate. Add to `desk` only when the code needs several plugins at once.
 

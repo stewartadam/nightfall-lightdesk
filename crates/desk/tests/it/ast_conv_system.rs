@@ -13,8 +13,8 @@ use nightfall_cmd_parse::generate_ast;
 use nightfall_desk::ast_conv::DeskAstConverter;
 use nightfall_desk::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_programmer::ast_conv::ProgrammerAstConverter;
-use nightfall_programmer::prelude::{ReleaseCommand, ReleaseTarget, UserCommand};
+use nightfall_programming::ast_conv::ProgrammerAstConverter;
+use nightfall_programming::prelude::{ReleaseCommand, ReleaseTarget, UserCommand};
 
 // ============================================================================
 // AST Alias Equality Tests

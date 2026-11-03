@@ -15,11 +15,11 @@ use nightfall_dmx::prelude::{Attribute, AttributeCategory, ParameterValue};
 use nightfall_engine::prelude::*;
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
-use nightfall_programmer::events::{
+use nightfall_programming::events::{
     ProgrammerAttributeOperation, ProgrammerAttributeSource, ProgrammerCommand,
     StoreObjectWorkflows, handle_blueprint_events,
 };
-use nightfall_programmer::prelude::Programmer;
+use nightfall_programming::prelude::Programmer;
 use uuid::Uuid;
 
 /// Builds an event app containing the resources required by Blueprint application handling.

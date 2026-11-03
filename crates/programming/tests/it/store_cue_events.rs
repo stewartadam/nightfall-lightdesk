@@ -25,11 +25,11 @@ use nightfall_engine::prelude::{
     OperationResult, PendingEngineOperationBuffer, ReplyTarget,
 };
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
-use nightfall_programmer::events::{
+use nightfall_programming::events::{
     ProgrammerCommand, StoreCueId, StoreCuePartId, StoreCueWorkflows, StoreMode, handle_cue_events,
     resume_store_cue_workflows,
 };
-use nightfall_programmer::prelude::Programmer;
+use nightfall_programming::prelude::Programmer;
 use uuid::Uuid;
 
 /// Builds a resolved fixture reference for cue-store tests.

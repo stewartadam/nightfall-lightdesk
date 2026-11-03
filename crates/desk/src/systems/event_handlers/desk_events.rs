@@ -56,7 +56,7 @@ mod tests {
                 crate::ast_conv::DeskAstConverter,
             >();
             nightfall_engine::protocol::dispatch_ast::register_converter::<
-                nightfall_programmer::ast_conv::ProgrammerAstConverter,
+                nightfall_programming::ast_conv::ProgrammerAstConverter,
             >();
         });
     }
@@ -146,7 +146,7 @@ mod tests {
             expanded[0]
                 .payload
                 .as_any()
-                .downcast_ref::<nightfall_programmer::prelude::ProgrammerCommand>()
+                .downcast_ref::<nightfall_programming::prelude::ProgrammerCommand>()
                 .is_some(),
             "eval should expose its parsed domain command in the current update"
         );

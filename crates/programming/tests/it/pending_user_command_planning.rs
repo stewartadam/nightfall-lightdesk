@@ -23,11 +23,11 @@ use nightfall_engine::prelude::{
     PendingEngineOperationBuffer, ReplyTarget, UndoId,
 };
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
-use nightfall_programmer::events::{
+use nightfall_programming::events::{
     PendingUserCommandPlans, ProgrammerCommand, SelectionFlattenApprovals, StoreCueId,
     StoreCuePartId, StoreMode, plan_pending_user_commands,
 };
-use nightfall_programmer::prelude::{
+use nightfall_programming::prelude::{
     AttributeFilter, ClearCommand, ClearTarget, Programmer, ProgrammerOperation, ReleaseCommand,
     ReleaseTarget, Scope, UserCommand,
 };

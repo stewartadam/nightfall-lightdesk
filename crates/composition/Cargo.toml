@@ -17,7 +17,7 @@ nightfall-fixtures = { path = "../fixtures" }
 nightfall-flow = { path = "../flow", default-features = false }
 nightfall-fx = { path = "../fx" }
 nightfall-macros = { path = "../macros" }
-nightfall-programmer = { path = "../programmer" }
+nightfall-programming = { path = "../programming" }
 nightfall-references = { path = "../references" }
 nightfall-scene-objects = { path = "../scene-objects" }
 nightfall-tempo = { path = "../tempo" }

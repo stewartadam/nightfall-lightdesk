@@ -19,8 +19,8 @@ use nightfall_engine::prelude::DataProvider;
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_instances::{InstanceClock, Owner};
-use nightfall_programmer::painter::materialize_and_paint_programmer;
-use nightfall_programmer::prelude::*;
+use nightfall_programming::painter::materialize_and_paint_programmer;
+use nightfall_programming::prelude::*;
 use uuid::Uuid;
 
 /// Helper function to create a test app with all necessary resources and systems

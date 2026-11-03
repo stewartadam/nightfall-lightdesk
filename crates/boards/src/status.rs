@@ -21,7 +21,7 @@ use nightfall_desk::prelude::Master;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
 use nightfall_macros::prelude::MacroRuns;
-use nightfall_programmer::prelude::Programmer;
+use nightfall_programming::prelude::Programmer;
 use nightfall_selection_runtime::SpatialSelectionResolver;
 use serde::Serialize;
 use uuid::Uuid;
