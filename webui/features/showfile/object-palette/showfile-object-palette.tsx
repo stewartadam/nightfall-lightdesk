@@ -51,8 +51,7 @@ import {
   showfileObjectResultLabel,
   showfileObjectTypeDefinition,
 } from "../../../lib/showfile-object-search";
-import { useShallowStore } from "../../../lib/use-shallow-store";
-import { useSharedStore } from "../../../lib/use-shared-store";
+import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import {
   blueprints,
   boards,
@@ -118,24 +117,34 @@ const ShowfileObjectResultTagBadge: Component<{
 export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
   props,
 ) => {
-  const $fixtures = useSharedStore(fixtures);
-  const $groups = useSharedStore(groups);
-  const $cues = useShallowStore(cues);
-  const $sequences = useShallowStore(sequences);
-  const $fx = useSharedStore(fx);
-  const $stepFx = useStore(stepFx);
-  const $fxModules = useStore(fxModules);
-  const $clips = useStore(clips);
-  const $flows = useStore(flows);
+  /**
+   * The palette stays mounted so typing right after the hotkey lands in its
+   * input, but it only follows showfile objects while open: a hidden palette
+   * would otherwise copy and re-index every snapshot, such as the burst a
+   * showfile load sends. Each store refreshes from its current snapshot on
+   * open, and only stores that changed meanwhile rebuild the index.
+   */
+  const open = () => props.isOpen;
+  /** Whether the palette has ever opened; nothing is indexed or rendered before that. */
+  const opened = createMemo<boolean>((was) => was || props.isOpen, false);
+  const $fixtures = useConditionalShallowStore(fixtures, open);
+  const $groups = useConditionalShallowStore(groups, open);
+  const $cues = useConditionalShallowStore(cues, open);
+  const $sequences = useConditionalShallowStore(sequences, open);
+  const $fx = useConditionalShallowStore(fx, open);
+  const $stepFx = useConditionalShallowStore(stepFx, open);
+  const $fxModules = useConditionalShallowStore(fxModules, open);
+  const $clips = useConditionalShallowStore(clips, open);
+  const $flows = useConditionalShallowStore(flows, open);
   const capabilities = useStore(runtimeCapabilities);
-  const $blueprints = useStore(blueprints);
-  const $colorPaths = useStore(colorPaths);
-  const $masters = useStore(masters);
-  const $sceneObjects = useSharedStore(sceneObjects);
-  const $timecodes = useStore(timecodes);
-  const $timelines = useShallowStore(timelines);
-  const $boards = useShallowStore(boards);
-  const $macros = useShallowStore(macros);
+  const $blueprints = useConditionalShallowStore(blueprints, open);
+  const $colorPaths = useConditionalShallowStore(colorPaths, open);
+  const $masters = useConditionalShallowStore(masters, open);
+  const $sceneObjects = useConditionalShallowStore(sceneObjects, open);
+  const $timecodes = useConditionalShallowStore(timecodes, open);
+  const $timelines = useConditionalShallowStore(timelines, open);
+  const $boards = useConditionalShallowStore(boards, open);
+  const $macros = useConditionalShallowStore(macros, open);
   const $dockApi = useStore(dockApi);
   const { invokePanelCapability } = usePanelCapabilityRegistry();
 
@@ -161,27 +170,32 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
     );
   });
 
-  /** Builds the latest object search index from nanostore snapshots. */
+  /**
+   * Builds the object search index from the palette's store snapshots, kept
+   * while the palette is closed and empty until it first opens.
+   */
   const entries = createMemo(() =>
-    buildShowfileObjectSearchEntries({
-      fixtures: $fixtures(),
-      groups: $groups(),
-      cues: $cues(),
-      sequences: $sequences(),
-      fx: $fx(),
-      stepFx: $stepFx(),
-      fxModules: $fxModules(),
-      clips: $clips(),
-      flows: capabilities()?.experimental_flows ? $flows() : {},
-      blueprints: $blueprints(),
-      colorPaths: $colorPaths(),
-      masters: $masters(),
-      sceneObjects: $sceneObjects(),
-      timecodes: $timecodes(),
-      timelines: $timelines(),
-      boards: $boards(),
-      macros: $macros(),
-    }),
+    !opened()
+      ? []
+      : buildShowfileObjectSearchEntries({
+          fixtures: $fixtures(),
+          groups: $groups(),
+          cues: $cues(),
+          sequences: $sequences(),
+          fx: $fx(),
+          stepFx: $stepFx(),
+          fxModules: $fxModules(),
+          clips: $clips(),
+          flows: capabilities()?.experimental_flows ? $flows() : {},
+          blueprints: $blueprints(),
+          colorPaths: $colorPaths(),
+          masters: $masters(),
+          sceneObjects: $sceneObjects(),
+          timecodes: $timecodes(),
+          timelines: $timelines(),
+          boards: $boards(),
+          macros: $macros(),
+        }),
   );
 
   /** Returns the rows visible for the current type badge and search phrase. */

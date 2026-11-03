@@ -35,20 +35,31 @@ interface DefaultLayoutOptions {
   compact: boolean | undefined;
 }
 
+/**
+ * Empties the workspace and forgets this device's saved arrangement, so the
+ * workspace holds nothing from a previous showfile. Structural edge slots
+ * survive Dockview's panel clear, so they are removed explicitly. A compact
+ * workspace never persists, so it leaves the docked session for when the
+ * window widens again.
+ */
+export function clearWorkspaceLayout(
+  api: DockviewApi,
+  options: Pick<DefaultLayoutOptions, "compact">,
+) {
+  if (!options.compact) clearLayout();
+  for (const edgePosition of DEFAULT_EDGE_GROUP_POSITIONS) {
+    if (api.getEdgeGroup(edgePosition)) {
+      api.removeEdgeGroup(edgePosition);
+    }
+  }
+  api.clear();
+}
+
 /** Seeds the performance workspace with visible clips, show objects, and visualization. */
 export function createDefaultLayout(
   api: DockviewApi,
   options: DefaultLayoutOptions,
 ) {
-  /** Removes structural edge slots that survive Dockview's panel clear. */
-  const removeDefaultEdgeGroups = () => {
-    for (const edgePosition of DEFAULT_EDGE_GROUP_POSITIONS) {
-      if (api.getEdgeGroup(edgePosition)) {
-        api.removeEdgeGroup(edgePosition);
-      }
-    }
-  };
-
   /** Opens clips when the three columns fit, keeping utility panels collapsed. */
   const applyDefaultEdgeState = () => {
     for (const edgePosition of ["bottom", "right"] as const) {
@@ -58,11 +69,7 @@ export function createDefaultLayout(
     else api.getEdgeGroup("left")?.collapse();
   };
 
-  // Clear the saved layout and panel UI. A compact workspace never persists,
-  // so it leaves the docked session for when the window widens again.
-  if (!options.compact) clearLayout();
-  removeDefaultEdgeGroups();
-  api.clear();
+  clearWorkspaceLayout(api, options);
 
   /** Adds a registered panel and reports missing components or docking failures. */
   const addPanel = <T extends Record<string, unknown>>(

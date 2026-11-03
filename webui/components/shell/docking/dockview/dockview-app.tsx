@@ -43,7 +43,7 @@ import { ScrollIndicators } from "../../../ui/scroll-area";
 import { Button } from "../../../ui/visual-language/button";
 import { bindCompactPresentation } from "./compact-presentation";
 import { createDeadPanelController } from "./dead-panel-controller";
-import { createDefaultLayout } from "./default-layout";
+import { clearWorkspaceLayout, createDefaultLayout } from "./default-layout";
 import { visualLanguageDockTheme } from "./dockview-host";
 import {
   edgeDropTargetClasses,
@@ -92,7 +92,10 @@ function isNativeEditableContextTarget(target: EventTarget | null): boolean {
 /** Exposes the mounted workspace to layout activation and reset commands. */
 export interface DockWorkspaceHandle {
   api: DockviewApi;
+  /** Replaces the arrangement with the built-in performance workspace. */
   reset: () => void;
+  /** Empties the workspace and forgets this device's saved arrangement. */
+  clear: () => void;
   hasSessionLayout: () => boolean;
 }
 
@@ -246,6 +249,7 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
             host: dockviewHostRef,
             compact: props.compact,
           }),
+        clear: () => clearWorkspaceLayout(dockApi, { compact: props.compact }),
         hasSessionLayout,
       });
       dockviewApiPublished = true;

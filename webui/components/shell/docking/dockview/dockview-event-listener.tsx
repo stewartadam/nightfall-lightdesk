@@ -59,7 +59,12 @@ interface DockviewEventListenerProps {
   /** Saves the arrangement as the local session; false for views that only present it. */
   persist?: boolean;
   hasSessionLayout?: () => boolean;
-  onResetLayout?: () => void;
+  /**
+   * Gives the workspace its starting arrangement for a showfile this device has
+   * not arranged. Returns false when it leaves the workspace empty for a layout
+   * the showfile brings, which must not be saved as this device's arrangement.
+   */
+  onArrangeShowfile?: () => boolean;
 }
 
 interface Disposable {
@@ -185,10 +190,9 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
 
   /**
    * Settles this device's arrangement once per loaded showfile. The device keeps
-   * its own arrangement when it already has one for this showfile; otherwise it
-   * starts from the built-in arrangement and the workspace opens the showfile's
-   * default named layout. Settings snapshots from other devices never rearrange
-   * this one.
+   * its own arrangement when it already has one for this showfile; otherwise the
+   * workspace starts it over and then opens the showfile's default named layout.
+   * Settings snapshots from other devices never rearrange this one.
    */
   createEffect(() => {
     const api = dockviewApi();
@@ -206,8 +210,7 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
       if (!keep) {
         isRestoringLayout = true;
         log.debug("No arrangement on this device for the showfile");
-        props.onResetLayout?.();
-        persistSession(api);
+        if (props.onArrangeShowfile?.() ?? false) persistSession(api);
         window.queueMicrotask(() => {
           isRestoringLayout = false;
         });

@@ -20,6 +20,7 @@ import {
   getActiveStoredLayoutId,
   getShowfilePanelLayouts,
   getStoredLayout,
+  saveLayout,
 } from "../../../../lib/layoutStorage";
 import { getLogger } from "../../../../lib/logger";
 import { setStoreAction } from "../../../../lib/nanostore-action";
@@ -58,6 +59,14 @@ const log = getLogger(import.meta.url);
  * reopening the showfile's default.
  */
 let settledShowfileRevision = -1;
+
+/**
+ * Showfile revision whose docked workspace was emptied to wait for the named
+ * layout step instead of building the built-in arrangement. It outlives one
+ * workspace owner, so a remount across the compact breakpoint knows the
+ * workspace it restores holds nothing yet.
+ */
+let awaitingArrangementRevision = -1;
 
 interface Workspace {
   layoutId?: string;
@@ -287,6 +296,38 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
     }),
   );
 
+  /**
+   * Starts a showfile this device has not arranged. The compact view, which
+   * never opens named layouts, builds the built-in arrangement at once. The
+   * docked view only empties its workspace: the named layout step decides,
+   * once it runs, whether the showfile opens one of its own layouts in a new
+   * workspace or needs the built-in arrangement, so the built-in panels are
+   * not mounted only to be discarded. Returns whether the workspace now holds
+   * an arrangement to save for this device.
+   */
+  const arrangeShowfile = (): boolean => {
+    const handle = current.handle;
+    if (!handle) return false;
+    if (props.compact) {
+      handle.reset();
+      return true;
+    }
+    handle.clear();
+    awaitingArrangementRevision = currentShowfileRevision.get();
+    return false;
+  };
+
+  /**
+   * Fills a workspace still empty from `arrangeShowfile` with the built-in
+   * arrangement, saving it for this device unless the view is compact.
+   */
+  const buildAwaitedArrangement = (handle: DockWorkspaceHandle) => {
+    if (awaitingArrangementRevision !== currentShowfileRevision.get()) return;
+    if (!props.compact) awaitingArrangementRevision = -1;
+    handle.reset();
+    if (!props.compact) saveLayout(handle.api);
+  };
+
   const boardWorkspace = useStore(activeBoardWorkspace);
   /** Board shown over the layouts, never in the compact view, which has no layout switcher. */
   const shownBoard = () => (props.compact ? null : boardWorkspace());
@@ -319,10 +360,26 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
     const preferred = keptDeviceArrangement
       ? (getActiveStoredLayoutId() ?? defaultLayoutId)
       : defaultLayoutId;
-    void initializeNamedLayout(api, preferred, keptDeviceArrangement).then(
-      (initialized) => {
-        if (initialized) settledShowfileRevision = revision;
-        else if (initializedRevision === revision) initializedRevision = -1;
+    // Without layouts of its own, the showfile starts from the built-in
+    // arrangement, which then becomes its first named layout.
+    if (!getShowfilePanelLayouts().length && current.handle?.api === api)
+      buildAwaitedArrangement(current.handle);
+    /** Records the outcome, falling back to the built-in arrangement when no layout opened. */
+    const settle = (initialized: boolean) => {
+      if (initialized) {
+        settledShowfileRevision = revision;
+        if (awaitingArrangementRevision === revision)
+          awaitingArrangementRevision = -1;
+        return;
+      }
+      if (initializedRevision === revision) initializedRevision = -1;
+      if (current.handle?.api === api) buildAwaitedArrangement(current.handle);
+    };
+    initializeNamedLayout(api, preferred, keptDeviceArrangement).then(
+      settle,
+      (error: unknown) => {
+        log.error("Could not open the showfile's layout", error);
+        settle(false);
       },
     );
   });
@@ -391,8 +448,12 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
                       entry.handle = handle;
                       setReady(true);
                       entry.resolve(handle);
-                      if (entry === initial && current === initial)
+                      if (entry === initial && current === initial) {
                         publish(entry);
+                        // A compact remount restores the docked session, which is empty
+                        // while the docked view still waits on the showfile's layout.
+                        if (props.compact) buildAwaitedArrangement(handle);
+                      }
                     }}
                     onError={entry.reject}
                   />
@@ -416,7 +477,7 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
         isActivating={switching}
         persist={!props.compact}
         hasSessionLayout={() => current.handle?.hasSessionLayout() ?? false}
-        onResetLayout={() => current.handle?.reset()}
+        onArrangeShowfile={arrangeShowfile}
       />
       <DockviewCommands onResetLayout={() => current.handle?.reset()} />
     </div>
