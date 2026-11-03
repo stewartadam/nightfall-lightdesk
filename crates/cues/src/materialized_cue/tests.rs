@@ -302,17 +302,19 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
     );
 }
 
-/// Blueprint definition events refresh affected active cue components in place.
+/// Editing a stored Blueprint refreshes affected active cue components in place, through the
+/// change messages published from the Blueprint store.
 #[test]
 fn blueprint_definition_change_rematerializes_active_cue() {
     let mut app = App::new();
-    app.add_message::<BlueprintDefinitionChange>();
     app.init_resource::<DataProvider<Group>>();
     app.init_resource::<DataProvider<Blueprint>>();
     app.init_resource::<FixtureDataProviderExt>();
+    app.publish_object_changes::<Blueprint>();
     app.add_systems(
         Update,
-        crate::materialized_sequence::rematerialize_after_blueprint_definition_change,
+        crate::materialized_sequence::rematerialize_after_blueprint_definition_change
+            .after(ObjectChangePublication),
     );
     let (fixture_ref, parameters) =
         add_single_element_fixture(app.world_mut(), 402, &[(Attribute::Red, 0.0, 255.0)]);
@@ -334,6 +336,7 @@ fn blueprint_definition_change_rematerializes_active_cue() {
         .resource_mut::<DataProvider<Blueprint>>()
         .add(make_blueprint(20.0))
         .expect("blueprint should be insertable");
+    app.update();
     let cue = Cue {
         instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
@@ -354,8 +357,6 @@ fn blueprint_definition_change_rematerializes_active_cue() {
         .resource_mut::<DataProvider<Blueprint>>()
         .add(make_blueprint(140.0))
         .expect("blueprint should be updateable");
-    app.world_mut()
-        .write_message(BlueprintDefinitionChange { uid: blueprint_uid });
     app.update();
 
     let refreshed = app

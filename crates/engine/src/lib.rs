@@ -34,6 +34,7 @@ pub mod diagnostic_paths;
 pub mod eval;
 pub mod eval_action;
 pub mod frame_waker;
+pub mod object_changes;
 pub mod object_crud;
 pub mod object_registry;
 #[cfg(not(target_arch = "wasm32"))]
@@ -87,7 +88,7 @@ pub mod prelude {
 
     pub use crate::EnginePlugin;
     pub use crate::assertions::{AssertionSet, BoundAssertionSet, FixtureAttributeTransition};
-    pub use crate::blueprint::{BlueprintCommand, BlueprintDefinitionChange, BlueprintOperation};
+    pub use crate::blueprint::{BlueprintCommand, BlueprintOperation};
     pub use crate::client::{
         Undo, decode_client_command, register_client_command, submit_client_command,
     };
@@ -108,6 +109,7 @@ pub mod prelude {
     pub use crate::eval::INTERNAL_ACTION_ORIGIN;
     pub use crate::eval_action::EvalOperation;
     pub use crate::frame_waker::FrameWaker;
+    pub use crate::object_changes::{ObjectChangePublication, ObjectChanged, ObjectChangesAppExt};
     pub use crate::object_crud::{ObjectCrud, apply_object_crud_command};
     pub use crate::parse_command_string;
     #[cfg(not(target_arch = "wasm32"))]

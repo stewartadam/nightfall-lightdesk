@@ -6,21 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Blueprint command, action, and change contracts shared across domains.
+//! Blueprint command and action contracts shared across domains.
 
-use bevy_ecs::prelude::*;
 use nightfall::prelude::Blueprint;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::prelude::*;
-
-/// Describes a committed Blueprint definition mutation.
-#[derive(Clone, Debug, Message)]
-pub struct BlueprintDefinitionChange {
-    /// Stable identity of the Blueprint that changed.
-    pub uid: Uuid,
-}
 
 /// Commands for blueprint CRUD operations
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]

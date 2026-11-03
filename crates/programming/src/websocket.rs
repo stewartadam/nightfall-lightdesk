@@ -181,7 +181,7 @@ pub fn forward_programmer_commands(
     mut events: MessageReader<CommandEnvelope<ProgrammerCommand>>,
     mut restore_events: MessageReader<EngineOperationEnvelope<RestoreProgrammerState>>,
     mut action_events: MessageReader<EngineOperationEnvelope<ProgrammerOperation>>,
-    mut blueprint_changes: MessageReader<BlueprintDefinitionChange>,
+    mut blueprint_changes: MessageReader<ObjectChanged<Blueprint>>,
     programmer: Res<Programmer>,
     blueprint_data_provider: Option<Res<DataProvider<Blueprint>>>,
     spatial_selection_resolver: SpatialSelectionResolver,

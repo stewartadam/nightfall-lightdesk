@@ -434,9 +434,9 @@ pub fn rematerialize_sequences_after_sequence_definition_change(
     }
 }
 
-/// Re-materializes active cue state affected by committed Blueprint edits.
+/// Re-materializes active cue state that references a Blueprint changed this frame.
 pub fn rematerialize_after_blueprint_definition_change(
-    mut changes: MessageReader<BlueprintDefinitionChange>,
+    mut changes: MessageReader<ObjectChanged<Blueprint>>,
     color_path_data_provider: Option<Res<DataProvider<ColorPath>>>,
     blueprint_data_provider: Res<DataProvider<Blueprint>>,
     fixture_data_provider: Res<FixtureDataProviderExt>,

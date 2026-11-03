@@ -45,7 +45,6 @@ pub fn action_events(
     mut blueprint_data_provider: ResMut<DataProvider<Blueprint>>,
     mut undo_manager: ResMut<UndoManager>,
     mut results: MessageWriter<OperationResult<(), CommandError>>,
-    mut definition_changes: MessageWriter<BlueprintDefinitionChange>,
 ) {
     for event in actions_reader.read() {
         let result = match &event.operation {
@@ -71,9 +70,6 @@ pub fn action_events(
                                 event.command_id.is_some(),
                             );
                         }
-                        definition_changes.write(BlueprintDefinitionChange {
-                            uid: blueprint.identifiers.uid,
-                        });
                         Ok(())
                     }
                     Err(error) => Err(CommandError::new(
@@ -95,18 +91,9 @@ pub fn crud_events(
     mut events_reader: MessageReader<CommandEnvelope<BlueprintCommand>>,
     mut blueprint_data_provider: ResMut<DataProvider<Blueprint>>,
     reference_index: Res<BlueprintReferenceIndex>,
-    mut definition_changes: MessageWriter<BlueprintDefinitionChange>,
     mut responder: CommandResponder,
 ) {
     for event in events_reader.read() {
-        let affected_uid = match &event.command {
-            BlueprintCommand::StoreBlueprint(blueprint) => Some(blueprint.identifiers.uid),
-            BlueprintCommand::RenameBlueprint { id, .. }
-            | BlueprintCommand::DeleteBlueprint(id) => blueprint_data_provider
-                .from_id(*id)
-                .ok()
-                .map(|blueprint| blueprint.identifiers.uid),
-        };
         let result = if let Err(error) =
             validate_blueprint_delete(&event.command, &blueprint_data_provider, &reference_index)
         {
@@ -116,12 +103,7 @@ pub fn crud_events(
                 .expect("every BlueprintCommand variant is a CRUD command")
         };
         let response = match result {
-            Ok(()) => {
-                if let Some(uid) = affected_uid {
-                    definition_changes.write(BlueprintDefinitionChange { uid });
-                }
-                responder.succeed(event.command_id)
-            }
+            Ok(()) => responder.succeed(event.command_id),
             Err(error) => responder.fail(event.command_id, error),
         };
         if let Err(error) = response {

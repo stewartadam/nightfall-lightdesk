@@ -1530,7 +1530,7 @@ fn sequence_definition_change_preserves_setup_start_position() {
 #[test]
 fn setup_blueprint_rematerialization_invalidates_render_prefix_cache() {
     let mut app = App::new();
-    app.add_message::<BlueprintDefinitionChange>();
+    app.add_message::<ObjectChanged<Blueprint>>();
     app.init_resource::<DataProvider<Group>>();
     app.init_resource::<DataProvider<Blueprint>>();
     app.init_resource::<FixtureDataProviderExt>();
@@ -1585,7 +1585,7 @@ fn setup_blueprint_rematerialization_invalidates_render_prefix_cache() {
         .id();
 
     app.world_mut()
-        .write_message(BlueprintDefinitionChange { uid: blueprint_uid });
+        .write_message(ObjectChanged::<Blueprint>::new(blueprint_uid));
     app.update();
 
     let sequence = app

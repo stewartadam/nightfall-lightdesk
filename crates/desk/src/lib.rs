@@ -112,7 +112,7 @@ impl Plugin for DeskPlugin {
         app.add_message::<masters::MasterUpdate>();
         register_client_command::<BlueprintCommand>(app, Undo::Captured);
         app.add_message::<EngineOperationEnvelope<BlueprintOperation>>();
-        app.add_message::<BlueprintDefinitionChange>();
+        app.publish_object_changes::<Blueprint>();
         app.init_resource::<BlueprintReferenceIndex>();
         app.init_resource::<GroupReferenceIndex>();
         app.init_resource::<websocket::LayerStackPublication>();

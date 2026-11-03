@@ -208,6 +208,9 @@ pub(super) fn init_bevy_with_transport_policy(
             ShowfileHandling
                 .run_if(in_state(CommandProcessingState::Running))
                 .after(EventHandling),
+            ObjectChangePublication
+                .run_if(in_state(CommandProcessingState::Running))
+                .after(ShowfileHandling),
         ),
     );
     app.configure_sets(
