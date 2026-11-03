@@ -14,6 +14,8 @@ use nightfall_engine::object_crud::apply_object_crud_command;
 use nightfall_engine::prelude::*;
 use nightfall_undo::prelude::{UndoEntry, UndoManager, Undoable};
 
+use super::{BlueprintCommand, BlueprintOperation};
+
 /// Rejects deletion of a Blueprint that still has registered live dependents.
 fn validate_blueprint_delete(
     command: &BlueprintCommand,

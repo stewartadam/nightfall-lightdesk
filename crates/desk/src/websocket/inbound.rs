@@ -10,23 +10,6 @@
 
 use super::*;
 
-/// Forward group commands to UI via byte-oriented broadcaster
-/// Forward group commands to UI via broadcaster
-///
-/// Note: CRUD commands (StoreGroup, RenameGroup, DeleteGroup) are intentionally
-/// NOT forwarded here because the command echo would be sent before we know if
-/// the operation succeeded. Instead, we rely on send_groups_on_change to send
-/// full definitions after changes.
-pub fn forward_group_commands(
-    mut events: MessageReader<CommandEnvelope<GroupCommand>>,
-    _broadcaster: Res<ClientEventSink>,
-) {
-    // Drain the events to avoid them accumulating
-    for _event in events.read() {
-        // CRUD commands are not forwarded - rely on send_groups_on_change instead
-    }
-}
-
 /// Forward clip commands to UI via broadcaster
 ///
 /// Note: RenameClip is intentionally NOT forwarded here because the command
@@ -44,23 +27,6 @@ pub fn forward_clip_commands(
                 &DeskWsMessage::ClipCommand(&event.command),
             );
         }
-    }
-}
-
-/// Forward blueprint commands to UI via broadcaster
-/// Forward blueprint commands to UI via broadcaster
-///
-/// Note: CRUD commands (StoreBlueprint, RenameBlueprint, DeleteBlueprint) are
-/// intentionally NOT forwarded here because the command echo would be sent before
-/// we know if the operation succeeded. Instead, we rely on send_blueprints_on_change
-/// to send full definitions after changes.
-pub fn forward_blueprint_commands(
-    mut events: MessageReader<CommandEnvelope<BlueprintCommand>>,
-    _broadcaster: Res<ClientEventSink>,
-) {
-    // Drain the events to avoid them accumulating
-    for _event in events.read() {
-        // CRUD commands are not forwarded - rely on send_blueprints_on_change instead
     }
 }
 

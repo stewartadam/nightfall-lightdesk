@@ -9,7 +9,6 @@
 use bevy_app::prelude::*;
 use bevy_ecs::{prelude::Messages, schedule::IntoScheduleConfigs};
 use nightfall::prelude::*;
-use nightfall_desk::prelude::GroupOperation;
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandNoticeReply, CommandOrigin, CommandReply, CommandResult,
     CommandTracker, DataProvider, EngineOperationEnvelope, FinishedCommand, OperationResult,
@@ -17,7 +16,7 @@ use nightfall_engine::prelude::{
 };
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt, FixtureElement};
 use nightfall_programming::events::{ProgrammerCommand, StoreObjectWorkflows, handle_group_events};
-use nightfall_programming::prelude::Programmer;
+use nightfall_programming::prelude::{GroupOperation, Programmer};
 use nightfall_selection_runtime::SpatialSelectionResolver;
 use nightfall_undo::prelude::UndoManager;
 use uuid::Uuid;
@@ -153,7 +152,7 @@ fn tracked_store_group_finishes_after_action_result() {
     app.add_systems(
         Update,
         (
-            nightfall_desk::systems::event_handlers::group_events::action_events,
+            nightfall_programming::groups::events::action_events,
             nightfall_programming::events::resume_store_object_workflows,
         )
             .chain()

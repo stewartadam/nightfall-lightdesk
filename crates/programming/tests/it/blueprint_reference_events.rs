@@ -19,7 +19,7 @@ use nightfall_programming::events::{
     ProgrammerAttributeOperation, ProgrammerAttributeSource, ProgrammerCommand,
     StoreObjectWorkflows, handle_blueprint_events,
 };
-use nightfall_programming::prelude::Programmer;
+use nightfall_programming::prelude::{BlueprintOperation, Programmer};
 use uuid::Uuid;
 
 /// Builds an event app containing the resources required by Blueprint application handling.

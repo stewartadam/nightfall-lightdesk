@@ -35,7 +35,6 @@ pub mod ast_conv;
 pub mod automation_actions;
 pub mod desk_command;
 pub mod faders;
-pub mod group_command;
 pub mod masters;
 mod panel_layouts;
 pub mod resources;
@@ -59,8 +58,6 @@ pub mod prelude {
         FaderAssignment, FaderButtonMode, FaderCommand, FaderConfig, FaderSnapshot, FaderUpdate,
         Faders, HeldButtonEffect, HeldButtonEffects,
     };
-    pub use crate::group_command::GroupCommand;
-    pub use crate::group_command::GroupOperation;
     pub use crate::masters::{
         FixtureMasterTarget, InstanceMasterTarget, MASTER_INTENSITY_ATTRIBUTES, Master,
         MasterCommand, MasterKind, MasterMode, MasterTarget, add_default_show_masters,
@@ -106,15 +103,9 @@ impl Plugin for DeskPlugin {
         automation_actions::register_desk_actions(app);
 
         register_client_command::<DeskCommand>(app, Undo::Skipped);
-        register_client_command::<GroupCommand>(app, Undo::Captured);
-        app.add_message::<EngineOperationEnvelope<GroupOperation>>();
         register_client_command::<MasterCommand>(app, Undo::Captured);
         app.add_message::<masters::MasterUpdate>();
-        register_client_command::<BlueprintCommand>(app, Undo::Captured);
-        app.add_message::<EngineOperationEnvelope<BlueprintOperation>>();
-        app.publish_object_changes::<Blueprint>();
         app.init_resource::<BlueprintReferenceIndex>();
-        app.init_resource::<GroupReferenceIndex>();
         app.init_resource::<websocket::LayerStackPublication>();
         app.add_message::<OperationResult<(), CommandError>>();
         app.add_message::<NotificationEnvelope<nightfall_io::IoRuntimeNotification>>();
@@ -157,8 +148,6 @@ impl Plugin for DeskPlugin {
         // Register undoable commands
         {
             let mut registry = app.world_mut().resource_mut::<UndoRegistry>();
-            registry.register::<BlueprintCommand>();
-            registry.register::<GroupCommand>();
             registry.register::<MasterCommand>();
         }
 
@@ -188,11 +177,6 @@ impl Plugin for DeskPlugin {
             Update,
             (
                 event_handlers::fixture_events::crud_events,
-                event_handlers::group_events::crud_events,
-                event_handlers::group_events::action_events.in_set(DeskEventSet::GroupActions),
-                event_handlers::blueprint_events::crud_events.in_set(DeskEventSet::BlueprintCrud),
-                event_handlers::blueprint_events::action_events
-                    .in_set(DeskEventSet::BlueprintActions),
                 event_handlers::debug_events::handle_events,
                 faders::handle_fader_commands,
                 faders::handle_fader_updates,
@@ -276,9 +260,7 @@ impl Plugin for DeskPlugin {
         app.add_systems(
             PostUpdate,
             (
-                websocket::forward_group_commands,
                 websocket::forward_clip_commands,
-                websocket::forward_blueprint_commands,
                 websocket::forward_desk_commands,
                 // These read removals, which only last two updates.
                 websocket::send_clips_on_change,

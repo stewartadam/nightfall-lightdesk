@@ -99,7 +99,7 @@ Plugin crates each own one area of the show. They add themselves to the engine a
 | Crate | WASM | Description |
 |-------|------|-------------|
 | `cues` | Demo | Cues, sequences, tracking, release, and the runtime state that plays them. |
-| `programming` | Demo | The programmer: live values and selection, the programmer layer, and storing into cues. |
+| `programming` | Demo | The programmer (live values and selection, the programmer layer, storing into cues), and groups and Blueprints: their stores, commands, undo, and command line words. |
 | `fx` | Demo | Procedural FX and Step FX, and their runtime state. |
 | `fx-module` | No | FX modules: the WebAssembly Interface Type (WIT) contract, Rust types for module authors, and the Wasmtime host that runs modules. |
 | `flow` | Demo | Flow node graphs: definitions, built-in nodes, and the runtime. The demo build leaves out FX module nodes. |
@@ -172,7 +172,7 @@ The `desk` crate is the largest cross-plugin crate. It holds the behavior that b
 
 - The `DeskCommand` entry point, including the requests to create, save, load, and import showfiles.
 - Masters, faders with their levels and buttons, and the actions that drive them.
-- Groups and blueprints.
+- The client feeds for group and Blueprint definitions. The stores, commands, and undo for groups and Blueprints live in `programming`.
 - Console settings and the showfile's shared panel layouts.
 - The adjustments after the merge: virtual dimmers, virtual relations, and each playback's intensity level.
 - Diagnostics, network statistics, and the layer stack that the **Layers** panel shows.

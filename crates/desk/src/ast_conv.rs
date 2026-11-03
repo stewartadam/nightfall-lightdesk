@@ -17,7 +17,6 @@ use nightfall_engine::prelude::*;
 use nightfall_undo::prelude::*;
 
 use crate::desk_command::{DeskCommand, ShowfileRevisionSelection};
-use crate::group_command::GroupCommand;
 
 /// Builds the desk command for a parsed load target, including explicit source prefixes.
 fn load_command_for_target(target: &str) -> Result<DeskCommand, DispatchError> {
@@ -82,13 +81,6 @@ impl AstConvert for DeskAstConverter {
                                 })?;
                             return Ok(vec![Box::new(ClipCommand::DeleteClip(id))]);
                         }
-                        ast::ObjectTypeAst::Group => {
-                            let id = conv::simple_identifier_ast_to_single_id(&delete_ast.id)
-                                .ok_or_else(|| {
-                                    DispatchError::ConversionFailed("invalid group ID".to_string())
-                                })?;
-                            return Ok(vec![Box::new(GroupCommand::DeleteGroup(id))]);
-                        }
                         _ => {}
                     }
                     Err(DispatchError::NotApplicable)
@@ -105,17 +97,6 @@ impl AstConvert for DeskAstConverter {
                                 DispatchError::ConversionFailed("invalid clip ID".to_string())
                             })?;
                             return Ok(vec![Box::new(ClipCommand::RenameClip { id, new_id })]);
-                        }
-                        ast::ObjectTypeAst::Group => {
-                            let id = conv::simple_identifier_ast_to_single_id(&rename_ast.from)
-                                .ok_or_else(|| {
-                                    DispatchError::ConversionFailed("invalid group ID".to_string())
-                                })?;
-                            let new_id = conv::simple_identifier_ast_to_single_id(&rename_ast.to)
-                                .ok_or_else(|| {
-                                DispatchError::ConversionFailed("invalid group ID".to_string())
-                            })?;
-                            return Ok(vec![Box::new(GroupCommand::RenameGroup { id, new_id })]);
                         }
                         _ => {}
                     }

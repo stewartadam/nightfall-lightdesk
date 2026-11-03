@@ -10,6 +10,7 @@
 
 mod ast_conv_attributes;
 mod ast_conv_clear;
+mod ast_conv_management;
 mod ast_conv_selection;
 mod ast_conv_store_recall;
 mod ast_conv_timings;

@@ -8,8 +8,9 @@
 
 use bevy_app::{App, Update};
 use nightfall::prelude::*;
-use nightfall_desk::prelude::{FixtureMasterTarget, GroupCommand, Master, MasterTarget};
+use nightfall_desk::prelude::{FixtureMasterTarget, Master, MasterTarget};
 use nightfall_fixtures::prelude::{Fixture, FixtureDataProviderExt};
+use nightfall_programming::prelude::GroupCommand;
 use nightfall_selection::{ReferenceIssueReason, ReferenceTarget};
 use uuid::Uuid;
 

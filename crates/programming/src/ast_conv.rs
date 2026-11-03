@@ -16,7 +16,9 @@ use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 
 use crate::action_model::{ClearCommand, ClearTarget, ReleaseCommand, ReleaseTarget, UserCommand};
+use crate::blueprints::BlueprintCommand;
 use crate::events::{StoreCueId, StoreCuePartId, StoreMode};
+use crate::groups::GroupCommand;
 
 /// Converts parser store mode AST into programmer command mode.
 fn store_mode_from_ast(mode: ast::StoreCueModeAst) -> StoreMode {
@@ -292,6 +294,12 @@ impl AstConvert for ProgrammerAstConverter {
                         allow_selection_flatten: false,
                         selection_flatten_approval: None,
                     }))])
+                }
+                ast::GeneralCommandAst::Delete(delete_ast) => {
+                    delete_command(&delete_ast.object_type, &delete_ast.id)
+                }
+                ast::GeneralCommandAst::Rename(rename_ast) => {
+                    rename_command(&rename_ast.object_type, &rename_ast.from, &rename_ast.to)
                 }
                 _ => Err(DispatchError::NotApplicable),
             },
@@ -587,6 +595,52 @@ fn timings_to_transitions(
     }
 
     Ok((transition, attribute_transitions))
+}
+
+/// Parses one numeric object ID from a command argument, naming the object kind on failure.
+fn single_object_id(
+    id: &ast::SimpleIdentifierExpressionAst,
+    object_kind: &str,
+) -> Result<u32, DispatchError> {
+    conv::simple_identifier_ast_to_single_id(id)
+        .ok_or_else(|| DispatchError::ConversionFailed(format!("invalid {object_kind} ID")))
+}
+
+/// Converts `delete group N` and `delete blueprint N`; other object types belong to other
+/// converters.
+fn delete_command(
+    object_type: &ast::ObjectTypeAst,
+    id: &ast::SimpleIdentifierExpressionAst,
+) -> Result<Vec<DynEnginePayload>, DispatchError> {
+    match object_type {
+        ast::ObjectTypeAst::Group => Ok(vec![Box::new(GroupCommand::DeleteGroup(
+            single_object_id(id, "group")?,
+        ))]),
+        ast::ObjectTypeAst::Blueprint => Ok(vec![Box::new(BlueprintCommand::DeleteBlueprint(
+            single_object_id(id, "blueprint")?,
+        ))]),
+        _ => Err(DispatchError::NotApplicable),
+    }
+}
+
+/// Converts `rename group N to M` and `rename blueprint N to M`; other object types belong to
+/// other converters.
+fn rename_command(
+    object_type: &ast::ObjectTypeAst,
+    from: &ast::SimpleIdentifierExpressionAst,
+    to: &ast::SimpleIdentifierExpressionAst,
+) -> Result<Vec<DynEnginePayload>, DispatchError> {
+    match object_type {
+        ast::ObjectTypeAst::Group => Ok(vec![Box::new(GroupCommand::RenameGroup {
+            id: single_object_id(from, "group")?,
+            new_id: single_object_id(to, "group")?,
+        })]),
+        ast::ObjectTypeAst::Blueprint => Ok(vec![Box::new(BlueprintCommand::RenameBlueprint {
+            id: single_object_id(from, "blueprint")?,
+            new_id: single_object_id(to, "blueprint")?,
+        })]),
+        _ => Err(DispatchError::NotApplicable),
+    }
 }
 
 /// Builds the assertion set for one attribute command: every attribute action becomes a value,

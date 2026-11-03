@@ -22,7 +22,9 @@ use nightfall_selection_runtime::{SelectionResolver, SpatialSelectionResolver};
 use serde::{Deserialize, Serialize};
 
 use crate::action_model::{AttributeFilter, ProgrammerOperation, Scope, UserCommand};
+use crate::blueprints::BlueprintOperation;
 use crate::command_planner::{ProgrammerCommandPlanner, ProgrammerPlanContext};
+use crate::groups::GroupOperation;
 use crate::resources::Programmer;
 
 mod blueprints;

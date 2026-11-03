@@ -6171,6 +6171,7 @@ dependencies = [
  "nightfall-fx",
  "nightfall-fx-module",
  "nightfall-io",
+ "nightfall-programming",
  "nightfall-selection",
  "nightfall-workspace-hack",
  "serde",

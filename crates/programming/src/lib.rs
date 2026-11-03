@@ -6,17 +6,20 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! The programmer: the operator's working selection and live values.
+//! Programming: the operator's working selection and live values, and the groups and Blueprints
+//! built from them.
 //!
 //! [`ProgrammingPlugin`] holds the active fixture selection and the values set on it, paints them
 //! into the programmer layer that the compositor merges with playbacks, and handles clearing and
-//! releasing them. It also stores programmer contents into cues, Blueprints, and groups, and
-//! recalls them back into the programmer.
+//! releasing them. It also stores programmer contents into cues, Blueprints, and groups, recalls
+//! them back into the programmer, and owns the group and Blueprint stores with their commands
+//! and undo support.
 
 #![warn(missing_docs)]
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use nightfall::prelude::{Blueprint, Group};
 use nightfall_actions::{ActionAppExt, ActionDescriptor};
 use nightfall_engine::prelude::*;
 use nightfall_undo::prelude::*;
@@ -26,8 +29,10 @@ use crate::resources::Programmer;
 
 pub mod action_model;
 pub mod ast_conv;
+pub mod blueprints;
 pub mod command_planner;
 pub mod events;
+pub mod groups;
 pub mod painter;
 pub mod resources;
 pub mod undo;
@@ -40,11 +45,13 @@ pub mod prelude {
         AttributeFilter, ClearCommand, ClearTarget, ProgrammerOperation, ReleaseCommand,
         ReleaseTarget, Scope, UserCommand,
     };
+    pub use crate::blueprints::{BlueprintCommand, BlueprintOperation};
     pub use crate::command_planner::{ProgrammerCommandPlanner, ProgrammerPlanContext};
     pub use crate::events::{
         ProgrammerAttributeOperation, ProgrammerAttributeSource, ProgrammerCommand, StoreCueId,
         StoreCuePartId, StoreCueWorkflows, StoreMode,
     };
+    pub use crate::groups::{GroupCommand, GroupOperation};
     pub use crate::resources::{Programmer, ProgrammerMode};
     pub use crate::undo::{RemoveProgrammerInstructionByUuid, RestoreProgrammerState};
 }
@@ -70,6 +77,16 @@ impl Plugin for ProgrammingPlugin {
         >();
         register_engine_operation::<undo::RestoreProgrammerState>(app);
         register_engine_operation::<undo::RemoveProgrammerInstructionByUuid>(app);
+        register_client_command::<groups::GroupCommand>(app, Undo::Captured);
+        app.add_message::<EngineOperationEnvelope<groups::GroupOperation>>();
+        register_client_command::<blueprints::BlueprintCommand>(app, Undo::Captured);
+        app.add_message::<EngineOperationEnvelope<blueprints::BlueprintOperation>>();
+        app.add_message::<OperationResult<(), CommandError>>();
+        app.init_resource::<DataProvider<Group>>();
+        app.init_resource::<DataProvider<Blueprint>>();
+        app.init_resource::<BlueprintReferenceIndex>();
+        app.init_resource::<GroupReferenceIndex>();
+        app.publish_object_changes::<Blueprint>();
 
         app.add_systems(
             PostUpdate,
@@ -89,15 +106,14 @@ impl Plugin for ProgrammingPlugin {
         app.init_resource::<events::PendingProgrammerActionWorkflows>();
 
         // Register undoable commands
-        app.world_mut()
-            .resource_mut::<UndoRegistry>()
-            .register::<events::ProgrammerCommand>();
-        app.world_mut()
-            .resource_mut::<UndoRegistry>()
-            .register_operation::<undo::RestoreProgrammerState>();
-        app.world_mut()
-            .resource_mut::<UndoRegistry>()
-            .register_operation::<undo::RemoveProgrammerInstructionByUuid>();
+        {
+            let mut registry = app.world_mut().resource_mut::<UndoRegistry>();
+            registry.register::<events::ProgrammerCommand>();
+            registry.register_operation::<undo::RestoreProgrammerState>();
+            registry.register_operation::<undo::RemoveProgrammerInstructionByUuid>();
+            registry.register::<groups::GroupCommand>();
+            registry.register::<blueprints::BlueprintCommand>();
+        }
 
         app.add_systems(
             Update,
@@ -123,10 +139,14 @@ impl Plugin for ProgrammingPlugin {
                     events::rebuild_programmer_blueprint_reference_index
                         .after(events::handle_blueprint_events)
                         .after(events::handle_programmer_events)
-                        .before(DeskEventSet::BlueprintCrud),
+                        .before(blueprints::events::crud_events),
+                    groups::events::crud_events,
+                    groups::events::action_events,
+                    blueprints::events::crud_events,
+                    blueprints::events::action_events,
                     events::resume_store_object_workflows
-                        .after(DeskEventSet::GroupActions)
-                        .after(DeskEventSet::BlueprintActions),
+                        .after(groups::events::action_events)
+                        .after(blueprints::events::action_events),
                     events::handle_undo_events,
                     events::handle_remove_instruction_events,
                 )

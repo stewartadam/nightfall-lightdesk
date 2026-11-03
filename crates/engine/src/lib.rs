@@ -24,7 +24,6 @@ use nightfall_cmd_parse::prelude::*;
 use crate::prelude::*;
 
 pub mod assertions;
-pub mod blueprint;
 mod client;
 pub mod client_bridge;
 pub mod client_ingress;
@@ -88,7 +87,6 @@ pub mod prelude {
 
     pub use crate::EnginePlugin;
     pub use crate::assertions::{AssertionSet, BoundAssertionSet, FixtureAttributeTransition};
-    pub use crate::blueprint::{BlueprintCommand, BlueprintOperation};
     pub use crate::client::{
         Undo, decode_client_command, register_client_command, submit_client_command,
     };
@@ -334,12 +332,6 @@ pub enum DeskEventSet {
     ClipForwarding,
     /// Routes clip playback actions to the domain that owns each clip source.
     ClipRouting,
-    /// Applies blueprint create, update, and delete commands.
-    BlueprintCrud,
-    /// Applies blueprint engine actions.
-    BlueprintActions,
-    /// Applies group engine actions.
-    GroupActions,
     /// Applies instance playback commands.
     InstancePlayback,
     /// Replaces queued command-line eval commands with the concrete commands they evaluate to.

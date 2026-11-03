@@ -8,11 +8,9 @@
 
 //! Undo/redo implementations for desk commands.
 
-use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_undo::prelude::*;
 
-use crate::group_command::GroupCommand;
 use crate::masters::{Master, MasterCommand};
 
 // ============================================================================
@@ -78,56 +76,11 @@ impl Undoable for MasterCommand {
     }
 }
 
-// ============================================================================
-// Group Commands
-// ============================================================================
-
-fn inverse_for_store_group(
-    group: &Group,
-    groups: &DataProvider<Group>,
-) -> Option<Box<dyn Undoable>> {
-    match groups.get(group.identifiers.uid) {
-        Ok(existing) => {
-            let old_group: Group = (*existing).clone();
-            Some(Box::new(GroupCommand::StoreGroup(old_group)))
-        }
-        Err(_) => Some(Box::new(GroupCommand::DeleteGroup(group.identifiers.id))),
-    }
-}
-
-impl Undoable for GroupCommand {
-    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
-        let groups = ctx.world.resource::<DataProvider<Group>>();
-        match self {
-            GroupCommand::StoreGroup(group) => inverse_for_store_group(group, groups),
-            GroupCommand::DeleteGroup(id) => {
-                // Capture full group before deletion
-                groups.from_id(*id).ok().map(|group_ref| {
-                    let group: Group = (*group_ref).clone();
-                    Box::new(GroupCommand::StoreGroup(group)) as Box<dyn Undoable>
-                })
-            }
-            GroupCommand::RenameGroup { id, new_id } => Some(Box::new(GroupCommand::RenameGroup {
-                id: *new_id,
-                new_id: *id,
-            })),
-        }
-    }
-
-    fn description(&self) -> String {
-        match self {
-            GroupCommand::StoreGroup(group) => format!("Store Group {}", group.identifiers.id),
-            GroupCommand::DeleteGroup(id) => format!("Delete Group {}", id),
-            GroupCommand::RenameGroup { id, new_id } => format!("Rename Group {} → {}", id, new_id),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use bevy_ecs::prelude::*;
+    use nightfall::prelude::Identifiers;
     use nightfall_clips::{Clip, ClipCommand, ClipSourceRef, RestoreClipSource, Source};
-    use nightfall_dmx::prelude::{Attribute, ParameterValue};
     use uuid::Uuid;
 
     use super::*;
@@ -150,14 +103,6 @@ mod tests {
             .into_any()
             .downcast::<ClipCommand>()
             .expect("inverse should be an clip command")
-    }
-
-    /// Extracts a Blueprint command from a boxed undo command.
-    fn inverse_blueprint_command(command: Box<dyn Undoable>) -> BlueprintCommand {
-        *command
-            .into_any()
-            .downcast::<BlueprintCommand>()
-            .expect("inverse should be a Blueprint command")
     }
 
     /// Verifies a committed drag undoes to the level from before the drag, not the live level.
@@ -184,60 +129,6 @@ mod tests {
                 level_percent,
             } if (level_percent - 25.0).abs() < f32::EPSILON
         ));
-    }
-
-    /// Verifies Blueprint edits undo to the previous UUID-backed logical definition.
-    #[test]
-    fn store_blueprint_inverse_restores_previous_definition() {
-        let uid = Uuid::from_u128(30);
-        let original = Blueprint {
-            identifiers: Identifiers {
-                id: 5,
-                uid,
-                label: "Before".to_owned(),
-            },
-            values: std::collections::HashMap::from([(
-                Attribute::Red,
-                ValueSource::Inline(ParameterValue::Absolute { value: 20.0 }),
-            )]),
-            ..Default::default()
-        };
-        let mut blueprints = DataProvider::<Blueprint>::default();
-        blueprints
-            .add(original.clone())
-            .expect("original Blueprint should be insertable");
-        let mut world = World::new();
-        world.insert_resource(blueprints);
-        let updated = Blueprint {
-            identifiers: Identifiers {
-                id: 50,
-                uid,
-                label: "After".to_owned(),
-            },
-            values: std::collections::HashMap::from([(
-                Attribute::Red,
-                ValueSource::Inline(ParameterValue::Absolute { value: 80.0 }),
-            )]),
-            ..Default::default()
-        };
-
-        let inverse = BlueprintCommand::StoreBlueprint(updated)
-            .inverse(&UndoContext { world: &world })
-            .expect("Blueprint update should be undoable");
-
-        match inverse_blueprint_command(inverse) {
-            BlueprintCommand::StoreBlueprint(snapshot) => {
-                assert_eq!(snapshot.identifiers.uid, uid);
-                assert_eq!(snapshot.identifiers.id, 5);
-                assert_eq!(snapshot.identifiers.label, "Before");
-                assert!(matches!(
-                    snapshot.values.get(&Attribute::Red),
-                    Some(ValueSource::Inline(ParameterValue::Absolute { value }))
-                        if *value == 20.0
-                ));
-            }
-            other => panic!("expected StoreBlueprint inverse, got {other:?}"),
-        }
     }
 
     /// Verifies store undo snapshots by UID after an earlier numeric rename.
