@@ -16,7 +16,7 @@ nightfall-io = { path = "../io" }
 nightfall-service-host = { path = "../service_host" }
 tokio.workspace = true
 tracing.workspace = true
-serialport = { version = "4.10", default-features = false }
+serialport = { version = "4.10", default-features = false, features = ["usbportinfo-location"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }

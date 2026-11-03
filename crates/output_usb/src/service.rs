@@ -25,7 +25,7 @@ use nightfall_service_host::prelude::{WorkerSlot, process_singleton};
 use nusb::MaybeFuture;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
-use crate::open_dmx::OpenDmxPort;
+use crate::open_dmx::{OpenDmxPort, UsbDeviceIdentity};
 
 /// uDMX output client handle.
 #[derive(Clone, Default, Resource)]
@@ -534,6 +534,30 @@ fn usb_device_location_key(_device: &nusb::DeviceInfo) -> Option<String> {
     None
 }
 
+/// Returns the nusb bus ID of a USB device.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn usb_device_bus_id(device: &nusb::DeviceInfo) -> &str {
+    device.bus_id()
+}
+
+/// Returns no bus ID on platforms where nusb does not expose one.
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn usb_device_bus_id(_device: &nusb::DeviceInfo) -> &str {
+    ""
+}
+
+/// Returns the hub port chain of a USB device.
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+fn usb_device_port_chain(device: &nusb::DeviceInfo) -> &[u8] {
+    device.port_chain()
+}
+
+/// Returns no port chain on platforms where nusb does not expose one.
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn usb_device_port_chain(_device: &nusb::DeviceInfo) -> &[u8] {
+    &[]
+}
+
 /// Returns whether a saved selector resolves to a currently visible USB device.
 fn selector_matches_device(
     selector: &str,
@@ -621,11 +645,13 @@ fn try_init_device(selector: &str) -> InitDeviceResult {
     };
 
     if (device.vendor_id(), device.product_id()) == (OPEN_DMX_VENDOR_ID, OPEN_DMX_PRODUCT_ID) {
-        return match OpenDmxPort::open(
-            device.vendor_id(),
-            device.product_id(),
-            device.serial_number(),
-        ) {
+        return match OpenDmxPort::open(&UsbDeviceIdentity {
+            vendor_id: device.vendor_id(),
+            product_id: device.product_id(),
+            serial_number: device.serial_number(),
+            bus_id: usb_device_bus_id(&device),
+            port_chain: usb_device_port_chain(&device),
+        }) {
             Some(port) => InitDeviceResult::Connected(OpenedUdmxDevice {
                 selector,
                 id: device.id(),

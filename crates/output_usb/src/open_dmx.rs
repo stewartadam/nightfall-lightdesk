@@ -50,6 +50,25 @@ const WRITE_TIMEOUT: Duration = Duration::from_millis(250);
 /// DMX512 null start code for dimmer data.
 const NULL_START_CODE: u8 = 0;
 
+/// USB identity of an Open DMX device, used to find the serial port the OS created for it.
+pub(crate) struct UsbDeviceIdentity<'a> {
+    pub(crate) vendor_id: u16,
+    pub(crate) product_id: u16,
+    pub(crate) serial_number: Option<&'a str>,
+    /// Bus ID as nusb formats it.
+    pub(crate) bus_id: &'a str,
+    /// Hub port numbers from the root hub to the device.
+    pub(crate) port_chain: &'a [u8],
+}
+
+/// Serial port of a USB device as the OS reports it.
+struct PortCandidate {
+    port_name: String,
+    serial_number: Option<String>,
+    /// Bus ID as serialport formats it, and the hub port chain.
+    location: Option<(String, Vec<u8>)>,
+}
+
 /// Open DMX port and the writer thread that keeps refreshing its output.
 pub(crate) struct OpenDmxPort {
     frame: Arc<Mutex<[u8; MAX_CHANNELS_PER_UNIVERSE]>>,
@@ -65,16 +84,14 @@ impl OpenDmxPort {
     ///
     /// Returns `None` when no matching serial port exists or it cannot be opened, for example
     /// while the OS driver is still binding to a freshly attached device.
-    pub(crate) fn open(
-        vendor_id: u16,
-        product_id: u16,
-        serial_number: Option<&str>,
-    ) -> Option<Self> {
-        let Some(port_name) = find_serial_port(vendor_id, product_id, serial_number) else {
+    pub(crate) fn open(device: &UsbDeviceIdentity<'_>) -> Option<Self> {
+        let Some(port_name) = find_serial_port(device) else {
             tracing::warn!(
-                vendor_id = format!("{vendor_id:04x}"),
-                product_id = format!("{product_id:04x}"),
-                serial_number,
+                vendor_id = format!("{:04x}", device.vendor_id),
+                product_id = format!("{:04x}", device.product_id),
+                serial_number = device.serial_number,
+                bus_id = device.bus_id,
+                port_chain = ?device.port_chain,
                 "no serial port found for Open DMX device"
             );
             return None;
@@ -217,14 +234,8 @@ fn write_frame(port: &mut dyn SerialPort, packet: &[u8]) -> std::io::Result<Inst
 
 /// Returns the name of the serial port the OS created for a USB device.
 ///
-/// Matches by serial number when the device reports one, otherwise only when exactly one port
-/// has the vendor and product ID. On macOS the `cu.` callout device is preferred over the `tty.`
-/// dial-in device, which can block opens waiting for carrier.
-fn find_serial_port(
-    vendor_id: u16,
-    product_id: u16,
-    serial_number: Option<&str>,
-) -> Option<String> {
+/// See [`select_serial_port`] for how the port is matched.
+fn find_serial_port(device: &UsbDeviceIdentity<'_>) -> Option<String> {
     // Without libudev, serialport scans /sys/class/tty and panics when it is missing, as in some
     // containers.
     #[cfg(target_os = "linux")]
@@ -242,40 +253,93 @@ fn find_serial_port(
     let candidates = ports
         .into_iter()
         .filter_map(|port| match port.port_type {
-            SerialPortType::UsbPort(info) if info.vid == vendor_id && info.pid == product_id => {
-                Some((port.port_name, info.serial_number))
+            SerialPortType::UsbPort(info)
+                if info.vid == device.vendor_id && info.pid == device.product_id =>
+            {
+                Some(PortCandidate {
+                    port_name: port.port_name,
+                    serial_number: info.serial_number,
+                    location: info.location.map(|location| {
+                        (
+                            location.bus_id().to_string(),
+                            location.port_chain().to_vec(),
+                        )
+                    }),
+                })
             }
             _ => None,
         })
         .collect::<Vec<_>>();
-    select_serial_port(candidates, serial_number)
+    select_serial_port(candidates, device)
 }
 
-/// Picks the port for a device from `(port name, serial number)` candidates sharing its USB ID.
+/// Picks the port for a device from candidates sharing its USB ID.
+///
+/// Matches by serial number when the device reports one. When several ports remain, as with
+/// clones that all ship the same serial, the device's USB bus and port chain pick between them.
+/// On macOS the `cu.` callout device is preferred over the `tty.` dial-in device, which can block
+/// opens waiting for carrier.
 fn select_serial_port(
-    candidates: Vec<(String, Option<String>)>,
-    serial_number: Option<&str>,
+    candidates: Vec<PortCandidate>,
+    device: &UsbDeviceIdentity<'_>,
 ) -> Option<String> {
-    let serial_number = serial_number
+    let serial_number = device
+        .serial_number
         .map(str::trim)
         .filter(|value| !value.is_empty());
     let mut matches = candidates
         .into_iter()
-        .filter(|(_, port_serial)| match serial_number {
-            Some(serial_number) => port_serial
+        .filter(|candidate| match serial_number {
+            Some(serial_number) => candidate
+                .serial_number
                 .as_deref()
                 .is_some_and(|port_serial| port_serial_matches(port_serial.trim(), serial_number)),
             None => true,
         })
-        .map(|(port_name, _)| port_name)
-        .filter(|port_name| !port_name.starts_with("/dev/tty.") || cfg!(not(target_os = "macos")))
+        .filter(|candidate| {
+            !candidate.port_name.starts_with("/dev/tty.") || cfg!(not(target_os = "macos"))
+        })
         .collect::<Vec<_>>();
-    matches.sort();
-    matches.dedup();
-    if matches.len() == 1 {
-        matches.pop()
+    if matches.len() > 1 {
+        matches.retain(|candidate| {
+            candidate
+                .location
+                .as_ref()
+                .is_some_and(|(bus_id, port_chain)| {
+                    port_chain == device.port_chain && same_usb_bus(device.bus_id, bus_id)
+                })
+        });
+    }
+    let mut port_names = matches
+        .into_iter()
+        .map(|candidate| candidate.port_name)
+        .collect::<Vec<_>>();
+    port_names.sort();
+    port_names.dedup();
+    if port_names.len() == 1 {
+        port_names.pop()
     } else {
         None
+    }
+}
+
+/// Returns whether nusb's and serialport's bus IDs name the same USB bus.
+///
+/// Both read the same OS location, but nusb formats macOS bus numbers in hex and Linux ones
+/// zero-padded, while serialport uses plain decimal. Windows bus IDs are location path strings
+/// in both.
+fn same_usb_bus(nusb_bus_id: &str, serialport_bus_id: &str) -> bool {
+    let nusb_radix = if cfg!(any(target_os = "macos", target_os = "ios")) {
+        16
+    } else {
+        10
+    };
+    match (
+        u32::from_str_radix(nusb_bus_id, nusb_radix),
+        serialport_bus_id.parse::<u32>(),
+    ) {
+        (Ok(nusb_bus), Ok(serialport_bus)) => nusb_bus == serialport_bus,
+        _ => nusb_bus_id == serialport_bus_id,
     }
 }
 
@@ -294,9 +358,52 @@ fn port_serial_matches(port_serial: &str, usb_serial: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// Builds a candidate list entry.
-    fn candidate(port_name: &str, serial_number: Option<&str>) -> (String, Option<String>) {
-        (port_name.to_string(), serial_number.map(ToOwned::to_owned))
+    /// Builds a candidate port without location information.
+    fn candidate(port_name: &str, serial_number: Option<&str>) -> PortCandidate {
+        PortCandidate {
+            port_name: port_name.to_string(),
+            serial_number: serial_number.map(ToOwned::to_owned),
+            location: None,
+        }
+    }
+
+    /// Builds a candidate port on a USB bus and port chain.
+    fn located_candidate(
+        port_name: &str,
+        serial_number: &str,
+        bus_id: &str,
+        port_chain: &[u8],
+    ) -> PortCandidate {
+        PortCandidate {
+            location: Some((bus_id.to_string(), port_chain.to_vec())),
+            ..candidate(port_name, Some(serial_number))
+        }
+    }
+
+    /// Builds a device identity on the first port of bus 2.
+    fn device(serial_number: Option<&str>) -> UsbDeviceIdentity<'_> {
+        UsbDeviceIdentity {
+            vendor_id: 0x0403,
+            product_id: 0x6001,
+            serial_number,
+            bus_id: "02",
+            port_chain: &[1],
+        }
+    }
+
+    /// Verifies clones sharing a serial number are told apart by their USB bus and port chain.
+    #[test]
+    fn select_serial_port_uses_location_for_duplicate_serials() {
+        let selected = select_serial_port(
+            vec![
+                located_candidate("/dev/ttyUSB0", "AB0KT9HX", "3", &[1]),
+                located_candidate("/dev/ttyUSB1", "AB0KT9HX", "2", &[1]),
+                located_candidate("/dev/ttyUSB2", "AB0KT9HX", "2", &[2]),
+            ],
+            &device(Some("AB0KT9HX")),
+        );
+
+        assert_eq!(selected.as_deref(), Some("/dev/ttyUSB1"));
     }
 
     /// Verifies the serial number picks the right port among several adapters of the same model.
@@ -307,7 +414,7 @@ mod tests {
                 candidate("/dev/ttyUSB0", Some("AAAA")),
                 candidate("/dev/ttyUSB1", Some("AB0KT9HX")),
             ],
-            Some("AB0KT9HX"),
+            &device(Some("AB0KT9HX")),
         );
 
         assert_eq!(selected.as_deref(), Some("/dev/ttyUSB1"));
@@ -321,7 +428,7 @@ mod tests {
                 candidate("COM3", Some("AB0KT9HXA")),
                 candidate("COM4", Some("AB0KT9HX2A")),
             ],
-            Some("AB0KT9HX"),
+            &device(Some("AB0KT9HX")),
         );
 
         assert_eq!(selected.as_deref(), Some("COM3"));
@@ -331,11 +438,14 @@ mod tests {
     #[test]
     fn select_serial_port_without_serial_requires_single_candidate() {
         assert_eq!(
-            select_serial_port(vec![candidate("COM3", None)], None).as_deref(),
+            select_serial_port(vec![candidate("COM3", None)], &device(None)).as_deref(),
             Some("COM3")
         );
         assert_eq!(
-            select_serial_port(vec![candidate("COM3", None), candidate("COM4", None)], None),
+            select_serial_port(
+                vec![candidate("COM3", None), candidate("COM4", None)],
+                &device(None)
+            ),
             None
         );
     }
@@ -349,7 +459,7 @@ mod tests {
                 candidate("/dev/tty.usbserial-AB0KT9HX", Some("AB0KT9HX")),
                 candidate("/dev/cu.usbserial-AB0KT9HX", Some("AB0KT9HX")),
             ],
-            Some("AB0KT9HX"),
+            &device(Some("AB0KT9HX")),
         );
 
         assert_eq!(selected.as_deref(), Some("/dev/cu.usbserial-AB0KT9HX"));
@@ -373,37 +483,73 @@ mod tests {
         assert!(frame[3..].iter().all(|&channel| channel == 0));
     }
 
-    /// Drives a real Open DMX dongle for five seconds with a ramp on every channel and checks the
-    /// writer keeps refreshing at 30-40Hz without write failures.
+    /// Drives every attached Open DMX dongle at once for five seconds with a ramp on every
+    /// channel and checks each writer keeps refreshing at 30-40Hz without write failures. With
+    /// several clones sharing a serial number, this also checks each resolves to its own port.
     ///
-    /// Run with an FTDI Open DMX interface attached:
+    /// Run with FTDI Open DMX interfaces attached:
     /// `cargo test -p nightfall-output-usb open_dmx_hardware -- --ignored --nocapture`.
-    /// `NIGHTFALL_OPEN_DMX_SERIAL` selects the adapter when several are attached.
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     #[test]
     #[ignore = "requires an FTDI Open DMX interface"]
     fn open_dmx_hardware_refreshes_frames() {
         use nightfall_io::prelude::{OPEN_DMX_PRODUCT_ID, OPEN_DMX_VENDOR_ID};
+        use nusb::MaybeFuture;
 
-        let serial = std::env::var("NIGHTFALL_OPEN_DMX_SERIAL").ok();
-        let port = OpenDmxPort::open(OPEN_DMX_VENDOR_ID, OPEN_DMX_PRODUCT_ID, serial.as_deref())
-            .expect("Open DMX interface should open");
+        let usb_devices = nusb::list_devices()
+            .wait()
+            .expect("USB devices should enumerate")
+            .filter(|device| {
+                device.vendor_id() == OPEN_DMX_VENDOR_ID
+                    && device.product_id() == OPEN_DMX_PRODUCT_ID
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            !usb_devices.is_empty(),
+            "an Open DMX interface should be attached"
+        );
+        let ports = usb_devices
+            .iter()
+            .map(|usb_device| {
+                OpenDmxPort::open(&UsbDeviceIdentity {
+                    vendor_id: usb_device.vendor_id(),
+                    product_id: usb_device.product_id(),
+                    serial_number: usb_device.serial_number(),
+                    bus_id: usb_device.bus_id(),
+                    port_chain: usb_device.port_chain(),
+                })
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Open DMX interface on bus {} port {:?} should open",
+                        usb_device.bus_id(),
+                        usb_device.port_chain()
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
 
         let duration = Duration::from_secs(5);
         let start = Instant::now();
         while start.elapsed() < duration {
             let level = ((start.elapsed().as_millis() / 10) % 256) as u8;
-            port.submit(&[level; MAX_CHANNELS_PER_UNIVERSE]);
+            for port in &ports {
+                port.submit(&[level; MAX_CHANNELS_PER_UNIVERSE]);
+            }
             thread::sleep(Duration::from_millis(25));
         }
-        port.submit(&[0; MAX_CHANNELS_PER_UNIVERSE]);
+        for port in &ports {
+            port.submit(&[0; MAX_CHANNELS_PER_UNIVERSE]);
+        }
         thread::sleep(Duration::from_millis(100));
 
-        let rate_hz = port.frames_sent_count() as f64 / start.elapsed().as_secs_f64();
-        println!("Open DMX refresh rate: {rate_hz:.1}Hz");
-        assert!(port.is_alive(), "writer thread should still be running");
-        assert!(
-            (30.0..=41.0).contains(&rate_hz),
-            "unexpected refresh rate {rate_hz:.1}Hz"
-        );
+        for port in &ports {
+            let rate_hz = port.frames_sent_count() as f64 / start.elapsed().as_secs_f64();
+            println!("Open DMX refresh rate: {rate_hz:.1}Hz");
+            assert!(port.is_alive(), "writer thread should still be running");
+            assert!(
+                (30.0..=41.0).contains(&rate_hz),
+                "unexpected refresh rate {rate_hz:.1}Hz"
+            );
+        }
     }
 }
