@@ -433,8 +433,7 @@ async function storedCueBlueprintReferenceCount(page: Page): Promise<number> {
     ];
     return instructionContainers
       .flat()
-      .filter((item: any) => item.cue_instruction?.blueprint_application)
-      .length;
+      .filter((item: any) => item.assertions?.blueprint_application).length;
   });
 }
 

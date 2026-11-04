@@ -63,7 +63,7 @@ test("timeline playhead advances smoothly", async ({ page }) => {
   await waitForAppStores(page);
   await page.evaluate(async () => {
     await (window as any).appStores.send({
-      module: "DeskCommand",
+      module: "EngineCommand",
       command: { type: "Eval", data: "fps 44" },
     });
   });

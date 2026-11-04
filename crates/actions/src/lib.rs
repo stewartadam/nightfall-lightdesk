@@ -42,7 +42,9 @@ pub use descriptor::{
     ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind, ActionParameter,
     ActionParameterKind, ActionSurface,
 };
-pub use eval::{DESK_EVAL_ACTION_ID, DeskEvalActionArguments, desk_eval_action};
+pub use eval::{
+    DESK_EVAL_ACTION_ID, DeskEvalActionArguments, desk_eval_action, register_eval_action,
+};
 pub use failures::{FAILURE_REPEAT_WINDOW, InvocationFailureThrottle};
 pub use feedback::{ActionFeedback, FeedbackState};
 pub use invocation::{
@@ -76,6 +78,7 @@ pub struct ActionInvocationHandling;
 impl Plugin for ActionsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ActionRegistry>();
+        eval::register_eval_action(app);
         app.init_resource::<SourceEdgeStates>();
         app.init_resource::<InvocationFailureThrottle>();
         app.init_resource::<ActionTargets>();
@@ -331,10 +334,18 @@ mod tests {
         register_trigger_action(&mut app);
 
         let catalog = app.world().resource::<ActionRegistry>().catalog();
+        let mut ids: Vec<&str> = catalog
+            .iter()
+            .map(|entry| entry.descriptor.id.as_str())
+            .collect();
+        ids.sort_unstable();
+        let entry = catalog
+            .iter()
+            .find(|entry| entry.descriptor.id.as_str() == "test.apply")
+            .expect("the registered action should be listed");
 
-        assert_eq!(catalog.len(), 1);
-        assert_eq!(catalog[0].descriptor.id.as_str(), "test.apply");
-        assert_eq!(catalog[0].capabilities, vec!["test.capability".to_string()]);
+        assert_eq!(ids, vec![DESK_EVAL_ACTION_ID, "test.apply"]);
+        assert_eq!(entry.capabilities, vec!["test.capability".to_string()]);
     }
 
     /// Verifies a surface invokes registered domain behavior through opaque arguments.

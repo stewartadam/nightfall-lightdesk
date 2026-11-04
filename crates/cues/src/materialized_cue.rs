@@ -16,11 +16,11 @@ use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     InstanceClock, InstancePosition, InstanceStatus, Owner, activation_epoch_ms,
 };
 use nightfall_selection::filter_existing_selection;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use partially::Partial;
 use smart_default::SmartDefault;
 use web_time::Instant;

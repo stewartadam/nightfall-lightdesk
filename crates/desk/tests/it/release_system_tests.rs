@@ -8,7 +8,7 @@
 
 use bevy_app::prelude::*;
 use nightfall::prelude::Group;
-use nightfall_desk::systems::event_handlers::instance_events::handle_events;
+use nightfall_clips::playback::instance_events::handle_events;
 use nightfall_engine::prelude::{
     CommandError, DataProvider, EngineOperationEnvelope, OperationResult,
 };

@@ -11,6 +11,7 @@ bevy_state.workspace = true
 enum_dispatch.workspace = true
 orx-parallel.workspace = true
 nightfall = { path = "../common" }
+nightfall-clips = { path = "../clips" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
@@ -19,6 +20,7 @@ nightfall-instances = { path = "../instances" }
 nightfall-playback-planner = { path = "../playback-planner" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-selection = { path = "../selection" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-undo = { path = "../undo" }
 nightfall-waveform = { path = "../waveform" }
 thiserror = "2.0"
@@ -34,10 +36,7 @@ uuid.workspace = true
 criterion.workspace = true
 moonshine-kind.workspace = true
 nightfall-desk = { path = "../desk" }
-nightfall-clips = { path = "../clips" }
 nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
-nightfall-flow = { path = "../flow" }
-nightfall-fx-module = { path = "../fx-module" }
 nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-io = { path = "../io" }
 

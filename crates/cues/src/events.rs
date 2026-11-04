@@ -25,7 +25,6 @@ use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     EditorPreviewInstance, InstanceClock, InstanceControls, InstanceId, InstanceKind,
     InstanceMetadata, InstanceOptions, Owner, instance_clock_from_reconstruction_timing,
@@ -33,6 +32,7 @@ use nightfall_instances::{
 #[cfg(test)]
 use nightfall_instances::{InstanceClockDiscontinuity, InstanceClockSource};
 use nightfall_playback_planner::{PlaybackPositionSource, PlaybackReconstructionTiming};
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use nightfall_undo::prelude::{UndoEntry, UndoManager, Undoable};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -83,13 +83,15 @@ pub(crate) fn register_event_systems(app: &mut App) {
                 .after(sequence_crud_events),
             crate::materialized_sequence::rematerialize_sequences_after_sequence_definition_change
                 .after(sync_release_cue_rows),
-            crate::materialized_sequence::rematerialize_after_blueprint_definition_change
-                .after(DeskEventSet::BlueprintCrud)
-                .after(DeskEventSet::BlueprintActions),
             handle_sequence_playback_actions,
             handle_restore_sequence_position,
         )
             .in_set(EventHandling),
+    );
+    app.add_systems(
+        Update,
+        crate::materialized_sequence::rematerialize_after_blueprint_definition_change
+            .after(ObjectChangePublication),
     );
     app.add_systems(
         Update,

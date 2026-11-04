@@ -18,8 +18,9 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::ApplyDeferred;
 use nightfall::prelude::{ColorPath, ColorPathId, ObjectRef, builtin_color_paths};
+use nightfall_clips::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
 use nightfall_engine::prelude::*;
-use nightfall_instances::InstanceId;
+use nightfall_instances::{InstanceId, InstanceKind};
 use nightfall_playback_planner::PlaybackReconstructionTiming;
 use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -67,9 +68,7 @@ pub mod prelude {
     pub use crate::CueStoreTarget;
     pub use crate::SequencePlaybackOperation;
     pub use crate::cue::cue_flags::TrackingFlags;
-    pub use crate::cue::{
-        BoundCueInstruction, Cue, CueInstruction, CuePart, Sequence, TrackingMode,
-    };
+    pub use crate::cue::{Cue, CuePart, Sequence, TrackingMode};
     pub use crate::data_provider_ext::CueDataProviderExt;
     pub use crate::duration::{CueDurationProfile, CueDurationResolver};
     pub use crate::events::{
@@ -100,6 +99,16 @@ impl Plugin for CuePlugin {
         tracing::debug!("Registering CuePlugin");
         register_engine_operation::<CueOperation>(app);
         register_engine_operation::<CueLifecycleOperation>(app);
+        // Sequence clips are played from clip operations directly, so the cue domain reports
+        // their outcomes and detaches their clip links itself.
+        app.register_clip_source(
+            ClipSourceKind::Sequence,
+            ClipSourceDomain {
+                playback_kind: InstanceKind::Sequence,
+                handles_clip_operations: true,
+                restarts_on_go: false,
+            },
+        );
         register_client_command::<CueCommand>(app, Undo::Captured);
         register_engine_operation::<SequencePlaybackOperation>(app);
         register_engine_operation::<undo::RestoreSequencePosition>(app);

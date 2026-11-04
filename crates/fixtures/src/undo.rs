@@ -403,6 +403,8 @@ impl Undoable for FixtureCommand {
                     defaults: fixtures.color_path_default_entries(),
                 }),
             )),
+            // Stale input values come from the wire and cannot be restored.
+            FixtureCommand::ReleaseStaleInputs => None,
         }
     }
 
@@ -458,6 +460,7 @@ impl Undoable for FixtureCommand {
                     None => format!("Clear Fixture {} Color Path", target),
                 }
             }
+            FixtureCommand::ReleaseStaleInputs => "Release Stale Inputs".to_string(),
         }
     }
 }

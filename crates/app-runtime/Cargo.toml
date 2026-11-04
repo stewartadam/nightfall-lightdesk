@@ -26,8 +26,9 @@ nightfall-audio = { path = "../audio", optional = true }
 nightfall-beat-detection = { path = "../beat-detection", optional = true }
 nightfall-composition = { path = "../composition" }
 nightfall-compositor = { path = "../compositor" }
+nightfall-controls = { path = "../controls" }
 nightfall-cues = { path = "../cues" }
-nightfall-desk = { path = "../desk", default-features = false, features = ["fx-module-host", "native-network-watch"] }
+nightfall-desk = { path = "../desk", default-features = false, features = ["native-network-watch"] }
 nightfall-desk-audio = { path = "../desk_audio", optional = true }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
@@ -51,7 +52,8 @@ nightfall-output-sacn = { path = "../output_sacn", optional = true }
 nightfall-output-usb = { path = "../output_usb", optional = true }
 nightfall-instances = { path = "../instances" }
 nightfall-fx-module = { path = "../fx-module" }
-nightfall-programmer = { path = "../programmer" }
+nightfall-programming = { path = "../programming" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-references = { path = "../references", features = ["fx-module-host"] }
 nightfall-scene-objects = { path = "../scene-objects" }
 nightfall-showfile = { path = "../showfile" }

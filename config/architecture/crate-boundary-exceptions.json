@@ -45,24 +45,11 @@
       "reason": "Programmer storage and recall workflows directly consume cue-domain contracts.",
       "edges": [
         {
-          "from": "nightfall-programmer",
+          "from": "nightfall-programming",
           "to": "nightfall-cues",
           "fromLayer": "plugins",
           "toLayer": "plugins",
           "rule": "plugin-crate-must-not-depend-on-plugin-crate"
-        }
-      ]
-    },
-    {
-      "id": "programmer-desk-orchestration",
-      "reason": "Programmer event and store orchestration uses desk-owned integration services.",
-      "edges": [
-        {
-          "from": "nightfall-programmer",
-          "to": "nightfall-desk",
-          "fromLayer": "plugins",
-          "toLayer": "cross-plugin",
-          "rule": "plugin-crate-must-not-depend-on-cross-plugin-or-host"
         }
       ]
     },

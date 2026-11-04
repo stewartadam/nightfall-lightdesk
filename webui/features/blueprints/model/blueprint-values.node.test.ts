@@ -35,7 +35,7 @@ function referencedCue(): Cue {
     instructions: [
       {
         selection: {},
-        cue_instruction: {
+        assertions: {
           values: {},
           blueprint_application: {
             blueprint_uid: "blueprint-5",

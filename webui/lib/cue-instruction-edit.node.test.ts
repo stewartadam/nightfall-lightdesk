@@ -34,11 +34,11 @@ test("editGroupedInstructionValue updates one element without competing assertio
     type: "AbsolutePercent",
     data: { value: 0.5 },
   };
-  instruction.cue_instruction.values = {
+  instruction.assertions.values = {
     VirtualIntensity: { type: "Inline", data: oldValue },
     Blue: { type: "Inline", data: oldValue },
   };
-  instruction.cue_instruction.transitions.fade_in = {
+  instruction.assertions.transitions.fade_in = {
     type: "Interpolated",
     data: { start: { secs: 0, nanos: 0 }, end: { secs: 2, nanos: 0 } },
   };
@@ -52,18 +52,18 @@ test("editGroupedInstructionValue updates one element without competing assertio
   );
   assert.deepEqual(instruction.selection, before.selection);
   assert.deepEqual(
-    instruction.cue_instruction.transitions,
-    before.cue_instruction.transitions,
+    instruction.assertions.transitions,
+    before.assertions.transitions,
   );
   assert.deepEqual(
-    instruction.cue_instruction.values.Blue,
-    before.cue_instruction.values.Blue,
+    instruction.assertions.values.Blue,
+    before.assertions.values.Blue,
   );
-  assert.deepEqual(instruction.cue_instruction.values.VirtualIntensity, {
+  assert.deepEqual(instruction.assertions.values.VirtualIntensity, {
     type: "Fanned",
     data: { values: [newValue, oldValue] },
   });
-  assert.equal(instruction.cue_instruction.values.Intensity, undefined);
+  assert.equal(instruction.assertions.values.Intensity, undefined);
 });
 
 /** Verifies editing a fan retains the sampled values at every untouched selection position. */
@@ -75,7 +75,7 @@ test("editGroupedInstructionValue preserves other fan positions on repeated edit
   ];
   const instruction = ensureInstructionForFixtureRef([], refs[0]);
   instruction.selection.source = { type: "Resolved", data: refs };
-  instruction.cue_instruction.values.Red = {
+  instruction.assertions.values.Red = {
     type: "Fanned",
     data: {
       values: [
@@ -102,7 +102,7 @@ test("editGroupedInstructionValue preserves other fan positions on repeated edit
     }),
     true,
   );
-  assert.deepEqual(instruction.cue_instruction.values.Red, {
+  assert.deepEqual(instruction.assertions.values.Red, {
     type: "Fanned",
     data: {
       values: [edited, { type: "Absolute", data: { value: 100 } }, edited],
@@ -113,13 +113,13 @@ test("editGroupedInstructionValue preserves other fan positions on repeated edit
 /** Verifies repeated tracked-row edits for one fixture reuse one instruction. */
 test("ensureInstructionForFixtureRef reuses a tracked-row instruction", () => {
   const fixture = fixtureRef("fixture-a");
-  const instructions: types.BoundCueInstruction[] = [];
+  const instructions: types.BoundAssertionSet[] = [];
 
   const firstEditInstruction = ensureInstructionForFixtureRef(
     instructions,
     fixture,
   );
-  firstEditInstruction.cue_instruction.values.Intensity = {
+  firstEditInstruction.assertions.values.Intensity = {
     type: "Inline",
     data: { type: "Absolute", data: { value: 66 } },
   };
@@ -128,14 +128,14 @@ test("ensureInstructionForFixtureRef reuses a tracked-row instruction", () => {
     instructions,
     fixture,
   );
-  secondEditInstruction.cue_instruction.values.White = {
+  secondEditInstruction.assertions.values.White = {
     type: "Inline",
     data: { type: "Absolute", data: { value: 66 } },
   };
 
   assert.equal(instructions.length, 1);
   assert.equal(firstEditInstruction, secondEditInstruction);
-  assert.deepEqual(Object.keys(instructions[0].cue_instruction.values), [
+  assert.deepEqual(Object.keys(instructions[0].assertions.values), [
     "Intensity",
     "White",
   ]);
@@ -145,7 +145,7 @@ test("ensureInstructionForFixtureRef reuses a tracked-row instruction", () => {
 test("findInstructionForFixtureRef distinguishes element references", () => {
   const wholeFixture = fixtureRef("fixture-a");
   const elementFixture = fixtureRef("fixture-a", 1);
-  const instructions: types.BoundCueInstruction[] = [
+  const instructions: types.BoundAssertionSet[] = [
     ensureInstructionForFixtureRef([], wholeFixture),
   ];
 

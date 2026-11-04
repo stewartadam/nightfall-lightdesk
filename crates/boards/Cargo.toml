@@ -10,11 +10,12 @@ bevy_ecs.workspace = true
 nightfall = { path = "../common" }
 nightfall-actions = { path = "../actions" }
 nightfall-clips = { path = "../clips" }
-nightfall-desk = { path = "../desk", default-features = false }
+nightfall-controls = { path = "../controls" }
 nightfall-engine = { path = "../engine" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-macros = { path = "../macros" }
-nightfall-programmer = { path = "../programmer" }
+nightfall-programming = { path = "../programming" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-undo = { path = "../undo" }
 serde.workspace = true
 serde_json.workspace = true

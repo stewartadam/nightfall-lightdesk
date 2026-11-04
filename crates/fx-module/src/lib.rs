@@ -24,13 +24,14 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall::prelude::{FadeCurve, MaterializedTransition};
 use nightfall::prelude::{Identifiers, SpatialSelection};
+use nightfall_clips::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::Fixture;
 pub use nightfall_fx::prelude::StoredFxModule;
 use nightfall_instances::{
     ClipInstanceAttachment, ClipInstanceRequest, ClipInstanceStartContext,
-    DomainInstanceReconstructionRequest, InstanceClock,
+    DomainInstanceReconstructionRequest, InstanceClock, InstanceKind,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -42,6 +43,7 @@ pub mod ast_conv;
 pub mod events;
 /// Runtime playback and layer materialization for active fx module objects.
 pub mod instances;
+mod notifications;
 mod runtime;
 mod undo;
 /// Websocket integration for stored fx module commands and definitions.
@@ -272,7 +274,14 @@ impl Plugin for FxModulePlugin {
 
         register_client_command::<FxModuleCommand>(app, Undo::Captured);
         app.add_message::<FxModulePreviewUpdate>();
-        register_engine_operation::<events::FxModulePlaybackOperation>(app);
+        app.register_clip_source(
+            ClipSourceKind::FxModule,
+            ClipSourceDomain {
+                playback_kind: InstanceKind::Fx,
+                handles_clip_operations: false,
+                restarts_on_go: true,
+            },
+        );
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         app.add_message::<NotificationEnvelope<FxModuleRuntimeNotification>>();
@@ -296,7 +305,8 @@ impl Plugin for FxModulePlugin {
                     .before(nightfall_fx::events::crud_events),
                 events::handle_events,
                 events::handle_domain_playback_reconstruction_requests,
-                events::handle_clip_commands,
+                events::handle_clip_commands.after(DeskEventSet::ClipRouting),
+                notifications::forward_fx_module_runtime_notifications,
                 events::handle_preview_commands,
                 instances::cleanup_inactive_fx_module,
                 instances::cleanup_preview_fx_module_runtimes,

@@ -64,11 +64,11 @@ export class CommandSequenceRunner {
     const steps: CommandSequenceStep[] = [];
 
     for (const [index, statement] of statements.entries()) {
-      const command: types.DeskCommand = {
+      const command: types.EngineCommand = {
         type: "Eval",
         data: statement,
       };
-      const pendingResult = this.client.invoke("DeskCommand", command, {
+      const pendingResult = this.client.invoke("EngineCommand", command, {
         consoleCommandText: statement,
       });
       progress.onStatementStarted?.(index);

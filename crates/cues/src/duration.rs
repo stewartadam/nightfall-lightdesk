@@ -14,13 +14,14 @@ use nightfall::prelude::{
     AttributeTransitions, FixtureRef, MaterializedTransition, PartialTransition, Transition,
     ValueSource,
 };
+use nightfall_engine::prelude::BoundAssertionSet;
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_playback_planner::{PlaybackDurationProfile, PlaybackExtent};
 use nightfall_selection::filter_existing_selection;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use serde::{Deserialize, Serialize};
 
-use crate::cue::{BoundCueInstruction, Cue};
+use crate::cue::Cue;
 use crate::materialized_cue::MaterializedCue;
 
 /// Resolved cue timing information needed by playback planners and UI summaries.
@@ -187,7 +188,7 @@ pub fn resolve_cue_duration_profile(
 /// Records timing for a set of bound cue instructions.
 fn record_instruction_durations(
     profile: &mut CueDurationProfile,
-    instructions: &[BoundCueInstruction],
+    instructions: &[BoundAssertionSet],
     transitions: &PartialTransition,
     transitions_by_attribute: &AttributeTransitions,
     data_provider: &FixtureDataProviderExt,
@@ -211,7 +212,7 @@ fn record_instruction_durations(
                 })
                 .collect();
 
-            for (attribute, source) in bound_instructions.cue_instruction.values.iter() {
+            for (attribute, source) in bound_instructions.assertions.values.iter() {
                 if matches!(source, ValueSource::Release | ValueSource::HoldPosition) {
                     continue;
                 }
@@ -225,7 +226,7 @@ fn record_instruction_durations(
                     let transition = MaterializedCue::resolve_transition_definition(
                         transitions,
                         transitions_by_attribute,
-                        &bound_instructions.cue_instruction,
+                        &bound_instructions.assertions,
                         fixture_ref,
                         attribute,
                         &resolved_parameter.attribute,

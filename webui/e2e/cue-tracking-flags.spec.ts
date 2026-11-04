@@ -240,7 +240,7 @@ async function storeOwnedTrackingFlagsData(
                 },
                 clauses: [],
               },
-              cue_instruction: {
+              assertions: {
                 values: {
                   Intensity: {
                     type: "Inline",

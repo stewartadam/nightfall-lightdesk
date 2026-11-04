@@ -18,7 +18,6 @@ use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::Attribute;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 #[cfg(test)]
 use nightfall_instances::InstanceClockSource;
 use nightfall_instances::{
@@ -26,6 +25,7 @@ use nightfall_instances::{
     InstanceKind, InstanceMetadata, InstancePosition, InstanceStatus, reconcile_instance_options,
 };
 use nightfall_selection::filter_existing_selection;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use tracing::warn;
 use uuid::Uuid;
 

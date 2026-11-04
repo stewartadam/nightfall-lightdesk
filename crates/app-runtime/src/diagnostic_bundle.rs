@@ -337,7 +337,10 @@ mod tests {
                 metadata: nightfall_showfile::current_showfile_metadata(),
                 ..Default::default()
             };
-            snapshot.settings.audio_device = Some("unsaved device".to_string());
+            snapshot.settings.insert(
+                "audio".to_string(),
+                serde_json::json!({ "output_device": "unsaved device" }),
+            );
             let result = write_test_bundle(
                 &root.join("downloads"),
                 root,
@@ -358,10 +361,7 @@ mod tests {
                 std::str::from_utf8(&files["showfile.nightfall-show/showfile.json"]).unwrap();
             let loaded =
                 nightfall_showfile::parse_showfile_snapshot_json(json, "exported show").unwrap();
-            assert_eq!(
-                loaded.settings.audio_device.as_deref(),
-                Some("unsaved device")
-            );
+            assert_eq!(loaded.settings["audio"]["output_device"], "unsaved device");
             assert!(files.contains_key("showfile.nightfall-show/showfile-manifest.json"));
             assert_eq!(
                 files.contains_key("showfile.nightfall-show/arbitrary/nested/asset.bin"),

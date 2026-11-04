@@ -11,31 +11,24 @@ bevy_app.workspace = true
 bevy_diagnostic.workspace = true
 bevy_ecs.workspace = true
 bevy_platform.workspace = true
-moonshine-kind.workspace = true
 netwatcher = { workspace = true, optional = true }
 nightfall = { path = "../common" }
-nightfall-actions = { path = "../actions" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-compositor = { path = "../compositor" }
+nightfall-controls = { path = "../controls" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
 nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-fixtures = { path = "../fixtures" }
-nightfall-flow = { path = "../flow", default-features = false }
 nightfall-framepace = { path = "../framepace" }
 nightfall-fx = { path = "../fx" }
-nightfall-fx-module = { path = "../fx-module", optional = true }
 nightfall-io = { path = "../io" }
 nightfall-lookahead = { path = "../lookahead" }
 nightfall-instances = { path = "../instances" }
-nightfall-playback-planner = { path = "../playback-planner" }
-nightfall-selection = { path = "../selection" }
-nightfall-tempo = { path = "../tempo" }
 nightfall-undo = { path = "../undo" }
 serde_json.workspace = true
 serde.workspace = true
-smart-default.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
 typeshare.workspace = true
@@ -45,7 +38,6 @@ web-time.workspace = true
 [features]
 default = []
 debug = ["nightfall-engine/debug"]
-fx-module-host = ["dep:nightfall-fx-module", "nightfall-flow/fx-module"]
 native-network-watch = ["dep:netwatcher"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -56,7 +48,8 @@ workspace = true
 
 [dev-dependencies]
 async-channel.workspace = true
-nightfall-programmer = { path = "../programmer" }
+moonshine-kind.workspace = true
+nightfall-programming = { path = "../programming" }
 criterion.workspace = true
 minicbor-serde.workspace = true
 nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
@@ -67,8 +60,4 @@ harness = false
 
 [[bench]]
 name = "layer_stack"
-harness = false
-
-[[bench]]
-name = "vdim"
 harness = false

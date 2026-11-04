@@ -20,7 +20,10 @@ use std::{
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use nightfall_engine::prelude::SettingsAppExt;
+
 mod service;
+pub mod settings;
 
 use crate::service::{AudioOutputClient, AudioOutputDeviceInfo, AudioWorkerSinkState};
 
@@ -286,10 +289,13 @@ impl Plugin for AudioPlugin {
         let audio_client = audio_service.client();
 
         app.insert_resource(AudioController::new(audio_client));
+        app.register_settings_section(settings::AudioSettings::SECTION);
+        app.add_settings_command(settings::apply);
     }
 }
 
 pub mod prelude {
+    pub use crate::settings::{AudioSettings, AudioSettingsCommand};
     pub use crate::{AudioController, AudioPlugin, AudioSinkId};
 }
 

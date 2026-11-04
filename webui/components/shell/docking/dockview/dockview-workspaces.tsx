@@ -356,7 +356,8 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
     const keptDeviceArrangement =
       dockviewLayoutKeptDeviceArrangement.get() ||
       settledShowfileRevision === revision;
-    const defaultLayoutId = $settings.get().default_panel_layout_id ?? null;
+    const defaultLayoutId =
+      $settings.get().panelLayouts.default_layout_id ?? null;
     const preferred = keptDeviceArrangement
       ? (getActiveStoredLayoutId() ?? defaultLayoutId)
       : defaultLayoutId;

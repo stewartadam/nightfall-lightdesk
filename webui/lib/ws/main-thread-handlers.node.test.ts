@@ -68,7 +68,6 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "GetObjectProfileResponse",
   "GroupDefinitions",
   "InputContributionTrace",
-  "IoSettings",
   "LayerStack",
   "ListAvailableFixturesResponse",
   "ListAvailableFxModulesResponse",

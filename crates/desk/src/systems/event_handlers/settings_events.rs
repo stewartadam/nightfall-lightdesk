@@ -16,7 +16,7 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::{
-    InputDmxUniverses, InputUniverseStaleTimeout, ParameterStateProjection, RouteValidationSettings,
+    InputDmxUniverses, InputUniverseStaleTimeout, RouteValidationSettings,
 };
 use nightfall_io::prelude::{
     AvailableUsbDmxDevices, ExternalControlSettings, InputUniverseVisibilityMode,
@@ -26,8 +26,6 @@ use nightfall_io::prelude::{
     sanitize_input_signal_loss_timeout,
 };
 
-use crate::panel_layouts;
-use crate::prelude::DeskSettings;
 use crate::settings::{
     AvailableAudioDevices, GraphicsReport, ReportedGraphics, SettingsCommand, TelemetryConsent,
     TelemetryState,
@@ -56,14 +54,6 @@ impl From<Result<(), CommandError>> for SettingsCommandOutcome {
     }
 }
 
-/// Returns wall-clock milliseconds since the Unix epoch for layout timestamps.
-fn now_ms() -> f64 {
-    web_time::SystemTime::now()
-        .duration_since(web_time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as f64)
-        .unwrap_or(0.0)
-}
-
 /// Domain-local result emitted after one settings command has applied.
 #[derive(Clone, Debug, Message)]
 pub struct SettingsCommandResult {
@@ -74,7 +64,6 @@ pub struct SettingsCommandResult {
 /// Settings resources used by mutation and enumeration commands.
 #[derive(SystemParam)]
 pub struct SettingsCommandParams<'w> {
-    settings: ResMut<'w, DeskSettings>,
     io_settings: ResMut<'w, IoRuntimeSettings>,
     external_control: ResMut<'w, nightfall_io::ExternalControlState>,
     telemetry: ResMut<'w, TelemetryState>,
@@ -296,14 +285,6 @@ pub fn handle_events(
         let result = dispatch_settings_command! {
             match &event.command, params {
                 fields {
-                    SetProgrammerAutoSelect => settings.programmer_auto_select,
-                    SetAudioDevice => settings.audio_device,
-                    SetSequenceReorderRenumberPolicy => settings.sequence_reorder_renumber_policy,
-                    SetSelectionFlattenPolicy => settings.selection_flatten_policy,
-                    SetTimeDisplayPreference => settings.time_display_preference,
-                    SetTimelinePlacementPreference => settings.timeline_placement_preference,
-                    SetShowfileBackupRetention => settings.showfile_backup_retention,
-                    SetParameterKeyframesOnly => settings.parameter_keyframes_only,
                     SetNetworkInterface => io_settings.network_interface,
                     SetNetworkOutputEnabled => io_settings.network_output_enabled,
                     SetNetworkInputEnabled => io_settings.network_input_enabled,
@@ -325,28 +306,6 @@ pub fn handle_events(
                 SettingsCommand::SetDmxOutputRate(value) => params.set_dmx_output_rate(*value),
                 SettingsCommand::SetInputUniverseVisibilityMode(value) => {
                     params.set_input_universe_visibility_mode(*value)
-                },
-                SettingsCommand::CreatePanelLayout(layout) => {
-                    panel_layouts::create(&mut params.settings, layout).into()
-                },
-                SettingsCommand::SavePanelLayoutArrangement(arrangement) => {
-                    panel_layouts::save_arrangement(&mut params.settings, arrangement, now_ms())
-                        .into()
-                },
-                SettingsCommand::RenamePanelLayout(rename) => {
-                    panel_layouts::rename(&mut params.settings, rename, now_ms()).into()
-                },
-                SettingsCommand::SetPanelLayoutVisibility(visibility) => {
-                    panel_layouts::set_visibility(&mut params.settings, visibility).into()
-                },
-                SettingsCommand::DeletePanelLayout(id) => {
-                    panel_layouts::delete(&mut params.settings, id).into()
-                },
-                SettingsCommand::ReorderPanelLayouts(ids) => {
-                    panel_layouts::reorder(&mut params.settings, ids).into()
-                },
-                SettingsCommand::SetDefaultPanelLayout(id) => {
-                    panel_layouts::set_default(&mut params.settings, id.as_deref()).into()
                 },
                 SettingsCommand::GetAvailableNetworkInterfaces => params.network_interfaces(),
                 SettingsCommand::GetAvailableAudioDevices => params.audio_devices(),
@@ -409,17 +368,6 @@ pub fn sync_network_dmx_outputs_from_settings(
     let sanitized_usb_outputs = settings.usb_dmx_outputs.sanitized();
     if *usb_dmx_outputs != sanitized_usb_outputs {
         *usb_dmx_outputs = sanitized_usb_outputs;
-    }
-}
-
-/// Applies the showfile's parameter stream mode to the client projection whenever desk settings
-/// change, whether from a settings command or a loaded showfile.
-pub fn sync_parameter_stream_from_settings(
-    settings: Res<DeskSettings>,
-    mut projection: ResMut<ParameterStateProjection>,
-) {
-    if settings.is_changed() {
-        projection.set_keyframes_only(settings.parameter_keyframes_only);
     }
 }
 
@@ -498,7 +446,6 @@ mod command_tests {
     /// Creates a focused app containing the semantic settings-command lifecycle.
     fn settings_command_app() -> App {
         let mut app = App::new();
-        app.init_resource::<DeskSettings>();
         app.init_resource::<IoRuntimeSettings>();
         app.init_resource::<nightfall_io::ExternalControlState>();
         app.init_resource::<TelemetryState>();
@@ -659,14 +606,14 @@ mod command_tests {
     #[test]
     fn setting_mutation_precedes_success() {
         let mut app = settings_command_app();
-        let command_id = submit_command(&mut app, SettingsCommand::SetProgrammerAutoSelect(true));
+        let command_id = submit_command(&mut app, SettingsCommand::SetUsbOutputEnabled(false));
 
         app.update();
 
         assert!(
-            app.world()
-                .resource::<DeskSettings>()
-                .programmer_auto_select
+            !app.world()
+                .resource::<IoRuntimeSettings>()
+                .usb_output_enabled
         );
         let result = take_result(&mut app);
         assert_eq!(result.command_id, command_id);
@@ -674,13 +621,11 @@ mod command_tests {
     }
 
     /// Verifies table-driven field setters write their payload into the resource each row names,
-    /// whether that is desk settings, IO runtime settings, or route validation settings.
+    /// whether that is IO runtime settings or route validation settings.
     #[test]
     fn field_setters_update_their_target_resources() {
         let mut app = settings_command_app();
         let commands = [
-            SettingsCommand::SetAudioDevice(Some("Main Output".into())),
-            SettingsCommand::SetShowfileBackupRetention(3),
             SettingsCommand::SetNetworkInterface(Some("eth0".into())),
             SettingsCommand::SetUsbOutputEnabled(true),
             SettingsCommand::SetRouteValidationMode(
@@ -694,9 +639,6 @@ mod command_tests {
 
         app.update();
 
-        let settings = app.world().resource::<DeskSettings>();
-        assert_eq!(settings.audio_device.as_deref(), Some("Main Output"));
-        assert_eq!(settings.showfile_backup_retention, 3);
         let io_settings = app.world().resource::<IoRuntimeSettings>();
         assert_eq!(io_settings.network_interface.as_deref(), Some("eth0"));
         assert!(io_settings.usb_output_enabled);
@@ -714,38 +656,6 @@ mod command_tests {
             results
                 .iter()
                 .all(|result| result.outcome == CommandOutcome::succeeded())
-        );
-    }
-
-    /// Verifies the keyframes-only setting reaches the parameter projection after the command
-    /// applies, and again when settings are replaced wholesale as a showfile load does.
-    #[test]
-    fn parameter_keyframes_only_reaches_the_projection() {
-        let mut app = settings_command_app();
-        app.init_resource::<ParameterStateProjection>();
-        app.add_systems(
-            Update,
-            sync_parameter_stream_from_settings.after(finish_commands),
-        );
-        submit_command(&mut app, SettingsCommand::SetParameterKeyframesOnly(true));
-        app.update();
-        assert!(
-            app.world()
-                .resource::<DeskSettings>()
-                .parameter_keyframes_only
-        );
-        assert!(
-            app.world()
-                .resource::<ParameterStateProjection>()
-                .keyframes_only()
-        );
-
-        app.insert_resource(DeskSettings::default());
-        app.update();
-        assert!(
-            !app.world()
-                .resource::<ParameterStateProjection>()
-                .keyframes_only()
         );
     }
 

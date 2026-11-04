@@ -46,8 +46,8 @@ test("downloads a live showfile ZIP from the browser footer menu", async ({
   writeFileSync(join(source, "extra.txt"), "showfile reference");
   const result = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
-      module: "SettingsCommand",
-      command: { type: "SetShowfileBackupRetention", data: 37 },
+      module: "ShowfileSettingsCommand",
+      command: { type: "SetBackupRetention", data: 37 },
     }),
   );
   expect(result.outcome.type).toBe("Succeeded");
@@ -91,8 +91,8 @@ test("downloads a live showfile ZIP from the browser footer menu", async ({
         },
       ),
     );
-    expect(loaded.settings.showfile_backup_retention).toBe(37);
-    expect(loaded.settings.panel_layouts.length).toBeGreaterThan(0);
+    expect(loaded.settings.showfile.backup_retention).toBe(37);
+    expect(loaded.settings.panelLayouts.layouts.length).toBeGreaterThan(0);
     const entries = execFileSync("unzip", ["-Z1", path], {
       encoding: "utf8",
     }).split("\n");

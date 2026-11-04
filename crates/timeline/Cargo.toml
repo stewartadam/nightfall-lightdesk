@@ -25,6 +25,7 @@ nightfall-lookahead = { path = "../lookahead" }
 nightfall-playback-planner = { path = "../playback-planner" }
 nightfall-instances = { path = "../instances" }
 nightfall-selection = { path = "../selection" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-timecode = { path = "../timecode" }
 nightfall-undo = { path = "../undo" }
 nightfall-websocket = { path = "../websocket", optional = true }

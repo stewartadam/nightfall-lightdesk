@@ -8,19 +8,16 @@
 
 use std::time::Duration;
 
-use async_channel::{Receiver, TryRecvError};
+use async_channel::Receiver;
 use bevy_app::{App, Update};
 use bevy_ecs::schedule::IntoScheduleConfigs;
-use nightfall_desk::prelude::{
-    AvailableAudioDevices, DeskSettings, PanelLayoutRename, PanelLayoutVisibility,
-    SelectionFlattenPolicy, SequenceReorderRenumberPolicy, SettingsCommand, StoredPanelLayout,
-    StoredPanelLayoutPanel, TimeDisplayPreference, TimelinePlacementPreference,
-};
+use nightfall_desk::prelude::{AvailableAudioDevices, SettingsCommand};
 use nightfall_desk::systems::event_handlers::settings_events;
-use nightfall_desk::websocket::{send_io_settings_on_change, send_settings_on_change};
 use nightfall_engine::prelude::{
-    ClientEventSink, CommandEnvelope, CommandOrigin, OutboundFrame, ReplyTarget,
+    ClientEventSink, CommandEnvelope, CommandOrigin, EventHandling, OutboundFrame, ReplyTarget,
+    SettingsAppExt, SettingsPlugin,
 };
+use nightfall_fixtures::IO_SETTINGS_SECTION;
 use nightfall_fixtures::prelude::{
     InputDmxUniverses, InputUniverseStaleTimeout, RouteValidationMode, RouteValidationSettings,
 };
@@ -50,7 +47,6 @@ fn settings_command_app() -> (App, Receiver<OutboundFrame>) {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<SettingsCommand>>();
     app.add_message::<settings_events::SettingsCommandResult>();
-    app.init_resource::<DeskSettings>();
     app.init_resource::<IoRuntimeSettings>();
     app.init_resource::<ExternalControlState>();
     app.init_resource::<nightfall_desk::prelude::TelemetryState>();
@@ -68,8 +64,14 @@ fn settings_command_app() -> (App, Receiver<OutboundFrame>) {
         default_interface: None,
     });
     app.insert_resource(ClientEventSink::new(tx));
-    app.add_systems(Update, settings_events::handle_events);
+    app.add_systems(Update, settings_events::handle_events.in_set(EventHandling));
     (app, rx)
+}
+
+/// Sends the showfile's IO settings to clients through the settings registry, as the engine does.
+fn broadcast_io_settings(app: &mut App) {
+    app.add_plugins(SettingsPlugin);
+    app.register_settings_section(IO_SETTINGS_SECTION);
 }
 
 /// Submits one independently tracked settings command to a focused handler test.
@@ -81,76 +83,11 @@ fn submit_settings_command(app: &mut App, command: SettingsCommand) {
     ));
 }
 
-#[test]
-fn broadcasts_settings_when_desk_settings_changes() {
-    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
-
-    let mut app = App::new();
-    app.init_resource::<DeskSettings>();
-    app.insert_resource(ClientEventSink::new(tx));
-    app.add_systems(Update, send_settings_on_change);
-
-    app.update();
-    drain_channel(&rx);
-
-    {
-        let mut settings = app.world_mut().resource_mut::<DeskSettings>();
-        settings.programmer_auto_select = true;
-        settings.panel_layouts = vec![StoredPanelLayout {
-            shown_in_switcher: true,
-            id: "layout-b".to_string(),
-            name: "Layout B".to_string(),
-            version: 2,
-            layout: serde_json::json!({ "grid": "b" }),
-            panels: vec![StoredPanelLayoutPanel {
-                id: "panel-Cues".to_string(),
-                title: "Cues".to_string(),
-                params: serde_json::json!({ "sequence": "main" }),
-            }],
-            created_at: 30.0,
-            updated_at: 40.0,
-            transient: false,
-        }];
-    }
-    app.update();
-
-    let raw = rx
-        .try_recv()
-        .expect("expected websocket settings broadcast after settings change");
-    let message = decode_ws_message(&raw.bytes);
-    assert_eq!(message["type"], "Settings");
-    assert_eq!(message["data"]["programmer_auto_select"], true);
-    assert_eq!(message["data"]["panel_layouts"][0]["name"], "Layout B");
-    assert_eq!(message["data"]["panel_layouts"][0]["layout"]["grid"], "b");
-}
-
-#[test]
-fn does_not_broadcast_settings_without_change() {
-    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
-
-    let mut app = App::new();
-    app.init_resource::<DeskSettings>();
-    app.insert_resource(ClientEventSink::new(tx));
-    app.add_systems(Update, send_settings_on_change);
-
-    app.update();
-    drain_channel(&rx);
-    app.update();
-
-    assert!(
-        matches!(rx.try_recv(), Err(TryRecvError::Empty)),
-        "did not expect websocket settings broadcast without settings change"
-    );
-}
-
 /// Verifies signal-loss policy and stale timeout updates are broadcast and mirrored to fixtures.
 #[test]
 fn broadcasts_input_signal_loss_policy_and_timeout() {
     let (mut app, rx) = settings_command_app();
-    app.add_systems(
-        Update,
-        send_io_settings_on_change.after(settings_events::handle_events),
-    );
+    broadcast_io_settings(&mut app);
 
     app.update();
     drain_channel(&rx);
@@ -170,14 +107,17 @@ fn broadcasts_input_signal_loss_policy_and_timeout() {
         .try_recv()
         .expect("expected websocket settings broadcast after settings command");
     let message = decode_ws_message(&raw.bytes);
-    assert_eq!(message["type"], "IoSettings");
+    assert_eq!(message["type"], "Settings");
     assert_eq!(
-        message["data"]["input_signal_loss_policy"]["type"],
+        message["data"]["sections"]["io"]["input_signal_loss_policy"]["type"],
         "ClearAfterTimeout"
     );
-    assert_eq!(message["data"]["input_signal_loss_timeout"]["secs"], 0);
     assert_eq!(
-        message["data"]["input_signal_loss_timeout"]["nanos"],
+        message["data"]["sections"]["io"]["input_signal_loss_timeout"]["secs"],
+        0
+    );
+    assert_eq!(
+        message["data"]["sections"]["io"]["input_signal_loss_timeout"]["nanos"],
         1_000_000
     );
     assert_eq!(
@@ -190,10 +130,7 @@ fn broadcasts_input_signal_loss_policy_and_timeout() {
 #[test]
 fn broadcasts_clamped_dmx_output_rate() {
     let (mut app, rx) = settings_command_app();
-    app.add_systems(
-        Update,
-        send_io_settings_on_change.after(settings_events::handle_events),
-    );
+    broadcast_io_settings(&mut app);
     app.update();
     drain_channel(&rx);
 
@@ -204,8 +141,8 @@ fn broadcasts_clamped_dmx_output_rate() {
             .expect("expected websocket settings broadcast after rate change")
             .bytes,
     );
-    assert_eq!(message["type"], "IoSettings");
-    assert_eq!(message["data"]["dmx_output_rate_hz"], 30);
+    assert_eq!(message["type"], "Settings");
+    assert_eq!(message["data"]["sections"]["io"]["dmx_output_rate_hz"], 30);
 
     submit_settings_command(&mut app, SettingsCommand::SetDmxOutputRate(500));
     app.update();
@@ -297,44 +234,6 @@ fn updates_usb_output_enabled_from_settings_command() {
 }
 
 #[test]
-fn updates_sequence_reorder_renumber_policy_from_settings_command() {
-    let (mut app, _rx) = settings_command_app();
-
-    submit_settings_command(
-        &mut app,
-        SettingsCommand::SetSequenceReorderRenumberPolicy(
-            SequenceReorderRenumberPolicy::AutoRenumber,
-        ),
-    );
-
-    app.update();
-
-    assert_eq!(
-        app.world()
-            .resource::<DeskSettings>()
-            .sequence_reorder_renumber_policy,
-        SequenceReorderRenumberPolicy::AutoRenumber
-    );
-}
-
-#[test]
-fn deserializes_sequence_reorder_renumber_policy_settings_command() {
-    let json = serde_json::json!({
-        "type": "SetSequenceReorderRenumberPolicy",
-        "data": "Prompt"
-    });
-
-    let command: SettingsCommand =
-        serde_json::from_value(json).expect("expected Prompt settings command to deserialize");
-
-    let SettingsCommand::SetSequenceReorderRenumberPolicy(policy) = command else {
-        panic!("expected SetSequenceReorderRenumberPolicy command");
-    };
-
-    assert_eq!(policy, SequenceReorderRenumberPolicy::Prompt);
-}
-
-#[test]
 fn updates_input_universe_visibility_mode_from_settings_command() {
     let (mut app, _rx) = settings_command_app();
 
@@ -393,267 +292,5 @@ fn syncs_input_stale_timeout_from_io_settings() {
     assert_eq!(
         app.world().resource::<InputUniverseStaleTimeout>().0,
         Duration::from_millis(1)
-    );
-}
-
-#[test]
-fn updates_selection_flatten_policy_from_settings_command() {
-    let (mut app, _rx) = settings_command_app();
-
-    submit_settings_command(
-        &mut app,
-        SettingsCommand::SetSelectionFlattenPolicy(SelectionFlattenPolicy::Prompt),
-    );
-
-    app.update();
-
-    assert_eq!(
-        app.world()
-            .resource::<DeskSettings>()
-            .selection_flatten_policy,
-        SelectionFlattenPolicy::Prompt
-    );
-}
-
-#[test]
-fn deserializes_selection_flatten_policy_settings_command() {
-    let json = serde_json::json!({
-        "type": "SetSelectionFlattenPolicy",
-        "data": "Prompt"
-    });
-
-    let command: SettingsCommand = serde_json::from_value(json)
-        .expect("expected Prompt selection flatten policy command to deserialize");
-
-    let SettingsCommand::SetSelectionFlattenPolicy(policy) = command else {
-        panic!("expected SetSelectionFlattenPolicy command");
-    };
-
-    assert_eq!(policy, SelectionFlattenPolicy::Prompt);
-}
-
-#[test]
-fn updates_time_display_preference_from_settings_command() {
-    let (mut app, _rx) = settings_command_app();
-
-    submit_settings_command(
-        &mut app,
-        SettingsCommand::SetTimeDisplayPreference(TimeDisplayPreference::Milliseconds),
-    );
-
-    app.update();
-
-    assert_eq!(
-        app.world()
-            .resource::<DeskSettings>()
-            .time_display_preference,
-        TimeDisplayPreference::Milliseconds
-    );
-}
-
-#[test]
-fn deserializes_time_display_preference_settings_command() {
-    let json = serde_json::json!({
-        "type": "SetTimeDisplayPreference",
-        "data": "Bpm"
-    });
-
-    let command: SettingsCommand = serde_json::from_value(json)
-        .expect("expected BPM time display preference command to deserialize");
-
-    let SettingsCommand::SetTimeDisplayPreference(preference) = command else {
-        panic!("expected SetTimeDisplayPreference command");
-    };
-
-    assert_eq!(preference, TimeDisplayPreference::Bpm);
-}
-
-/// Verifies settings commands update the timeline placement preference resource field.
-#[test]
-fn updates_timeline_placement_preference_from_settings_command() {
-    let (mut app, _rx) = settings_command_app();
-
-    submit_settings_command(
-        &mut app,
-        SettingsCommand::SetTimelinePlacementPreference(TimelinePlacementPreference::Cursor),
-    );
-
-    app.update();
-
-    assert_eq!(
-        app.world()
-            .resource::<DeskSettings>()
-            .timeline_placement_preference,
-        TimelinePlacementPreference::Cursor
-    );
-}
-
-/// Verifies timeline placement settings commands deserialize from UI JSON.
-#[test]
-fn deserializes_timeline_placement_preference_settings_command() {
-    let json = serde_json::json!({
-        "type": "SetTimelinePlacementPreference",
-        "data": "Cursor"
-    });
-
-    let command: SettingsCommand = serde_json::from_value(json)
-        .expect("expected cursor timeline placement preference command to deserialize");
-
-    let SettingsCommand::SetTimelinePlacementPreference(preference) = command else {
-        panic!("expected SetTimelinePlacementPreference command");
-    };
-
-    assert_eq!(preference, TimelinePlacementPreference::Cursor);
-}
-
-/// Verifies settings commands update the showfile backup retention resource field.
-#[test]
-fn updates_showfile_backup_retention_from_settings_command() {
-    let (mut app, _rx) = settings_command_app();
-
-    submit_settings_command(&mut app, SettingsCommand::SetShowfileBackupRetention(7));
-
-    app.update();
-
-    assert_eq!(
-        app.world()
-            .resource::<DeskSettings>()
-            .showfile_backup_retention,
-        7
-    );
-}
-
-/// Verifies websocket payloads deserialize into the backup retention settings command.
-#[test]
-fn deserializes_showfile_backup_retention_settings_command() {
-    let json = serde_json::json!({
-        "type": "SetShowfileBackupRetention",
-        "data": 3
-    });
-
-    let command: SettingsCommand = serde_json::from_value(json)
-        .expect("expected showfile backup retention command to deserialize");
-
-    let SettingsCommand::SetShowfileBackupRetention(retention) = command else {
-        panic!("expected SetShowfileBackupRetention command");
-    };
-
-    assert_eq!(retention, 3);
-}
-
-/// Builds a named layout fixture with the given id and switcher visibility.
-fn stored_layout(id: &str, shown_in_switcher: bool) -> StoredPanelLayout {
-    StoredPanelLayout {
-        shown_in_switcher,
-        id: id.to_string(),
-        name: id.to_string(),
-        version: 2,
-        layout: serde_json::json!({ "grid": id }),
-        panels: vec![StoredPanelLayoutPanel {
-            id: "panel-Cues".to_string(),
-            title: "Cues".to_string(),
-            params: serde_json::json!({ "sequence": "main" }),
-        }],
-        created_at: 10.0,
-        updated_at: 20.0,
-        transient: false,
-    }
-}
-
-/// Verifies per-layout commands build the showfile's named layouts, order and default layout,
-/// and that the result survives a settings round trip.
-#[test]
-fn panel_layout_commands_round_trip() {
-    let (mut app, _rx) = settings_command_app();
-    for layout in [
-        stored_layout("second", true),
-        stored_layout("hidden", true),
-        stored_layout("first", true),
-    ] {
-        submit_settings_command(&mut app, SettingsCommand::CreatePanelLayout(layout));
-    }
-    submit_settings_command(
-        &mut app,
-        SettingsCommand::SetPanelLayoutVisibility(PanelLayoutVisibility {
-            id: "hidden".into(),
-            shown_in_switcher: false,
-        }),
-    );
-    submit_settings_command(
-        &mut app,
-        SettingsCommand::ReorderPanelLayouts(vec!["first".into(), "second".into()]),
-    );
-    submit_settings_command(
-        &mut app,
-        SettingsCommand::SetDefaultPanelLayout(Some("first".into())),
-    );
-    app.update();
-
-    let settings = app.world().resource::<DeskSettings>();
-    let decoded: DeskSettings =
-        serde_json::from_str(&serde_json::to_string(settings).unwrap()).unwrap();
-    let order: Vec<_> = decoded
-        .panel_layouts
-        .iter()
-        .map(|layout| (layout.id.as_str(), layout.shown_in_switcher))
-        .collect();
-    assert_eq!(
-        order,
-        [("first", true), ("hidden", false), ("second", true)]
-    );
-    assert_eq!(decoded.default_panel_layout_id.as_deref(), Some("first"));
-}
-
-/// Verifies a refused layout edit leaves the showfile's layouts untouched.
-#[test]
-fn rejected_panel_layout_edit_changes_nothing() {
-    let (mut app, _rx) = settings_command_app();
-    submit_settings_command(
-        &mut app,
-        SettingsCommand::CreatePanelLayout(stored_layout("only", true)),
-    );
-    app.update();
-    let before = app.world().resource::<DeskSettings>().panel_layouts.clone();
-
-    submit_settings_command(
-        &mut app,
-        SettingsCommand::RenamePanelLayout(PanelLayoutRename {
-            id: "missing".into(),
-            name: "Renamed".into(),
-        }),
-    );
-    submit_settings_command(
-        &mut app,
-        SettingsCommand::CreatePanelLayout(stored_layout("only", false)),
-    );
-    app.update();
-
-    assert_eq!(app.world().resource::<DeskSettings>().panel_layouts, before);
-}
-
-/// Verifies saved showfiles leave out transient layouts and a default layout that is one.
-#[test]
-fn showfile_settings_skip_transient_layouts() {
-    let layout = |id: &str, transient: bool| StoredPanelLayout {
-        transient,
-        ..stored_layout(id, true)
-    };
-    let settings = DeskSettings {
-        panel_layouts: vec![layout("user", false), layout("lesson", true)],
-        default_panel_layout_id: Some("lesson".into()),
-        ..DeskSettings::default()
-    };
-
-    let saved = settings.for_showfile();
-    assert_eq!(saved.panel_layouts, vec![layout("user", false)]);
-    assert_eq!(saved.default_panel_layout_id, None);
-
-    let settings = DeskSettings {
-        default_panel_layout_id: Some("user".into()),
-        ..settings
-    };
-    assert_eq!(
-        settings.for_showfile().default_panel_layout_id.as_deref(),
-        Some("user")
     );
 }

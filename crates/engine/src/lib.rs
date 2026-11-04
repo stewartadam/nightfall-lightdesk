@@ -23,15 +23,18 @@ use nightfall_cmd_parse::prelude::*;
 
 use crate::prelude::*;
 
-pub mod blueprint;
+pub mod assertions;
 mod client;
 pub mod client_bridge;
 pub mod client_ingress;
 pub mod command_lifecycle;
 pub mod data_provider;
 pub mod diagnostic_paths;
+pub mod eval;
 pub mod eval_action;
 pub mod frame_waker;
+pub mod object_changes;
+pub mod object_crud;
 pub mod object_registry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod process_shutdown;
@@ -40,6 +43,8 @@ pub mod reference_index;
 pub mod render_pass;
 pub mod resync;
 pub mod runtime_capabilities;
+pub mod settings;
+pub mod ui_notification;
 pub mod variables;
 
 /// Backend lifecycle state for process initialization and showfile readiness.
@@ -82,7 +87,7 @@ pub mod prelude {
     pub use nightfall_engine_derive::EnginePayload;
 
     pub use crate::EnginePlugin;
-    pub use crate::blueprint::{BlueprintCommand, BlueprintDefinitionChange, BlueprintOperation};
+    pub use crate::assertions::{AssertionSet, BoundAssertionSet, FixtureAttributeTransition};
     pub use crate::client::{
         Undo, decode_client_command, register_client_command, submit_client_command,
     };
@@ -100,8 +105,11 @@ pub mod prelude {
         CommandReply, CommandResponder, CommandTracker, FinishedCommand, finish_command_in_world,
     };
     pub use crate::data_provider::{DataChanges, DataProvider, DataRevision, DataStoreError};
+    pub use crate::eval::INTERNAL_ACTION_ORIGIN;
     pub use crate::eval_action::EvalOperation;
     pub use crate::frame_waker::FrameWaker;
+    pub use crate::object_changes::{ObjectChangePublication, ObjectChanged, ObjectChangesAppExt};
+    pub use crate::object_crud::{ObjectCrud, apply_object_crud_command};
     pub use crate::parse_command_string;
     #[cfg(not(target_arch = "wasm32"))]
     pub use crate::process_shutdown::{
@@ -136,6 +144,22 @@ pub mod prelude {
     pub use crate::runtime_capabilities::{
         FxModuleCapability, LibraryCapability, RuntimeCapabilities, RuntimeMode,
         TimelineAudioCapability, disk_storage_available,
+    };
+    pub use crate::settings::{
+        SettingsAppExt, SettingsCommandHandling, SettingsPlugin, SettingsRegistry, SettingsSection,
+        SettingsSync, SettingsUpdate, SettingsValue, SettingsValues, load_saved_settings,
+        panel_layouts::{
+            PanelLayoutArrangement, PanelLayoutCommand, PanelLayoutRename, PanelLayoutVisibility,
+            PanelLayouts, StoredPanelLayout, StoredPanelLayoutPanel,
+        },
+        register_settings_section, sync_settings_values,
+        ui_preferences::{
+            SequenceReorderRenumberPolicy, TimeDisplayPreference, TimelinePlacementPreference,
+            UiPreferences, UiPreferencesCommand,
+        },
+    };
+    pub use crate::ui_notification::{
+        ToastAction, ToastLevel, UiNotification, UiNotificationState,
     };
     pub use crate::variables::GlobalVariables;
     pub use crate::{
@@ -216,9 +240,38 @@ impl Plugin for EnginePlugin {
             broadcast_app_state_on_change.in_set(ClientFeedback),
         );
 
-        register_client_command::<EngineCommand>(app, Undo::Skipped);
+        register_ingress_command::<EngineCommand>(app);
+        register_command_deserializer::<EngineCommand>(app, eval::deserialize_engine_command);
         app.add_message::<ResyncRequested>();
         app.add_systems(Update, resync::begin_resync.in_set(InputHandling));
+
+        app.add_plugins(settings::SettingsPlugin);
+        settings::register_engine_sections(app);
+
+        app.add_message::<UiNotification>();
+        app.init_resource::<UiNotificationState>();
+        app.add_systems(
+            PostUpdate,
+            ui_notification::forward_ui_notifications.in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Update,
+            ui_notification::send_pending_ui_notifications_on_resync.in_set(ResyncHandling),
+        );
+
+        register_engine_operation::<EvalOperation>(app);
+        app.init_resource::<PendingCommandBuffer>();
+        app.init_resource::<DelayedCommandQueue>();
+        app.add_systems(
+            Update,
+            (
+                eval::process_scheduled_commands,
+                eval::expand_pending_eval_commands.in_set(DeskEventSet::EvalExpansion),
+            )
+                .chain()
+                .in_set(PendingCommandExpansion),
+        );
+        app.add_systems(Update, eval::handle_eval.in_set(EventHandling));
     }
 }
 
@@ -229,7 +282,7 @@ pub struct InputHandling;
 /// System set for systems that rewrite queued commands before undo capture and dispatch.
 ///
 /// Expanders replace wrapper commands in the pending buffer with the concrete commands they
-/// stand for, such as desk eval text or context-dependent transport commands, so the
+/// stand for, such as command-line eval text or context-dependent transport commands, so the
 /// concrete commands are captured and dispatched in the same frame.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PendingCommandExpansion;
@@ -296,13 +349,9 @@ pub enum DeskEventSet {
     ClipForwarding,
     /// Routes clip playback actions to the domain that owns each clip source.
     ClipRouting,
-    /// Applies blueprint create, update, and delete commands.
-    BlueprintCrud,
-    /// Applies blueprint engine actions.
-    BlueprintActions,
     /// Applies instance playback commands.
     InstancePlayback,
-    /// Replaces queued desk eval commands with the concrete commands they evaluate to.
+    /// Replaces queued command-line eval commands with the concrete commands they evaluate to.
     EvalExpansion,
 }
 
@@ -371,6 +420,10 @@ pub enum EngineCommand {
     ResyncState,
     /// Set the FPS upper-bound
     SetFps(u32),
+    /// Parse one command-language statement and run the commands it produces.
+    Eval(String),
+    /// Wait for a duration before the command that requested it completes.
+    Sleep(std::time::Duration),
 }
 
 impl EnginePayload for EngineCommand {}

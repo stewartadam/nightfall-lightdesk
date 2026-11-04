@@ -99,6 +99,7 @@ export type LayerStackWsMessage = {
 
 /** Commands that can share the websocket message queue type at call sites. */
 export type AnyCommand =
+  | types.AudioSettingsCommand
   | types.BlueprintCommand
   | types.BoardCommand
   | types.CueCommand
@@ -111,19 +112,25 @@ export type AnyCommand =
   | types.FxModuleCommand
   | types.GroupCommand
   | types.MacroCommand
+  | types.PanelLayoutCommand
+  | types.ParameterStreamSettingsCommand
   | types.ProgrammerCommand
+  | types.ProgrammingSettingsCommand
   | types.SceneObjectCommand
   | types.SettingsCommand
+  | types.ShowfileSettingsCommand
   | types.FaderCommand
   | types.StepFxCommand
   | types.TempoCommand
   | types.TimecodeCommand
   | types.TimelineCommand
+  | types.UiPreferencesCommand
   | types.UndoCommand;
 
 /** Union of websocket payloads handled on the main thread. */
 export type AnyWsMessage =
   | types.BoardWsMessage
+  | types.ControlsWsMessage
   | types.CueWsMessage
   | types.MacroWsMessage
   | Exclude<types.FixtureWsMessage, { type: "ParameterState" }>

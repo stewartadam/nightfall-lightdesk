@@ -21,6 +21,7 @@ pub mod compositor;
 pub mod data_provider_ext;
 pub mod events;
 pub mod fixture;
+pub mod fixture_events;
 pub mod geometry;
 pub mod input_apply;
 pub mod library;
@@ -28,19 +29,23 @@ pub mod output_frames;
 pub mod parameter;
 pub mod parameter_index;
 pub mod parameter_state;
+pub mod parameter_stream_settings;
 pub mod physical;
 pub mod placement;
+pub mod relations;
 pub mod route_overlap;
 pub mod route_resolution;
 pub mod route_validation;
 pub mod routes;
-pub mod selection;
+mod selection_source;
+pub mod stale_inputs;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 pub mod transport_holds;
 pub mod undo;
 pub mod universe;
 pub mod universe_stream;
+pub mod vdim;
 pub mod websocket;
 pub mod wire_layout;
 
@@ -132,6 +137,9 @@ pub mod prelude {
     pub use crate::parameter::{Parameter, ParameterValues};
     pub use crate::parameter_index::{ParameterIndex, ParameterLocation};
     pub use crate::parameter_state::ParameterStateProjection;
+    pub use crate::parameter_stream_settings::{
+        ParameterStreamSettings, ParameterStreamSettingsCommand,
+    };
     pub use crate::physical::{BeamOptics, BeamType, DEFAULT_LUMENS, FixturePhysical};
     pub use crate::placement::FixturePlacement;
     pub use crate::route_validation::{
@@ -145,9 +153,6 @@ pub mod prelude {
         ResolvedInputRoute, ResolvedInputRoutes, ResolvedInputSource, ResolvedInputTarget,
         ResolvedOutputDestinations, ResolvedTransportTarget, retain_route_fixtures,
     };
-    pub use crate::selection::{
-        ResolvedSelectionCache, SelectionResolver, SpatialSelectionResolver,
-    };
     pub use crate::universe::{
         ConsoleChannelOrigin, ConsoleDmxUniverses, DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS,
         InputDmxUniverses, InputUniverseStaleTimeout,
@@ -156,9 +161,21 @@ pub mod prelude {
     pub use crate::{
         DmxOperation, FixtureCommand, FixturePlacementPositionUpdate,
         FixturePlacementRotationUpdate, FixturePlugin, HeldTransportDmxChannelState,
-        ManualDmxChannelState, RouteEndpoint,
+        ManualDmxChannelState, RouteEndpoint, VirtualIntensity,
     };
 }
+
+/// `Render` system set, inside [`VdimProcessing`], in which virtual dimmers and virtual relation
+/// masters scale the composited values.
+///
+/// Systems that must see the values before that scaling, such as inhibit masters, order
+/// themselves before this set.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct VirtualIntensity;
+
+/// Section the showfile's input and output transport settings are saved and sent under.
+pub const IO_SETTINGS_SECTION: SettingsSection<nightfall_io::IoRuntimeSettings> =
+    SettingsSection::new("io");
 
 /// Plugin for fixtures
 pub struct FixturePlugin;
@@ -189,6 +206,15 @@ impl Plugin for FixturePlugin {
         app.init_resource::<routes::ConsoleDmxAddresses>();
         app.init_resource::<route_validation::RouteValidationSettings>();
         app.init_resource::<parameter_state::ParameterStateProjection>();
+        app.register_settings_section(parameter_stream_settings::ParameterStreamSettings::SECTION);
+        app.register_settings_section(IO_SETTINGS_SECTION);
+        app.add_settings_command(parameter_stream_settings::apply);
+        app.add_systems(
+            Update,
+            parameter_stream_settings::sync_parameter_stream
+                .in_set(EventHandling)
+                .after(SettingsCommandHandling),
+        );
         app.init_resource::<websocket::ParameterStateRequests>();
         app.init_resource::<universe::ConsoleDmxUniverses>();
         app.init_resource::<universe::InputDmxUniverses>();
@@ -235,6 +261,24 @@ impl Plugin for FixturePlugin {
             )
                 .chain()
                 .in_set(EventHandling),
+        );
+
+        app.add_systems(
+            Update,
+            (
+                fixture_events::crud_events,
+                stale_inputs::clear_stale_input_channels,
+            )
+                .in_set(EventHandling),
+        );
+
+        // Virtual dimmers and virtual relation masters scale the composited values before output.
+        app.add_systems(
+            Render,
+            (vdim::apply_vdim, relations::apply_virtual_relations)
+                .chain()
+                .in_set(VdimProcessing)
+                .in_set(VirtualIntensity),
         );
 
         // Runs after every event handler, like the console manual layer, so releases planned
@@ -495,6 +539,9 @@ pub enum FixtureCommand {
         /// Color path ID to assign, or None to clear the default.
         color_path_id: Option<ColorPathId>,
     },
+
+    /// Clear transport input assertions whose source universes are stale.
+    ReleaseStaleInputs,
 }
 
 impl IngressCommand for FixtureCommand {}

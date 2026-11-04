@@ -149,7 +149,7 @@ function ownedRedInstruction(fixtureUid: string, value: number): object {
       },
       clauses: [],
     },
-    cue_instruction: {
+    assertions: {
       values: {
         Red: {
           type: "Inline",
@@ -373,7 +373,7 @@ async function evalCommand(page: Page, command: string) {
   const result = await page.evaluate(async (commandText) => {
     const stores = (window as any).appStores;
     return stores.sendAndAwait({
-      module: "DeskCommand",
+      module: "EngineCommand",
       command: { type: "Eval", data: commandText },
     });
   }, command);
@@ -484,7 +484,7 @@ async function seedReleaseCueEditor(page: Page) {
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Intensity: {
                   type: "Inline",
@@ -534,7 +534,7 @@ async function seedReleaseCueEditor(page: Page) {
                 },
                 clauses: [],
               },
-              cue_instruction: {
+              assertions: {
                 values: {
                   Intensity: {
                     type: "Inline",
@@ -713,7 +713,7 @@ test("sequence setup cue row opens value-capable cue editor", async ({
       page.evaluate((sequenceUid) => {
         const setupInstruction = (window as any).appStores.sequences.get()[
           sequenceUid
-        ]?.setup_cue?.instructions?.[0]?.cue_instruction;
+        ]?.setup_cue?.instructions?.[0]?.assertions;
         return setupInstruction?.values?.Intensity?.data?.data?.value;
       }, SEQUENCE_UID),
     )
@@ -750,8 +750,8 @@ test("sequence setup cue editor refreshes when setup cue attributes change", asy
     const stores = (window as any).appStores;
     const sequence = stores.sequences.get()[sequenceUid];
     const setupCue = JSON.parse(JSON.stringify(sequence.setup_cue));
-    setupCue.instructions[0].cue_instruction.values = {
-      ...setupCue.instructions[0].cue_instruction.values,
+    setupCue.instructions[0].assertions.values = {
+      ...setupCue.instructions[0].assertions.values,
       Red: {
         type: "Inline",
         data: { type: "Absolute", data: { value: 100 } },
@@ -771,7 +771,7 @@ test("sequence setup cue editor refreshes when setup cue attributes change", asy
       page.evaluate((sequenceUid) => {
         const setupInstruction = (window as any).appStores.sequences.get()[
           sequenceUid
-        ]?.setup_cue?.instructions?.[0]?.cue_instruction;
+        ]?.setup_cue?.instructions?.[0]?.assertions;
         return setupInstruction?.values?.Red?.data?.data?.value;
       }, SEQUENCE_UID),
     )
@@ -996,13 +996,13 @@ test("sequence release cue row opens sequence-backed cue editor", async ({
     const stores = (window as any).appStores;
     const sequence = stores.sequences.get()[sequenceUid];
     const releaseCue = JSON.parse(JSON.stringify(sequence.release_cue));
-    releaseCue.instructions[0].cue_instruction.transitions = {
+    releaseCue.instructions[0].assertions.transitions = {
       fade_out: {
         type: "Fixed",
         data: { secs: 7, nanos: 0 },
       },
     };
-    releaseCue.instructions[0].cue_instruction.transitions_by_attribute = {
+    releaseCue.instructions[0].assertions.transitions_by_attribute = {
       Intensity: {
         fade_out: {
           type: "Fixed",
@@ -1023,7 +1023,7 @@ test("sequence release cue row opens sequence-backed cue editor", async ({
       page.evaluate((sequenceUid) => {
         const instruction = (window as any).appStores.sequences.get()[
           sequenceUid
-        ]?.release_cue?.instructions?.[0]?.cue_instruction;
+        ]?.release_cue?.instructions?.[0]?.assertions;
         return {
           copiedCueFadeOut: instruction?.transitions?.fade_out?.data?.secs,
           copiedAttributeFadeOut:
@@ -1058,16 +1058,16 @@ test("sequence release cue row opens sequence-backed cue editor", async ({
       page.evaluate((sequenceUid) => {
         const sequence = (window as any).appStores.sequences.get()[sequenceUid];
         const transition =
-          sequence?.release_cue?.instructions?.[0]?.cue_instruction
+          sequence?.release_cue?.instructions?.[0]?.assertions
             ?.transitions_by_fixture_attribute?.[0];
         const scaffoldedValue =
-          sequence?.release_cue?.instructions?.[0]?.cue_instruction?.values
+          sequence?.release_cue?.instructions?.[0]?.assertions?.values
             ?.Intensity?.data?.data?.value;
         const copiedCueFadeOut =
-          sequence?.release_cue?.instructions?.[0]?.cue_instruction?.transitions
+          sequence?.release_cue?.instructions?.[0]?.assertions?.transitions
             ?.fade_out?.data?.secs;
         const copiedAttributeFadeOut =
-          sequence?.release_cue?.instructions?.[0]?.cue_instruction
+          sequence?.release_cue?.instructions?.[0]?.assertions
             ?.transitions_by_attribute?.Intensity?.fade_out?.data?.secs;
         return {
           hasFixtureUid: typeof transition?.fixture?.fixture_uid === "string",
@@ -1130,11 +1130,11 @@ test("sequence release cue row opens sequence-backed cue editor", async ({
             sequence?.release_cue?.instructions?.[0]?.selection?.source
               ?.data?.[1]?.fixture_uid,
           copiedValue:
-            sequence?.release_cue?.instructions?.[0]?.cue_instruction?.values
+            sequence?.release_cue?.instructions?.[0]?.assertions?.values
               ?.Intensity?.data?.data?.value,
           sourceFadeOut:
-            sequence?.release_cue?.instructions?.[0]?.cue_instruction
-              ?.transitions?.fade_out?.data?.secs,
+            sequence?.release_cue?.instructions?.[0]?.assertions?.transitions
+              ?.fade_out?.data?.secs,
         };
       }, SEQUENCE_UID),
     )
@@ -1171,7 +1171,7 @@ test("sequence release cue row opens sequence-backed cue editor", async ({
             sequenceUid
           ];
           const transition =
-            sequence?.release_cue?.instructions?.[0]?.cue_instruction?.transitions_by_fixture_attribute?.find(
+            sequence?.release_cue?.instructions?.[0]?.assertions?.transitions_by_fixture_attribute?.find(
               (entry: any) => entry.fixture?.fixture_uid === fixtureUid,
             );
           return {
@@ -1280,8 +1280,7 @@ test("sequence release cue keeps timing edits for command-merged fixtures", asyn
           const transition = sequence.release_cue.instructions
             .flatMap(
               (instruction: any) =>
-                instruction.cue_instruction.transitions_by_fixture_attribute ??
-                [],
+                instruction.assertions.transitions_by_fixture_attribute ?? [],
             )
             .find((entry: any) => entry.fixture?.fixture_uid === fixtureUid);
           return transition?.transitions_by_attribute?.Red?.fade_out?.data
@@ -1318,7 +1317,7 @@ test("sequence release cue keeps timing edits for command-merged fixtures", asyn
               ),
           );
           const transition =
-            redInstruction?.cue_instruction?.transitions_by_fixture_attribute?.find(
+            redInstruction?.assertions?.transitions_by_fixture_attribute?.find(
               (entry: any) => entry.fixture?.fixture_uid === fixtureUid,
             );
           return transition?.transitions_by_attribute?.Red?.fade_out?.data
@@ -1351,7 +1350,7 @@ test("sequence release cue keeps timing edits for command-merged fixtures", asyn
               ),
           );
           const transition =
-            redInstruction?.cue_instruction?.transitions_by_fixture_attribute?.find(
+            redInstruction?.assertions?.transitions_by_fixture_attribute?.find(
               (entry: any) => entry.fixture?.fixture_uid === fixtureUid,
             );
           return transition?.transitions_by_attribute?.Red?.fade_out?.data

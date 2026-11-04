@@ -13,12 +13,12 @@ use bevy_ecs::schedule::{ApplyDeferred, IntoScheduleConfigs};
 use bevy_ecs::system::SystemState;
 use nightfall_clips::ClipOptions;
 use nightfall_dmx::prelude::{Attribute, DmxValueResolution};
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_fixture_model::prelude::*;
 use nightfall_instances::InstanceClockSource;
 
 use super::tracking::mark_transition_input_complete;
 use super::*;
-use crate::cue::{BoundCueInstruction, CueInstruction};
 use crate::materialized_cue::{MaterializedColorPathGroup, MaterializedColorPathModel};
 
 fn test_cue(id: u32, label: &str) -> Cue {
@@ -66,9 +66,9 @@ fn non_wrapping_back_at_first_cue_keeps_lazy_prefix() {
 #[test]
 fn cue_lookahead_does_not_enable_unflagged_part_position_values() {
     let mut position_part = test_part(1, "Position part");
-    position_part.instructions.push(BoundCueInstruction {
+    position_part.instructions.push(BoundAssertionSet {
         selection: SelectionExpr::Resolved(Vec::new()).into(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: None,
             values: HashMap::from([(
                 Attribute::Pan,
@@ -1530,7 +1530,7 @@ fn sequence_definition_change_preserves_setup_start_position() {
 #[test]
 fn setup_blueprint_rematerialization_invalidates_render_prefix_cache() {
     let mut app = App::new();
-    app.add_message::<BlueprintDefinitionChange>();
+    app.add_message::<ObjectChanged<Blueprint>>();
     app.init_resource::<DataProvider<Group>>();
     app.init_resource::<DataProvider<Blueprint>>();
     app.init_resource::<FixtureDataProviderExt>();
@@ -1549,9 +1549,9 @@ fn setup_blueprint_rematerialization_invalidates_render_prefix_cache() {
         })
         .expect("Blueprint should be insertable");
     let setup_cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(Vec::new()).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: Some(BlueprintApplication {
                     blueprint_uid,
                     selector: BlueprintSelector::Attribute(Attribute::Red),
@@ -1585,7 +1585,7 @@ fn setup_blueprint_rematerialization_invalidates_render_prefix_cache() {
         .id();
 
     app.world_mut()
-        .write_message(BlueprintDefinitionChange { uid: blueprint_uid });
+        .write_message(ObjectChanged::<Blueprint>::new(blueprint_uid));
     app.update();
 
     let sequence = app

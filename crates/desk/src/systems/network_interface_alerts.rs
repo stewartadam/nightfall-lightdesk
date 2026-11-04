@@ -14,12 +14,11 @@
 //! operator at the setting that changes it.
 
 use bevy_ecs::prelude::*;
+use nightfall_engine::prelude::{ToastAction, ToastLevel, UiNotification};
 use nightfall_io::prelude::{
     ExternalControlSettings, ExternalControlState, IoRuntimeSettings, NetworkInterfaceInfo,
     NetworkInterfaceState, TransportRuntimePolicy,
 };
-
-use crate::ui_notification::{ToastAction, ToastLevel, UiNotification};
 
 /// Compares each new host interface snapshot with the previous one and toasts the transitions
 /// that affect configured DMX transports or the External control listener.

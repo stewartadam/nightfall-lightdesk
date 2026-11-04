@@ -25,7 +25,7 @@ pub(super) fn write_timeline_desk_action(
     writer.write(event);
 }
 
-/// Tracking change inferred from a clip command embedded in a desk eval timeline action.
+/// Tracking change inferred from a clip command embedded in a command-line eval timeline action.
 pub(super) enum DeskEvalClipTracking {
     Track {
         entity: Entity,
@@ -34,7 +34,7 @@ pub(super) enum DeskEvalClipTracking {
     Untrack(Entity),
 }
 
-/// Resolve a clip entity by numeric clip ID for parsed desk eval commands.
+/// Resolve a clip entity by numeric clip ID for parsed eval commands.
 pub(super) fn clip_entity_for_id(exec_query: &Query<(Entity, &Clip)>, id: u32) -> Option<Entity> {
     exec_query
         .iter()
@@ -67,7 +67,7 @@ pub(super) fn sequence_auto_end_release_completed(
     )
 }
 
-/// Appends clip ownership changes from an ID expression used inside a desk eval command.
+/// Appends clip ownership changes from an ID expression used inside an eval command.
 pub(super) fn push_desk_eval_clip_tracking_for_id_expr(
     tracking: &mut Vec<DeskEvalClipTracking>,
     exec_query: &Query<(Entity, &Clip)>,
@@ -79,7 +79,7 @@ pub(super) fn push_desk_eval_clip_tracking_for_id_expr(
         let Some(entity) = clip_entity_for_id(exec_query, id) else {
             tracing::warn!(
                 clip_id = id,
-                "Skipping timeline desk eval ownership tracking for missing clip"
+                "Skipping timeline eval ownership tracking for missing clip"
             );
             continue;
         };
@@ -105,7 +105,7 @@ pub(super) fn desk_eval_clip_tracking(
             tracing::debug!(
                 %command,
                 %error,
-                "Skipping timeline desk eval ownership tracking for unparseable command"
+                "Skipping timeline eval ownership tracking for unparseable command"
             );
             return Vec::new();
         }

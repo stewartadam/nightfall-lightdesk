@@ -9,16 +9,19 @@ publish = false
 bevy_app.workspace = true
 nightfall-actions = { path = "../actions" }
 nightfall-boards = { path = "../boards" }
+nightfall-clips = { path = "../clips" }
 nightfall-cues = { path = "../cues" }
+nightfall-controls = { path = "../controls" }
 nightfall-desk = { path = "../desk", default-features = false }
 nightfall-engine = { path = "../engine" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-flow = { path = "../flow", default-features = false }
 nightfall-fx = { path = "../fx" }
 nightfall-macros = { path = "../macros" }
-nightfall-programmer = { path = "../programmer" }
+nightfall-programming = { path = "../programming" }
 nightfall-references = { path = "../references" }
 nightfall-scene-objects = { path = "../scene-objects" }
+nightfall-showfile = { path = "../showfile" }
 nightfall-tempo = { path = "../tempo" }
 nightfall-timecode = { path = "../timecode" }
 nightfall-timeline = { path = "../timeline", default-features = false }

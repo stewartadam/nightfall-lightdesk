@@ -102,7 +102,7 @@ async function waitForSeededCue(
         (instruction: any) =>
           instruction.selection?.source?.data?.some(
             (ref: any) => ref.fixture_uid === fixtureUid,
-          ) && instruction.cue_instruction?.values?.[attribute] !== undefined,
+          ) && instruction.assertions?.values?.[attribute] !== undefined,
       );
     },
     { cueUid, fixtureUid, attribute },
@@ -295,7 +295,7 @@ async function storeOwnedFullAttributeData(
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Red: {
                   type: "Inline",
@@ -536,7 +536,7 @@ test("cue editor full grid reveals unasserted attributes for value edits", async
       .poll(async () =>
         page.evaluate((cueUid) => {
           const cue = (window as any).appStores?.cues?.get?.()?.[cueUid];
-          return cue?.instructions?.[0]?.cue_instruction?.values?.Green;
+          return cue?.instructions?.[0]?.assertions?.values?.Green;
         }, context.cueUid),
       )
       .toBeUndefined();
@@ -590,7 +590,7 @@ test("cue editor full grid reveals unasserted attributes for value edits", async
             (ref: any) => ref.fixture_uid === fixtureUid,
           ),
         );
-        const value = instruction?.cue_instruction?.values?.[attribute]?.data;
+        const value = instruction?.assertions?.values?.[attribute]?.data;
         return (
           value?.type === "AbsolutePercent" &&
           Math.abs(value.data.value - expected) < 0.0001

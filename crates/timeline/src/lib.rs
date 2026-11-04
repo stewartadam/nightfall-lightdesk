@@ -451,9 +451,10 @@ pub enum TimelineOperation {
 
 impl EngineOperation for TimelineOperation {}
 
-/// Registers the desk and timeline actions that timeline tests resolve stored references with.
+/// Registers the eval, clip, and timeline actions that timeline tests resolve stored references with.
 #[cfg(test)]
 pub(crate) fn install_timeline_test_actions(app: &mut App) {
-    nightfall_desk::automation_actions::register_desk_actions(app);
+    nightfall_actions::register_eval_action(app);
+    nightfall_clips::register_clip_actions(app);
     transport::register_timeline_actions(app);
 }

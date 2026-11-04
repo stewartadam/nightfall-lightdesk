@@ -31,24 +31,21 @@ use nightfall::prelude::{
 use nightfall_clips::{Clip, Source};
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_config::{RuntimeConfig, TransportConfig};
-use nightfall_cues::prelude::{
-    BoundCueInstruction, Cue, CueInstruction, MaterializedSequence, Sequence,
+use nightfall_controls::prelude::{
+    FixtureMasterTarget, InstanceMasterTarget, Master, MasterKind, MasterMode, MasterTarget,
+    fader_level_action,
 };
-use nightfall_desk::{
-    prelude::{
-        FixtureMasterTarget, InstanceMasterTarget, Master, MasterKind, MasterMode, MasterTarget,
-        ToastLevel, UiNotification, UiNotificationState, fader_level_action,
-    },
-    resources::log_config::{LogConfig, TracingTarget},
-};
+use nightfall_cues::prelude::{Cue, MaterializedSequence, Sequence};
+use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
     AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNoticeReply,
     CommandOrigin, CommandOutcome, CommandReply, CommandResult, CommandTracker,
     DISCRIMINATOR_NON_DROPPABLE, DataProvider, DmxOutput, EncodedClientMessage,
     EngineClientMessage, EngineOperationEnvelope, EventHandling, FinishedCommand, Render,
-    RenderPass, ReplyTarget,
+    RenderPass, ReplyTarget, ToastLevel, UiNotification, UiNotificationState,
 };
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{
     ConsoleDmxAddress, ConsoleDmxAddresses, Fixture, FixtureDataProviderExt, FixtureElement,
@@ -201,11 +198,11 @@ fn test_intensity_cue(
             label: label.to_owned(),
         },
         transitions,
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                 fixture_ref.clone(),
             ])),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,
@@ -510,7 +507,7 @@ fn world_factory_new_shows_start_with_global_masters() {
         assert_eq!(intensity.identifiers.id, 1);
         assert_eq!(
             intensity.identifiers.uid,
-            nightfall_desk::masters::DEFAULT_INTENSITY_MASTER_UID
+            nightfall_controls::masters::DEFAULT_INTENSITY_MASTER_UID
         );
         assert_eq!(intensity.kind, MasterKind::InhibitiveIntensity);
         assert_eq!(
@@ -520,7 +517,7 @@ fn world_factory_new_shows_start_with_global_masters() {
         assert_eq!(speed.identifiers.id, 2);
         assert_eq!(
             speed.identifiers.uid,
-            nightfall_desk::masters::DEFAULT_SPEED_MASTER_UID
+            nightfall_controls::masters::DEFAULT_SPEED_MASTER_UID
         );
         assert_eq!(speed.kind, MasterKind::PlaybackSpeed);
         assert_eq!(
@@ -744,7 +741,7 @@ fn world_factory_sample_data_bootstrap_starts_ready() {
 /// Verify sample faders reference the intended clips and survive the portable snapshot path.
 #[test]
 fn world_factory_sample_data_seeds_fader_assignments() {
-    use nightfall_desk::prelude::{FaderAssignment, FaderConfig, Faders};
+    use nightfall_controls::prelude::{FaderAssignment, FaderConfig, Faders};
     let factory = WorldFactory::new(test_log_config(), false, false, false);
     let mut app = factory
         .build(WorldBootstrap::SampleData {
@@ -1851,7 +1848,7 @@ fn named_sample_show_is_standalone_and_recoverable() {
         }
     }
     let mut state = bevy::ecs::system::SystemState::<
-        nightfall_fixtures::prelude::SpatialSelectionResolver,
+        nightfall_selection_runtime::SpatialSelectionResolver,
     >::new(app.world_mut());
     let resolver = state.get(app.world()).expect("selection resolver");
     let strobe_uids: std::collections::BTreeSet<_> = snapshot
@@ -1896,7 +1893,7 @@ fn named_sample_show_is_standalone_and_recoverable() {
         .expect("cue 30.30");
     assert_eq!(
         fanned_cue.instructions[0]
-            .cue_instruction
+            .assertions
             .values
             .get(&Attribute::Tilt),
         Some(&ValueSource::Inline(ParameterValue::AbsolutePercent {
@@ -2449,7 +2446,7 @@ async fn automation_eval_action_expands_and_completes() {
 async fn automation_control_go_starts_assigned_clip() {
     use nightfall_actions::{ActionInvocation, ActionSurface};
     use nightfall_clips::MaterializedClip;
-    use nightfall_desk::prelude::fader_go_action;
+    use nightfall_controls::prelude::fader_go_action;
 
     let mut app = sample_app();
     let outcome = run_action(

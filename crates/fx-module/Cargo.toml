@@ -8,6 +8,7 @@ edition.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
 nightfall = { path = "../common" }
+nightfall-clips = { path = "../clips" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-dmx = { path = "../dmx" }
@@ -18,6 +19,7 @@ nightfall-fx = { path = "../fx" }
 nightfall-instances = { path = "../instances" }
 nightfall-playback-planner = { path = "../playback-planner" }
 nightfall-selection = { path = "../selection" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-undo = { path = "../undo" }
 serde.workspace = true
 serde_json.workspace = true

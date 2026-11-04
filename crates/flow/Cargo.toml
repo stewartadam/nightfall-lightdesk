@@ -9,6 +9,7 @@ bevy_app.workspace = true
 bevy_ecs.workspace = true
 nightfall = { path = "../common" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-clips = { path = "../clips" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
@@ -17,6 +18,7 @@ nightfall-fx-module = { path = "../fx-module", optional = true }
 nightfall-instances = { path = "../instances" }
 nightfall-playback-planner = { path = "../playback-planner" }
 nightfall-selection = { path = "../selection" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
 nightfall-tempo = { path = "../tempo" }
 nightfall-timecode = { path = "../timecode" }
 nightfall-waveform = { path = "../waveform" }
@@ -31,7 +33,6 @@ uuid.workspace = true
 async-channel.workspace = true
 moonshine-kind.workspace = true
 nightfall-desk = { path = "../desk" }
-nightfall-clips = { path = "../clips" }
 tokio.workspace = true
 wit-component.workspace = true
 nightfall-fixture-model = { path = "../fixture-model" }

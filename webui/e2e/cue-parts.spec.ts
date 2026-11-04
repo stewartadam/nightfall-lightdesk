@@ -200,7 +200,7 @@ test("owned cue parts render as expandable rows, edit, and report status", async
       fade_out?: TransitionMode;
       curve_out?: "Linear" | "EaseIn" | "EaseOut" | "EaseInOut";
     };
-    type BoundCueInstruction = {
+    type BoundAssertionSet = {
       selection: {
         source: {
           type: "Resolved";
@@ -208,7 +208,7 @@ test("owned cue parts render as expandable rows, edit, and report status", async
         };
         clauses: [];
       };
-      cue_instruction: {
+      assertions: {
         values: Record<string, unknown>;
         transitions_by_attribute: Record<string, PartialTransition>;
         transitions: PartialTransition;
@@ -218,7 +218,7 @@ test("owned cue parts render as expandable rows, edit, and report status", async
       identifiers: { id: number; uid: string; label: string };
       transitions: PartialTransition;
       transitions_by_attribute: Record<string, PartialTransition>;
-      instructions: BoundCueInstruction[];
+      instructions: BoundAssertionSet[];
       tracking_flags: "HTP";
     };
     type Cue = {
@@ -226,7 +226,7 @@ test("owned cue parts render as expandable rows, edit, and report status", async
       trigger: { type: "Manual" } | { type: "FollowPrevious" };
       transitions: PartialTransition;
       transitions_by_attribute: Record<string, PartialTransition>;
-      instructions: BoundCueInstruction[];
+      instructions: BoundAssertionSet[];
       parts?: CuePart[];
       references: Record<string, unknown>;
       tracking_flags: "HTP";
@@ -407,7 +407,7 @@ test("owned cue parts render as expandable rows, edit, and report status", async
       const instruction = (
         attribute: "Red" | "Green" | "Blue",
         value: number,
-      ): BoundCueInstruction => ({
+      ): BoundAssertionSet => ({
         selection: {
           source: {
             type: "Resolved",
@@ -415,7 +415,7 @@ test("owned cue parts render as expandable rows, edit, and report status", async
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values: { [attribute]: percent(value) },
           transitions_by_attribute: {},
           transitions: {},
@@ -469,7 +469,7 @@ test("owned cue parts render as expandable rows, edit, and report status", async
         instructions: [
           {
             ...instruction("Red", 0.0),
-            cue_instruction: {
+            assertions: {
               values: {
                 Red: percent(0.0),
                 Green: percent(0.0),

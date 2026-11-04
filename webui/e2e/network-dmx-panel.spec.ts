@@ -105,7 +105,7 @@ async function enableTransportOutput(
 ): Promise<void> {
   await page.waitForFunction(
     (key) =>
-      typeof (window as any).appStores?.ioSettings?.get?.()?.[key] ===
+      typeof (window as any).appStores?.settings?.get?.()?.io?.[key] ===
       "boolean",
     settingKey,
   );
@@ -117,7 +117,7 @@ async function enableTransportOutput(
   await expect
     .poll(() =>
       page.evaluate(
-        (key) => (window as any).appStores.ioSettings.get()[key],
+        (key) => (window as any).appStores.settings.get().io[key],
         settingKey,
       ),
     )
@@ -204,10 +204,13 @@ async function seedUsbDmxTargets(
 ) {
   await page.evaluate((seedTargets) => {
     const stores = (window as any).appStores;
-    const settings = stores.ioSettings.get();
-    stores.ioSettings.set({
-      ...settings,
-      usb_dmx_outputs: { targets: seedTargets },
+    const settings = stores.settings.get().io;
+    stores.settings.set({
+      ...stores.settings.get(),
+      io: {
+        ...settings,
+        usb_dmx_outputs: { targets: seedTargets },
+      },
     });
   }, targets);
 }
@@ -310,7 +313,7 @@ test("I/O transports panel toggles network output", async ({ page }) => {
 
   await expect(page.locator("main#app")).toBeVisible();
   await page.waitForFunction(() =>
-    Boolean((window as any).appStores?.ioSettings),
+    Boolean((window as any).appStores?.settings),
   );
   await page.waitForTimeout(3_000);
   await openIoTransportsPanel(page);
@@ -329,7 +332,7 @@ test("I/O transports panel toggles network output", async ({ page }) => {
   const networkOutputEnabled = async () =>
     page.evaluate(
       () =>
-        (window as any).appStores.ioSettings.get().network_output_enabled ??
+        (window as any).appStores.settings.get().io.network_output_enabled ??
         true,
     );
 
@@ -365,7 +368,7 @@ test("I/O transports panel toggles network input", async ({ page }) => {
 
   await expect(page.locator("main#app")).toBeVisible();
   await page.waitForFunction(() =>
-    Boolean((window as any).appStores?.ioSettings),
+    Boolean((window as any).appStores?.settings),
   );
   await page.waitForTimeout(3_000);
   await openIoTransportsPanel(page);
@@ -384,7 +387,7 @@ test("I/O transports panel toggles network input", async ({ page }) => {
   const networkInputEnabled = async () =>
     page.evaluate(
       () =>
-        (window as any).appStores.ioSettings.get().network_input_enabled ??
+        (window as any).appStores.settings.get().io.network_input_enabled ??
         true,
     );
 
@@ -417,7 +420,7 @@ test("I/O transports panel toggles USB output", async ({ page }) => {
 
   await expect(page.locator("main#app")).toBeVisible();
   await page.waitForFunction(() =>
-    Boolean((window as any).appStores?.ioSettings),
+    Boolean((window as any).appStores?.settings),
   );
   await page.waitForTimeout(3_000);
   await openIoTransportsPanel(page);
@@ -436,7 +439,7 @@ test("I/O transports panel toggles USB output", async ({ page }) => {
   const usbOutputEnabled = async () =>
     page.evaluate(
       () =>
-        (window as any).appStores.ioSettings.get().usb_output_enabled ?? true,
+        (window as any).appStores.settings.get().io.usb_output_enabled ?? true,
     );
 
   if (!(await usbOutputEnabled())) {
@@ -1093,30 +1096,33 @@ test.describe("owned blank showfile", () => {
     await openIoTransportsPanel(page);
     await page.evaluate((targetId) => {
       const stores = (window as any).appStores;
-      const settings = stores.ioSettings.get();
-      stores.ioSettings.set({
-        ...settings,
-        network_dmx_outputs: {
-          targets: [
-            {
-              id: "sacn",
-              protocol: "Sacn",
-              delivery: { type: "SacnMulticast" },
-            },
-            {
-              id: "artnet",
-              protocol: "ArtNet",
-              delivery: { type: "ArtNetBroadcast" },
-            },
-            {
-              id: targetId,
-              protocol: "ArtNet",
-              delivery: {
-                type: "Unicast",
-                data: { ip: "127.0.0.1" },
+      const settings = stores.settings.get().io;
+      stores.settings.set({
+        ...stores.settings.get(),
+        io: {
+          ...settings,
+          network_dmx_outputs: {
+            targets: [
+              {
+                id: "sacn",
+                protocol: "Sacn",
+                delivery: { type: "SacnMulticast" },
               },
-            },
-          ],
+              {
+                id: "artnet",
+                protocol: "ArtNet",
+                delivery: { type: "ArtNetBroadcast" },
+              },
+              {
+                id: targetId,
+                protocol: "ArtNet",
+                delivery: {
+                  type: "Unicast",
+                  data: { ip: "127.0.0.1" },
+                },
+              },
+            ],
+          },
         },
       });
     }, duplicateTargetId);
@@ -1161,7 +1167,7 @@ test.describe("owned blank showfile", () => {
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const settings = (window as any).appStores.ioSettings.get();
+          const settings = (window as any).appStores.settings.get().io;
           const target = settings.network_dmx_outputs?.targets?.find(
             (candidate: any) => candidate.id === "artnet",
           );

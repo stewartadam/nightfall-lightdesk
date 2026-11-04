@@ -467,7 +467,7 @@ const TrackContents = (props: TrackListProps) => {
 
   const openKeyboardInsert = () => {
     const preference = timelinePlacementPreference(
-      settings().timeline_placement_preference,
+      settings().ui.timeline_placement,
     );
     const pointerIntent = lastPointerIntent();
     if (preference === TimelinePlacementPreference.Cursor && pointerIntent) {

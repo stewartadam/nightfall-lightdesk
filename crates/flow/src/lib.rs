@@ -18,9 +18,10 @@
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use nightfall_clips::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
 use nightfall_engine::prelude::*;
 use nightfall_instances::{
-    ClipInstanceAttachment, ClipInstanceRequest, DomainInstanceReconstructionRequest,
+    ClipInstanceAttachment, ClipInstanceRequest, DomainInstanceReconstructionRequest, InstanceKind,
 };
 use serde::{Deserialize, Serialize};
 
@@ -79,7 +80,14 @@ impl Plugin for FlowPlugin {
 
         register_client_command::<FlowCommand>(app, Undo::Skipped);
         app.add_message::<events::FlowCommandResult>();
-        register_engine_operation::<events::FlowPlaybackOperation>(app);
+        app.register_clip_source(
+            ClipSourceKind::Flow,
+            ClipSourceDomain {
+                playback_kind: InstanceKind::Flow,
+                handles_clip_operations: false,
+                restarts_on_go: false,
+            },
+        );
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FlowAstConverter>(
@@ -88,7 +96,7 @@ impl Plugin for FlowPlugin {
         app.add_systems(
             Update,
             (
-                events::handle_events,
+                events::handle_events.after(DeskEventSet::ClipRouting),
                 events::crud_events,
                 events::handle_playback_commands,
                 events::handle_domain_playback_reconstruction_requests,

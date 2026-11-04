@@ -18,19 +18,20 @@ use nightfall::prelude::{
 };
 use nightfall_clips::{Clip, Source};
 use nightfall_dmx::prelude::Attribute;
+use nightfall_engine::prelude::BoundAssertionSet;
 use nightfall_engine::prelude::DataProvider;
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, ResolvedElementParameter};
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_playback_planner::{
     PlannedPlaybackInterval, PlannedPlaybackIntervention, PlannedPlaybackInterventionKind,
     PlaybackDurationProfile, PlaybackExtent, PlaybackReconstructionTiming,
 };
 use nightfall_selection::filter_existing_selection;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use partially::Partial;
 use uuid::Uuid;
 
-use crate::cue::{BoundCueInstruction, Cue, Sequence};
+use crate::cue::{Cue, Sequence};
 use crate::duration::CueDurationResolver;
 use crate::materialized_cue::MaterializedCue;
 
@@ -748,7 +749,7 @@ fn record_global_release_timings(
 
 /// Records selected-side release timing for scoped release cue instructions.
 fn record_release_instruction_timings(
-    instructions: &[BoundCueInstruction],
+    instructions: &[BoundAssertionSet],
     transitions: &PartialTransition,
     transitions_by_attribute: &AttributeTransitions,
     fixture_data_provider: &FixtureDataProviderExt,
@@ -777,7 +778,7 @@ fn record_release_instruction_timings(
             let release_timing_attributes = MaterializedCue::release_timing_override_attributes(
                 transitions,
                 transitions_by_attribute,
-                &bound_instructions.cue_instruction,
+                &bound_instructions.assertions,
             );
             for attribute in &release_timing_attributes {
                 for fixture_ref in &fixture_refs {
@@ -796,7 +797,7 @@ fn record_release_instruction_timings(
                     let transition = MaterializedCue::resolve_transition_definition(
                         transitions,
                         transitions_by_attribute,
-                        &bound_instructions.cue_instruction,
+                        &bound_instructions.assertions,
                         fixture_ref,
                         attribute,
                         &resolved_parameter.attribute,
@@ -953,20 +954,21 @@ mod tests {
     };
     use nightfall_dmx::prelude::{Attribute, DmxValueResolution, ParameterValue};
     use nightfall_engine::prelude::DataProvider;
+    use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
     use nightfall_fixture_model::prelude::*;
     use nightfall_fixtures::prelude::{
         Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
     };
-    use nightfall_fixtures::selection::SpatialSelectionResolver;
     use nightfall_playback_planner::PlaybackPositionSource;
     use nightfall_playback_planner::{
         PlannedPlaybackInterval, PlannedPlaybackIntervention, PlannedPlaybackInterventionKind,
         PlannedPlaybackLifecycle, PlannedPlaybackSource, PlannedPlaybackSpeedChange,
         TimelinePlaybackOwner,
     };
+    use nightfall_selection_runtime::SpatialSelectionResolver;
 
     use super::{SequenceTimelineSeekPlayback, SequenceTimelineStepTiming};
-    use crate::cue::{BoundCueInstruction, Cue, CueInstruction, Sequence};
+    use crate::cue::{Cue, Sequence};
 
     /// Builds a sequence fixture with the requested number of steps and wrap mode.
     fn sequence(step_count: usize, wrap: bool) -> Sequence {
@@ -1121,9 +1123,9 @@ mod tests {
                 fade_out: Some(TransitionMode::Fixed(Duration::from_secs(1))),
                 ..Default::default()
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([
                         (

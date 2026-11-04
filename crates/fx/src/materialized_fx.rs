@@ -15,11 +15,11 @@ use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     InstanceClock, InstanceControls, InstanceId, InstanceKind, InstanceMetadata, InstancePosition,
     InstanceStatus, Owner,
 };
+use nightfall_selection_runtime::{ResolvedSelectionCache, SpatialSelectionResolver};
 #[cfg(not(target_arch = "wasm32"))]
 use orx_parallel::*;
 use smart_default::SmartDefault;

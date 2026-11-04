@@ -20,6 +20,8 @@
 use bevy_app::{PluginGroup, PluginGroupBuilder};
 use nightfall_actions::ActionsPlugin;
 use nightfall_boards::prelude::BoardsPlugin;
+use nightfall_clips::ClipsPlugin;
+use nightfall_controls::ControlsPlugin;
 use nightfall_cues::prelude::CuePlugin;
 use nightfall_desk::{prelude::DeskPlugin, resources::log_config::LogConfig};
 use nightfall_engine::{EnginePlugin, prelude::ClientBridgePlugin};
@@ -27,9 +29,10 @@ use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
 use nightfall_fx::prelude::FxPlugin;
 use nightfall_macros::prelude::MacrosPlugin;
-use nightfall_programmer::prelude::ProgrammerPlugin;
+use nightfall_programming::prelude::ProgrammingPlugin;
 use nightfall_references::ReferencesPlugin;
 use nightfall_scene_objects::prelude::SceneObjectPlugin;
+use nightfall_showfile::ShowfileSettingsPlugin;
 use nightfall_tempo::prelude::TempoPlugin;
 use nightfall_timecode::prelude::TimecodePlugin;
 use nightfall_timeline::prelude::TimelinePlugin;
@@ -59,13 +62,13 @@ impl PluginGroup for ShowPlugins {
     }
 }
 
-/// Engine infrastructure, fixtures, scene objects and the fixture compositor.
+/// Engine infrastructure, fixtures, scene objects, the fixture compositor and clip playback.
 pub struct CorePlugins;
 
 impl PluginGroup for CorePlugins {
     /// Lists the core plugins in build order. Engine, undo, client bridge and actions come first
     /// because later plugins assert they are present; fixtures and scene objects precede the
-    /// compositor that reads them.
+    /// compositor that reads them. Clip playback comes last, since the desk asserts it is present.
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
             .add(EnginePlugin)
@@ -75,24 +78,30 @@ impl PluginGroup for CorePlugins {
             .add(FixturePlugin)
             .add(SceneObjectPlugin)
             .add(FixtureCompositorPlugin)
+            .add(ClipsPlugin)
     }
 }
 
-/// The desk and the show data it operates: programmer, cues, boards and macros.
+/// The desk and the show data it operates: masters and faders, programmer, cues, boards and
+/// macros.
 pub struct DeskPlugins {
     /// Log filter handle the desk's log-level commands update.
     pub log_config: LogConfig,
 }
 
 impl PluginGroup for DeskPlugins {
-    /// Adds the desk first, since the programmer, cues, boards and macros register against it.
+    /// Adds masters and faders before the desk, whose playback feeds read held fader buttons,
+    /// and the desk before the programmer, cues, boards and macros that register against it.
+    /// The showfile settings go with the desk, which saves and loads shows.
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
+            .add(ControlsPlugin)
             .add(DeskPlugin {
                 log_config: self.log_config,
             })
-            .add(ProgrammerPlugin)
+            .add(ProgrammingPlugin)
             .add(CuePlugin)
+            .add(ShowfileSettingsPlugin)
             .add(BoardsPlugin)
             .add(MacrosPlugin)
     }

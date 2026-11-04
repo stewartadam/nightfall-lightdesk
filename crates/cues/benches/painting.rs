@@ -20,16 +20,15 @@ use nightfall::prelude::{
 use nightfall_compositor::prelude::Layer;
 use nightfall_cues::materialized_cue::paint_materialized_cues;
 use nightfall_cues::materialized_sequence::paint_materialized_sequences;
-use nightfall_cues::prelude::{
-    BoundCueInstruction, Cue, CueInstruction, MaterializedCue, MaterializedSequence, Sequence,
-};
+use nightfall_cues::prelude::{Cue, MaterializedCue, MaterializedSequence, Sequence};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::DataProvider;
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_fixtures::testing::patch_bench_fixtures;
 use nightfall_instances::InstanceClock;
 use nightfall_io::OutputTransport;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use uuid::Uuid;
 
 const DEFAULT_FIXTURE_COUNTS: &[usize] = &[64, 512];
@@ -164,9 +163,9 @@ fn bench_cue(cue_index: usize, fixture_count: usize) -> Cue {
             fade_in: Some(TransitionMode::Fixed(Duration::from_secs(10))),
             ..Default::default()
         },
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection,
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 values,
                 ..Default::default()
             },

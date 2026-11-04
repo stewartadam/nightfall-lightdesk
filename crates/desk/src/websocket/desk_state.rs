@@ -33,29 +33,6 @@ pub fn send_groups_on_change(
     }
 }
 
-/// Send master definitions.
-pub fn send_masters(master_data_provider: &DataProvider<Master>, broadcaster: &ClientEventSink) {
-    let masters: Vec<Master> = master_data_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &DeskWsMessage::MasterDefinitions(&masters),
-    );
-    tracing::trace!("Sending master definitions to websocket clients");
-}
-
-/// Send masters when DataProvider<Master> changes.
-pub fn send_masters_on_change(
-    master_data_provider: Res<DataProvider<Master>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if master_data_provider.is_changed() {
-        send_masters(&master_data_provider, &broadcaster);
-    }
-}
-
 /// Send clip definitions to UI
 pub fn send_clips(
     exec_query: Query<&Clip>,
@@ -231,39 +208,8 @@ pub fn send_undo_state_on_change(
     }
 }
 
-/// Send current desk settings to websocket clients
-pub fn send_settings(settings: &crate::settings::DeskSettings, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &DeskWsMessage::Settings(settings),
-    );
-    tracing::trace!("Sending settings to websocket clients");
-}
-
-/// Sends current IO runtime settings to websocket clients.
-pub fn send_io_settings(settings: &IoRuntimeSettings, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &DeskWsMessage::IoSettings(settings),
-    );
-    tracing::trace!("Sending IO settings to websocket clients");
-}
-
-/// Send settings when DeskSettings changes
-pub fn send_settings_on_change(
-    settings: Res<crate::settings::DeskSettings>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if !settings.is_changed() {
-        return;
-    }
-
-    send_settings(&settings, &broadcaster);
-}
-
-/// Sends IO runtime settings when the resource changes.
-pub fn send_io_settings_on_change(
-    settings: Res<IoRuntimeSettings>,
+/// Sends host-owned external control and telemetry state when either changes.
+pub fn send_host_state_on_change(
     external_control: Res<ExternalControlState>,
     telemetry: Res<crate::settings::TelemetryState>,
     broadcaster: Res<ClientEventSink>,
@@ -274,11 +220,6 @@ pub fn send_io_settings_on_change(
     if telemetry.is_changed() {
         send_telemetry_state(&telemetry, &broadcaster);
     }
-    if !settings.is_changed() {
-        return;
-    }
-
-    send_io_settings(&settings, &broadcaster);
 }
 
 /// Send available audio devices when the desk-facing resource changes.

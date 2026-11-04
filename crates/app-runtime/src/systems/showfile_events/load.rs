@@ -52,7 +52,7 @@ pub(crate) struct ShowfileLoadState<'w, 's> {
     pub(in crate::systems::showfile_events) macro_runs:
         Option<ResMut<'w, nightfall_macros::prelude::MacroRuns>>,
     pub(in crate::systems::showfile_events) armed_launches:
-        Option<ResMut<'w, nightfall_desk::launch_quantize::ArmedLaunches>>,
+        Option<ResMut<'w, nightfall_clips::launch_quantize::ArmedLaunches>>,
 }
 
 /// Clears the current show from the world, then applies `showfile_snapshot` through the shared

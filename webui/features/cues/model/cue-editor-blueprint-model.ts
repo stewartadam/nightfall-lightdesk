@@ -26,7 +26,7 @@ export interface CueAssertionRow {
 
 /** Resolves operator-facing provenance for one live Blueprint instruction. */
 export function blueprintValueSourceForInstruction(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
   blueprintMap: Record<string, types.Blueprint>,
 ): types.OutboundBlueprintValueSource | undefined {
   const application = instruction.blueprint_application;
@@ -178,7 +178,7 @@ export function makeBlueprintInstructionsAbsolute(
       target.partIndex === undefined
         ? cue.instructions
         : cue.parts?.[target.partIndex]?.instructions;
-    const instruction = instructions?.[target.selectionIndex]?.cue_instruction;
+    const instruction = instructions?.[target.selectionIndex]?.assertions;
     const application = instruction?.blueprint_application;
     const blueprint = application
       ? blueprintMap[application.blueprint_uid]

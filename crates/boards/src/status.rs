@@ -17,11 +17,12 @@ use std::collections::{HashMap, HashSet};
 use bevy_ecs::{prelude::*, system::SystemParam};
 use nightfall::prelude::*;
 use nightfall_clips::{Clip, MaterializedClip};
-use nightfall_desk::prelude::Master;
+use nightfall_controls::prelude::Master;
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::{prelude::FixtureDataProviderExt, selection::SpatialSelectionResolver};
+use nightfall_fixtures::prelude::FixtureDataProviderExt;
 use nightfall_macros::prelude::MacroRuns;
-use nightfall_programmer::prelude::Programmer;
+use nightfall_programming::prelude::Programmer;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -148,7 +149,7 @@ impl BoardObjects<'_, '_> {
         let selected = self.resolve(&self.programmer.active_spatial_selection());
         let mut blueprint_fixtures: HashMap<Uuid, HashSet<FixtureRef>> = HashMap::new();
         for (_, instruction) in self.programmer.active_instructions().iter() {
-            let Some(application) = &instruction.cue_instruction.blueprint_application else {
+            let Some(application) = &instruction.assertions.blueprint_application else {
                 continue;
             };
             blueprint_fixtures

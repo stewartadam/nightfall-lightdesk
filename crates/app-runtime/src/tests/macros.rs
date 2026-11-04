@@ -14,10 +14,9 @@ use bevy::prelude::{App, Messages};
 use nightfall::prelude::{Identifiers, Macro};
 use nightfall_actions::{ActionInvocation, ActionSurface};
 use nightfall_clips::Clip;
-use nightfall_desk::prelude::DeskCommand;
 use nightfall_engine::prelude::{
     CommandId, CommandOrigin, CommandOutcome, CommandResult, CommandTracker, DataProvider,
-    IngressCommand, PayloadEnvelope, PendingCommandBuffer, ReplyTarget, UndoId,
+    EngineCommand, IngressCommand, PayloadEnvelope, PendingCommandBuffer, ReplyTarget, UndoId,
 };
 use nightfall_macros::prelude::*;
 use nightfall_undo::prelude::{UndoCommand, UndoManager};
@@ -82,9 +81,9 @@ impl MacroHarness {
         command_id
     }
 
-    /// Submits command-line text as one desk eval command.
+    /// Submits command-line text as one `EngineCommand::Eval` command.
     fn eval(&mut self, text: &str) -> CommandId {
-        self.submit(DeskCommand::Eval(text.to_string()))
+        self.submit(EngineCommand::Eval(text.to_string()))
     }
 
     /// Runs one frame and records the command results it produced.
@@ -147,10 +146,10 @@ impl MacroHarness {
     }
 
     /// Lists the clip launches waiting for the next beat or bar.
-    fn armed_launches(&self) -> Vec<nightfall_desk::launch_quantize::ArmedLaunch> {
+    fn armed_launches(&self) -> Vec<nightfall_clips::launch_quantize::ArmedLaunch> {
         self.app
             .world()
-            .resource::<nightfall_desk::launch_quantize::ArmedLaunches>()
+            .resource::<nightfall_clips::launch_quantize::ArmedLaunches>()
             .status()
     }
 

@@ -130,7 +130,7 @@ export const TimelineShortcutBindings = (props: { componentId: string }) => {
     }
 
     const placementMs = timelinePlacementPosition({
-      preference: settings().timeline_placement_preference,
+      preference: settings().ui.timeline_placement,
       playheadMs: ctx.position(),
       cursorMs: ctx.cursorPosition(),
     });

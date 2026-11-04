@@ -263,6 +263,7 @@ dependencies = [
  "nightfall-composition",
  "nightfall-compositor",
  "nightfall-config",
+ "nightfall-controls",
  "nightfall-cues",
  "nightfall-desk",
  "nightfall-desk-audio",
@@ -288,9 +289,10 @@ dependencies = [
  "nightfall-output-artnet",
  "nightfall-output-sacn",
  "nightfall-output-usb",
- "nightfall-programmer",
+ "nightfall-programming",
  "nightfall-references",
  "nightfall-scene-objects",
+ "nightfall-selection-runtime",
  "nightfall-showfile",
  "nightfall-tempo",
  "nightfall-timecode",
@@ -5256,6 +5258,7 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "nightfall-engine",
+ "nightfall-playback-planner",
  "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",
@@ -5276,8 +5279,10 @@ dependencies = [
  "nightfall-service-host",
  "nightfall-workspace-hack",
  "rodio",
+ "serde",
  "tokio",
  "tracing",
+ "typeshare",
 ]
 
 [[package]]
@@ -5304,15 +5309,16 @@ dependencies = [
  "nightfall",
  "nightfall-actions",
  "nightfall-clips",
+ "nightfall-controls",
  "nightfall-cues",
- "nightfall-desk",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-model",
  "nightfall-fixtures",
  "nightfall-instances",
  "nightfall-macros",
- "nightfall-programmer",
+ "nightfall-programming",
+ "nightfall-selection-runtime",
  "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",
@@ -5385,17 +5391,25 @@ version = "0.1.0-alpha.5"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
+ "moonshine-kind",
  "nightfall",
  "nightfall-actions",
+ "nightfall-compositor",
+ "nightfall-engine",
+ "nightfall-fixtures",
  "nightfall-instances",
  "nightfall-playback-planner",
+ "nightfall-selection-runtime",
+ "nightfall-tempo",
  "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",
+ "serde_json",
  "smart-default",
  "tracing",
  "typeshare",
  "uuid",
+ "web-time",
 ]
 
 [[package]]
@@ -5420,6 +5434,8 @@ dependencies = [
  "bevy_app",
  "nightfall-actions",
  "nightfall-boards",
+ "nightfall-clips",
+ "nightfall-controls",
  "nightfall-cues",
  "nightfall-desk",
  "nightfall-engine",
@@ -5427,9 +5443,10 @@ dependencies = [
  "nightfall-flow",
  "nightfall-fx",
  "nightfall-macros",
- "nightfall-programmer",
+ "nightfall-programming",
  "nightfall-references",
  "nightfall-scene-objects",
+ "nightfall-showfile",
  "nightfall-tempo",
  "nightfall-timecode",
  "nightfall-timeline",
@@ -5468,6 +5485,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "nightfall-controls"
+version = "0.1.0-alpha.5"
+dependencies = [
+ "bevy_app",
+ "bevy_ecs",
+ "moonshine-kind",
+ "nightfall",
+ "nightfall-actions",
+ "nightfall-clips",
+ "nightfall-compositor",
+ "nightfall-dmx",
+ "nightfall-engine",
+ "nightfall-fixture-model",
+ "nightfall-fixtures",
+ "nightfall-instances",
+ "nightfall-selection",
+ "nightfall-selection-runtime",
+ "nightfall-undo",
+ "nightfall-workspace-hack",
+ "serde",
+ "serde_json",
+ "smart-default",
+ "tracing",
+ "typeshare",
+ "uuid",
+]
+
+[[package]]
 name = "nightfall-coremidi-hotplug"
 version = "0.1.0-alpha.5"
 dependencies = [
@@ -5502,6 +5547,7 @@ dependencies = [
  "nightfall-lookahead-projection",
  "nightfall-playback-planner",
  "nightfall-selection",
+ "nightfall-selection-runtime",
  "nightfall-undo",
  "nightfall-workspace-hack",
  "partially",
@@ -5529,30 +5575,24 @@ dependencies = [
  "moonshine-kind",
  "netwatcher",
  "nightfall",
- "nightfall-actions",
  "nightfall-clips",
  "nightfall-cmd-parse",
  "nightfall-compositor",
+ "nightfall-controls",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-model",
  "nightfall-fixtures",
- "nightfall-flow",
  "nightfall-framepace",
  "nightfall-fx",
- "nightfall-fx-module",
  "nightfall-instances",
  "nightfall-io",
  "nightfall-lookahead",
- "nightfall-playback-planner",
- "nightfall-programmer",
- "nightfall-selection",
- "nightfall-tempo",
+ "nightfall-programming",
  "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",
  "serde_json",
- "smart-default",
  "tracing",
  "tracing-subscriber",
  "typeshare",
@@ -5601,10 +5641,13 @@ dependencies = [
  "nightfall-cmd-parse",
  "nightfall-dmx",
  "nightfall-engine-derive",
+ "nightfall-selection",
  "nightfall-workspace-hack",
  "once_cell",
+ "partially",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -5722,6 +5765,7 @@ dependencies = [
  "nightfall-instances",
  "nightfall-playback-planner",
  "nightfall-selection",
+ "nightfall-selection-runtime",
  "nightfall-tempo",
  "nightfall-timecode",
  "nightfall-waveform",
@@ -5769,12 +5813,11 @@ dependencies = [
  "nightfall-engine",
  "nightfall-fixture-model",
  "nightfall-fixtures",
- "nightfall-flow",
- "nightfall-fx-module",
  "nightfall-instances",
  "nightfall-io",
  "nightfall-playback-planner",
  "nightfall-selection",
+ "nightfall-selection-runtime",
  "nightfall-undo",
  "nightfall-waveform",
  "nightfall-workspace-hack",
@@ -5798,6 +5841,7 @@ dependencies = [
  "bevy_ecs",
  "moonshine-kind",
  "nightfall",
+ "nightfall-clips",
  "nightfall-cmd-parse",
  "nightfall-compositor",
  "nightfall-desk",
@@ -5809,6 +5853,7 @@ dependencies = [
  "nightfall-instances",
  "nightfall-playback-planner",
  "nightfall-selection",
+ "nightfall-selection-runtime",
  "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",
@@ -6014,7 +6059,6 @@ dependencies = [
  "nightfall",
  "nightfall-actions",
  "nightfall-cmd-parse",
- "nightfall-desk",
  "nightfall-engine",
  "nightfall-undo",
  "nightfall-workspace-hack",
@@ -6112,7 +6156,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nightfall-programmer"
+name = "nightfall-programming"
 version = "0.1.0-alpha.5"
 dependencies = [
  "bevy_app",
@@ -6123,13 +6167,13 @@ dependencies = [
  "nightfall-cmd-parse",
  "nightfall-compositor",
  "nightfall-cues",
- "nightfall-desk",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-model",
  "nightfall-fixtures",
  "nightfall-instances",
  "nightfall-selection",
+ "nightfall-selection-runtime",
  "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",
@@ -6149,14 +6193,15 @@ dependencies = [
  "bevy_ecs",
  "minicbor-serde",
  "nightfall",
+ "nightfall-controls",
  "nightfall-cues",
- "nightfall-desk",
  "nightfall-engine",
  "nightfall-fixtures",
  "nightfall-flow",
  "nightfall-fx",
  "nightfall-fx-module",
  "nightfall-io",
+ "nightfall-programming",
  "nightfall-selection",
  "nightfall-workspace-hack",
  "serde",
@@ -6200,6 +6245,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nightfall-selection-runtime"
+version = "0.1.0-alpha.5"
+dependencies = [
+ "bevy_ecs",
+ "nightfall",
+ "nightfall-engine",
+ "nightfall-fixtures",
+ "nightfall-selection",
+ "nightfall-workspace-hack",
+ "uuid",
+]
+
+[[package]]
 name = "nightfall-service-host"
 version = "0.1.0-alpha.5"
 dependencies = [
@@ -6211,14 +6269,16 @@ dependencies = [
 name = "nightfall-showfile"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "bevy_app",
  "bevy_ecs",
  "flate2",
  "moonshine-kind",
  "nightfall",
  "nightfall-clips",
  "nightfall-cmd-parse",
+ "nightfall-controls",
  "nightfall-cues",
- "nightfall-desk",
+ "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixtures",
  "nightfall-flow",
@@ -6235,6 +6295,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+ "typeshare",
  "uuid",
 ]
 
@@ -6306,6 +6367,7 @@ dependencies = [
  "nightfall-lookahead",
  "nightfall-playback-planner",
  "nightfall-selection",
+ "nightfall-selection-runtime",
  "nightfall-timecode",
  "nightfall-undo",
  "nightfall-websocket",

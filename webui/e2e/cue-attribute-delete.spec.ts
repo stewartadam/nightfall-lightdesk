@@ -569,7 +569,7 @@ async function expectIntensityStored(
   await page.waitForFunction(
     ({ cueUid: targetCueUid, expected: expectedStored }) => {
       const cue = (window as any).appStores?.cues?.get?.()?.[targetCueUid];
-      const instruction = cue?.instructions?.[0]?.cue_instruction;
+      const instruction = cue?.instructions?.[0]?.assertions;
       const values = instruction?.values ?? {};
       const transitions = instruction?.transitions_by_attribute ?? {};
       const fixtureTransitions =
@@ -619,7 +619,7 @@ async function expectIntensityValueSource(
   await page.waitForFunction(
     ({ cueUid: targetCueUid, expected }) => {
       const cue = (window as any).appStores?.cues?.get?.()?.[targetCueUid];
-      const value = cue?.instructions?.[0]?.cue_instruction?.values?.Intensity;
+      const value = cue?.instructions?.[0]?.assertions?.values?.Intensity;
       if (expected === "Cleared") return value === undefined;
       return value?.type === expected;
     },
@@ -638,7 +638,7 @@ async function expectIntensityTimingOnly(
   await page.waitForFunction(
     (targetCueUid) => {
       const cue = (window as any).appStores?.cues?.get?.()?.[targetCueUid];
-      const instruction = cue?.instructions?.[0]?.cue_instruction;
+      const instruction = cue?.instructions?.[0]?.assertions;
       const values = instruction?.values ?? {};
       const transitions = instruction?.transitions_by_attribute ?? {};
       const fixtureTransitions =
@@ -772,7 +772,7 @@ async function seedTimingCueEditor(
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Intensity: {
                   type: "Inline",
@@ -903,8 +903,7 @@ async function expectRelativeGreenStored(
   await page.waitForFunction(
     ({ cueUid: targetCueUid, expected }) => {
       const cue = (window as any).appStores?.cues?.get?.()?.[targetCueUid];
-      const value =
-        cue?.instructions?.[0]?.cue_instruction?.values?.Green?.data;
+      const value = cue?.instructions?.[0]?.assertions?.values?.Green?.data;
       return (
         value?.type === "RelativePercent" &&
         Math.abs(value.data.offset - expected) < 0.0001
@@ -996,7 +995,7 @@ test("cue editor column menu deletes an attribute with undo redo", async ({
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Intensity: {
                   type: "Inline",
@@ -1331,7 +1330,7 @@ test("cue editor renders relative values with marker text", async ({
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Green: {
                   type: "Inline",
@@ -1498,7 +1497,7 @@ test("cue editor keeps keyboard-started relative value edits active", async ({
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Green: {
                   type: "Inline",
@@ -1523,7 +1522,7 @@ test("cue editor keeps keyboard-started relative value edits active", async ({
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Red: {
                   type: "Inline",
@@ -1630,7 +1629,7 @@ test("cue editor keeps keyboard-started relative value edits active", async ({
             (ref: any) => ref.fixture_uid === fixtureUid,
           ),
         );
-        const value = instruction?.cue_instruction?.values?.Green?.data;
+        const value = instruction?.assertions?.values?.Green?.data;
         return (
           value?.type === "RelativePercent" &&
           Math.abs(value.data.offset - expected) < 0.0001
@@ -1732,7 +1731,7 @@ test("cue editor renders cue tracking markers", async ({
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values,
               transitions: {},
               transitions_by_attribute: {},
@@ -1767,7 +1766,7 @@ test("cue editor renders cue tracking markers", async ({
                 },
                 clauses: [],
               },
-              cue_instruction: {
+              assertions: {
                 values: {
                   [blockAttr]: values[blockAttr],
                   [relativeBlockAttr]: values[relativeBlockAttr],
@@ -1812,8 +1811,7 @@ test("cue editor renders cue tracking markers", async ({
         ...stores.cues.get(),
         [cueUid]: cue,
       });
-      const seeded =
-        stores.cues.get()[cueUid]?.instructions?.[0]?.cue_instruction;
+      const seeded = stores.cues.get()[cueUid]?.instructions?.[0]?.assertions;
       if (
         seeded?.values?.[releaseAttr]?.type !== "Release" ||
         seeded?.values?.[holdAttr]?.type !== "HoldPosition" ||
@@ -1854,13 +1852,13 @@ test("cue editor renders cue tracking markers", async ({
       ({ cueUid, releaseAttr, holdAttr, blockAttr, relativeBlockAttr }) => {
         const cue = (window as any).appStores?.cues?.get?.()?.[cueUid];
         return (
-          cue?.instructions?.[0]?.cue_instruction?.values?.[releaseAttr]
-            ?.type === "Release" &&
-          cue?.instructions?.[0]?.cue_instruction?.values?.[holdAttr]?.type ===
+          cue?.instructions?.[0]?.assertions?.values?.[releaseAttr]?.type ===
+            "Release" &&
+          cue?.instructions?.[0]?.assertions?.values?.[holdAttr]?.type ===
             "HoldPosition" &&
-          cue?.instructions?.[0]?.cue_instruction?.values?.[blockAttr]?.type ===
+          cue?.instructions?.[0]?.assertions?.values?.[blockAttr]?.type ===
             "Inline" &&
-          cue?.instructions?.[0]?.cue_instruction?.values?.[relativeBlockAttr]
+          cue?.instructions?.[0]?.assertions?.values?.[relativeBlockAttr]
             ?.type === "Inline"
         );
       },
@@ -1999,7 +1997,7 @@ test("cue editor overwrites tracked values with local assertions", async ({
         instructions: [
           {
             selection,
-            cue_instruction: {
+            assertions: {
               values: {
                 [trackedAttr]: {
                   type: "Inline",
@@ -2178,7 +2176,7 @@ test("cue editor overwrites tracked values with local assertions", async ({
                   normalizeUid(cueUid),
               ) as any;
               return cue?.instructions?.some((instruction: any) =>
-                Object.entries(instruction.cue_instruction.values ?? {}).some(
+                Object.entries(instruction.assertions.values ?? {}).some(
                   ([attribute, value]: [string, any]) =>
                     normalizeAttribute(attribute) ===
                       normalizeAttribute(trackedAttr) &&
@@ -2285,7 +2283,7 @@ test("cue editor values mode expands fixture element values", async ({
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 [attr]: {
                   type: "Inline",
@@ -2305,7 +2303,7 @@ test("cue editor values mode expands fixture element values", async ({
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 [attr]: {
                   type: "Inline",
@@ -2449,7 +2447,7 @@ test("cue editor values mode expands fixture element values", async ({
           (window as any).appStores.cues.get()[cueUid]?.instructions ?? []
         ).every(
           (instruction: any) =>
-            instruction.cue_instruction?.values?.[attr] === undefined,
+            instruction.assertions?.values?.[attr] === undefined,
         ),
       { cueUid: context.cueUid, attr: context.attr },
     );
@@ -2551,7 +2549,7 @@ test("cue editor toolbar toggles tracked values", async ({
         instructions: [
           {
             selection,
-            cue_instruction: {
+            assertions: {
               values: {},
               transitions: {},
               transitions_by_attribute: {},
@@ -2571,7 +2569,7 @@ test("cue editor toolbar toggles tracked values", async ({
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {},
               transitions: {},
               transitions_by_attribute: {},
@@ -2594,7 +2592,7 @@ test("cue editor toolbar toggles tracked values", async ({
             },
             clauses: [],
           },
-          cue_instruction: {
+          assertions: {
             values: {
               [trackedAttr]: {
                 type: "Inline",
@@ -2612,7 +2610,7 @@ test("cue editor toolbar toggles tracked values", async ({
       }
       const trackedFixtureInstruction = {
         selection,
-        cue_instruction: {
+        assertions: {
           values: {
             [trackedAttr]: {
               type: "Inline",
@@ -2637,7 +2635,7 @@ test("cue editor toolbar toggles tracked values", async ({
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values: {
             [trackedOnlyAttr]: {
               type: "Inline",
@@ -2664,7 +2662,7 @@ test("cue editor toolbar toggles tracked values", async ({
       };
       const staleFixtureInstruction = {
         selection,
-        cue_instruction: {
+        assertions: {
           values: {
             [staleAttr]: {
               type: "Inline",
@@ -2684,7 +2682,7 @@ test("cue editor toolbar toggles tracked values", async ({
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values: {
             [staleAttr]: {
               type: "Inline",
@@ -2709,7 +2707,7 @@ test("cue editor toolbar toggles tracked values", async ({
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values: {
             [trackedOnlyEditAttr]: {
               type: "Inline",
@@ -2992,8 +2990,8 @@ test("cue editor toolbar toggles tracked values", async ({
                 .get()
                 [cueUid]?.instructions?.some(
                   (instruction: any) =>
-                    instruction.cue_instruction.values?.[trackedOnlyEditAttr]
-                      ?.data?.data?.value === 33,
+                    instruction.assertions.values?.[trackedOnlyEditAttr]?.data
+                      ?.data?.value === 33,
                 );
             },
             {
@@ -3031,7 +3029,7 @@ test("cue editor toolbar toggles tracked values", async ({
                 .get()
                 [cueUid]?.instructions?.every(
                   (instruction: any) =>
-                    !instruction.cue_instruction.values?.[trackedOnlyEditAttr],
+                    !instruction.assertions.values?.[trackedOnlyEditAttr],
                 );
             },
             {
@@ -3067,10 +3065,10 @@ test("cue editor toolbar toggles tracked values", async ({
             ...currentCue,
             instructions: currentCue.instructions.filter(
               (instruction: any) =>
-                !instruction.cue_instruction.values?.[trackedOnlyEditAttr] &&
+                !instruction.assertions.values?.[trackedOnlyEditAttr] &&
                 !(
-                  Object.keys(instruction.cue_instruction.values ?? {})
-                    .length === 0 &&
+                  Object.keys(instruction.assertions.values ?? {}).length ===
+                    0 &&
                   instruction.selection?.source?.type === "Resolved" &&
                   instruction.selection.source.data?.some(
                     (ref: any) => ref.fixture_uid === trackedOnlyFixtureUid,
@@ -3122,7 +3120,7 @@ test("cue editor toolbar toggles tracked values", async ({
             },
             clauses: [],
           },
-          cue_instruction: {
+          assertions: {
             values: {
               [staleAttr]: {
                 type: "Inline",
@@ -3136,7 +3134,7 @@ test("cue editor toolbar toggles tracked values", async ({
         };
         const staleFixtureInstruction = {
           selection,
-          cue_instruction: {
+          assertions: {
             values: {
               [staleAttr]: {
                 type: "Inline",
@@ -3225,7 +3223,7 @@ test("cue editor toolbar toggles tracked values", async ({
         };
         const staleFixtureInstruction = {
           selection,
-          cue_instruction: {
+          assertions: {
             values: {
               [staleAttr]: {
                 type: "Inline",
@@ -3245,7 +3243,7 @@ test("cue editor toolbar toggles tracked values", async ({
             },
             clauses: [],
           },
-          cue_instruction: {
+          assertions: {
             values: {
               [staleAttr]: { type: "Release" },
             },
@@ -3277,7 +3275,7 @@ test("cue editor toolbar toggles tracked values", async ({
             instructions: [
               {
                 selection,
-                cue_instruction: {
+                assertions: {
                   values: {
                     [staleAttr]: {
                       type: "Inline",
@@ -3366,7 +3364,7 @@ test("cue editor toolbar toggles tracked values", async ({
             },
             clauses: [],
           },
-          cue_instruction: {
+          assertions: {
             values: {
               [trackedOnlyAttr]: {
                 type: "Inline",

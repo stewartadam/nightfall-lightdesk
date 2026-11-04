@@ -190,22 +190,22 @@ export function createBlueprintsController(props: BlueprintsControllerProps) {
   const requestBlueprintLabelEdit = (blueprint: types.Blueprint) =>
     crud.requestLabelEdit(blueprint.identifiers.uid, () => blueprint);
 
-  /** Recalls a blueprint through the shared desk command path. */
+  /** Recalls a blueprint through the shared command-line path. */
   const recallBlueprint = (blueprint: types.Blueprint, absolute = false) => {
-    const command: types.DeskCommand = {
+    const command: types.EngineCommand = {
       type: "Eval",
       data: `recall blueprint ${blueprint.identifiers.id}${absolute ? " /absolute" : ""}`,
     };
-    commandClient.emit("DeskCommand", command);
+    commandClient.emit("EngineCommand", command);
   };
 
   /** Captures current programmer values into an existing Blueprint definition. */
   const storeBlueprintFromProgrammer = (blueprint: types.Blueprint) => {
-    const command: types.DeskCommand = {
+    const command: types.EngineCommand = {
       type: "Eval",
       data: `store blueprint ${blueprint.identifiers.id}`,
     };
-    commandClient.emit("DeskCommand", command);
+    commandClient.emit("EngineCommand", command);
   };
 
   /** Duplicates a Blueprint definition under a fresh ID and stable identity. */

@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use nightfall_engine::prelude::{PanelLayouts, register_settings_section};
 use nightfall_showfile::{current_showfile_metadata, parse_showfile_snapshot_json};
 
 use super::*;
@@ -16,8 +17,19 @@ fn snapshot() -> ShowfileSnapshot {
         metadata: current_showfile_metadata(),
         ..Default::default()
     };
-    snapshot.settings.audio_device = Some("unsaved audio selection".to_string());
+    snapshot.settings.insert(
+        PanelLayouts::SECTION.key().to_string(),
+        serde_json::json!({ "default_layout_id": UNSAVED_MARKER }),
+    );
     snapshot
+}
+
+/// Unsaved value the test snapshot carries, so exports can be told apart from stored sources.
+const UNSAVED_MARKER: &str = "unsaved default layout";
+
+/// Returns the unsaved marker an exported snapshot carries, if any.
+fn unsaved_marker(snapshot: &ShowfileSnapshot) -> Option<&str> {
+    snapshot.settings.get(PanelLayouts::SECTION.key())?["default_layout_id"].as_str()
 }
 
 /// Reads an exported snapshot through the same parser used by normal showfile loading.
@@ -61,10 +73,7 @@ fn zip_exports_preserve_named_show_contents_and_warning_details() {
     zip.extract(destination.path()).unwrap();
     let show = destination.path().join("Tour.nightfall-show");
     let loaded = super::super::storage::read_showfile_snapshot_from_path(&show).unwrap();
-    assert_eq!(
-        loaded.settings.audio_device.as_deref(),
-        Some("unsaved audio selection")
-    );
+    assert_eq!(unsaved_marker(&loaded), Some(UNSAVED_MARKER));
     assert_eq!(
         std::fs::read(show.join("asset.bin")).unwrap(),
         b"asset contents"
@@ -100,10 +109,7 @@ fn published_showfiles_survive_staging_and_have_current_manifests() {
     assert!(path.join("showfile.json.gz").is_file());
     assert!(!path.join("showfile.json").exists());
     let loaded = super::super::storage::read_showfile_snapshot_from_path(&path).unwrap();
-    assert_eq!(
-        loaded.settings.audio_device.as_deref(),
-        Some("unsaved audio selection")
-    );
+    assert_eq!(unsaved_marker(&loaded), Some(UNSAVED_MARKER));
     super::super::manifest::read_current_showfile_manifest_from_dir(&path).unwrap();
     assert_eq!(
         std::fs::read(path.join("extra.bin")).unwrap(),
@@ -165,8 +171,8 @@ fn policies_preserve_live_state_and_directory_contents_without_saving() {
             prepare_showfile_export(snapshot(), &source, directory.path(), policy).unwrap();
         assert!(prepared.warnings.is_empty());
         assert_eq!(
-            read_export(&prepared).settings.audio_device.as_deref(),
-            Some("unsaved audio selection")
+            unsaved_marker(&read_export(&prepared)),
+            Some(UNSAVED_MARKER)
         );
         super::super::manifest::read_current_showfile_manifest_from_dir(&prepared.path()).unwrap();
         assert_eq!(
@@ -368,9 +374,10 @@ fn all_references_reload_without_the_original_libraries() {
         .unwrap();
     assert_eq!(
         app.world()
-            .resource::<nightfall_desk::prelude::DeskSettings>()
-            .audio_device,
-        loaded.settings.audio_device
+            .resource::<PanelLayouts>()
+            .default_layout_id
+            .as_deref(),
+        unsaved_marker(&loaded)
     );
     assert!(
         app.world()
@@ -393,13 +400,14 @@ fn all_references_reload_without_the_original_libraries() {
     }
 
     let mut world = bevy::prelude::World::new();
+    register_settings_section(&mut world, PanelLayouts::SECTION);
     nightfall_showfile::apply_showfile_snapshot_to_world(&mut world, loaded.clone()).unwrap();
     assert_eq!(
         world
-            .resource::<nightfall_desk::prelude::DeskSettings>()
-            .audio_device
+            .resource::<PanelLayouts>()
+            .default_layout_id
             .as_deref(),
-        Some("unsaved audio selection")
+        Some(UNSAVED_MARKER)
     );
     assert_eq!(
         std::fs::read(prepared.path().join(&loaded.timelines[0].audio_path)).unwrap(),

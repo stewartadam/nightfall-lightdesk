@@ -13,23 +13,12 @@ use super::*;
 /// Websocket request payload for resyncing runtime settings.
 #[derive(SystemParam)]
 pub(crate) struct ResyncSettingsParams<'w> {
-    settings: Res<'w, crate::settings::DeskSettings>,
     io_settings: Res<'w, IoRuntimeSettings>,
     external_control: Res<'w, ExternalControlState>,
     telemetry: Res<'w, crate::settings::TelemetryState>,
     available_audio_devices: Res<'w, AvailableAudioDevices>,
     available_usb_dmx_devices: Res<'w, AvailableUsbDmxDevices>,
     network_interface_state: Res<'w, NetworkInterfaceState>,
-}
-
-/// Resync state needed to send backend-owned fader snapshots.
-#[derive(SystemParam)]
-pub(crate) struct ResyncFaderParams<'w, 's> {
-    masters: Res<'w, DataProvider<Master>>,
-    faders: Res<'w, Faders>,
-    instance_index: Res<'w, InstanceIndex>,
-    controls_query: Query<'w, 's, &'static InstanceControls>,
-    held_buttons: Res<'w, HeldButtonEffects>,
 }
 
 /// Handle ResyncState by sending desk-owned lists immediately
@@ -43,39 +32,24 @@ pub(crate) fn handle_resync_state(
     mut layer_stack_publication: ResMut<LayerStackPublication>,
     instance_query: Query<super::instances::InstanceSnapshotData>,
     materialized_clips: Query<&MaterializedClip>,
-    fader_params: ResyncFaderParams,
+    held_buttons: Res<HeldButtonEffects>,
     undo_manager: Res<UndoManager>,
-    mut pending_ui_notifications: Option<ResMut<UiNotificationState>>,
-    every_client: Res<ClientEventSink>,
 ) {
     let Some(broadcaster) = resync.sink() else {
         return;
     };
 
     send_groups(group_data_provider, &broadcaster);
-    send_masters(&fader_params.masters, &broadcaster);
     send_clips(exec_query, materialized_clips, &broadcaster);
     send_instances(
         instance_query,
         materialized_clips,
         exec_query,
-        &fader_params.held_buttons,
-        &broadcaster,
-    );
-    send_faders(
-        &fader_params.faders,
-        &exec_query,
-        &fader_params.masters,
-        &materialized_clips,
-        &fader_params.instance_index,
-        &fader_params.controls_query,
-        &fader_params.held_buttons,
+        &held_buttons,
         &broadcaster,
     );
     send_blueprints(blueprint_data_provider, &broadcaster);
     send_blueprint_dependencies(&blueprint_reference_index, &broadcaster);
-    send_settings(&resync_settings.settings, &broadcaster);
-    send_io_settings(&resync_settings.io_settings, &broadcaster);
     send_external_control_state(&resync_settings.external_control, &broadcaster);
     send_telemetry_state(&resync_settings.telemetry, &broadcaster);
     send_network_interface_state(
@@ -91,11 +65,6 @@ pub(crate) fn handle_resync_state(
     // Sent by the next low-frequency pass, after the parameter layout its slots refer to.
     layer_stack_publication.invalidate();
     send_undo_state(undo_manager, &broadcaster);
-    flush_pending_ui_notifications(
-        pending_ui_notifications.as_deref_mut(),
-        &every_client,
-        &broadcaster,
-    );
 }
 
 /// State the layer stack snapshot is built from and change-checked against.

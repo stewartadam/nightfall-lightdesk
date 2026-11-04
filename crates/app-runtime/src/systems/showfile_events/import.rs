@@ -12,8 +12,10 @@ use std::{
 };
 
 use nightfall::prelude::*;
+use nightfall_controls::prelude::*;
 use nightfall_cues::prelude::*;
 use nightfall_desk::prelude::*;
+use nightfall_engine::prelude::BoundAssertionSet;
 use nightfall_fixtures::prelude::*;
 use nightfall_flow::prelude::*;
 use nightfall_fx::prelude::*;
@@ -113,7 +115,6 @@ pub(super) fn merge_showfile_snapshots(
         variables: merge_variables(current.variables, incoming.variables, options.variables),
         faders: merge_single(current.faders, incoming.faders, options.settings),
         settings: merge_single(current.settings, incoming.settings, options.settings),
-        io_settings: merge_single(current.io_settings, incoming.io_settings, options.settings),
         tempo: merge_single(current.tempo, incoming.tempo, options.settings),
         routes: merge_routes(current.routes, incoming.routes, options.routes)?,
         #[cfg(feature = "midi")]
@@ -383,7 +384,7 @@ fn retarget_cue_blueprint_refs(cue: &mut Cue, remap: &HashMap<Uuid, Uuid>) {
             .iter_mut()
             .flat_map(|part| part.instructions.iter_mut()),
     ) {
-        let Some(application) = &mut instruction.cue_instruction.blueprint_application else {
+        let Some(application) = &mut instruction.assertions.blueprint_application else {
             continue;
         };
         if let Some(current_uid) = remap.get(&application.blueprint_uid).copied() {
@@ -434,11 +435,11 @@ fn fixture_uid_remap_by_id(
 /// Retarget all fixture references stored directly on a cue.
 fn retarget_cue_fixture_refs(cue: &mut Cue, remap: &HashMap<Uuid, Uuid>) {
     for instruction in &mut cue.instructions {
-        retarget_bound_cue_instruction(instruction, remap);
+        retarget_bound_assertion_set(instruction, remap);
     }
     for part in &mut cue.parts {
         for instruction in &mut part.instructions {
-            retarget_bound_cue_instruction(instruction, remap);
+            retarget_bound_assertion_set(instruction, remap);
         }
     }
 }
@@ -456,12 +457,9 @@ fn retarget_cue_group_refs(cue: &mut Cue, remap: &HashMap<Uuid, Uuid>) {
 }
 
 /// Retarget a cue instruction selection and its per-fixture transition overrides.
-fn retarget_bound_cue_instruction(
-    instruction: &mut BoundCueInstruction,
-    remap: &HashMap<Uuid, Uuid>,
-) {
+fn retarget_bound_assertion_set(instruction: &mut BoundAssertionSet, remap: &HashMap<Uuid, Uuid>) {
     retarget_spatial_selection(&mut instruction.selection, remap);
-    for fixture_transition in &mut instruction.cue_instruction.transitions_by_fixture_attribute {
+    for fixture_transition in &mut instruction.assertions.transitions_by_fixture_attribute {
         retarget_fixture_ref(&mut fixture_transition.fixture, remap);
     }
 }
@@ -700,14 +698,14 @@ fn prune_invalid_cue_color_path_assignments(
 
 /// Clears invalid color path assignments from a list of cue instructions.
 fn prune_invalid_instruction_color_path_assignments(
-    instructions: &mut [BoundCueInstruction],
+    instructions: &mut [BoundAssertionSet],
     valid_path_ids: &HashSet<u32>,
 ) {
     for instruction in instructions {
-        if let Some(color_path_id) = instruction.cue_instruction.color_path_id
+        if let Some(color_path_id) = instruction.assertions.color_path_id
             && !valid_path_ids.contains(&color_path_id.0)
         {
-            instruction.cue_instruction.color_path_id = None;
+            instruction.assertions.color_path_id = None;
         }
     }
 }

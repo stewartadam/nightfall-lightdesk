@@ -99,9 +99,9 @@ fn seek_fire_cue_attaches_elapsed_instance_clock() {
                 uid: cue_uid,
                 label: "cue-1".to_owned(),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([
                         (

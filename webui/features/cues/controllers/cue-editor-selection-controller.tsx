@@ -305,7 +305,7 @@ export function createCueEditorSelectionController(
   const instructionContainerForTarget = (
     cue: types.Cue,
     target: { partIndex?: number },
-  ): types.BoundCueInstruction[] | undefined => {
+  ): types.BoundAssertionSet[] | undefined => {
     return target.partIndex === undefined
       ? cue.instructions
       : cue.parts?.[target.partIndex]?.instructions;
@@ -341,7 +341,7 @@ export function createCueEditorSelectionController(
     for (const target of candidateTargets) {
       const instruction = instructionContainerForTarget(cue, target)?.[
         target.selectionIndex
-      ]?.cue_instruction;
+      ]?.assertions;
       const application = instruction?.blueprint_application;
       const blueprint = application
         ? blueprints[application.blueprint_uid]
@@ -390,7 +390,7 @@ export function createCueEditorSelectionController(
     if (!instructions) return false;
 
     let changed = false;
-    for (const { cue_instruction: instruction } of instructions) {
+    for (const { assertions: instruction } of instructions) {
       for (const attr of attrs) {
         changed = deleteInstructionAttribute(instruction, attr) || changed;
       }
@@ -453,7 +453,7 @@ export function createCueEditorSelectionController(
 
   /** Marks an instruction attribute as release-only for cue editor value cells. */
   const markInstructionAttributeRelease = (
-    instruction: types.CueInstruction,
+    instruction: types.AssertionSet,
     attr: string,
   ): boolean => {
     instruction.values ??= {};
@@ -489,7 +489,7 @@ export function createCueEditorSelectionController(
 
     const updatedCue: types.Cue = JSON.parse(JSON.stringify(currentCue));
     let changed = false;
-    const affectedContainers = new Set<types.BoundCueInstruction[]>();
+    const affectedContainers = new Set<types.BoundAssertionSet[]>();
     for (const target of targets) {
       const container = instructionContainerForTarget(updatedCue, target);
       const instructionItem = instructionForFixtureRefEdit(
@@ -498,7 +498,7 @@ export function createCueEditorSelectionController(
         target.fixtureRef,
         { create: options.release },
       );
-      const instruction = instructionItem?.cue_instruction;
+      const instruction = instructionItem?.assertions;
       if (!instruction) continue;
       for (const attr of attrs) {
         changed = options.release

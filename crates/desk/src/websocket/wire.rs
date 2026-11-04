@@ -182,18 +182,12 @@ pub struct DeskMetrics {
 pub(super) enum DeskWsMessage<'a> {
     /// Definition of all groups
     GroupDefinitions(&'a [Group]),
-    /// Definition of all masters
-    MasterDefinitions(&'a [Master]),
     /// Definition of all clips
     ClipDefinitions(&'a [OutboundClipLocal]),
     /// Definition of all blueprints
     BlueprintDefinitions(&'a [Blueprint]),
     /// Reverse dependencies for every Blueprint with a live authored reference.
     BlueprintDependencies(&'a [OutboundBlueprintDependency]),
-    /// Current desk settings
-    Settings(&'a DeskSettings),
-    /// Current IO runtime settings
-    IoSettings(&'a IoRuntimeSettings),
     /// Host-owned external control settings and listener status.
     ExternalControlState(&'a ExternalControlState),
     /// Host-owned telemetry consent and anonymous identifier.
@@ -211,8 +205,6 @@ pub(super) enum DeskWsMessage<'a> {
     AvailableUsbDmxDevices(&'a [UsbDmxDeviceInfo]),
     /// A desk command
     DeskCommand(&'a DeskCommand),
-    /// UI-only notification
-    UiNotification(&'a UiNotification),
     /// An clip command
     ClipCommand(&'a ClipCommand),
     /// Layer stack with computed values (sorted by priority)
@@ -221,8 +213,6 @@ pub(super) enum DeskWsMessage<'a> {
     Metrics(&'a DeskMetrics),
     /// Active instances list
     ActiveInstances(&'a [InstanceInfo]),
-    /// Backend-owned fader state
-    Faders(&'a [FaderSnapshot]),
     /// Current undo/redo state
     UndoState(&'a UndoStateMessage),
     /// Live clip launches waiting for the next beat or bar

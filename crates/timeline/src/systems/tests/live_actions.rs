@@ -8,10 +8,10 @@
 
 use nightfall_actions::{ActionInvocation, ActionReference, ActionSurface, ActionsPlugin};
 use nightfall_clips::InstanceIndex;
-use nightfall_clips::{CLIP_START_ACTION_ID, start_clip_action};
-use nightfall_desk::systems::event_handlers::clip_events::{
+use nightfall_clips::playback::clip_events::{
     PendingClipPlaybackSpeeds, handle_clip_speed_commands,
 };
+use nightfall_clips::{CLIP_START_ACTION_ID, start_clip_action};
 
 use super::*;
 use crate::TimelineNondeterministicSeekBehavior;
@@ -504,9 +504,9 @@ fn process_actions_syncs_live_fire_cue_clock_from_timeline_position() {
                 uid: cue_uid,
                 label: "cue-1".to_owned(),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([
                         (

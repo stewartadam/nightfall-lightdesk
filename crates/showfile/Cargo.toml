@@ -5,12 +5,13 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
+bevy_app.workspace = true
 bevy_ecs.workspace = true
 moonshine-kind.workspace = true
 nightfall = { path = "../common" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-cues = { path = "../cues" }
-nightfall-desk = { path = "../desk", default-features = false }
+nightfall-controls = { path = "../controls" }
 nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
 nightfall-fixtures = { path = "../fixtures" }
@@ -27,10 +28,12 @@ nightfall-timeline = { path = "../timeline", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+typeshare.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 flate2 = "1.1"
+nightfall-dmx = { path = "../dmx" }
 
 [[example]]
 name = "validate"

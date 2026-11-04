@@ -45,41 +45,29 @@ import {
   $availableNetworkInterfaces,
   $availableUsbDmxDevices,
   $externalControlState,
-  $ioSettings,
   $networkInterfaceStatus,
   $settings,
   $settingsSnapshotRevision,
   $telemetryState,
+  type SettingsSections,
 } from "./settings";
 
-/** Reads persisted panel layouts from settings while tolerating older snapshots. */
-export function panelLayoutsFromSettings(
-  settings: types.DeskSettings,
-): StoredPanelLayout[] {
-  return (
-    (
-      settings as types.DeskSettings & {
-        panel_layouts?: StoredPanelLayout[];
-      }
-    ).panel_layouts ?? []
-  );
-}
-
-/** Applies desk settings and refreshes showfile-backed panel layouts. */
-export function applySettingsSnapshot(settings: types.DeskSettings): void {
-  setStoreAction($settings, "Receive Settings", settings);
+/**
+ * Applies the settings sections a backend message carries, keeping every other section, and
+ * refreshes the showfile-backed panel layouts when their section is among them.
+ */
+export function applySettingsSnapshot(update: types.SettingsUpdate): void {
+  const sections = update.sections as Partial<SettingsSections>;
+  setStoreAction($settings, "Receive Settings", {
+    ...$settings.get(),
+    ...sections,
+  });
   $settingsSnapshotRevision.set($settingsSnapshotRevision.get() + 1);
-  replaceStoredLayoutsFromShowfile(panelLayoutsFromSettings(settings));
-  reconcileLayoutSessions(
-    panelLayoutsFromSettings(settings).map((layout) => layout.id),
-  );
-}
-
-/** Applies transport-owned runtime settings from the backend. */
-export function applyIoSettingsSnapshot(
-  settings: types.IoRuntimeSettings,
-): void {
-  setStoreAction($ioSettings, "Receive IoSettings", settings);
+  if (sections.panelLayouts) {
+    const layouts = sections.panelLayouts.layouts as StoredPanelLayout[];
+    replaceStoredLayoutsFromShowfile(layouts);
+    reconcileLayoutSessions(layouts.map((layout) => layout.id));
+  }
 }
 
 /** Applies the host network-interface list to the network settings store. */

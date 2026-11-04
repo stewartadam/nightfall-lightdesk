@@ -10,11 +10,12 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use nightfall_controls::prelude::MasterCommand;
 use nightfall_cues::prelude::CueCommand;
-use nightfall_desk::prelude::{GroupCommand, MasterCommand};
 use nightfall_engine::prelude::*;
 use nightfall_flow::prelude::FlowCommand;
 use nightfall_fx::prelude::{FxCommand, StepFxCommand};
+use nightfall_programming::prelude::GroupCommand;
 use nightfall_selection::{ReferenceLookup, ReferenceSource, prune_missing_fixture_refs};
 use serde::{Deserialize, Serialize};
 

@@ -11,15 +11,12 @@
 use std::{collections::HashMap, time::Duration};
 
 use nightfall::prelude::*;
-use nightfall_dmx::prelude::*;
+use nightfall_engine::prelude::BoundAssertionSet;
 use nightfall_instances::Timebase;
 use nightfall_selection::{
     HeldReference, ReferenceSource, SelectionValidatedEntity, SpatialSelectionResolution,
-    selection_validation_warnings,
 };
-use partially::Partial;
 use serde::{Deserialize, Serialize};
-use serde_with::DisplayFromStr;
 
 pub mod cue_flags {
     //! proc macro from enum_flags generates structs that cannot be documented,
@@ -92,100 +89,8 @@ impl TrackingMode {
     }
 }
 
-/// Stores an instruction without a selection
-///
-/// Used by the programmer (active selection events) and palettes
-#[serde_with::serde_as]
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct CueInstruction {
-    /// The values for each attribute
-    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
-    #[typeshare(serialized_as = "Record<String, ValueSource>")]
-    pub values: HashMap<Attribute, ValueSource>,
-    /// Optional live Blueprint operation occupying this instruction's authoring position.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub blueprint_application: Option<BlueprintApplication>,
-    /// Per-transition attribute that override the instruction-wide transitions
-    /// #[serde_as(as = "Vec<(_, _)>")]
-    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
-    #[typeshare(serialized_as = "Record<String, PartialTransition>")]
-    pub transitions_by_attribute: AttributeTransitions,
-    /// Per-fixture, per-attribute transitions that override instruction-wide and
-    /// attribute-wide transitions.
-    #[serde(default)]
-    pub transitions_by_fixture_attribute: Vec<FixtureAttributeTransition>,
-    /// Optional color path applied to logical color transitions in this instruction.
-    #[serde(default)]
-    pub color_path_id: Option<ColorPathId>,
-    /// Default transition that applies to all attributes
-    pub transitions: PartialTransition,
-}
-
-/// Per-fixture transition overrides grouped by attribute.
-#[serde_with::serde_as]
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct FixtureAttributeTransition {
-    /// Fixture or fixture element this override applies to.
-    pub fixture: FixtureRef,
-    /// Attribute-specific transition overrides for this fixture ref.
-    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
-    #[typeshare(serialized_as = "Record<String, PartialTransition>")]
-    pub transitions_by_attribute: AttributeTransitions,
-}
-
-impl CueInstruction {
-    /// Reports whether this instruction dynamically references the Blueprint.
-    pub fn references_blueprint(&self, uid: uuid::Uuid) -> bool {
-        self.blueprint_application
-            .as_ref()
-            .is_some_and(|application| application.blueprint_uid == uid)
-    }
-
-    /// Merges another instruction into this one
-    pub fn merge(&mut self, other: CueInstruction) {
-        self.values.extend(other.values);
-        if other.blueprint_application.is_some() {
-            self.blueprint_application = other.blueprint_application;
-        }
-        self.transitions.apply_some(other.transitions);
-        for (key, value) in other.transitions_by_attribute {
-            self.transitions_by_attribute
-                .entry(key)
-                .and_modify(|e| {
-                    e.apply_some(value.clone());
-                })
-                .or_insert(value);
-        }
-        for other_fixture_transition in other.transitions_by_fixture_attribute {
-            if let Some(existing) = self
-                .transitions_by_fixture_attribute
-                .iter_mut()
-                .find(|entry| entry.fixture == other_fixture_transition.fixture)
-            {
-                for (key, value) in other_fixture_transition.transitions_by_attribute {
-                    existing
-                        .transitions_by_attribute
-                        .entry(key)
-                        .and_modify(|entry| {
-                            entry.apply_some(value.clone());
-                        })
-                        .or_insert(value);
-                }
-            } else {
-                self.transitions_by_fixture_attribute
-                    .push(other_fixture_transition);
-            }
-        }
-        if other.color_path_id.is_some() {
-            self.color_path_id = other.color_path_id;
-        }
-    }
-}
-
-fn flatten_bound_instructions(instructions: Vec<BoundCueInstruction>) -> Vec<BoundCueInstruction> {
-    let mut flattened: Vec<BoundCueInstruction> = Vec::new();
+fn flatten_bound_instructions(instructions: Vec<BoundAssertionSet>) -> Vec<BoundAssertionSet> {
+    let mut flattened: Vec<BoundAssertionSet> = Vec::new();
 
     for instruction in instructions {
         match (
@@ -213,9 +118,9 @@ fn flatten_bound_instructions(instructions: Vec<BoundCueInstruction>) -> Vec<Bou
                 } else {
                     for uid in fixture_order {
                         let refs = fixture_refs.remove(&uid).unwrap();
-                        flattened.push(BoundCueInstruction {
+                        flattened.push(BoundAssertionSet {
                             selection: SpatialSelection::identity(SelectionExpr::Resolved(refs)),
-                            cue_instruction: instruction.cue_instruction.clone(),
+                            assertions: instruction.assertions.clone(),
                         });
                     }
                 }
@@ -229,26 +134,6 @@ fn flatten_bound_instructions(instructions: Vec<BoundCueInstruction>) -> Vec<Bou
     flattened
 }
 
-/// Wrapper struct to bind a selection to the instructions
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub struct BoundCueInstruction {
-    /// The spatial selection for the instruction
-    pub selection: SpatialSelection,
-    /// The cue instruction to execute
-    pub cue_instruction: CueInstruction,
-}
-
-impl SelectionValidatedEntity for BoundCueInstruction {
-    /// Return validation warnings for this instruction selection.
-    fn selection_validation_warnings(
-        &self,
-        resolver: &dyn SpatialSelectionResolution,
-    ) -> Vec<String> {
-        selection_validation_warnings(&self.selection, resolver)
-    }
-}
-
 /// Nested cue-like component owned by a parent cue.
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -260,7 +145,7 @@ pub struct CuePart {
     /// Per-transition attribute that override the part default transitions
     pub transitions_by_attribute: AttributeTransitions,
     /// Instructions for the part. Transitions on an instruction override part-wide transitions.
-    pub instructions: Vec<BoundCueInstruction>,
+    pub instructions: Vec<BoundAssertionSet>,
     /// Bit flags that determine which types attributes are tracked.
     pub tracking_flags: cue_flags::TrackingFlags,
     /// Whether this cue part may pre-position dark fixtures for its position assertions.
@@ -328,7 +213,7 @@ pub struct Cue {
     /// Per-transition attribute that override the default transitions
     pub transitions_by_attribute: AttributeTransitions,
     /// Instructions for the cue. Transitions on an instruction override the cue-wide transitions.
-    pub instructions: Vec<BoundCueInstruction>,
+    pub instructions: Vec<BoundAssertionSet>,
     /// Whether the top-level cue part may pre-position dark fixtures for its position assertions.
     #[serde(default)]
     pub lookahead: Option<bool>,
@@ -392,7 +277,7 @@ impl Cue {
         self.instructions
             .iter()
             .chain(self.parts.iter().flat_map(|part| part.instructions.iter()))
-            .any(|instruction| instruction.cue_instruction.references_blueprint(uid))
+            .any(|instruction| instruction.assertions.references_blueprint(uid))
     }
 
     /// Returns the authored scheduling duration for this cue and its parts.
@@ -471,16 +356,16 @@ impl Cue {
 /// Reports one instruction's selection and live Blueprint application under `prefix`.
 fn visit_instruction_references(
     prefix: &str,
-    instruction: &BoundCueInstruction,
+    instruction: &BoundAssertionSet,
     visit: &mut dyn FnMut(&str, HeldReference<'_>),
 ) {
     visit(
         &format!("{prefix}.selection"),
         HeldReference::Selection(&instruction.selection),
     );
-    if let Some(application) = &instruction.cue_instruction.blueprint_application {
+    if let Some(application) = &instruction.assertions.blueprint_application {
         visit(
-            &format!("{prefix}.cue_instruction.blueprint_application.blueprint_uid"),
+            &format!("{prefix}.assertions.blueprint_application.blueprint_uid"),
             HeldReference::Blueprint(application.blueprint_uid),
         );
     }
@@ -606,6 +491,9 @@ impl ReferenceSource for Sequence {
 
 #[cfg(test)]
 mod tests {
+    use nightfall_dmx::prelude::AttributeCategory;
+    use nightfall_engine::prelude::AssertionSet;
+
     use super::*;
 
     /// Verifies cue duration helpers read timing even when no values materialize.
@@ -649,9 +537,9 @@ mod tests {
     fn cue_blueprint_application_round_trips() {
         let blueprint_uid = uuid::Uuid::new_v4();
         let cue = Cue {
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SelectionExpr::Resolved(Vec::new()).into(),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: Some(BlueprintApplication {
                         blueprint_uid,
                         selector: BlueprintSelector::Category(AttributeCategory::Color),
@@ -664,10 +552,8 @@ mod tests {
         let serialized = serde_json::to_string(&cue).expect("cue should serialize");
         let restored: Cue = serde_json::from_str(&serialized).expect("cue should deserialize");
         assert_eq!(
-            restored.instructions[0]
-                .cue_instruction
-                .blueprint_application,
-            cue.instructions[0].cue_instruction.blueprint_application
+            restored.instructions[0].assertions.blueprint_application,
+            cue.instructions[0].assertions.blueprint_application
         );
     }
 }

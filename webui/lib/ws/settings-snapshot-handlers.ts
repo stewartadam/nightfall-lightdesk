@@ -16,7 +16,6 @@ import {
   applyClientActionInvocation,
   applyControllerMappingModeSnapshot,
   applyExternalControlStateSnapshot,
-  applyIoSettingsSnapshot,
   applyMidiControlTouched,
   applyMidiDeviceDetected,
   applyMidiDeviceListSnapshot,
@@ -51,10 +50,6 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("TelemetryState", (message) => {
     applyTelemetryStateSnapshot(message.data);
-  });
-
-  registry.register("IoSettings", (message) => {
-    applyIoSettingsSnapshot(message.data);
   });
 
   registry.register("AvailableNetworkInterfaces", (message) => {

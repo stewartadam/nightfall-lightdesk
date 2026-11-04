@@ -10,14 +10,11 @@ use std::time::Duration;
 
 use bevy::prelude::{App, AppExit};
 use nightfall_config::RuntimeConfig;
-use nightfall_desk::{
-    prelude::{UiNotification, UiNotificationState},
-    resources::log_config::LogConfig,
-};
+use nightfall_desk::resources::log_config::LogConfig;
 use nightfall_engine::prelude::{
     ClientEventSink, CommandError, CommandId, CommandOutcome, CommandResult,
-    DISCRIMINATOR_NON_DROPPABLE, EngineClientMessage, finish_command_in_world,
-    request_graceful_exit,
+    DISCRIMINATOR_NON_DROPPABLE, EngineClientMessage, UiNotification, UiNotificationState,
+    finish_command_in_world, request_graceful_exit,
 };
 use nightfall_websocket::prelude::SharedWebUiAssets;
 
@@ -69,7 +66,7 @@ pub fn run_bevy_session(
     pin_backend_thread_to_performance_core(thread_role);
     queue_startup_ui_notifications(&mut bevy_app, startup_ui_notifications);
 
-    // Send startup commands through DeskCommand::Eval so they go through
+    // Send startup commands through EngineCommand::Eval so they go through
     // the same scheduling pipeline as WebSocket/WebUI commands.
     if let Some(cmd_str) = startup_commands {
         queue_startup_command(&mut bevy_app, STARTUP_CMDS_ENV, cmd_str);

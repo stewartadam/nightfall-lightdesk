@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Active playback and backend-owned control projection.
+//! Active playback projection.
 
 use super::*;
 
@@ -123,32 +123,6 @@ pub fn send_instances(
     );
 }
 
-/// Send backend-owned faders to UI
-pub fn send_faders(
-    faders: &Faders,
-    clips: &Query<&Clip>,
-    masters: &DataProvider<Master>,
-    materialized_clips: &Query<&MaterializedClip>,
-    instance_index: &InstanceIndex,
-    controls_query: &Query<&InstanceControls>,
-    held_buttons: &HeldButtonEffects,
-    broadcaster: &ClientEventSink,
-) {
-    let snapshots = faders.snapshots(
-        clips,
-        masters,
-        materialized_clips,
-        instance_index,
-        controls_query,
-        held_buttons,
-    );
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &DeskWsMessage::Faders(&snapshots),
-    );
-    tracing::trace!("Sending {} faders to websocket clients", snapshots.len());
-}
-
 /// Send instances when they spawn, despawn, stop, or update metadata/faders.
 pub fn send_instances_on_change(
     instance_query: Query<InstanceSnapshotData>,
@@ -182,45 +156,6 @@ pub fn send_instances_on_change(
         instance_query,
         materialized_clips,
         clips,
-        &held_buttons,
-        &broadcaster,
-    );
-}
-
-/// Send faders when backend-owned state or linked playback state changes.
-pub fn send_faders_on_change(
-    faders: Res<Faders>,
-    clips: Query<&Clip>,
-    masters: Res<DataProvider<Master>>,
-    materialized_clips: Query<&MaterializedClip>,
-    added_materialized_clips: Query<(), Added<MaterializedClip>>,
-    mut removed_materialized_clips: RemovedComponents<MaterializedClip>,
-    instance_index: Res<InstanceIndex>,
-    changed_instance_controls: Query<(), Changed<InstanceControls>>,
-    controls_query: Query<&InstanceControls>,
-    held_buttons: Res<HeldButtonEffects>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let materialized_removed = !removed_materialized_clips.is_empty();
-    removed_materialized_clips.clear();
-    let materialized_changed = !added_materialized_clips.is_empty() || materialized_removed;
-
-    if !faders.is_changed()
-        && !masters.is_changed()
-        && changed_instance_controls.is_empty()
-        && !materialized_changed
-        && !held_buttons.is_changed()
-    {
-        return;
-    }
-
-    send_faders(
-        &faders,
-        &clips,
-        &masters,
-        &materialized_clips,
-        &instance_index,
-        &controls_query,
         &held_buttons,
         &broadcaster,
     );

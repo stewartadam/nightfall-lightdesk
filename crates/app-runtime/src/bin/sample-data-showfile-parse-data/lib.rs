@@ -23,11 +23,9 @@ use bevy::{
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 use nightfall_clips::{Clip, Source};
+use nightfall_controls::prelude::*;
 use nightfall_cues::prelude::*;
-use nightfall_desk::{
-    prelude::*,
-    resources::log_config::{LogConfig, TracingTarget},
-};
+use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixture_model::prelude::*;
@@ -497,9 +495,9 @@ fn add_cue_sequence_and_clips(world: &mut World, fixture_ref: FixtureRef) -> Res
                 curve_in: Some(FadeCurve::Linear),
                 curve_out: Some(FadeCurve::Linear),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     values: HashMap::from([(
                         Attribute::Red,
                         ValueSource::Inline(ParameterValue::AbsolutePercent {

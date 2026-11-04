@@ -192,7 +192,7 @@ function ownedCue(): object {
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values: {
             Intensity: {
               type: "Inline",

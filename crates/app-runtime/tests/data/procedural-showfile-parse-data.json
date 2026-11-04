@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "nightfallVersion": "0.1.0-alpha.4",
-    "showfileVersion": 23,
+    "nightfallVersion": "0.1.0-alpha.5",
+    "showfileVersion": 25,
     "lastSavedUnixSec": 1800000000
   },
   "fixtures": [
@@ -135,16 +135,70 @@
     }
   },
   "settings": {
-    "programmer_auto_select": false,
-    "audio_device": null,
-    "sequence_reorder_renumber_policy": "Preserve",
-    "selection_flatten_policy": "Silent",
-    "time_display_preference": "Auto",
-    "timeline_placement_preference": "Playhead",
-    "showfile_backup_retention": 20,
-    "parameter_keyframes_only": false,
-    "panel_layouts": [],
-    "default_panel_layout_id": null
+    "audio": {
+      "output_device": null
+    },
+    "io": {
+      "network_interface": null,
+      "network_output_enabled": false,
+      "network_input_enabled": false,
+      "usb_output_enabled": false,
+      "network_dmx_outputs": {
+        "targets": [
+          {
+            "id": "sacn",
+            "protocol": "Sacn",
+            "delivery": {
+              "type": "SacnMulticast"
+            }
+          },
+          {
+            "id": "artnet",
+            "protocol": "ArtNet",
+            "delivery": {
+              "type": "ArtNetBroadcast"
+            }
+          }
+        ]
+      },
+      "usb_dmx_outputs": {
+        "targets": [
+          {
+            "id": "udmx",
+            "device": "default",
+            "device_label": null
+          }
+        ]
+      },
+      "input_signal_loss_policy": {
+        "type": "Hold"
+      },
+      "input_signal_loss_timeout": {
+        "secs": 2,
+        "nanos": 0
+      },
+      "input_universe_visibility_mode": "ExternalOnly",
+      "dmx_output_rate_hz": 44
+    },
+    "panelLayouts": {
+      "layouts": [],
+      "default_layout_id": null
+    },
+    "parameterStream": {
+      "keyframes_only": false
+    },
+    "programming": {
+      "auto_select": false,
+      "selection_flatten_policy": "Silent"
+    },
+    "showfile": {
+      "backup_retention": 20
+    },
+    "ui": {
+      "time_display": "Auto",
+      "timeline_placement": "Playhead",
+      "sequence_reorder_renumber_policy": "Preserve"
+    }
   },
   "faders": [
     {
@@ -188,48 +242,6 @@
       "buttonMode": "Go"
     }
   ],
-  "ioSettings": {
-    "network_interface": null,
-    "network_output_enabled": false,
-    "network_input_enabled": false,
-    "usb_output_enabled": false,
-    "network_dmx_outputs": {
-      "targets": [
-        {
-          "id": "sacn",
-          "protocol": "Sacn",
-          "delivery": {
-            "type": "SacnMulticast"
-          }
-        },
-        {
-          "id": "artnet",
-          "protocol": "ArtNet",
-          "delivery": {
-            "type": "ArtNetBroadcast"
-          }
-        }
-      ]
-    },
-    "usb_dmx_outputs": {
-      "targets": [
-        {
-          "id": "udmx",
-          "device": "default",
-          "device_label": null
-        }
-      ]
-    },
-    "input_signal_loss_policy": {
-      "type": "Hold"
-    },
-    "input_signal_loss_timeout": {
-      "secs": 2,
-      "nanos": 0
-    },
-    "input_universe_visibility_mode": "ExternalOnly",
-    "dmx_output_rate_hz": 44
-  },
   "tempo": {
     "bpm": 120.0,
     "beatsPerBar": 4,
@@ -437,7 +449,7 @@
             },
             "clauses": []
           },
-          "cue_instruction": {
+          "assertions": {
             "values": {
               "Red": {
                 "type": "Inline",

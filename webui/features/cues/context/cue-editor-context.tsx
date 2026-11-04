@@ -443,9 +443,9 @@ export function createCueEditorContextValue(
     };
     previewCue.transitions_by_attribute = {};
     for (const instruction of previewCue.instructions) {
-      instruction.cue_instruction.transitions = {};
-      instruction.cue_instruction.transitions_by_attribute = {};
-      instruction.cue_instruction.transitions_by_fixture_attribute = [];
+      instruction.assertions.transitions = {};
+      instruction.assertions.transitions_by_attribute = {};
+      instruction.assertions.transitions_by_fixture_attribute = [];
     }
     for (const part of previewCue.parts ?? []) {
       part.transitions = {
@@ -457,9 +457,9 @@ export function createCueEditorContextValue(
       };
       part.transitions_by_attribute = {};
       for (const instruction of part.instructions) {
-        instruction.cue_instruction.transitions = {};
-        instruction.cue_instruction.transitions_by_attribute = {};
-        instruction.cue_instruction.transitions_by_fixture_attribute = [];
+        instruction.assertions.transitions = {};
+        instruction.assertions.transitions_by_attribute = {};
+        instruction.assertions.transitions_by_fixture_attribute = [];
       }
     }
     return previewCue;

@@ -19,11 +19,10 @@ use std::ops::Deref;
 
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::Attribute;
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet, FixtureAttributeTransition};
 use uuid::Uuid;
 
-use crate::cue::{
-    BoundCueInstruction, Cue, CueInstruction, CuePart, FixtureAttributeTransition, Sequence,
-};
+use crate::cue::{Cue, CuePart, Sequence};
 
 /// Scope of a row: the release cue itself, or one of its parts by part ID.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -77,7 +76,7 @@ impl StoredTimings {
                 .map(|(scope, instruction)| StoredRow {
                     key: row_key(scope, instruction),
                     overrides: instruction
-                        .cue_instruction
+                        .assertions
                         .transitions_by_fixture_attribute
                         .clone(),
                 })
@@ -92,7 +91,7 @@ impl StoredTimings {
     /// attributes, which carries timing over when a row's selection or attributes change.
     fn assign<'a>(
         self,
-        projected: impl IntoIterator<Item = (RowScope, &'a mut BoundCueInstruction)>,
+        projected: impl IntoIterator<Item = (RowScope, &'a mut BoundAssertionSet)>,
     ) {
         let mut by_row: HashMap<RowKey, VecDeque<usize>> = HashMap::new();
         for (index, row) in self.rows.iter().enumerate() {
@@ -108,7 +107,7 @@ impl StoredTimings {
             match stored {
                 Some(index) => {
                     claimed[index] = true;
-                    instruction.cue_instruction.transitions_by_fixture_attribute =
+                    instruction.assertions.transitions_by_fixture_attribute =
                         self.rows[index].overrides.clone();
                 }
                 None => unmatched.push(instruction),
@@ -139,7 +138,7 @@ impl StoredTimings {
 
         for instruction in unmatched {
             let attributes = row_attributes(instruction);
-            instruction.cue_instruction.transitions_by_fixture_attribute =
+            instruction.assertions.transitions_by_fixture_attribute =
                 resolved_fixture_refs(instruction)
                     .iter()
                     .filter_map(|fixture| {
@@ -228,14 +227,14 @@ fn project_release_cue<C: Deref<Target = Cue>>(
 }
 
 /// Copies the selection and values of each value-bearing instruction, without its timing.
-fn release_rows(instructions: &[BoundCueInstruction]) -> Vec<BoundCueInstruction> {
+fn release_rows(instructions: &[BoundAssertionSet]) -> Vec<BoundAssertionSet> {
     instructions
         .iter()
-        .filter(|instruction| !instruction.cue_instruction.values.is_empty())
-        .map(|instruction| BoundCueInstruction {
+        .filter(|instruction| !instruction.assertions.values.is_empty())
+        .map(|instruction| BoundAssertionSet {
             selection: instruction.selection.clone(),
-            cue_instruction: CueInstruction {
-                values: instruction.cue_instruction.values.clone(),
+            assertions: AssertionSet {
+                values: instruction.assertions.values.clone(),
                 ..Default::default()
             },
         })
@@ -271,7 +270,7 @@ fn has_instruction_rows(cue: &Cue) -> bool {
 }
 
 /// Returns a row's identity: its scope, selection and sorted attribute names.
-fn row_key(scope: RowScope, instruction: &BoundCueInstruction) -> RowKey {
+fn row_key(scope: RowScope, instruction: &BoundAssertionSet) -> RowKey {
     (
         scope,
         serde_json::to_string(&instruction.selection).unwrap_or_default(),
@@ -280,14 +279,14 @@ fn row_key(scope: RowScope, instruction: &BoundCueInstruction) -> RowKey {
 }
 
 /// Returns the sorted names of the attributes a row writes.
-fn row_attributes(instruction: &BoundCueInstruction) -> Vec<Attribute> {
-    let mut attributes: Vec<_> = instruction.cue_instruction.values.keys().cloned().collect();
+fn row_attributes(instruction: &BoundAssertionSet) -> Vec<Attribute> {
+    let mut attributes: Vec<_> = instruction.assertions.values.keys().cloned().collect();
     attributes.sort();
     attributes
 }
 
 /// Returns the fixtures stored directly on a row's resolved selection, if it has one.
-fn resolved_fixture_refs(instruction: &BoundCueInstruction) -> &[FixtureRef] {
+fn resolved_fixture_refs(instruction: &BoundAssertionSet) -> &[FixtureRef] {
     match &instruction.selection.source {
         SelectionExpr::Resolved(fixtures) => fixtures,
         _ => &[],
@@ -319,8 +318,8 @@ mod tests {
     }
 
     /// Builds a row writing full red to the given resolved fixtures.
-    fn red_row(fixture_uids: &[Uuid]) -> BoundCueInstruction {
-        BoundCueInstruction {
+    fn red_row(fixture_uids: &[Uuid]) -> BoundAssertionSet {
+        BoundAssertionSet {
             selection: SpatialSelection::identity(SelectionExpr::Resolved(
                 fixture_uids
                     .iter()
@@ -330,7 +329,7 @@ mod tests {
                     })
                     .collect(),
             )),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 values: HashMap::from([(
                     Attribute::Red,
                     ValueSource::Inline(ParameterValue::AbsolutePercent { value: 1.0.into() }),
@@ -361,11 +360,8 @@ mod tests {
     }
 
     /// Returns the red override stored for one fixture on a row.
-    fn red_override_for(
-        row: &BoundCueInstruction,
-        fixture_uid: Uuid,
-    ) -> Option<&PartialTransition> {
-        row.cue_instruction
+    fn red_override_for(row: &BoundAssertionSet, fixture_uid: Uuid) -> Option<&PartialTransition> {
+        row.assertions
             .transitions_by_fixture_attribute
             .iter()
             .find(|entry| entry.fixture.fixture_uid == fixture_uid)?
@@ -381,11 +377,11 @@ mod tests {
         let projected_fixture = Uuid::from_u128(0x55);
         let mut step = Cue::default();
         let mut step_row = red_row(&[projected_fixture]);
-        step_row.cue_instruction.transitions = fade_out(9);
+        step_row.assertions.transitions = fade_out(9);
         step.instructions = vec![step_row];
 
         let mut stored_row = red_row(&[stored_fixture]);
-        stored_row.cue_instruction.transitions_by_fixture_attribute =
+        stored_row.assertions.transitions_by_fixture_attribute =
             vec![red_override(projected_fixture, 4)];
         let release_cue = Cue {
             instructions: vec![stored_row],
@@ -396,7 +392,7 @@ mod tests {
         let updated =
             release_cue_rows_update(&sequence, |_| Some(&step)).expect("rows should change");
         let row = &updated.instructions[0];
-        assert!(row.cue_instruction.transitions.fade_out.is_none());
+        assert!(row.assertions.transitions.fade_out.is_none());
         assert_eq!(
             fade_out_secs(red_override_for(row, projected_fixture)),
             Some(4)
@@ -413,7 +409,7 @@ mod tests {
         step.instructions = vec![red_row(&[stored_fixture, added_fixture])];
 
         let mut stored_row = red_row(&[stored_fixture]);
-        stored_row.cue_instruction.transitions_by_fixture_attribute =
+        stored_row.assertions.transitions_by_fixture_attribute =
             vec![red_override(stored_fixture, 6)];
         let release_cue = Cue {
             instructions: vec![stored_row],
@@ -461,8 +457,7 @@ mod tests {
         step.instructions = vec![red_row(&[fixture]), red_row(&[fixture])];
 
         let mut overridden = red_row(&[fixture]);
-        overridden.cue_instruction.transitions_by_fixture_attribute =
-            vec![red_override(fixture, 4)];
+        overridden.assertions.transitions_by_fixture_attribute = vec![red_override(fixture, 4)];
         let release_cue = Cue {
             instructions: vec![overridden, red_row(&[fixture])],
             ..Default::default()

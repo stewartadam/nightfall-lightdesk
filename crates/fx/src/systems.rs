@@ -16,10 +16,10 @@ use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::ParameterValue;
 use nightfall_engine::prelude::DataProvider;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::{
     InstanceClock, InstanceClockDiscontinuity, InstancePosition, InstanceStatus, Timebase,
 };
+use nightfall_selection_runtime::{ResolvedSelectionCache, SpatialSelectionResolver};
 #[cfg(not(target_arch = "wasm32"))]
 use orx_parallel::*;
 

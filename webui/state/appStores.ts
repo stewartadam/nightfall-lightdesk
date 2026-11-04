@@ -40,7 +40,6 @@ import {
   $availableNetworkInterfaces,
   $availableUsbDmxDevices,
   $externalControlState,
-  $ioSettings,
   $networkInterfaceStatus,
   $settings,
   $telemetryState,
@@ -1102,7 +1101,6 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
   window.appStores = {
     dockApi,
     settings: $settings,
-    ioSettings: $ioSettings,
     availableNetworkInterfaces: $availableNetworkInterfaces,
     externalControlState: $externalControlState,
     telemetryState: $telemetryState,

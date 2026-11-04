@@ -27,6 +27,7 @@
       "nightfall-fixtures",
       "nightfall-framepace",
       "nightfall-lookahead",
+      "nightfall-selection-runtime",
       "nightfall-service-host",
       "nightfall-tempo",
       "nightfall-timecode",
@@ -35,6 +36,7 @@
     ],
     "plugins": [
       "nightfall-audio",
+      "nightfall-controls",
       "nightfall-cues",
       "nightfall-fixture-library",
       "nightfall-flow",
@@ -50,7 +52,7 @@
       "nightfall-output-artnet",
       "nightfall-output-sacn",
       "nightfall-output-usb",
-      "nightfall-programmer",
+      "nightfall-programming",
       "nightfall-scene-objects",
       "nightfall-timeline"
     ],

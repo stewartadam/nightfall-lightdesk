@@ -235,7 +235,9 @@ test("keyframes-only setting sends full frames", async ({ page }, testInfo) => {
   await expect
     .poll(() =>
       page.evaluate(
-        () => (window as any).appStores.settings.get().parameter_keyframes_only,
+        () =>
+          (window as any).appStores.settings.get().parameterStream
+            .keyframes_only,
       ),
     )
     .toBe(false);
@@ -251,7 +253,9 @@ test("keyframes-only setting sends full frames", async ({ page }, testInfo) => {
   await expect
     .poll(() =>
       page.evaluate(
-        () => (window as any).appStores.settings.get().parameter_keyframes_only,
+        () =>
+          (window as any).appStores.settings.get().parameterStream
+            .keyframes_only,
       ),
     )
     .toBe(true);
@@ -286,7 +290,9 @@ test("keyframes-only setting sends full frames", async ({ page }, testInfo) => {
   await expect
     .poll(() =>
       page.evaluate(
-        () => (window as any).appStores.settings.get().parameter_keyframes_only,
+        () =>
+          (window as any).appStores.settings.get().parameterStream
+            .keyframes_only,
       ),
     )
     .toBe(false);

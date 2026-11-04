@@ -22,7 +22,6 @@ use crate::commands::UndoCommand;
 use crate::dispatcher::UndoRegistry;
 use crate::manager::UndoManager;
 
-mod blueprint;
 pub mod commands;
 pub mod context;
 pub mod dispatcher;

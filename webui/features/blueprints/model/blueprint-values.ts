@@ -104,7 +104,7 @@ function cueReferencesBlueprint(cue: types.Cue, blueprintUid: string): boolean {
     ...(cue.parts ?? []).flatMap((part) => part.instructions),
   ].some(
     (instruction) =>
-      instruction.cue_instruction.blueprint_application?.blueprint_uid ===
+      instruction.assertions.blueprint_application?.blueprint_uid ===
       blueprintUid,
   );
 }

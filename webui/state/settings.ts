@@ -6,48 +6,77 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { atom } from "nanostores";
+import { atom, computed } from "nanostores";
 import {
+  type AudioSettings,
   CurrentNetworkInterfaceMode,
-  type DeskSettings,
   type ExternalControlState,
   InputUniverseVisibilityMode,
   type IoRuntimeSettings,
   type NetworkInterfaceInfo,
   type NetworkInterfaceStatus,
+  type PanelLayouts,
+  type ParameterStreamSettings,
+  type ProgrammingSettings,
   SelectionFlattenPolicy,
   SequenceReorderRenumberPolicy,
+  type ShowfileSettings,
   type TelemetryState,
   TimeDisplayPreference,
   TimelinePlacementPreference,
+  type UiPreferences,
   type UsbDmxDeviceInfo,
 } from "../types";
 
-/** Current desk-wide settings */
-export const $settings = atom<DeskSettings>({
-  programmer_auto_select: false,
-  audio_device: undefined,
-  sequence_reorder_renumber_policy: SequenceReorderRenumberPolicy.Preserve,
-  selection_flatten_policy: SelectionFlattenPolicy.Silent,
-  time_display_preference: TimeDisplayPreference.Auto,
-  timeline_placement_preference: TimelinePlacementPreference.Playhead,
-  showfile_backup_retention: 20,
-  default_panel_layout_id: undefined,
-});
+/**
+ * Settings sections saved with the showfile, keyed as the backend saves and sends them. Each
+ * section belongs to one backend plugin; a section whose plugin is not running keeps its
+ * defaults here.
+ */
+export type SettingsSections = {
+  ui: UiPreferences;
+  panelLayouts: PanelLayouts;
+  programming: ProgrammingSettings;
+  parameterStream: ParameterStreamSettings;
+  audio: AudioSettings;
+  showfile: ShowfileSettings;
+  io: IoRuntimeSettings;
+};
 
-/** Current transport-owned runtime settings. */
-export const $ioSettings = atom<IoRuntimeSettings>({
-  network_interface: undefined,
-  network_output_enabled: true,
-  network_input_enabled: true,
-  usb_output_enabled: true,
-  network_dmx_outputs: { targets: [] },
-  usb_dmx_outputs: { targets: [] },
-  input_signal_loss_policy: { type: "Hold" },
-  input_signal_loss_timeout: { secs: 2, nanos: 0 },
-  input_universe_visibility_mode: InputUniverseVisibilityMode.ExternalOnly,
-  dmx_output_rate_hz: 44,
-});
+/** Section values used until the backend sends its own, matching the backend defaults. */
+export const DEFAULT_SETTINGS: SettingsSections = {
+  ui: {
+    time_display: TimeDisplayPreference.Auto,
+    timeline_placement: TimelinePlacementPreference.Playhead,
+    sequence_reorder_renumber_policy: SequenceReorderRenumberPolicy.Preserve,
+  },
+  panelLayouts: { layouts: [], default_layout_id: undefined },
+  programming: {
+    auto_select: false,
+    selection_flatten_policy: SelectionFlattenPolicy.Silent,
+  },
+  parameterStream: { keyframes_only: false },
+  audio: { output_device: undefined },
+  showfile: { backup_retention: 20 },
+  io: {
+    network_interface: undefined,
+    network_output_enabled: true,
+    network_input_enabled: true,
+    usb_output_enabled: true,
+    network_dmx_outputs: { targets: [] },
+    usb_dmx_outputs: { targets: [] },
+    input_signal_loss_policy: { type: "Hold" },
+    input_signal_loss_timeout: { secs: 2, nanos: 0 },
+    input_universe_visibility_mode: InputUniverseVisibilityMode.ExternalOnly,
+    dmx_output_rate_hz: 44,
+  },
+};
+
+/** Current settings sections, updated section by section as the backend reports changes. */
+export const $settings = atom<SettingsSections>(DEFAULT_SETTINGS);
+
+/** IO runtime settings section, read-only; IO changes go through the IO settings commands. */
+export const $ioSettings = computed($settings, (settings) => settings.io);
 
 /** Increments whenever a backend settings snapshot is applied. */
 export const $settingsSnapshotRevision = atom(0);
