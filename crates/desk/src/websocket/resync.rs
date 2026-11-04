@@ -24,23 +24,17 @@ pub(crate) struct ResyncSettingsParams<'w> {
 /// Handle ResyncState by sending desk-owned lists immediately
 pub(crate) fn handle_resync_state(
     mut resync: ResyncReplies,
-    group_data_provider: Res<DataProvider<Group>>,
     exec_query: Query<&Clip>,
-    blueprint_data_provider: Res<DataProvider<Blueprint>>,
-    blueprint_reference_index: Res<BlueprintReferenceIndex>,
     resync_settings: ResyncSettingsParams,
     mut layer_stack_publication: ResMut<LayerStackPublication>,
     instance_query: Query<super::instances::InstanceSnapshotData>,
     materialized_clips: Query<&MaterializedClip>,
     held_buttons: Res<HeldButtonEffects>,
-    undo_manager: Res<UndoManager>,
 ) {
     let Some(broadcaster) = resync.sink() else {
         return;
     };
 
-    send_groups(group_data_provider, &broadcaster);
-    send_clips(exec_query, materialized_clips, &broadcaster);
     send_instances(
         instance_query,
         materialized_clips,
@@ -48,8 +42,6 @@ pub(crate) fn handle_resync_state(
         &held_buttons,
         &broadcaster,
     );
-    send_blueprints(blueprint_data_provider, &broadcaster);
-    send_blueprint_dependencies(&blueprint_reference_index, &broadcaster);
     send_external_control_state(&resync_settings.external_control, &broadcaster);
     send_telemetry_state(&resync_settings.telemetry, &broadcaster);
     send_network_interface_state(
@@ -64,7 +56,6 @@ pub(crate) fn handle_resync_state(
     send_available_usb_dmx_devices(&resync_settings.available_usb_dmx_devices.0, &broadcaster);
     // Sent by the next low-frequency pass, after the parameter layout its slots refer to.
     layer_stack_publication.invalidate();
-    send_undo_state(undo_manager, &broadcaster);
 }
 
 /// State the layer stack snapshot is built from and change-checked against.

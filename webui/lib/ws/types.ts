@@ -130,8 +130,10 @@ export type AnyCommand =
 /** Union of websocket payloads handled on the main thread. */
 export type AnyWsMessage =
   | types.BoardWsMessage
+  | types.ClipWsMessage
   | types.ControlsWsMessage
   | types.CueWsMessage
+  | types.DefinitionWsMessage
   | types.MacroWsMessage
   | Exclude<types.FixtureWsMessage, { type: "ParameterState" }>
   | ParameterStateWsMessage
@@ -147,6 +149,7 @@ export type AnyWsMessage =
   | types.FxWsMessage
   | types.FxModuleWsMessage
   | types.TempoWsMessage
+  | types.UndoWsMessage
   | types.TimecodeWsMessage
   | types.TimelineWsMessage
   | types.MidiWsMessage

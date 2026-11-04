@@ -10,26 +10,6 @@
 
 use super::*;
 
-/// Forward clip commands to UI via broadcaster
-///
-/// Note: RenameClip is intentionally NOT forwarded here because the command
-/// echo would be sent before we know if the rename succeeded. Instead, we rely
-/// on send_clips_on_clip_change to send full definitions after changes.
-pub fn forward_clip_commands(
-    mut events: MessageReader<CommandEnvelope<ClipCommand>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    for event in events.read() {
-        if matches!(event.command, ClipCommand::DeleteClip(..)) {
-            tracing::trace!(?event, "Forwarding ClipCommand to UI");
-            broadcaster.publish(
-                DISCRIMINATOR_NON_DROPPABLE,
-                &DeskWsMessage::ClipCommand(&event.command),
-            );
-        }
-    }
-}
-
 /// Forward selected desk commands to UI via broadcaster.
 ///
 /// Currently only SetLogLevel is forwarded so CLI log-level changes can update

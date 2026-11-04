@@ -5389,6 +5389,7 @@ dependencies = [
 name = "nightfall-clips"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "async-channel",
  "bevy_app",
  "bevy_ecs",
  "moonshine-kind",
@@ -6384,9 +6385,11 @@ dependencies = [
 name = "nightfall-undo"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "async-channel",
  "bevy_app",
  "bevy_ecs",
  "dyn-clone",
+ "minicbor-serde",
  "nightfall",
  "nightfall-engine",
  "nightfall-workspace-hack",

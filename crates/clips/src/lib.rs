@@ -27,6 +27,7 @@ pub mod playback;
 mod source_reference;
 mod source_routing;
 mod undo;
+pub mod websocket;
 
 pub use actions::{
     CLIP_BACK_ACTION_ID, CLIP_GO_ACTION_ID, CLIP_GOTO_ACTION_ID, CLIP_LAUNCH_ARMED_ACTION_ID,

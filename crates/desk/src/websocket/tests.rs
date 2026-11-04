@@ -8,47 +8,12 @@
 
 use std::time::Duration;
 
-use bevy_app::{App, Last, Update};
+use bevy_app::{App, Update};
 use moonshine_kind::Instance;
-use nightfall_engine::prelude::EnginePayload;
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::{Parameter, ParameterValues};
-use nightfall_undo::context::UndoContext;
-use nightfall_undo::manager::{UndoEntry, UndoGroup, UndoManager};
-use nightfall_undo::traits::Undoable;
 
 use super::*;
-
-/// Test command used to verify undo-manager behavior without app dependencies.
-#[derive(Debug, Clone, EnginePayload)]
-struct TestUndoCommand;
-
-impl Undoable for TestUndoCommand {
-    /// Produces no inverse because this command exists only to populate undo metadata.
-    fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
-        None
-    }
-
-    /// Returns the stable description asserted by the undo-state tests.
-    fn description(&self) -> String {
-        "Test Undo Command".to_string()
-    }
-}
-
-/// Removes any startup messages from a test websocket receiver.
-fn drain_channel(rx: &async_channel::Receiver<OutboundFrame>) {
-    while rx.try_recv().is_ok() {}
-}
-
-/// Decodes a discriminator-prefixed websocket payload into its JSON representation.
-fn decode_ws_message(raw: &[u8]) -> serde_json::Value {
-    assert!(
-        !raw.is_empty(),
-        "websocket payload must include discriminator"
-    );
-    minicbor_serde::from_slice::<serde_json::Value>(&raw[1..])
-        .expect("failed to decode websocket payload")
-}
 
 /// Spawns a parameter with the requested attribute and merge strategy for layer tests.
 fn spawn_parameter(
@@ -143,99 +108,6 @@ fn forward_desk_commands_ignores_non_log_level() {
     assert!(
         rx.try_recv().is_err(),
         "non-log desk command should not be broadcast"
-    );
-}
-
-#[test]
-/// Verifies an unchanged undo manager produces no repeated websocket traffic.
-fn send_undo_state_on_change_does_not_broadcast_when_idle() {
-    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
-    let mut app = App::new();
-    app.insert_resource(ClientEventSink::new(tx));
-    app.init_resource::<UndoManager>();
-    app.add_systems(Update, send_undo_state_on_change);
-    app.add_systems(Last, nightfall_undo::systems::finalize_detached_undo_groups);
-
-    // Allow any startup frame noise, then assert no repeated UndoState traffic.
-    app.update();
-    drain_channel(&rx);
-
-    app.update();
-    app.update();
-
-    assert!(
-        rx.try_recv().is_err(),
-        "did not expect undo state broadcasts while undo manager is idle"
-    );
-}
-
-#[test]
-/// Verifies undo stack changes broadcast complete developer-visible metadata.
-fn send_undo_state_on_change_broadcasts_on_undo_stack_change() {
-    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
-    let mut app = App::new();
-    app.insert_resource(ClientEventSink::new(tx));
-    app.init_resource::<UndoManager>();
-    app.add_systems(Update, send_undo_state_on_change);
-
-    app.update();
-    drain_channel(&rx);
-
-    let entry = UndoEntry {
-        command: Box::new(TestUndoCommand),
-        description: "Add fixture".to_string(),
-        command_id: Some(CommandId::new()),
-    };
-    app.world_mut()
-        .resource_mut::<UndoManager>()
-        .push_undo_group_direct(UndoGroup {
-            entries: vec![entry],
-            description: "Add fixture".to_string(),
-            timestamp: std::time::Instant::now(),
-            is_gurq_preserved: false,
-            undo_id: UndoId::new(),
-        });
-
-    app.update();
-
-    let payload = rx
-        .try_recv()
-        .expect("expected websocket payload for undo state change");
-    let message = decode_ws_message(&payload.bytes);
-    assert_eq!(message["type"], "UndoState");
-    assert_eq!(message["data"]["can_undo"], true);
-    assert_eq!(message["data"]["undo_depth"], 1);
-    assert_eq!(message["data"]["undo_description"], "Add fixture");
-    assert_eq!(message["data"]["undo_stack"][0]["order"], 0);
-    assert_eq!(
-        message["data"]["undo_stack"][0]["description"],
-        "Add fixture"
-    );
-    assert_eq!(message["data"]["undo_stack"][0]["entry_count"], 1);
-    assert!(
-        message["data"]["undo_stack"][0]["age_ms"]
-            .as_u64()
-            .is_some(),
-        "expected undo stack age in milliseconds"
-    );
-    assert_eq!(message["data"]["undo_stack"][0]["is_gurq_preserved"], false);
-    assert_eq!(
-        message["data"]["undo_stack"][0]["entry_descriptions"][0],
-        "Add fixture"
-    );
-    assert_eq!(
-        message["data"]["undo_stack"][0]["correlation_ids"]
-            .as_array()
-            .expect("expected correlation IDs")
-            .len(),
-        1
-    );
-    assert_eq!(
-        message["data"]["redo_stack"]
-            .as_array()
-            .expect("expected redo stack")
-            .len(),
-        0
     );
 }
 
@@ -537,27 +409,3 @@ fn layer_stack_is_packed_by_layout_slot_and_sent_only_when_changed() {
 /// Index of the second bench fixture's first parameter, so the test exercises a slot past zero.
 const BENCH_PARAMETER_COUNT_FOR_TEST: usize =
     nightfall_fixtures::testing::BENCH_FIXTURE_PARAMETERS.len();
-
-#[test]
-/// A client's resync sends the armed-launch snapshot only to that client, not to every
-/// connection.
-fn armed_launch_resync_replies_only_to_requester() {
-    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
-    let mut app = App::new();
-    app.add_message::<ResyncRequested>();
-    app.insert_resource(ClientEventSink::new(tx));
-    app.init_resource::<ArmedLaunches>();
-    app.add_systems(Update, send_armed_launches_on_resync);
-
-    let requester = Audience::Client(ClientId(7));
-    app.world_mut().write_message(ResyncRequested {
-        command_id: None,
-        audience: requester,
-    });
-    app.update();
-
-    let audiences: Vec<Audience> = std::iter::from_fn(|| rx.try_recv().ok())
-        .map(|frame| frame.audience)
-        .collect();
-    assert_eq!(audiences, vec![requester]);
-}

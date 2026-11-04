@@ -31,6 +31,7 @@ pub mod action_model;
 pub mod ast_conv;
 pub mod blueprints;
 pub mod command_planner;
+pub mod definition_feeds;
 pub mod events;
 pub mod groups;
 pub mod painter;
@@ -101,7 +102,23 @@ impl Plugin for ProgrammingPlugin {
 
         app.add_systems(
             Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
+            (
+                websocket::handle_resync_state,
+                // The showfile identity follows the groups and Blueprints it describes.
+                definition_feeds::handle_resync_state.before(
+                    nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync,
+                ),
+            )
+                .in_set(ResyncHandling),
+        );
+        app.add_systems(
+            Render,
+            (
+                definition_feeds::send_groups_on_change,
+                definition_feeds::send_blueprints_on_change,
+                definition_feeds::send_blueprint_dependencies_on_change,
+            )
+                .in_set(ClientOutput),
         );
 
         app.init_resource::<Programmer>();

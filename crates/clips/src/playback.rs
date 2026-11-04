@@ -122,5 +122,27 @@ impl Plugin for ClipsPlugin {
             PostUpdate,
             clip_events::handle_clip_playback_attachments.before(ClientFeedback),
         );
+
+        app.add_systems(
+            PostUpdate,
+            (
+                crate::websocket::forward_clip_commands,
+                // Reads clip removals, which only last two updates.
+                crate::websocket::send_clips_on_change,
+                crate::websocket::send_armed_launches_on_change,
+            )
+                .in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Render,
+            crate::websocket::send_clips_on_clip_change.in_set(ClientOutput),
+        );
+        app.add_systems(
+            Update,
+            crate::websocket::handle_resync_state
+                .in_set(ResyncHandling)
+                // The showfile identity follows the clips it describes.
+                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
+        );
     }
 }

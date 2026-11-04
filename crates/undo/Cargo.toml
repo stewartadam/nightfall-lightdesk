@@ -21,3 +21,7 @@ nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+async-channel.workspace = true
+minicbor-serde.workspace = true

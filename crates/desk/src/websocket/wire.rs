@@ -12,15 +12,6 @@ use nightfall_io::NetworkOutputSendFailure;
 
 use super::*;
 
-/// Local outbound clip representation used for UI serialization
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[typeshare::typeshare]
-pub(super) struct OutboundClipLocal {
-    pub(super) clip: Clip,
-    /// Whether this clip has an active playback
-    pub(super) is_active: bool,
-}
-
 /// Information about an active playback for UI display
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -69,50 +60,6 @@ pub struct InstanceInfo {
     pub held_button: Option<HeldButtonEffect>,
     /// Source-specific runtime status.
     pub status: InstanceStatus,
-}
-
-/// Developer-visible metadata for one undo or redo stack group.
-#[typeshare::typeshare]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct UndoStackEntryMessage {
-    /// Zero-based position in execution order, where 0 is the next group to apply.
-    pub order: u32,
-    /// Human-readable description for the grouped operation.
-    pub description: String,
-    /// Number of commands grouped into this undoable operation.
-    pub entry_count: u32,
-    /// Age of the grouped operation when this message was emitted.
-    pub age_ms: u32,
-    /// Whether this group was preserved from a redo branch by GURQ.
-    pub is_gurq_preserved: bool,
-    /// Batch ID linking commands that undo or redo together.
-    pub undo_id: String,
-    /// Human-readable descriptions for commands in this group.
-    pub entry_descriptions: Vec<String>,
-    /// Correlation IDs linking grouped commands to the original command envelopes.
-    pub correlation_ids: Vec<String>,
-}
-
-/// Current state of the undo/redo system for UI display
-#[typeshare::typeshare]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct UndoStateMessage {
-    /// Whether there are operations available to undo
-    pub can_undo: bool,
-    /// Whether there are operations available to redo
-    pub can_redo: bool,
-    /// Description of the next undo operation
-    pub undo_description: Option<String>,
-    /// Description of the next redo operation
-    pub redo_description: Option<String>,
-    /// Number of items in the undo stack
-    pub undo_depth: u32,
-    /// Number of items in the redo stack
-    pub redo_depth: u32,
-    /// Undo stack groups in undo execution order.
-    pub undo_stack: Vec<UndoStackEntryMessage>,
-    /// Redo stack groups in redo execution order.
-    pub redo_stack: Vec<UndoStackEntryMessage>,
 }
 
 /// Engine performance metrics for UI instrumentation panel
@@ -180,14 +127,6 @@ pub struct DeskMetrics {
 #[serde(tag = "type", content = "data")]
 #[typeshare::typeshare]
 pub(super) enum DeskWsMessage<'a> {
-    /// Definition of all groups
-    GroupDefinitions(&'a [Group]),
-    /// Definition of all clips
-    ClipDefinitions(&'a [OutboundClipLocal]),
-    /// Definition of all blueprints
-    BlueprintDefinitions(&'a [Blueprint]),
-    /// Reverse dependencies for every Blueprint with a live authored reference.
-    BlueprintDependencies(&'a [OutboundBlueprintDependency]),
     /// Host-owned external control settings and listener status.
     ExternalControlState(&'a ExternalControlState),
     /// Host-owned telemetry consent and anonymous identifier.
@@ -205,29 +144,12 @@ pub(super) enum DeskWsMessage<'a> {
     AvailableUsbDmxDevices(&'a [UsbDmxDeviceInfo]),
     /// A desk command
     DeskCommand(&'a DeskCommand),
-    /// An clip command
-    ClipCommand(&'a ClipCommand),
     /// Layer stack with computed values (sorted by priority)
     LayerStack(&'a OutboundLayerStack),
     /// Engine performance metrics
     Metrics(&'a DeskMetrics),
     /// Active instances list
     ActiveInstances(&'a [InstanceInfo]),
-    /// Current undo/redo state
-    UndoState(&'a UndoStateMessage),
-    /// Live clip launches waiting for the next beat or bar
-    ArmedLaunches(&'a [ArmedLaunch]),
-}
-
-/// One Blueprint's current reverse-dependency descriptions.
-#[derive(Clone, Debug, Serialize)]
-#[typeshare::typeshare]
-pub struct OutboundBlueprintDependency {
-    /// Stable Blueprint identity used as the dependency lookup key.
-    #[serde(with = "nightfall::serde_uuid_simple")]
-    pub blueprint_uid: Uuid,
-    /// Authored programmer, cue, and sequence objects retaining the live reference.
-    pub dependents: Vec<String>,
 }
 
 /// Layer stack snapshot whose parameter values are indexed by the slots of a

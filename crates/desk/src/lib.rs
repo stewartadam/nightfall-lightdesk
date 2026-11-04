@@ -15,7 +15,6 @@
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use nightfall::prelude::*;
 use nightfall_controls::ControlsPlugin;
 use nightfall_engine::{EnginePlugin, prelude::*};
 use nightfall_framepace::FramePaceStats;
@@ -70,7 +69,6 @@ impl Plugin for DeskPlugin {
         );
 
         register_client_command::<DeskCommand>(app, Undo::Skipped);
-        app.init_resource::<BlueprintReferenceIndex>();
         app.init_resource::<websocket::LayerStackPublication>();
         app.add_message::<OperationResult<(), CommandError>>();
         app.add_message::<NotificationEnvelope<nightfall_io::IoRuntimeNotification>>();
@@ -86,8 +84,6 @@ impl Plugin for DeskPlugin {
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::DeskAstConverter>(
         );
 
-        app.init_resource::<DataProvider<Group>>();
-        app.init_resource::<DataProvider<Blueprint>>();
         app.init_resource::<GlobalVariables>();
         app.init_resource::<NetworkStats>();
         app.init_resource::<IoRuntimeSettings>();
@@ -143,23 +139,15 @@ impl Plugin for DeskPlugin {
         app.add_systems(
             PostUpdate,
             (
-                websocket::forward_clip_commands,
                 websocket::forward_desk_commands,
-                // These read removals, which only last two updates.
-                websocket::send_clips_on_change,
+                // Reads removals, which only last two updates.
                 websocket::send_instances_on_change,
-                websocket::send_armed_launches_on_change,
             )
                 .in_set(ClientFeedback),
         );
         app.add_systems(
             Render,
             (
-                websocket::send_groups_on_change,
-                websocket::send_blueprints_on_change,
-                websocket::send_blueprint_dependencies_on_change,
-                websocket::send_clips_on_clip_change,
-                websocket::send_undo_state_on_change,
                 websocket::send_host_state_on_change,
                 websocket::send_available_audio_devices_on_change,
                 websocket::send_available_usb_dmx_devices_on_change,
@@ -171,11 +159,10 @@ impl Plugin for DeskPlugin {
 
         app.add_systems(
             Update,
-            (
-                websocket::handle_resync_state,
-                websocket::send_armed_launches_on_resync,
-            )
+            websocket::handle_resync_state
                 .in_set(ResyncHandling)
+                // Playbacks refer to the clips sent before them.
+                .after(nightfall_clips::websocket::handle_resync_state)
                 // The showfile identity follows the desk snapshot it describes.
                 .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
         );

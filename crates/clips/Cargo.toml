@@ -27,6 +27,7 @@ uuid.workspace = true
 web-time.workspace = true
 
 [dev-dependencies]
+async-channel.workspace = true
 nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
