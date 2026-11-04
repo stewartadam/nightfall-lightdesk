@@ -11,7 +11,7 @@
 use bevy::app::PluginGroupBuilder;
 use bevy::prelude::*;
 use nightfall_composition::ShowPlugins;
-use nightfall_desk::resources::log_config::LogConfig;
+use nightfall_engine::logging::LogConfig;
 use nightfall_fixtures::prelude::FixtureCompositorPlugin;
 use nightfall_fx::prelude::FxPlugin;
 use nightfall_fx_module::prelude::FxModulePlugin;

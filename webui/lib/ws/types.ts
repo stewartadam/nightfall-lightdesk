@@ -9,12 +9,6 @@
 import type * as types from "../../types";
 import type * as flowTypes from "../../types/index";
 
-/** Desk command echo message emitted using the websocket envelope shape. */
-export type DeskCommandWsMessage = {
-  type: "DeskCommand";
-  data: types.DeskCommand;
-};
-
 /** Step FX definitions are emitted by the backend but are not yet typeshared. */
 export type StepFxDefinitionsWsMessage = {
   type: "StepFxDefinitions";
@@ -103,7 +97,8 @@ export type AnyCommand =
   | types.BlueprintCommand
   | types.BoardCommand
   | types.CueCommand
-  | types.DeskCommand
+  | types.LogCommand
+  | types.ShowfileCommand
   | types.EngineCommand
   | types.ClipCommand
   | flowTypes.FlowCommand
@@ -157,7 +152,7 @@ export type AnyWsMessage =
   | types.OscWsMessage
   | types.ActionsWsMessage
   | types.EngineClientMessage
-  | DeskCommandWsMessage
+  | types.LogWsMessage
   | types.SceneObjectWsMessage
   | types.ReferenceWsMessage
   | AnyCommand;

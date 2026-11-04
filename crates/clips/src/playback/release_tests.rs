@@ -6,9 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Releasing parameters through playback operations.
+
 use bevy_app::prelude::*;
 use nightfall::prelude::Group;
-use nightfall_clips::playback::instance_events::handle_events;
 use nightfall_engine::prelude::{
     CommandError, DataProvider, EngineOperationEnvelope, OperationResult,
 };
@@ -17,6 +18,8 @@ use nightfall_fixtures::prelude::{
 };
 use nightfall_instances::{PlaybackOperation, PlaybackScope};
 use nightfall_io::RouteTransport;
+
+use super::instance_events::handle_events;
 
 /// Verifies releasing every parameter frees every console slot instead of leaving system-owned
 /// zeros, so released console universes stop being routed to transports.

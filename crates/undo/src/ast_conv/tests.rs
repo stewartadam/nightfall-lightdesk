@@ -6,9 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use nightfall_cmd_parse::generate_ast;
 use nightfall_engine::prelude::*;
-use nightfall_undo::prelude::*;
 
+use super::UndoAstConverter;
+use crate::prelude::*;
+
+/// Verifies undo commands need the tagged `data` form and reject unknown fields.
 #[test]
 fn test_undo_command_deserialization() {
     // Test that UndoCommand can be deserialized from JSON with tag/content format
@@ -52,16 +56,11 @@ fn test_undo_command_deserialization() {
     );
 }
 
+/// Verifies `undo` becomes the undo command.
 #[test]
 fn test_undo_command_parsing() {
-    // Initialize AST converter registration (normally done by DeskPlugin)
-    nightfall_engine::protocol::dispatch_ast::clear_converters();
-    nightfall_engine::protocol::dispatch_ast::register_converter::<
-        nightfall_desk::ast_conv::DeskAstConverter,
-    >();
-
     // Test parsing "undo" command
-    let result = parse_command_string("undo");
+    let result = UndoAstConverter::convert(&generate_ast("undo").expect("undo should parse"));
     assert!(result.is_ok(), "Failed to parse 'undo': {:?}", result.err());
 
     let commands = result.unwrap();
@@ -82,16 +81,11 @@ fn test_undo_command_parsing() {
     );
 }
 
+/// Verifies `redo` becomes the redo command.
 #[test]
 fn test_redo_command_parsing() {
-    // Initialize AST converter registration (normally done by DeskPlugin)
-    nightfall_engine::protocol::dispatch_ast::clear_converters();
-    nightfall_engine::protocol::dispatch_ast::register_converter::<
-        nightfall_desk::ast_conv::DeskAstConverter,
-    >();
-
     // Test parsing "redo" command
-    let result = parse_command_string("redo");
+    let result = UndoAstConverter::convert(&generate_ast("redo").expect("redo should parse"));
     assert!(result.is_ok(), "Failed to parse 'redo': {:?}", result.err());
 
     let commands = result.unwrap();

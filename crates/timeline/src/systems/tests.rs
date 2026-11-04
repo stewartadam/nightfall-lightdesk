@@ -25,7 +25,6 @@ use nightfall_compositor::prelude::{LayerCompositingContext, ObjectRefMarker, Re
 use nightfall_cues::materialized_cue::paint_materialized_cues;
 use nightfall_cues::materialized_sequence::paint_materialized_sequences;
 use nightfall_cues::prelude::*;
-use nightfall_desk::prelude::*;
 use nightfall_dmx::prelude::{Attribute, DmxValueResolution, ParameterValue};
 use nightfall_engine::prelude::*;
 use nightfall_fixture_model::prelude::*;
@@ -596,7 +595,6 @@ fn setup_sequence_timeline_app_with_stop(
 fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
-    app.add_message::<CommandEnvelope<DeskCommand>>();
     app.add_message::<CommandEnvelope<CueCommand>>();
     app.add_message::<EngineOperationEnvelope<EvalOperation>>();
     app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();

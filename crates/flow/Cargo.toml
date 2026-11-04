@@ -32,7 +32,6 @@ uuid.workspace = true
 [dev-dependencies]
 async-channel.workspace = true
 moonshine-kind.workspace = true
-nightfall-desk = { path = "../desk" }
 tokio.workspace = true
 wit-component.workspace = true
 nightfall-fixture-model = { path = "../fixture-model" }

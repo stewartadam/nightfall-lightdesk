@@ -77,7 +77,7 @@ Engine core crates build the engine's runtime that every plugin plugs into.
 
 | Crate | WASM | Description |
 |-------|------|-------------|
-| `engine` | Demo | Core of the Bevy app: app states, schedules and their ordering, the `Render` schedule, the command and update protocol, the client bridge, object stores, runtime capabilities, the settings registry, and the UI preference and panel layout settings sections. |
+| `engine` | Demo | Core of the Bevy app: app states, schedules and their ordering, the `Render` schedule, the command and update protocol, the client bridge, object stores, runtime capabilities, the settings registry, runtime log filters, and the UI preference and panel layout settings sections. |
 | `undo` | Demo | Undo and redo: captures undoable commands and stores their inverses. |
 | `actions` | Demo | Registry of bindable actions and how each one turns into a command or an update, plus the eval action that runs a line of the command language. |
 | `clips` | Demo | Clip model, clip commands, lookups by identifier, and clip playback: routing clip starts and stops to the plugin registered for each clip source, launch quantize, the lifecycle and clocks of running playbacks, and the bindable clip actions. |
@@ -135,7 +135,7 @@ Cross-plugin crates combine several plugins, which plugin crates can't do themse
 | `boards` | Demo | Boards: grids of buttons, button presses, and button status. |
 | `macros` | Demo | Macros: numbered command-line scripts, the backend runner that executes them line by line, and the `macro.start`, `macro.release`, and `macro.stop` actions. |
 | `references` | Demo | Show-wide report of which objects use which, for the **References** panel and delete guards. |
-| `showfile` | Demo | The versioned showfile JSON format, migrations, applying a showfile to an engine world, and snapshots of a world. |
+| `showfile` | Demo | The versioned showfile JSON format, migrations, applying a showfile to an engine world, snapshots of a world, and the requests to create, save, load, import, and delete shows. |
 | `wasm-bridge` | Bridge | Functions the web UI calls in WASM. See [what the WASM bridge exports](#what-the-wasm-bridge-exports). |
 
 ## Hosts: programs and tools
@@ -176,12 +176,11 @@ To add a setting, add a field to its owner's section. Register a new section wit
 
 The `desk` crate is the largest cross-plugin crate. It holds the behavior that belongs to the console as a whole rather than to one domain:
 
-- The `DeskCommand` entry point, including the requests to create, save, load, and import showfiles.
-- The client feeds for group and Blueprint definitions. The stores, commands, and undo for groups and Blueprints live in `programming`.
 - Host settings: network interface, telemetry, external control, and the device lists.
+- The playback feed of running clips and instances.
 - Diagnostics, network statistics, and the layer stack that the **Layers** panel shows.
 
-Running a line of the command language (`EngineCommand::Eval`), delayed commands, and user notifications live in `engine`, so any crate can use them.
+Running a line of the command language (`EngineCommand::Eval`), quitting, log filters, delayed commands, and user notifications live in `engine`, so any crate can use them. Each crate converts the command-language words it owns: `engine` converts `sleep`, `fps`, `quit`, and `log`, `showfile` converts `save`, `load`, and `new show`, and `clips` and `undo` convert theirs.
 
 The plugin rules explain why this code collects in `desk`. A plugin crate can't depend on another plugin crate, so behavior that touches several plugins, such as the playback feed that reports Step FX previews next to every running clip, needs a crate above them. The browser demo compiles all of it.
 

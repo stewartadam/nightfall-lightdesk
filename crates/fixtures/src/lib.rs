@@ -41,6 +41,7 @@ mod selection_source;
 pub mod stale_inputs;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
+pub mod trace;
 pub mod transport_holds;
 pub mod undo;
 pub mod universe;
@@ -227,6 +228,8 @@ impl Plugin for FixturePlugin {
         app.init_resource::<nightfall_io::InputUniverseVisibilityMode>();
         app.add_message::<websocket::SuppressFixtureChangedSnapshot>();
         websocket::register_fixture_websocket_diagnostics(app);
+        register_client_command::<trace::FixtureTraceCommand>(app, Undo::Skipped);
+        app.add_systems(Update, trace::handle_trace_fixture.in_set(EventHandling));
 
         // Register undoable commands
         {

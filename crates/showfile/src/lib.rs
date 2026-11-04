@@ -14,6 +14,8 @@
 #![warn(missing_docs)]
 
 mod apply;
+mod ast_conv;
+mod command;
 mod contributors;
 mod migrations;
 mod selection_refs;
@@ -27,11 +29,42 @@ pub use apply::{
 };
 /// Current schema version written into newly saved showfile metadata.
 pub const CURRENT_SHOWFILE_VERSION: u32 = 25;
+pub use ast_conv::ShowfileAstConverter;
+pub use command::{
+    NewShowfileOptions, ShowfileCommand, ShowfileImportOptions, ShowfileImportPolicy,
+    ShowfileRevisionSelection, reject_disk_storage_commands,
+};
 pub use selection_refs::stabilize_showfile_group_refs;
 pub use settings::{
     DEFAULT_SHOWFILE_BACKUP_RETENTION, ShowfileSettings, ShowfileSettingsCommand,
-    ShowfileSettingsPlugin, apply_showfile_settings_command,
+    apply_showfile_settings_command,
 };
+
+/// Registers the showfile requests and the [`ShowfileSettings`] section, in every host.
+///
+/// Hosts that store shows on disk answer [`ShowfileCommand`]s themselves. Without disk storage
+/// this plugin fails them, so the caller is never left waiting.
+pub struct ShowfilePlugin;
+
+impl bevy_app::Plugin for ShowfilePlugin {
+    /// Registers [`ShowfileCommand`] and its words, the disk storage guard, and the settings
+    /// section with the handler for [`ShowfileSettingsCommand`].
+    fn build(&self, app: &mut bevy_app::App) {
+        use bevy_ecs::prelude::*;
+        use nightfall_engine::prelude::*;
+
+        register_client_command::<ShowfileCommand>(app, Undo::Skipped);
+        nightfall_engine::protocol::dispatch_ast::register_converter::<ShowfileAstConverter>();
+        app.add_systems(
+            bevy_app::Update,
+            reject_disk_storage_commands
+                .run_if(not(disk_storage_available))
+                .in_set(EventHandling),
+        );
+        app.register_settings_section(ShowfileSettings::SECTION);
+        app.add_settings_command(apply_showfile_settings_command);
+    }
+}
 pub use snapshot::{
     RoutesSnapshot, ShowfileMetadata, ShowfileSnapshot, current_showfile_metadata,
     validate_showfile_asset_versions,

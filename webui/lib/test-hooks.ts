@@ -31,7 +31,7 @@ import {
 import type { NightfallHarness } from "../e2e/harness/registry";
 import { type AppLifecyclePhase, appLifecycle } from "../state/app-lifecycle";
 import { $settings, $settingsSnapshotRevision } from "../state/settings";
-import type { DeskCommand } from "../types";
+import type { ShowfileCommand } from "../types";
 import { commandClient } from "./engine-commands";
 import {
   backendAppState,
@@ -128,13 +128,13 @@ export type NightfallTestHooks = {
      * once the shell is interactive on it.
      */
     ensureLoaded(name: string, options?: WaitOptions): Promise<TestReadiness>;
-    /** Sends a world-swapping desk command and waits like `load`. */
+    /** Sends a world-swapping showfile command and waits like `load`. */
     swapWorld(
       command: unknown,
       expectedShowfileName: string,
       options?: WaitOptions,
     ): Promise<void>;
-    /** Returns the desk command that saves the current show under a name. */
+    /** Returns the showfile command that saves the current show under a name. */
     saveNamedCommand: typeof saveNamedShowfileCommand;
   };
   uiActions: {
@@ -251,7 +251,7 @@ function startupOutcome(state: TestReadiness): StartupOutcome | undefined {
   return undefined;
 }
 
-/** Sends a world-swapping desk command and waits for the swapped world to be ready. */
+/** Sends a world-swapping showfile command and waits for the swapped world to be ready. */
 function swapWorld(
   command: unknown,
   expectedShowfileName: string,
@@ -259,7 +259,7 @@ function swapWorld(
 ): Promise<void> {
   markResyncPending();
   return waitForStartupWorldSwapCommand(
-    commandClient.invoke("DeskCommand", command as DeskCommand),
+    commandClient.invoke("ShowfileCommand", command as ShowfileCommand),
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     expectedShowfileName,
   );

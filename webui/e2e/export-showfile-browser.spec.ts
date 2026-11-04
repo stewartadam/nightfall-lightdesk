@@ -25,7 +25,7 @@ test("downloads a live showfile ZIP from the browser footer menu", async ({
   await waitForDockviewApp(page);
   const created = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
-      module: "DeskCommand",
+      module: "ShowfileCommand",
       command: {
         type: "NewNamedShowfile",
         data: { name: "browser-export-test", includeSampleData: false },

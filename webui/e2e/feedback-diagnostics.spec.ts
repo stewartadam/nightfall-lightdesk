@@ -287,7 +287,7 @@ test("downloads browser diagnostics with selected showfile references", async ({
   await waitForDockviewApp(page);
   const created = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
-      module: "DeskCommand",
+      module: "ShowfileCommand",
       command: {
         type: "SaveNamedShowfile",
         data: "browser-diagnostics",

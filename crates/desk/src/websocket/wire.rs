@@ -142,8 +142,6 @@ pub(super) enum DeskWsMessage<'a> {
     ),
     /// Compatible USB DMX devices list
     AvailableUsbDmxDevices(&'a [UsbDmxDeviceInfo]),
-    /// A desk command
-    DeskCommand(&'a DeskCommand),
     /// Layer stack with computed values (sorted by priority)
     LayerStack(&'a OutboundLayerStack),
     /// Engine performance metrics

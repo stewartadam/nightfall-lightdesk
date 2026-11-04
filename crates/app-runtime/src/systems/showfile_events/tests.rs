@@ -36,6 +36,7 @@ use nightfall_scene_objects::prelude::*;
 use nightfall_showfile::{
     CURRENT_SHOWFILE_VERSION, ShowfileSettings, parse_showfile_snapshot_json,
 };
+use nightfall_showfile::{ShowfileImportOptions, ShowfileImportPolicy};
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
 use uuid::Uuid;
@@ -117,7 +118,7 @@ fn write_test_showfile_manifest(
 }
 
 /// Registers and queues one showfile command for handler tests.
-fn submit_showfile_command(world: &mut World, command: DeskCommand) -> CommandId {
+fn submit_showfile_command(world: &mut World, command: ShowfileCommand) -> CommandId {
     let command_id = CommandId::new();
     world
         .resource_mut::<CommandTracker>()
@@ -129,7 +130,7 @@ fn submit_showfile_command(world: &mut World, command: DeskCommand) -> CommandId
         )
         .expect("showfile command should register");
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             command_id,
             command_id.into(),
@@ -618,13 +619,13 @@ fn effective_save_showfile_name_uses_current_loaded_showfile() {
     };
 
     assert_eq!(
-        effective_save_showfile_name(&DeskCommand::SaveShowfile, &current_showfile)
+        effective_save_showfile_name(&ShowfileCommand::SaveShowfile, &current_showfile)
             .expect("resolve save target"),
         Some("sample".to_string())
     );
     assert_eq!(
         effective_save_showfile_name(
-            &DeskCommand::SaveNamedShowfile("other.nightfall-show".to_string()),
+            &ShowfileCommand::SaveNamedShowfile("other.nightfall-show".to_string()),
             &current_showfile,
         )
         .expect("resolve named save target"),
@@ -1800,7 +1801,7 @@ fn save_showfile_event_emits_success_result_and_toast() {
         correlation_id.into(),
         CommandOrigin::WebUi,
         ReplyTarget::Detached,
-        DeskCommand::SaveShowfile,
+        ShowfileCommand::SaveShowfile,
     );
     app.world_mut()
         .resource_mut::<CommandTracker>()
@@ -1858,17 +1859,17 @@ fn save_showfile_event_emits_success_result_and_toast() {
 fn new_showfile_event_is_deferred_when_swap_request_resource_exists() {
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
 
     let correlation_id = Uuid::new_v4();
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             correlation_id.into(),
             correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::NewShowfile,
+            ShowfileCommand::NewShowfile,
         ));
 
     world
@@ -1893,17 +1894,17 @@ fn new_showfile_event_is_deferred_when_swap_request_resource_exists() {
 fn named_new_showfile_event_is_deferred_when_swap_request_resource_exists() {
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
 
     let correlation_id = Uuid::new_v4();
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             correlation_id.into(),
             correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::NewNamedShowfile(nightfall_desk::desk_command::NewShowfileOptions {
+            ShowfileCommand::NewNamedShowfile(nightfall_showfile::NewShowfileOptions {
                 name: "demo".to_string(),
                 include_sample_data: true,
             }),
@@ -1934,17 +1935,17 @@ fn load_showfile_event_is_deferred_when_swap_request_resource_exists() {
         .expect("process config lock");
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
 
     let correlation_id = Uuid::new_v4();
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             correlation_id.into(),
             correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::LoadNamedShowfile("demo".to_string()),
+            ShowfileCommand::LoadNamedShowfile("demo".to_string()),
         ));
 
     world
@@ -1972,17 +1973,17 @@ fn load_draft_showfile_event_is_deferred_when_swap_request_resource_exists() {
         .expect("process config lock");
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
 
     let correlation_id = Uuid::new_v4();
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             correlation_id.into(),
             correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::LoadDraftShowfile("demo".to_string()),
+            ShowfileCommand::LoadDraftShowfile("demo".to_string()),
         ));
 
     world
@@ -2024,10 +2025,10 @@ fn load_showfile_event_emits_success_result_after_direct_load() {
         .expect("block saved manifest repair with a directory");
 
     let mut world = setup_world();
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
     let command_id = submit_showfile_command(
         &mut world,
-        DeskCommand::LoadNamedShowfile("tour".to_string()),
+        ShowfileCommand::LoadNamedShowfile("tour".to_string()),
     );
 
     world
@@ -2100,10 +2101,10 @@ fn load_showfile_revision_event_preserves_saved_showfile_until_save() {
     .expect("write revision snapshot");
 
     let mut world = setup_world();
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
     let command_id = submit_showfile_command(
         &mut world,
-        DeskCommand::LoadShowfileRevision(
+        ShowfileCommand::LoadShowfileRevision(
             ShowfileRevisionSelection::from_revision_name("default-20260707-151450")
                 .expect("parse revision selection"),
         ),
@@ -2152,7 +2153,7 @@ fn load_showfile_revision_event_preserves_saved_showfile_until_save() {
         "revision variable should retain its loaded string value"
     );
 
-    let save_command_id = submit_showfile_command(&mut world, DeskCommand::SaveShowfile);
+    let save_command_id = submit_showfile_command(&mut world, ShowfileCommand::SaveShowfile);
     world
         .run_system_once(handle_events)
         .expect("run explicit save handler");
@@ -2188,27 +2189,27 @@ fn mixed_world_swap_events_preserve_original_order() {
         .expect("process config lock");
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
 
     let load_correlation_id = Uuid::new_v4();
     let new_correlation_id = Uuid::new_v4();
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             load_correlation_id.into(),
             load_correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::LoadShowfile,
+            ShowfileCommand::LoadShowfile,
         ));
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             new_correlation_id.into(),
             new_correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::NewShowfile,
+            ShowfileCommand::NewShowfile,
         ));
 
     world

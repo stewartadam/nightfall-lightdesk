@@ -20,7 +20,6 @@ moonshine-kind.workspace = true
 nightfall = { path = "../common" }
 nightfall-composition = { path = "../composition" }
 nightfall-compositor = { path = "../compositor" }
-nightfall-desk = { path = "../desk", default-features = false }
 nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
 nightfall-fixtures = { path = "../fixtures" }
@@ -32,6 +31,7 @@ nightfall-timeline = { path = "../timeline", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 serde-wasm-bindgen = "0.6"
+tracing.workspace = true
 wasm-bindgen = "0.2"
 uuid.workspace = true
 

@@ -111,7 +111,7 @@ test("fader assignments survive saving and loading a showfile", async ({
   const expected = await assignments(page);
   const saved = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
-      module: "DeskCommand",
+      module: "ShowfileCommand",
       command: {
         type: "SaveNamedShowfile",
         data: "fader-roundtrip",
@@ -151,7 +151,7 @@ test("fader assignments survive saving and loading a showfile", async ({
     .toEqual({ clip: null, master: null, buttonMode: "Go" });
   await page.evaluate(() =>
     (window as any).appStores.send({
-      module: "DeskCommand",
+      module: "ShowfileCommand",
       command: { type: "LoadNamedShowfile", data: "fader-roundtrip" },
     }),
   );

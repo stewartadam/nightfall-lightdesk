@@ -418,7 +418,7 @@ mod tests {
     fn summarizes_a_running_show() {
         use std::sync::{Arc, RwLock};
 
-        use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
+        use nightfall_engine::logging::{LogConfig, TracingTarget};
 
         let log_config =
             LogConfig::new(|_| Ok(()), Arc::new(RwLock::new(TracingTarget::default())));

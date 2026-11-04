@@ -22,6 +22,7 @@ use crate::commands::UndoCommand;
 use crate::dispatcher::UndoRegistry;
 use crate::manager::UndoManager;
 
+pub mod ast_conv;
 pub mod commands;
 pub mod context;
 pub mod dispatcher;
@@ -51,6 +52,8 @@ impl Plugin for UndoPlugin {
         );
 
         register_client_command::<UndoCommand>(app, Undo::Captured);
+        nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::UndoAstConverter>(
+        );
 
         // Initialize resources
         app.init_resource::<UndoManager>();
@@ -79,7 +82,10 @@ impl Plugin for UndoPlugin {
         );
         app.add_systems(
             Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
+            websocket::handle_resync_state
+                .in_set(ResyncHandling)
+                // The showfile identity follows the undo stack of the show it names.
+                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
         );
         app.add_systems(
             Last,

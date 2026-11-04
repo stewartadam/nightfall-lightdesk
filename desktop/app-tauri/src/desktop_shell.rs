@@ -17,7 +17,7 @@ use std::time::Duration;
 use app_runtime::{monitor_bevy_session, run_bevy_session};
 use nightfall::constants::APP_LOG_FILE_NAME;
 use nightfall_config::RuntimeConfig;
-use nightfall_desk::resources::log_config::LogConfig;
+use nightfall_engine::logging::LogConfig;
 use nightfall_engine::prelude::request_graceful_exit;
 use tauri::{
     Emitter, EventTarget, Manager, Runtime, WebviewWindow, WebviewWindowBuilder,

@@ -59,10 +59,14 @@ fn convert_typed<T: AstConvert>(
 
 /// Register a converter for `T` using the common typed adapter.
 ///
-/// Plugin crates call: `register_converter::<MyDomainPlugin>();`
+/// Plugin crates call: `register_converter::<MyDomainPlugin>();`. Registering the same converter
+/// again, as each rebuilt world's plugins do, keeps its first position and adds nothing.
 pub fn register_converter<T: AstConvert>() {
     let type_id = TypeId::of::<T>();
     let mut guard = CONVERTERS.write().expect("ast dispatch lock poisoned");
+    if guard.iter().any(|(registered, _)| *registered == type_id) {
+        return;
+    }
     guard.push((type_id, convert_typed::<T> as AstConverterFn));
 }
 

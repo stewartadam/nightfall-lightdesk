@@ -9,9 +9,8 @@
 //! Desk behavior that spans several show domains.
 //!
 //! Plugin crates can't depend on each other, so behavior that touches several of them lives
-//! here: the `DeskCommand` entry point (including the showfile requests), host settings, the
-//! clip, playback, group, and Blueprint feeds, and diagnostics. Code that concerns one domain
-//! only belongs in that domain's crate.
+//! here: host settings, the playback and layer stack feeds, and diagnostics. Code that concerns
+//! one domain only belongs in that domain's crate.
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
@@ -23,13 +22,8 @@ use nightfall_io::{
 };
 use nightfall_undo::UndoPlugin;
 
-use crate::{
-    desk_command::DeskCommand, prelude::*, resources::log_config::LogConfig,
-    systems::event_handlers,
-};
+use crate::{prelude::*, systems::event_handlers};
 
-pub mod ast_conv;
-pub mod desk_command;
 pub mod resources;
 pub mod settings;
 pub mod systems;
@@ -37,9 +31,6 @@ pub mod websocket;
 
 pub mod prelude {
     pub use crate::DeskPlugin;
-    pub use crate::desk_command::{
-        DeskCommand, ShowfileImportOptions, ShowfileImportPolicy, ShowfileRevisionSelection,
-    };
     pub use crate::resources::ExclusiveResource;
     pub use crate::settings::{
         AvailableAudioDevices, GraphicsReport, ReportedGraphics, SettingsCommand, TelemetryConsent,
@@ -48,9 +39,7 @@ pub mod prelude {
 }
 
 /// Plugin for adding desk functionality to the app
-pub struct DeskPlugin {
-    pub log_config: LogConfig,
-}
+pub struct DeskPlugin;
 
 impl Plugin for DeskPlugin {
     fn build(&self, app: &mut App) {
@@ -68,7 +57,6 @@ impl Plugin for DeskPlugin {
             "DeskPlugin requires ControlsPlugin (provides held fader buttons for playback feeds)"
         );
 
-        register_client_command::<DeskCommand>(app, Undo::Skipped);
         app.init_resource::<websocket::LayerStackPublication>();
         app.add_message::<OperationResult<(), CommandError>>();
         app.add_message::<NotificationEnvelope<nightfall_io::IoRuntimeNotification>>();
@@ -81,9 +69,6 @@ impl Plugin for DeskPlugin {
         register_client_command::<SettingsCommand>(app, Undo::Skipped);
         app.add_message::<event_handlers::settings_events::SettingsCommandResult>();
 
-        nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::DeskAstConverter>(
-        );
-
         app.init_resource::<GlobalVariables>();
         app.init_resource::<NetworkStats>();
         app.init_resource::<IoRuntimeSettings>();
@@ -94,19 +79,7 @@ impl Plugin for DeskPlugin {
         app.init_resource::<AvailableUsbDmxDevices>();
         app.init_resource::<NetworkInterfaceState>();
         app.init_resource::<FramePaceStats>();
-        app.insert_resource(self.log_config.clone());
         websocket::register_websocket_performance_diagnostics(app);
-
-        app.add_systems(
-            Update,
-            event_handlers::debug_events::handle_events.in_set(EventHandling),
-        );
-        app.add_systems(
-            Update,
-            event_handlers::desk_events::reject_disk_storage_commands
-                .run_if(not(disk_storage_available))
-                .in_set(EventHandling),
-        );
 
         app.add_systems(
             Update,
@@ -138,12 +111,8 @@ impl Plugin for DeskPlugin {
 
         app.add_systems(
             PostUpdate,
-            (
-                websocket::forward_desk_commands,
-                // Reads removals, which only last two updates.
-                websocket::send_instances_on_change,
-            )
-                .in_set(ClientFeedback),
+            // Reads removals, which only last two updates.
+            websocket::send_instances_on_change.in_set(ClientFeedback),
         );
         app.add_systems(
             Render,

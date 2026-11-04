@@ -16,7 +16,7 @@ use bevy::{
 use bevy_state::{app::AppExtStates, condition::in_state};
 use nightfall_actions::ActionInvocationHandling;
 use nightfall_config::RuntimeConfig;
-use nightfall_desk::resources::log_config::LogConfig;
+use nightfall_engine::logging::LogConfig;
 use nightfall_engine::prelude::*;
 use nightfall_framepace::prelude::*;
 use nightfall_io::{IoRuntimeSettings, TransportRuntimePolicy, sanitize_dmx_output_rate_hz};

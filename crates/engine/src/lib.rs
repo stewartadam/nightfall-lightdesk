@@ -24,6 +24,7 @@ use nightfall_cmd_parse::prelude::*;
 use crate::prelude::*;
 
 pub mod assertions;
+pub mod ast_conv;
 mod client;
 pub mod client_bridge;
 pub mod client_ingress;
@@ -33,6 +34,7 @@ pub mod diagnostic_paths;
 pub mod eval;
 pub mod eval_action;
 pub mod frame_waker;
+pub mod logging;
 pub mod object_changes;
 pub mod object_crud;
 pub mod object_registry;
@@ -108,6 +110,7 @@ pub mod prelude {
     pub use crate::eval::INTERNAL_ACTION_ORIGIN;
     pub use crate::eval_action::EvalOperation;
     pub use crate::frame_waker::FrameWaker;
+    pub use crate::logging::{LogCommand, LogConfig, LogFilterError, LoggingPlugin, TracingTarget};
     pub use crate::object_changes::{ObjectChangePublication, ObjectChanged, ObjectChangesAppExt};
     pub use crate::object_crud::{ObjectCrud, apply_object_crud_command};
     pub use crate::parse_command_string;
@@ -242,6 +245,7 @@ impl Plugin for EnginePlugin {
 
         register_ingress_command::<EngineCommand>(app);
         register_command_deserializer::<EngineCommand>(app, eval::deserialize_engine_command);
+        protocol::dispatch_ast::register_converter::<ast_conv::EngineAstConverter>();
         app.add_message::<ResyncRequested>();
         app.add_systems(Update, resync::begin_resync.in_set(InputHandling));
 
@@ -416,6 +420,8 @@ pub fn register_client_update_deserializer(
 #[typeshare::typeshare]
 #[serde(deny_unknown_fields)]
 pub enum EngineCommand {
+    /// Quit the application
+    Quit,
     /// Request that all plugins resend their full state
     ResyncState,
     /// Set the FPS upper-bound

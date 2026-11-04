@@ -36,8 +36,8 @@ use nightfall_controls::prelude::{
     fader_level_action,
 };
 use nightfall_cues::prelude::{Cue, MaterializedSequence, Sequence};
-use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
+use nightfall_engine::logging::{LogConfig, TracingTarget};
 use nightfall_engine::prelude::{
     AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNoticeReply,
     CommandOrigin, CommandOutcome, CommandReply, CommandResult, CommandTracker,

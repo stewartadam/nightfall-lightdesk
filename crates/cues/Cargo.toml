@@ -37,7 +37,6 @@ nightfall-fixture-model = { path = "../fixture-model" }
 
 [dev-dependencies]
 criterion.workspace = true
-nightfall-desk = { path = "../desk" }
 minicbor-serde.workspace = true
 nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
 nightfall-io = { path = "../io" }

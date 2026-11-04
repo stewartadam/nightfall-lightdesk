@@ -49,12 +49,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use web_time::Instant;
 
-use crate::DeskCommand;
 use crate::prelude::*;
 
 mod desk_state;
 mod diagnostics;
-mod inbound;
 mod instances;
 mod layers;
 mod metrics;
@@ -67,7 +65,6 @@ pub use diagnostics::{
     LAYER_STACK_BROADCAST_MS, LAYER_STACK_BUILD_MS, LAYER_STACK_TRANSITION_BUILD_MS,
     register_websocket_performance_diagnostics,
 };
-pub use inbound::*;
 pub use instances::*;
 pub use layers::{LayerSnapshotData, LayerStackPublication, send_layer_stack};
 #[cfg(test)]

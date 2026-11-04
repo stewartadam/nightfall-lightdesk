@@ -163,7 +163,7 @@ async function generateShowfile(
       }
       const actions = (await window.__nightfallHarness.load("app"))
         .showfileActions;
-      await send("DeskCommand", actions.saveNamedShowfileCommand(name));
+      await send("ShowfileCommand", actions.saveNamedShowfileCommand(name));
     },
     { groups, name },
   );

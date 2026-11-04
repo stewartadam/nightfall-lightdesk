@@ -13,7 +13,6 @@ bevy_ecs.workspace = true
 bevy_platform.workspace = true
 netwatcher = { workspace = true, optional = true }
 nightfall = { path = "../common" }
-nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-controls = { path = "../controls" }
 nightfall-dmx = { path = "../dmx" }
@@ -29,7 +28,6 @@ nightfall-instances = { path = "../instances" }
 nightfall-undo = { path = "../undo" }
 serde_json.workspace = true
 serde.workspace = true
-tracing-subscriber.workspace = true
 tracing.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
@@ -49,7 +47,6 @@ workspace = true
 [dev-dependencies]
 async-channel.workspace = true
 moonshine-kind.workspace = true
-nightfall-programming = { path = "../programming" }
 criterion.workspace = true
 minicbor-serde.workspace = true
 nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }

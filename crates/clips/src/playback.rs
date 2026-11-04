@@ -29,6 +29,8 @@ use crate::{
 pub mod clip_events;
 pub mod clocks;
 pub mod instance_events;
+#[cfg(test)]
+mod release_tests;
 
 /// Installs clip commands, clip playback routing, and playback lifecycle systems.
 ///
@@ -47,6 +49,9 @@ impl Plugin for ClipsPlugin {
             app.is_plugin_added::<nightfall_undo::UndoPlugin>(),
             "ClipsPlugin requires UndoPlugin (provides UndoRegistry)"
         );
+        nightfall_engine::protocol::dispatch_ast::register_converter::<
+            crate::ast_conv::ClipAstConverter,
+        >();
         app.init_resource::<clip_events::PendingClipPlaybackSpeeds>();
         app.init_resource::<ArmedLaunches>();
         app.init_resource::<InstanceIndex>();
@@ -127,7 +132,7 @@ impl Plugin for ClipsPlugin {
             PostUpdate,
             (
                 crate::websocket::forward_clip_commands,
-                // Reads clip removals, which only last two updates.
+                // Reads playback stops (MaterializedClip removals), which only last two updates.
                 crate::websocket::send_clips_on_change,
                 crate::websocket::send_armed_launches_on_change,
             )

@@ -22,12 +22,12 @@ import type { AnyWsMessage } from "./types";
 
 const log = getLogger(import.meta.url);
 
-/** Registers desk command echo and backend UI notification handlers. */
+/** Registers log command echo and backend UI notification handlers. */
 export function registerDeskHandlers(
   registry: WsMessageHandlerRegistry<AnyWsMessage>,
 ): void {
-  registry.register("DeskCommand", (message) => {
-    handleDeskCommand(message.data as unknown as types.DeskCommand);
+  registry.register("LogCommand", (message) => {
+    handleLogCommand(message.data as unknown as types.LogCommand);
   });
 
   registry.register("UiNotification", (message) => {
@@ -35,9 +35,9 @@ export function registerDeskHandlers(
   });
 }
 
-/** Keeps UI-side logging configuration synchronized with desk commands from the backend. */
-function handleDeskCommand(command: types.DeskCommand) {
-  log.trace("Handling DeskCommand:", command);
+/** Keeps UI-side logging configuration synchronized with log commands from the backend. */
+function handleLogCommand(command: types.LogCommand) {
+  log.trace("Handling LogCommand:", command);
 
   switch (command.type) {
     case "SetLogLevel": {
@@ -46,7 +46,7 @@ function handleDeskCommand(command: types.DeskCommand) {
       break;
     }
     default:
-      log.warn(`Unhandled DeskCommand: ${command.type}`);
+      log.warn(`Unhandled LogCommand: ${command.type}`);
   }
 }
 

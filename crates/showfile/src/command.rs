@@ -6,8 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use nightfall::prelude::*;
-use nightfall_dmx::prelude::*;
+use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -193,19 +192,12 @@ fn is_revision_timestamp(timestamp: &str) -> bool {
         && bytes[9..].iter().all(|byte| byte.is_ascii_digit())
 }
 
-/// Events representing commands for the engine
-// FIXME: DeskCommand != UserCommand. User command use uids, desk commands use objectrefs.
-// some intermediate layer needs to mediate between the two.
-/// Desk-level commands accepted from the UI and command parser.
-#[allow(missing_docs)]
+/// Requests to create, save, load, import, or delete shows on disk.
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
 #[serde(deny_unknown_fields)]
-pub enum DeskCommand {
-    /// Quit the application
-    Quit,
-
+pub enum ShowfileCommand {
     /// Create a fresh unnamed empty showfile.
     NewShowfile,
     /// Create a fresh showfile for a named `.nightfall-show` folder.
@@ -236,57 +228,156 @@ pub enum DeskCommand {
     EmptyShowfileTrash,
     /// Import selected object collections from a showfile
     ImportShowfile(ShowfileImportOptions),
-
-    /// Set log level filter (e.g. "debug", "nightfall=trace")
-    SetLogLevel(String),
-
-    /// Trace outputs related to a specific fixture attribute
-    TraceFixture {
-        fixture_ref: UnresolvedFixtureRef,
-        attribute: Attribute,
-    },
-
-    /// Set a log tracing filters (filter uses same format as those of RUST_LOG)
-    SetTracingFilter {
-        field: String,
-        value: Option<String>, // None means "match any value"
-    },
-
-    /// Clear all existing log tracing filters
-    ClearTracingFilter,
 }
 
-impl IngressCommand for DeskCommand {}
+impl IngressCommand for ShowfileCommand {}
 
-impl DeskCommand {
-    /// Reports whether this command reads or writes showfiles on disk.
-    ///
-    /// Runtimes without the disk storage capability reject these commands up front instead of
-    /// leaving them unanswered. New showfiles count as storage commands because creating one
-    /// replaces the working show with a fresh draft folder.
-    #[must_use]
-    pub const fn requires_disk_storage(&self) -> bool {
-        match self {
-            Self::NewShowfile
-            | Self::NewNamedShowfile(_)
-            | Self::SaveShowfile
-            | Self::SaveNamedShowfile(_)
-            | Self::SaveDraftShowfile
-            | Self::SaveNamedDraftShowfile(_)
-            | Self::LoadShowfile
-            | Self::LoadNamedShowfile(_)
-            | Self::LoadDraftShowfile(_)
-            | Self::LoadShowfileRevision(_)
-            | Self::DiscardDraftShowfile(_)
-            | Self::DeleteShowfile(_)
-            | Self::RestoreDeletedShowfile(_)
-            | Self::EmptyShowfileTrash
-            | Self::ImportShowfile(_) => true,
-            Self::Quit
-            | Self::SetLogLevel(_)
-            | Self::TraceFixture { .. }
-            | Self::SetTracingFilter { .. }
-            | Self::ClearTracingFilter => false,
+/// Fails every showfile command when the runtime has no disk storage.
+///
+/// Runs only while [`disk_storage_available`] is false, so hosts without a filesystem (such as
+/// the browser demo) answer new, open, save, import, and trash commands immediately with an
+/// operator-facing reason instead of leaving the caller waiting for a result that never comes.
+/// A new show counts too, because creating one replaces the working show with a fresh draft
+/// folder.
+pub fn reject_disk_storage_commands(
+    mut events: MessageReader<CommandEnvelope<ShowfileCommand>>,
+    mut responder: CommandResponder,
+) {
+    for event in events.read() {
+        if let Err(error) = responder.fail(
+            event.command_id,
+            CommandError::new(
+                "showfile.disk_storage_unavailable",
+                "This version of nightfall has no disk storage, so it cannot create, open, save, import, or delete shows.",
+            ),
+        ) {
+            tracing::error!(command_id = %event.command_id, %error, "disk_storage_command_failure_failed");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy_app::{App, Update};
+
+    use super::*;
+
+    /// Creates a focused app that runs the disk storage guard under the given capabilities.
+    ///
+    /// A downstream spy records every showfile command still open after the guard ran,
+    /// standing in for the native showfile handler.
+    fn disk_storage_guard_app(capabilities: RuntimeCapabilities) -> App {
+        let mut app = App::new();
+        app.add_message::<CommandEnvelope<ShowfileCommand>>();
+        app.add_message::<CommandResult>();
+        app.add_message::<CommandReply>();
+        app.add_message::<FinishedCommand>();
+        app.add_message::<CommandNoticeReply>();
+        app.init_resource::<CommandTracker>();
+        app.insert_resource(capabilities);
+        app.init_resource::<OpenShowfileCommands>();
+        app.add_systems(
+            Update,
+            (
+                reject_disk_storage_commands.run_if(not(disk_storage_available)),
+                record_open_showfile_commands,
+            )
+                .chain(),
+        );
+        app
+    }
+
+    /// Showfile commands that a later handler could still answer after the guard ran.
+    #[derive(Resource, Default)]
+    struct OpenShowfileCommands(Vec<CommandId>);
+
+    /// Records showfile commands whose lifecycle is still active for a later handler.
+    fn record_open_showfile_commands(
+        mut events: MessageReader<CommandEnvelope<ShowfileCommand>>,
+        responder: CommandResponder,
+        mut open: ResMut<OpenShowfileCommands>,
+    ) {
+        for event in events.read() {
+            if responder.is_active(event.command_id) {
+                open.0.push(event.command_id);
+            }
+        }
+    }
+
+    /// Registers and submits one showfile command as if it came from the web UI.
+    fn submit_showfile_command(app: &mut App, command: ShowfileCommand) -> CommandId {
+        let command_id = CommandId::new();
+        app.world_mut()
+            .resource_mut::<CommandTracker>()
+            .register_context(
+                command_id,
+                command_id.into(),
+                CommandOrigin::WebUi,
+                ReplyTarget::ClientBroadcast,
+            )
+            .expect("showfile command should register");
+        app.world_mut().write_message(CommandEnvelope::with_context(
+            command_id,
+            command_id.into(),
+            CommandOrigin::WebUi,
+            ReplyTarget::ClientBroadcast,
+            command,
+        ));
+        command_id
+    }
+
+    /// Drains the terminal command results published during the last update.
+    fn drain_results(app: &mut App) -> Vec<CommandResult> {
+        app.world_mut()
+            .resource_mut::<Messages<CommandResult>>()
+            .drain()
+            .collect()
+    }
+
+    /// Verifies the browser demo answers new, load and save commands with a failure in the
+    /// same frame.
+    #[test]
+    fn storage_commands_fail_fast_without_disk_storage() {
+        let mut app = disk_storage_guard_app(RuntimeCapabilities::embedded_demo());
+        let commands = [
+            ShowfileCommand::NewShowfile,
+            ShowfileCommand::SaveShowfile,
+            ShowfileCommand::LoadNamedShowfile("tour".into()),
+        ]
+        .map(|command| submit_showfile_command(&mut app, command));
+
+        app.update();
+
+        let results = drain_results(&mut app);
+        for command_id in commands {
+            assert!(
+                results.iter().any(|result| result.command_id == command_id
+                    && matches!(
+                        &result.outcome,
+                        CommandOutcome::Failed(CommandError { code, .. })
+                            if code == "showfile.disk_storage_unavailable"
+                    )),
+                "expected {command_id} to fail with the disk storage error, got {results:?}",
+            );
+        }
+        assert!(app.world().resource::<OpenShowfileCommands>().0.is_empty());
+    }
+
+    /// Verifies the guard stays out of the way when the host can store shows on disk.
+    #[test]
+    fn storage_commands_reach_handlers_with_disk_storage() {
+        let mut app = disk_storage_guard_app(RuntimeCapabilities {
+            disk_storage: true,
+            ..RuntimeCapabilities::default()
+        });
+        let command_id = submit_showfile_command(&mut app, ShowfileCommand::SaveShowfile);
+
+        app.update();
+
+        assert!(drain_results(&mut app).is_empty());
+        assert_eq!(
+            app.world().resource::<OpenShowfileCommands>().0,
+            [command_id]
+        );
     }
 }

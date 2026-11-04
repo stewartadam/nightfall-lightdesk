@@ -49,69 +49,6 @@ fn spawn_parameter(
 }
 
 #[test]
-/// Verifies log-level commands are echoed as non-droppable desk messages.
-fn forward_desk_commands_broadcasts_set_log_level() {
-    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
-    let mut app = App::new();
-    app.add_message::<CommandEnvelope<DeskCommand>>();
-    app.insert_resource(ClientEventSink::new(tx));
-    app.add_systems(Update, forward_desk_commands);
-
-    app.world_mut().write_message(CommandEnvelope::new(
-        DeskCommand::SetLogLevel("debug".to_string()),
-        CommandOrigin::WebUi,
-        ReplyTarget::Detached,
-    ));
-
-    app.update();
-
-    let payload = rx
-        .try_recv()
-        .expect("expected websocket payload for SetLogLevel");
-    assert_eq!(
-        payload.bytes.first().copied(),
-        Some(DISCRIMINATOR_NON_DROPPABLE)
-    );
-
-    let payload_text = String::from_utf8_lossy(&payload.bytes);
-    assert!(
-        payload_text.contains("DeskCommand"),
-        "payload did not include DeskCommand tag: {payload_text:?}"
-    );
-    assert!(
-        payload_text.contains("SetLogLevel"),
-        "payload did not include SetLogLevel variant: {payload_text:?}"
-    );
-    assert!(
-        payload_text.contains("debug"),
-        "payload did not include configured level: {payload_text:?}"
-    );
-}
-
-#[test]
-/// Verifies desk commands without a UI synchronization contract are not echoed.
-fn forward_desk_commands_ignores_non_log_level() {
-    let (tx, rx) = async_channel::unbounded::<OutboundFrame>();
-    let mut app = App::new();
-    app.add_message::<CommandEnvelope<DeskCommand>>();
-    app.insert_resource(ClientEventSink::new(tx));
-    app.add_systems(Update, forward_desk_commands);
-
-    app.world_mut().write_message(CommandEnvelope::new(
-        DeskCommand::ClearTracingFilter,
-        CommandOrigin::WebUi,
-        ReplyTarget::Detached,
-    ));
-
-    app.update();
-
-    assert!(
-        rx.try_recv().is_err(),
-        "non-log desk command should not be broadcast"
-    );
-}
-
-#[test]
 /// Verifies a parameter reports an active transition during its fade-in window.
 fn is_transition_active_reports_active_during_fade_in() {
     let mut app = App::new();
