@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, For, onMount } from "solid-js";
+import { Alert } from "../../../components/ui/alert";
 import { Table, TableScroll } from "../../../components/ui/table";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import { commandClient } from "../../../lib/engine-commands";
@@ -15,6 +16,7 @@ import {
   sendNetworkDmxOutputs,
   sendNetworkInputEnabled,
   sendNetworkOutputEnabled,
+  sendUsbDmxDeviceAssignment,
   sendUsbDmxOutputs,
   sendUsbOutputEnabled,
 } from "../../../lib/io-service";
@@ -36,6 +38,7 @@ import {
   $externalControlState,
   $ioSettings,
   $networkInterfaceStatus,
+  $usbDmxTargetStates,
 } from "../../../state/settings";
 import * as types from "../../../types";
 import { ExternalControlSettings } from "../components/external-control-settings";
@@ -54,12 +57,15 @@ import {
 import {
   DEFAULT_USB_DEVICE_ID,
   isBuiltInUsbTarget,
+  joinPorts,
   replaceUsbTarget,
-  resolveUsbTargetDevices,
   usbDeviceOptionLabel,
+  usbDevicePortChoiceSummary,
   usbDeviceSelectorLabel,
   usbDeviceSerialConflictKeys,
+  usbDevicesSharingSerials,
   usbTargetDeviceLabel,
+  usbTargetStatusView,
 } from "../usb/model";
 
 /** Coordinates I/O transport stores, edits, validation, and presentation. */
@@ -71,6 +77,7 @@ export function IoTransportsController() {
   const externalControl = useStore($externalControlState);
   const networkInterfaceStatus = useStore($networkInterfaceStatus);
   const usbDevices = useStore($availableUsbDmxDevices);
+  const usbTargetStates = useStore($usbDmxTargetStates);
 
   const [newId, setNewId] = createSignal("");
   const [newProtocol, setNewProtocol] = createSignal<types.NetworkDmxProtocol>(
@@ -110,9 +117,27 @@ export function IoTransportsController() {
   const usbSerialConflictKeys = createMemo(() =>
     usbDeviceSerialConflictKeys(usbDevices()),
   );
+  /** Returns the backend's adapter status for each USB target, keyed by target id. */
+  const usbTargetStatusById = createMemo(
+    () =>
+      new Map(usbTargetStates().map((state) => [state.target, state.status])),
+  );
   /** Returns the attached device each USB target currently outputs to, keyed by target id. */
-  const usbTargetDevices = createMemo(() =>
-    resolveUsbTargetDevices(usbTargets(), usbDevices()),
+  const usbTargetDevices = createMemo(() => {
+    const devices = new Map<string, types.UsbDmxDeviceInfo>();
+    for (const [target, status] of usbTargetStatusById()) {
+      const deviceId =
+        status.type === "Connected" || status.type === "Moved"
+          ? status.data.device
+          : undefined;
+      const device = deviceId ? usbDeviceById().get(deviceId) : undefined;
+      if (device) devices.set(target, device);
+    }
+    return devices;
+  });
+  /** Returns attached adapters that share a serial number, grouped by serial. */
+  const usbSharedSerials = createMemo(() =>
+    usbDevicesSharingSerials(usbDevices()),
   );
   /** Returns discovered USB DMX device ids that are not already mapped. */
   const availableNewUsbDeviceIds = createMemo(() => {
@@ -442,19 +467,20 @@ export function IoTransportsController() {
     );
   };
 
-  /** Returns the status text for a configured USB mapping row. */
-  const usbTargetStatus = (target: types.UsbDmxOutputTarget) => {
-    const device = target.device.trim();
-    if (device === "") {
-      return { label: "Missing device", kind: "invalid" as const };
-    }
-    if (device === DEFAULT_USB_DEVICE_ID) {
-      return { label: "Auto", kind: "valid" as const };
-    }
-    if (usbTargetDevices().has(target.id)) {
-      return { label: "Configured", kind: "valid" as const };
-    }
-    return { label: "Missing", kind: "invalid" as const };
+  /** Returns the status text and one-click fix for a configured USB mapping row. */
+  const usbTargetStatus = (target: types.UsbDmxOutputTarget) =>
+    usbTargetStatusView(
+      target,
+      usbTargetStatusById().get(target.id),
+      usbDeviceById(),
+    );
+
+  /** Binds a USB target to the attached adapter its status suggests. */
+  const assignUsbTargetDevice = (
+    target: types.UsbDmxOutputTarget,
+    device: string,
+  ) => {
+    sendUsbDmxDeviceAssignment({ target: target.id, device });
   };
 
   /** Returns select options for an existing USB target, preserving saved missing devices. */
@@ -487,7 +513,7 @@ export function IoTransportsController() {
     if (
       savedDevice !== "" &&
       savedDevice !== DEFAULT_USB_DEVICE_ID &&
-      resolvedDevice === undefined
+      !options.some((option) => option.id === savedDevice)
     ) {
       return [
         {
@@ -619,6 +645,22 @@ export function IoTransportsController() {
               onChange={setUsbOutputEnabled}
             />
           </div>
+          <For each={usbSharedSerials()}>
+            {(group) => (
+              <Alert
+                variant="warning"
+                density="compact"
+                class="mb-2"
+                data-slot="usb-shared-serial-warning"
+              >
+                Adapters on{" "}
+                {joinPorts(group.devices.map(usbDevicePortChoiceSummary))}{" "}
+                report the same serial number ({group.serial}). Nightfall tells
+                them apart by the USB port they are plugged into, so keep each
+                one in the port its output is assigned to.
+              </Alert>
+            )}
+          </For>
           <TableScroll
             aria-label="USB transports scroll area"
             class="rounded border border-gray-800"
@@ -635,7 +677,7 @@ export function IoTransportsController() {
                   <th scope="col" class="w-64 whitespace-nowrap text-left">
                     USB Device
                   </th>
-                  <th scope="col" class="w-36 whitespace-nowrap text-left">
+                  <th scope="col" class="w-56 whitespace-nowrap text-left">
                     Status
                   </th>
                   <th scope="col" class="w-28 whitespace-nowrap text-right">
@@ -653,6 +695,7 @@ export function IoTransportsController() {
                       status={usbTargetStatus(target)}
                       deviceOptions={usbDeviceOptions(target)}
                       onSave={saveUsbTarget}
+                      onAssignDevice={assignUsbTargetDevice}
                       onRemove={removeUsbTarget}
                     />
                   )}

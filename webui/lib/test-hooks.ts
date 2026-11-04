@@ -31,7 +31,7 @@ import {
 import type { NightfallHarness } from "../e2e/harness/registry";
 import { type AppLifecyclePhase, appLifecycle } from "../state/app-lifecycle";
 import { $settings, $settingsSnapshotRevision } from "../state/settings";
-import type { DeskCommand } from "../types";
+import type { DeskCommand, UiNotification } from "../types";
 import { commandClient } from "./engine-commands";
 import {
   backendAppState,
@@ -52,6 +52,7 @@ import {
   normalizedShowfileName,
 } from "./showfile-loading";
 import { testHooksEnabled } from "./test-mode";
+import { handleUiNotification } from "./ws/desk-handlers";
 
 /** Startup and layout signals a test waits on, sampled at one instant. */
 export type TestReadiness = {
@@ -142,6 +143,13 @@ export type NightfallTestHooks = {
      * Registers a UI action as a mounted panel would, returning the disposer its unmount runs.
      */
     register: typeof registerUiAction;
+  };
+  engineNotifications: {
+    /**
+     * Presents a UI notification as if the engine had sent it, for notices the test backends
+     * cannot raise, such as ones about USB hardware.
+     */
+    show(notification: UiNotification): void;
   };
 };
 
@@ -358,6 +366,9 @@ function createTestHooks(): NightfallTestHooks {
     },
     uiActions: {
       register: registerUiAction,
+    },
+    engineNotifications: {
+      show: handleUiNotification,
     },
   };
 }

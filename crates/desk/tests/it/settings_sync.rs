@@ -27,7 +27,7 @@ use nightfall_fixtures::prelude::{
 use nightfall_io::prelude::{
     AvailableUsbDmxDevices, ExternalControlState, InputSignalLossPolicy,
     InputUniverseVisibilityMode, IoRuntimeSettings, NetworkDmxOutputTargets, NetworkInterfaceState,
-    UsbDmxOutputTarget, UsbDmxOutputTargets,
+    UsbDmxDeviceAssignment, UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets,
 };
 
 /// Discards every message currently buffered on `rx`, stopping once it is empty or closed.
@@ -278,6 +278,74 @@ fn updates_usb_dmx_outputs_from_settings_command() {
     assert_eq!(
         app.world().resource::<UsbDmxOutputTargets>(),
         &settings.usb_dmx_outputs
+    );
+}
+
+/// Verifies assigning an attached adapter saves its current port and name on the target, and an
+/// adapter that is not attached is refused without changing anything.
+#[test]
+fn assigns_attached_usb_dmx_device_to_target() {
+    let (mut app, _rx) = settings_command_app();
+    let adapter = UsbDmxDeviceInfo {
+        id: "id-16c0:05dc,serial-0001,port-20:3".to_string(),
+        label: "Anyma uDMX (16c0:05dc) - serial 0001".to_string(),
+        vendor_id: 0x16c0,
+        product_id: 0x05dc,
+        manufacturer: Some("Anyma".to_string()),
+        product: Some("uDMX".to_string()),
+        serial_number: Some("0001".to_string()),
+        location: Some("bus 20 port 3".to_string()),
+    };
+    app.world_mut().resource_mut::<AvailableUsbDmxDevices>().0 = vec![adapter.clone()];
+    submit_settings_command(
+        &mut app,
+        SettingsCommand::SetUsbDmxOutputs(UsbDmxOutputTargets {
+            targets: vec![UsbDmxOutputTarget {
+                id: "left".to_string(),
+                device: "id-16c0:05dc,serial-0001,port-20:1".to_string(),
+                device_label: None,
+            }],
+        }),
+    );
+    app.update();
+
+    submit_settings_command(
+        &mut app,
+        SettingsCommand::AssignUsbDmxDevice(UsbDmxDeviceAssignment {
+            target: "left".to_string(),
+            device: "id-16c0:05dc,serial-0001,port-20:9".to_string(),
+        }),
+    );
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<UsbDmxOutputTargets>()
+            .get("left")
+            .map(|target| target.device.as_str()),
+        Some("id-16c0:05dc,serial-0001,port-20:1")
+    );
+
+    submit_settings_command(
+        &mut app,
+        SettingsCommand::AssignUsbDmxDevice(UsbDmxDeviceAssignment {
+            target: "left".to_string(),
+            device: adapter.id.clone(),
+        }),
+    );
+    app.update();
+
+    let target = app
+        .world()
+        .resource::<IoRuntimeSettings>()
+        .usb_dmx_outputs
+        .get("left")
+        .cloned()
+        .expect("left target should be saved");
+    assert_eq!(target.device, adapter.id);
+    assert_eq!(target.device_label.as_deref(), Some("Anyma uDMX"));
+    assert_eq!(
+        app.world().resource::<UsbDmxOutputTargets>(),
+        &app.world().resource::<IoRuntimeSettings>().usb_dmx_outputs
     );
 }
 

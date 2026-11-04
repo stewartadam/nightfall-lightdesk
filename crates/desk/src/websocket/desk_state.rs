@@ -305,6 +305,26 @@ pub fn send_available_usb_dmx_devices_on_change(
     send_available_usb_dmx_devices(&available_usb_dmx_devices.0, &broadcaster);
 }
 
+/// Send each USB output's adapter status when the statuses change.
+pub fn send_usb_dmx_target_states_on_change(
+    states: Res<UsbDmxTargetStates>,
+    broadcaster: Res<ClientEventSink>,
+) {
+    if !states.is_changed() {
+        return;
+    }
+
+    send_usb_dmx_target_states(&states, &broadcaster);
+}
+
+/// Broadcast each USB output's adapter status to websocket clients.
+pub fn send_usb_dmx_target_states(states: &UsbDmxTargetStates, broadcaster: &ClientEventSink) {
+    broadcaster.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &DeskWsMessage::UsbDmxTargetStates(&states.states),
+    );
+}
+
 /// Broadcast network interface list and current/default status from a single snapshot.
 pub fn send_network_interface_state(
     settings: &IoRuntimeSettings,

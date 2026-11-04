@@ -10,12 +10,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type * as types from "../../../types";
 import {
-  resolveUsbTargetDevices,
   savedUsbDeviceDetailLabel,
   usbDeviceFriendlyName,
   usbDeviceOptionLabel,
   usbDeviceSerialConflictKeys,
+  usbDevicesSharingSerials,
   usbTargetDeviceLabel,
+  usbTargetStatusView,
 } from "./model";
 
 const DEVICE = {
@@ -57,60 +58,51 @@ test("USB selector labels include ports only for conflicting serials", () => {
   );
 });
 
-/** Builds an attached FTDI clone sharing serial AB0KT9HX on the given port. */
-function ftdiClone(port: string): types.UsbDmxDeviceInfo {
-  return {
-    id: `id-0403:6001,serial-AB0KT9HX,port-02:${port}`,
-    label: `FTDI FT232R USB UART (0403:6001) - serial AB0KT9HX`,
-    manufacturer: "FTDI",
-    product: "FT232R USB UART",
-    serial_number: "AB0KT9HX",
-    location: `bus 02 port ${port}`,
-    vendor_id: 0x0403,
-    product_id: 0x6001,
-  } as types.UsbDmxDeviceInfo;
-}
+/** Verifies adapters are grouped only when more than one reports the same serial number. */
+test("USB devices sharing a serial are grouped by serial", () => {
+  const twin = { ...DEVICE, id: "serial-ABC,port-1:3" };
+  const other = { ...DEVICE, id: "serial-XYZ,port-1:4", serial_number: "XYZ" };
 
-/** Builds a USB target saved with the given selector. */
-function usbTarget(id: string, device: string): types.UsbDmxOutputTarget {
-  return { id, device } as types.UsbDmxOutputTarget;
-}
-
-/** Verifies clones sharing a serial keep their own targets as either one is attached or removed. */
-test("USB target resolution keeps clones on their saved ports", () => {
-  const left = usbTarget("left", "id-0403:6001,serial-AB0KT9HX,port-02:1");
-  const right = usbTarget("right", "id-0403:6001,serial-AB0KT9HX,port-02:2");
-
-  const both = resolveUsbTargetDevices(
-    [left, right],
-    [ftdiClone("2"), ftdiClone("1")],
-  );
-  assert.equal(both.get("left")?.location, "bus 02 port 1");
-  assert.equal(both.get("right")?.location, "bus 02 port 2");
-
-  const rightOnly = resolveUsbTargetDevices([left, right], [ftdiClone("2")]);
-  assert.equal(rightOnly.get("left"), undefined);
-  assert.equal(rightOnly.get("right")?.location, "bus 02 port 2");
+  assert.deepEqual(usbDevicesSharingSerials([DEVICE, other, twin]), [
+    { serial: "ABC", devices: [DEVICE, twin] },
+  ]);
+  assert.deepEqual(usbDevicesSharingSerials([DEVICE, other]), []);
 });
 
-/** Verifies a unique serial follows its device to a new port and serial-only selectors resolve. */
-test("USB target resolution falls back to unique serials", () => {
-  const moved = resolveUsbTargetDevices(
-    [usbTarget("udmx", "id-0403:6001,serial-AB0KT9HX,port-02:1")],
-    [ftdiClone("3")],
-  );
-  assert.equal(moved.get("udmx")?.location, "bus 02 port 3");
+/** Verifies each backend status maps to its row text and the adapter its fix binds. */
+test("USB target status view offers a fix for moved and ambiguous adapters", () => {
+  const target = {
+    id: "left",
+    device: "serial-ABC,port-1:1",
+  } as types.UsbDmxOutputTarget;
+  const deviceById = new Map([[DEVICE.id, DEVICE]]);
 
-  const serialOnly = usbTarget("udmx", "id-0403:6001,serial-AB0KT9HX");
-  assert.equal(
-    resolveUsbTargetDevices([serialOnly], [ftdiClone("1")]).get("udmx")
-      ?.location,
-    "bus 02 port 1",
-  );
-  assert.equal(
-    resolveUsbTargetDevices([serialOnly], [ftdiClone("1"), ftdiClone("2")]).get(
-      "udmx",
+  assert.deepEqual(
+    usbTargetStatusView(
+      target,
+      { type: "Connected", data: { device: DEVICE.id } },
+      deviceById,
     ),
+    { label: "Configured", kind: "valid" },
+  );
+  assert.deepEqual(
+    usbTargetStatusView(
+      target,
+      { type: "Moved", data: { device: DEVICE.id } },
+      deviceById,
+    ).fix,
+    { label: "Update port", device: DEVICE.id },
+  );
+  const choice = usbTargetStatusView(
+    target,
+    { type: "NeedsChoice", data: { device: DEVICE.id } },
+    deviceById,
+  );
+  assert.equal(choice.kind, "warning");
+  assert.match(choice.detail ?? "", /port 1:2/);
+  assert.deepEqual(choice.fix, { label: "Use adapter", device: DEVICE.id });
+  assert.equal(
+    usbTargetStatusView(target, { type: "Missing" }, deviceById).fix,
     undefined,
   );
 });

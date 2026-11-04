@@ -6,20 +6,30 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import { For, Show } from "solid-js";
 import { NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import type { UsbDmxOutputTarget } from "../../../types";
-import { isBuiltInUsbTarget } from "../usb/model";
+import { isBuiltInUsbTarget, type UsbTargetStatusView } from "../usb/model";
+
+/** Text color for each status kind. */
+const STATUS_CLASS: Record<UsbTargetStatusView["kind"], string> = {
+  valid: "text-gray-500",
+  warning: "text-amber-300",
+  invalid: "text-red-300",
+};
 
 interface UsbTargetRowProps {
   target: UsbDmxOutputTarget;
   outputEnabled: boolean;
   deviceAvailable: boolean;
-  status: { label: string; kind: "valid" | "invalid" };
+  status: UsbTargetStatusView;
   deviceOptions: Array<{ id: string; label: string }>;
   onSave: (target: UsbDmxOutputTarget) => void;
   onRemove: (target: UsbDmxOutputTarget) => void;
+  /** Binds the target to an attached adapter, saving the port it is on now. */
+  onAssignDevice: (target: UsbDmxOutputTarget, device: string) => void;
 }
 
 /** Renders one configured USB output mapping from controller-projected state. */
@@ -58,13 +68,35 @@ export function UsbTargetRow(props: UsbTargetRowProps) {
             </span>
           }
         >
-          <span
-            class={`text-xs ${
-              props.status.kind === "valid" ? "text-gray-500" : "text-red-300"
-            }`}
-          >
-            {props.status.label}
-          </span>
+          <div class="flex flex-col items-start gap-1">
+            <span
+              class={`inline-flex items-center gap-1 text-xs ${STATUS_CLASS[props.status.kind]}`}
+            >
+              <Show when={props.status.kind !== "valid"}>
+                <WarningIcon class="size-3.5 shrink-0" aria-hidden="true" />
+              </Show>
+              {props.status.label}
+            </span>
+            <Show when={props.status.detail}>
+              {(detail) => (
+                <span class="text-xs text-gray-500">{detail()}</span>
+              )}
+            </Show>
+            <Show when={props.status.fix}>
+              {(fix) => (
+                <Button
+                  size="compact"
+                  type="button"
+                  aria-label={`${props.target.id} ${fix().label.toLowerCase()}`}
+                  onClick={() =>
+                    props.onAssignDevice(props.target, fix().device)
+                  }
+                >
+                  {fix().label}
+                </Button>
+              )}
+            </Show>
+          </div>
         </Show>
       </td>
       <td class="text-right">

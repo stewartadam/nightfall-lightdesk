@@ -15,7 +15,7 @@ use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::RouteValidationMode;
 use nightfall_io::prelude::{
     ExternalControlSettings, InputSignalLossPolicy, InputUniverseVisibilityMode,
-    NetworkDmxOutputTargets, UsbDmxOutputTargets,
+    NetworkDmxOutputTargets, UsbDmxDeviceAssignment, UsbDmxOutputTargets,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -342,6 +342,8 @@ pub enum SettingsCommand {
     SetNetworkDmxOutputs(NetworkDmxOutputTargets),
     /// Set named USB DMX output targets.
     SetUsbDmxOutputs(UsbDmxOutputTargets),
+    /// Bind one USB DMX output target to an attached adapter, saving the port it is on now.
+    AssignUsbDmxDevice(UsbDmxDeviceAssignment),
     /// Set the input signal-loss policy
     SetInputSignalLossPolicy(InputSignalLossPolicy),
     /// Set the stale input age threshold

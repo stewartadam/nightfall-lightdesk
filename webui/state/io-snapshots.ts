@@ -50,6 +50,7 @@ import {
   $settings,
   $settingsSnapshotRevision,
   $telemetryState,
+  $usbDmxTargetStates,
 } from "./settings";
 
 /** Reads persisted panel layouts from settings while tolerating older snapshots. */
@@ -124,6 +125,13 @@ export function applyAvailableUsbDmxDevicesSnapshot(
     "Receive AvailableUsbDmxDevices",
     devices,
   );
+}
+
+/** Applies the backend's status for each saved USB DMX output. */
+export function applyUsbDmxTargetStatesSnapshot(
+  states: types.UsbDmxTargetState[],
+): void {
+  setStoreAction($usbDmxTargetStates, "Receive UsbDmxTargetStates", states);
 }
 
 /** Applies the audio inputs LTC timecodes can read from. */

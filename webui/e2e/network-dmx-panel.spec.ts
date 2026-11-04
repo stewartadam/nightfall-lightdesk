@@ -6,7 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { UsbDmxDeviceInfo } from "../types/index";
+import type {
+  ToastAction as EngineToastAction,
+  ToastLevel,
+  UsbDmxDeviceInfo,
+  UsbDmxTargetState,
+} from "../types/index";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -945,6 +950,260 @@ test("I/O transports panel distinguishes same-SKU USB devices", async ({
 
   await select.selectOption("default");
   await expect(select).toHaveValue("default");
+});
+
+/** Seeds the backend's USB output statuses into the UI store, keeping them through broadcasts. */
+async function seedUsbDmxTargetStates(
+  page: Page,
+  states: UsbDmxTargetState[],
+): Promise<void> {
+  await page.evaluate((seedStates) => {
+    const store = (window as any).appStores.usbDmxTargetStates as any;
+    if (!store.__e2eOriginalSet) {
+      store.__e2eOriginalSet = store.set.bind(store);
+      store.set = (nextStates: unknown) =>
+        store.__e2eOriginalSet(
+          (window as any).__e2eUsbDmxTargetStates ?? nextStates,
+        );
+    }
+    (window as any).__e2eUsbDmxTargetStates = seedStates;
+    store.__e2eOriginalSet(seedStates);
+  }, states);
+}
+
+/**
+ * Shows a toast carrying engine toast actions through the app's own action mapping, as the
+ * websocket handler does. The Playwright backends run with USB output forbidden and have no
+ * adapters, so the engine never raises USB toasts itself here.
+ */
+async function showEngineToast(
+  page: Page,
+  message: string,
+  actions: EngineToastAction[],
+): Promise<void> {
+  await page.evaluate(
+    ({ message, actions }) =>
+      window.__nightfallTest.engineNotifications.show({
+        type: "ShowToast",
+        data: { level: "Warning" as ToastLevel, message, actions },
+      }),
+    { message, actions },
+  );
+}
+
+/**
+ * Scrolls the USB section to the top of the panel, waits for toasts to finish animating in, and
+ * saves the USB section beside the page's toasts as one screenshot.
+ */
+async function captureUsbSection(
+  page: Page,
+  panel: Locator,
+  name: string,
+): Promise<void> {
+  await panel.evaluate((scroller) => {
+    const section = scroller.querySelector(
+      'section[aria-label="USB output transports"]',
+    ) as HTMLElement;
+    scroller.scrollTop +=
+      section.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top;
+  });
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: test.info().outputPath(name) });
+}
+
+/** Builds an Anyma uDMX that reports serial 0001, as cloned adapters do, on port 20:<port>. */
+function sharedSerialAdapter(port: string): UsbDmxDeviceInfo {
+  return {
+    id: `id-16c0:05dc,serial-0001,port-20:${port}`,
+    label: `Anyma uDMX (16c0:05dc) - serial 0001 - bus 20 port ${port}`,
+    vendor_id: 0x16c0,
+    product_id: 0x05dc,
+    manufacturer: "Anyma",
+    product: "uDMX",
+    serial_number: "0001",
+    location: `bus 20 port ${port}`,
+  };
+}
+
+/** Opens I/O Transports with USB output on and two outputs saved for shared-serial adapters. */
+async function openSharedSerialOutputs(
+  page: Page,
+  devices: UsbDmxDeviceInfo[],
+  states: UsbDmxTargetState[],
+): Promise<Locator> {
+  await page.setViewportSize({ width: 1400, height: 1400 });
+  await page.goto("/?e2e=1");
+  await expect(page.locator("main#app")).toBeVisible();
+  await page.waitForFunction(() =>
+    Boolean((window as any).appStores?.usbDmxTargetStates),
+  );
+  await openIoTransportsPanel(page);
+  const panel = networkDmxPanel(page);
+  await enableTransportOutput(
+    page,
+    panel,
+    "Enable USB output",
+    "usb_output_enabled",
+  );
+  await seedUsbDmxTargets(page, [
+    { id: "udmx", device: "default" },
+    {
+      id: "left",
+      device: sharedSerialAdapter("1").id,
+      device_label: "Anyma uDMX",
+    },
+    {
+      id: "right",
+      device: sharedSerialAdapter("2").id,
+      device_label: "Anyma uDMX",
+    },
+  ]);
+  await seedUsbDmxDevices(page, devices);
+  await seedUsbDmxTargetStates(page, [
+    { target: "udmx", status: { type: "Auto" } },
+    ...states,
+  ]);
+  return panel;
+}
+
+/**
+ * Verifies a lone adapter that two saved outputs could claim asks which output it drives, both
+ * from the notification and from each output's row, and that choosing sends the assignment.
+ */
+test("I/O transports panel asks which output a lone shared-serial adapter drives", async ({
+  page,
+}) => {
+  const lone = sharedSerialAdapter("3");
+  const panel = await openSharedSerialOutputs(
+    page,
+    [lone],
+    [
+      {
+        target: "left",
+        status: { type: "NeedsChoice", data: { device: lone.id } },
+      },
+      {
+        target: "right",
+        status: { type: "NeedsChoice", data: { device: lone.id } },
+      },
+    ],
+  );
+
+  for (const target of ["left", "right"]) {
+    const row = usbDmxTargetRow(panel, target);
+    await expect(
+      row.getByText("Choose adapter", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      row.getByText(
+        "The adapter on port 20:3 could be this output or another one",
+      ),
+    ).toBeVisible();
+    await expect(
+      row.getByRole("button", { name: `${target} use adapter` }),
+    ).toBeVisible();
+  }
+
+  await showEngineToast(
+    page,
+    'The USB DMX adapter on port 20:3 could be output "left" or "right". Choose which output it drives.',
+    [
+      { type: "ChooseUsbDmxOutput", data: { target: "left", device: lone.id } },
+      {
+        type: "ChooseUsbDmxOutput",
+        data: { target: "right", device: lone.id },
+      },
+      { type: "OpenUsbDmxOutputs" },
+    ],
+  );
+  const toast = page.locator('[data-component="Toast"]').filter({
+    hasText: "could be output",
+  });
+  await expect(
+    toast.getByRole("button", { name: "Use as left" }),
+  ).toBeVisible();
+  await expect(
+    toast.getByRole("button", { name: "Use as right" }),
+  ).toBeVisible();
+  await expect(
+    toast.getByRole("button", { name: "Open I/O Transports" }),
+  ).toBeVisible();
+  await captureUsbSection(page, panel, "usb-choose-output.png");
+  await page.screenshot({
+    path: test.info().outputPath("usb-choose-output-page.png"),
+  });
+
+  // The backend has no adapters attached, so it refuses the assignment it receives.
+  await toast.getByRole("button", { name: "Use as left" }).click();
+  await expect(
+    page.getByText("That USB DMX adapter is no longer attached").first(),
+  ).toBeVisible();
+});
+
+/**
+ * Verifies adapters sharing a serial number raise a warning naming their ports, and an output
+ * whose adapter is on another port offers to update it.
+ */
+test("I/O transports panel warns about adapters sharing a serial number", async ({
+  page,
+}) => {
+  const onSavedPort = sharedSerialAdapter("2");
+  const elsewhere = sharedSerialAdapter("3");
+  const panel = await openSharedSerialOutputs(
+    page,
+    [onSavedPort, elsewhere],
+    [
+      {
+        target: "left",
+        status: { type: "OtherPort", data: { device: elsewhere.id } },
+      },
+      {
+        target: "right",
+        status: { type: "Connected", data: { device: onSavedPort.id } },
+      },
+    ],
+  );
+
+  await expect(
+    panel.locator('[data-slot="usb-shared-serial-warning"]'),
+  ).toContainText(
+    "Adapters on port 20:2 and port 20:3 report the same serial number (0001).",
+  );
+  const left = usbDmxTargetRow(panel, "left");
+  await expect(
+    left.getByText("Not on its port", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    left.getByText("A matching adapter is on port 20:3"),
+  ).toBeVisible();
+  await expect(
+    left.getByRole("button", { name: "left update port" }),
+  ).toBeVisible();
+  await expect(
+    usbDmxTargetRow(panel, "right").getByText("Configured", { exact: true }),
+  ).toBeVisible();
+
+  await showEngineToast(
+    page,
+    'USB output "left" has no adapter on port 20:1. A matching adapter is on port 20:3, but adapters that share a serial number are told apart by port, so output stays off until you confirm it.',
+    [
+      {
+        type: "UpdateUsbDmxPort",
+        data: { target: "left", device: elsewhere.id },
+      },
+      { type: "OpenUsbDmxOutputs" },
+    ],
+  );
+  await expect(
+    page
+      .locator('[data-component="Toast"]')
+      .getByRole("button", { name: "Update port" }),
+  ).toBeVisible();
+  await captureUsbSection(page, panel, "usb-shared-serial.png");
+  await page.screenshot({
+    path: test.info().outputPath("usb-shared-serial-page.png"),
+  });
 });
 
 /** Groups scenarios that create their own blank showfile through the startup picker. */

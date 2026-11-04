@@ -12,11 +12,12 @@ pub mod network_interface_alerts;
 pub mod relations;
 pub mod scheduled_commands;
 pub mod stale_inputs;
+pub mod usb_dmx_targets;
 pub mod vdim;
 
 pub mod prelude {
     pub use super::{
         event_handlers, instance_controls, network_interface_alerts, relations, scheduled_commands,
-        stale_inputs, vdim,
+        stale_inputs, usb_dmx_targets, vdim,
     };
 }

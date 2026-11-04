@@ -19,6 +19,7 @@ pub(crate) struct ResyncSettingsParams<'w> {
     telemetry: Res<'w, crate::settings::TelemetryState>,
     available_audio_devices: Res<'w, AvailableAudioDevices>,
     available_usb_dmx_devices: Res<'w, AvailableUsbDmxDevices>,
+    usb_dmx_target_states: Res<'w, UsbDmxTargetStates>,
     network_interface_state: Res<'w, NetworkInterfaceState>,
 }
 
@@ -88,6 +89,7 @@ pub(crate) fn handle_resync_state(
         &broadcaster,
     );
     send_available_usb_dmx_devices(&resync_settings.available_usb_dmx_devices.0, &broadcaster);
+    send_usb_dmx_target_states(&resync_settings.usb_dmx_target_states, &broadcaster);
     // Sent by the next low-frequency pass, after the parameter layout its slots refer to.
     layer_stack_publication.invalidate();
     send_undo_state(undo_manager, &broadcaster);
