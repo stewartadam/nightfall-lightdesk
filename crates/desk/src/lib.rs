@@ -66,10 +66,6 @@ pub mod prelude {
         AvailableAudioDevices, GraphicsReport, ReportedGraphics, SettingsCommand, TelemetryConsent,
         TelemetryState,
     };
-    pub use crate::systems::relations::apply_virtual_relations;
-    pub use crate::systems::vdim::{
-        DEFAULT_GAMMA, VDIM_AFFECTED_ATTRIBUTES, apply_vdim, gamma_correct,
-    };
 }
 
 /// Plugin for adding desk functionality to the app
@@ -172,11 +168,9 @@ impl Plugin for DeskPlugin {
         app.add_systems(
             Update,
             (
-                event_handlers::fixture_events::crud_events,
                 event_handlers::debug_events::handle_events,
                 faders::handle_fader_commands,
                 faders::handle_fader_updates,
-                systems::stale_inputs::clear_stale_input_channels,
             )
                 .in_set(EventHandling),
         );
@@ -222,16 +216,13 @@ impl Plugin for DeskPlugin {
                 .before(Compositing),
         );
 
-        // apply virtual dimmer scaling and virtual relation masters after compositing
+        // Inhibit masters cap intensity before virtual dimmers and relations scale the composited
+        // values.
         app.add_systems(
             Render,
-            (
-                masters::apply_master_inhibition,
-                systems::vdim::apply_vdim,
-                systems::relations::apply_virtual_relations,
-            )
-                .chain()
-                .in_set(VdimProcessing),
+            masters::apply_master_inhibition
+                .in_set(VdimProcessing)
+                .before(nightfall_fixtures::VirtualIntensity),
         );
         #[cfg(feature = "native-network-watch")]
         app.add_systems(

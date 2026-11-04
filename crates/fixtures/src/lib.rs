@@ -21,6 +21,7 @@ pub mod compositor;
 pub mod data_provider_ext;
 pub mod events;
 pub mod fixture;
+pub mod fixture_events;
 pub mod geometry;
 pub mod input_apply;
 pub mod library;
@@ -31,17 +32,20 @@ pub mod parameter_state;
 pub mod parameter_stream_settings;
 pub mod physical;
 pub mod placement;
+pub mod relations;
 pub mod route_overlap;
 pub mod route_resolution;
 pub mod route_validation;
 pub mod routes;
 mod selection_source;
+pub mod stale_inputs;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 pub mod transport_holds;
 pub mod undo;
 pub mod universe;
 pub mod universe_stream;
+pub mod vdim;
 pub mod websocket;
 pub mod wire_layout;
 
@@ -157,9 +161,17 @@ pub mod prelude {
     pub use crate::{
         DmxOperation, FixtureCommand, FixturePlacementPositionUpdate,
         FixturePlacementRotationUpdate, FixturePlugin, HeldTransportDmxChannelState,
-        ManualDmxChannelState, RouteEndpoint,
+        ManualDmxChannelState, RouteEndpoint, VirtualIntensity,
     };
 }
+
+/// `Render` system set, inside [`VdimProcessing`], in which virtual dimmers and virtual relation
+/// masters scale the composited values.
+///
+/// Systems that must see the values before that scaling, such as inhibit masters, order
+/// themselves before this set.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct VirtualIntensity;
 
 /// Section the showfile's input and output transport settings are saved and sent under.
 pub const IO_SETTINGS_SECTION: SettingsSection<nightfall_io::IoRuntimeSettings> =
@@ -249,6 +261,24 @@ impl Plugin for FixturePlugin {
             )
                 .chain()
                 .in_set(EventHandling),
+        );
+
+        app.add_systems(
+            Update,
+            (
+                fixture_events::crud_events,
+                stale_inputs::clear_stale_input_channels,
+            )
+                .in_set(EventHandling),
+        );
+
+        // Virtual dimmers and virtual relation masters scale the composited values before output.
+        app.add_systems(
+            Render,
+            (vdim::apply_vdim, relations::apply_virtual_relations)
+                .chain()
+                .in_set(VdimProcessing)
+                .in_set(VirtualIntensity),
         );
 
         // Runs after every event handler, like the console manual layer, so releases planned
@@ -509,6 +539,9 @@ pub enum FixtureCommand {
         /// Color path ID to assign, or None to clear the default.
         color_path_id: Option<ColorPathId>,
     },
+
+    /// Clear transport input assertions whose source universes are stale.
+    ReleaseStaleInputs,
 }
 
 impl IngressCommand for FixtureCommand {}

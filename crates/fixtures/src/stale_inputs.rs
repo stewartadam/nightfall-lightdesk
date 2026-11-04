@@ -6,24 +6,26 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Clearing transport input values whose source universes have stopped sending.
+
 use bevy_ecs::prelude::*;
 use nightfall_compositor::prelude::Layer;
 use nightfall_engine::prelude::{CommandEnvelope, CommandResponder};
-use nightfall_fixtures::prelude::{
-    ConsoleDmxUniverses, InputDmxUniverses, TransportInputAssertionOwners, TransportInputLayer,
-    clear_stale_parameter_assertions,
-};
 use nightfall_io::{InputSignalLossPolicy, IoRuntimeSettings, sanitize_input_signal_loss_timeout};
 use web_time::Instant;
 
-use crate::DeskCommand;
+use crate::FixtureCommand;
+use crate::prelude::{
+    ConsoleDmxUniverses, InputDmxUniverses, TransportInputAssertionOwners, TransportInputLayer,
+    clear_stale_parameter_assertions,
+};
 
 /// Clears stale transport-owned input channels and parameter assertions based on IO settings.
 pub fn clear_stale_input_channels(
     settings: Res<IoRuntimeSettings>,
     mut input_universes: ResMut<InputDmxUniverses>,
     mut universes: ResMut<ConsoleDmxUniverses>,
-    mut release_events: MessageReader<CommandEnvelope<DeskCommand>>,
+    mut release_events: MessageReader<CommandEnvelope<FixtureCommand>>,
     mut responder: CommandResponder,
     mut input_layer_query: Query<
         (&mut Layer, &mut TransportInputAssertionOwners),
@@ -39,7 +41,7 @@ pub fn clear_stale_input_channels(
     let forced_release_commands = release_events
         .read()
         .filter_map(|event| {
-            matches!(event.command, DeskCommand::ReleaseStaleInputs).then_some(event.command_id)
+            matches!(event.command, FixtureCommand::ReleaseStaleInputs).then_some(event.command_id)
         })
         .collect::<Vec<_>>();
 
@@ -102,14 +104,14 @@ mod tests {
         CommandNoticeReply, CommandOrigin, CommandReply, CommandResult, CommandTracker,
         FinishedCommand, ReplyTarget,
     };
-    use nightfall_fixtures::prelude::TRANSPORT_INPUT_LAYER_PRIORITY;
-    use nightfall_fixtures::prelude::{ConsoleChannelOrigin, Parameter, ParameterAssertionSource};
     use nightfall_io::RouteTransport;
 
     use super::*;
+    use crate::prelude::TRANSPORT_INPUT_LAYER_PRIORITY;
+    use crate::prelude::{ConsoleChannelOrigin, Parameter, ParameterAssertionSource};
     /// Installs the command lifecycle resources required by the stale-input system.
     fn add_command_lifecycle(app: &mut App) {
-        app.add_message::<CommandEnvelope<DeskCommand>>();
+        app.add_message::<CommandEnvelope<FixtureCommand>>();
         app.add_message::<CommandResult>();
         app.add_message::<CommandReply>();
         app.add_message::<FinishedCommand>();
@@ -406,7 +408,7 @@ mod tests {
         }
 
         let command = CommandEnvelope::new(
-            DeskCommand::ReleaseStaleInputs,
+            FixtureCommand::ReleaseStaleInputs,
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
         );

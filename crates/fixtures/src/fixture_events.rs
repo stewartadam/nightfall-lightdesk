@@ -15,16 +15,17 @@ use bevy_ecs::system::SystemParam;
 use moonshine_kind::prelude::*;
 use nightfall::prelude::{ColorPath, ColorPathId, FixtureRef};
 use nightfall_engine::prelude::*;
-use nightfall_fixtures::FixturePlacementUpdateEntry;
-use nightfall_fixtures::parameter::Parameter;
-use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::route_validation::validate_routes;
-use nightfall_fixtures::websocket::{
-    SuppressFixtureChangedSnapshot, broadcast_fixture_command, send_color_path_defaults,
-};
 use nightfall_io::RouteTransport;
 use nightfall_io::prelude::*;
 use uuid::Uuid;
+
+use crate::FixturePlacementUpdateEntry;
+use crate::parameter::Parameter;
+use crate::prelude::*;
+use crate::route_validation::validate_routes;
+use crate::websocket::{
+    SuppressFixtureChangedSnapshot, broadcast_fixture_command, send_color_path_defaults,
+};
 
 mod color_path_defaults;
 mod definitions;
@@ -90,7 +91,9 @@ fn succeed_fixture_command(responder: &mut CommandResponder, command_id: Command
 /// Handles CRUD events for fixtures.
 ///
 /// Fixture definition, patch, and color path default commands go to their family handler,
-/// which reports the command's outcome. DMX channel commands belong to the fixtures crate.
+/// which reports the command's outcome. DMX channel commands are answered by
+/// `events::handle_set_dmx_channels` and the transport hold handlers, and `ReleaseStaleInputs` by
+/// `stale_inputs::clear_stale_input_channels`.
 pub fn crud_events(
     mut context: FixtureCrudContext,
     mut events: MessageReader<CommandEnvelope<FixtureCommand>>,
@@ -112,7 +115,8 @@ pub fn crud_events(
                 color_path_defaults::handle_command(&mut context, event);
             }
             FixtureCommand::SetDmxChannels { .. }
-            | FixtureCommand::SetTransportDmxChannels { .. } => {}
+            | FixtureCommand::SetTransportDmxChannels { .. }
+            | FixtureCommand::ReleaseStaleInputs => {}
         }
     }
 }

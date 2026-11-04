@@ -11,11 +11,11 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_cmd_parse::generate_ast;
-use nightfall_desk::systems::event_handlers::fixture_events::crud_events;
 use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::FixtureCommand;
 use nightfall_fixtures::ast_conv::FixtureAstConverter;
+use nightfall_fixtures::fixture_events::crud_events;
 use nightfall_fixtures::output_frames::{
     OutputDmxFrames, OutputRouting, compose_output_frames, update_input_routing,
 };

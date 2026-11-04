@@ -33,8 +33,7 @@ Every crate belongs to one of these architectural layers, manually assigned in `
 
 - `flow` depends on `fx-module`, because flows host FX module nodes.
 - `fx-module` depends on `fx`, to reuse the FX runtime contracts.
-- `programming` depends on `cues` and `desk`, for storing into cues and for desk services.
-- `output_artnet` and `output_sacn` depend on `desk`, for diagnostics and notifications.
+- `programming` depends on `cues`, for storing into cues.
 - `object-library` depends on `scene-objects`, to import and export scene objects.
 - `timeline` depends on `audio`, `cues`, and `fx`, to plan and play what its tracks trigger.
 
@@ -83,7 +82,7 @@ Engine core crates build the engine's runtime that every plugin plugs into.
 | `actions` | Demo | Registry of bindable actions and how each one turns into a command or an update. |
 | `clips` | Demo | Clip model, clip commands, lookups by identifier, and clip playback: routing clip starts and stops to the plugin registered for each clip source, launch quantize, and the lifecycle and clocks of running playbacks. |
 | `compositor` | Demo | Layer compositing pipeline: builds the layer stack and merges layers by priority and merge rule. |
-| `fixtures` | Demo | Fixtures, parameters, universes, patch bindings and their validation, DMX input, and the composition of output DMX frames. |
+| `fixtures` | Demo | Fixtures, parameters, universes, patch bindings and their validation, the fixture and patch commands, DMX input and the release of stale input values, virtual dimmers and virtual relations, and the composition of output DMX frames. |
 | `framepace` | Demo | Frame limiter that starts engine frames just before each DMX send time on the shared schedule, adapted from `bevy_framepace`. The browser demo uses only its `fps` command handling. |
 | `lookahead` | Demo | Runtime lookahead contracts shared by the playback domains. |
 | `selection-runtime` | Demo | Bevy system parameters that resolve fixture selections against the live patch, and the per-frame cache of resolved selections. |
@@ -180,13 +179,12 @@ The `desk` crate is the largest cross-plugin crate. It holds the behavior that b
 - Masters, faders with their levels and buttons, and the actions that drive them.
 - The client feeds for group and Blueprint definitions. The stores, commands, and undo for groups and Blueprints live in `programming`.
 - Host settings: network interface, telemetry, external control, and the device lists.
-- The adjustments after the merge: virtual dimmers, virtual relations, and each playback's intensity level.
+- Each playback's intensity level, applied after the layers are generated.
 - Diagnostics, network statistics, and the layer stack that the **Layers** panel shows.
-- The release of stale input values.
 
 Running a line of the command language (`EngineCommand::Eval`), delayed commands, and user notifications live in `engine`, so any crate can use them.
 
-The plugin rules explain why this code collects in `desk`. A plugin crate can't depend on another plugin crate, so behavior that touches several plugins, such as a master that scales playbacks from any of them, needs a crate above them. The result is a crate that many others use: `programming`, `output_artnet`, and `output_sacn` depend on it through boundary exceptions, and the browser demo compiles all of it.
+The plugin rules explain why this code collects in `desk`. A plugin crate can't depend on another plugin crate, so behavior that touches several plugins, such as a master that scales playbacks from any of them, needs a crate above them. The browser demo compiles all of it.
 
 Before you add code to `desk`, check whether it concerns one plugin only. If it does, put it in that plugin's crate. Add to `desk` only when the code needs several plugins at once.
 

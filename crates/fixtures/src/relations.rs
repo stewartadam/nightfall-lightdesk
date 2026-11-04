@@ -21,7 +21,8 @@
 use bevy_ecs::prelude::*;
 use nightfall::prelude::FixtureRef;
 use nightfall_fixture_model::prelude::*;
-use nightfall_fixtures::prelude::*;
+
+use crate::prelude::*;
 
 /// A fixture with relations the console applies, and the parameter entity
 /// of each of its model's parameters.

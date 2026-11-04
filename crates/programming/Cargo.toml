@@ -12,7 +12,6 @@ nightfall = { path = "../common" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-cues = { path = "../cues" }
 nightfall-engine = { path = "../engine" }
-nightfall-desk = { path = "../desk" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-instances = { path = "../instances" }

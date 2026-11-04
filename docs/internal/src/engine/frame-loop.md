@@ -256,7 +256,7 @@ Acknowledgements of input go in `ClientFeedback` in `PostUpdate`. Render-derived
 | Undo capture in `PendingCommandProcessing` | `crates/undo/src/lib.rs` |
 | Clock, playback level, and master systems | `crates/clips/src/playback.rs`, `crates/clips/src/playback/clocks.rs`, `crates/desk/src/lib.rs` |
 | Compositor and its removal observers | `crates/compositor/src/lib.rs`, `crates/compositor/src/system.rs` |
-| Virtual dimmers and virtual relations | `crates/desk/src/systems/vdim.rs`, `crates/desk/src/systems/relations.rs` |
+| Virtual dimmers and virtual relations | `crates/fixtures/src/vdim.rs`, `crates/fixtures/src/relations.rs` |
 | DMX packing and output frames | `crates/fixtures/src/lib.rs`, `crates/fixtures/src/output_frames.rs` |
 
 ## Related topics

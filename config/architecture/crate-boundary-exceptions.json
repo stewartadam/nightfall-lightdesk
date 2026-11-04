@@ -54,19 +54,6 @@
       ]
     },
     {
-      "id": "programmer-desk-orchestration",
-      "reason": "Programmer event and store orchestration uses desk-owned integration services.",
-      "edges": [
-        {
-          "from": "nightfall-programming",
-          "to": "nightfall-desk",
-          "fromLayer": "plugins",
-          "toLayer": "cross-plugin",
-          "rule": "plugin-crate-must-not-depend-on-cross-plugin-or-host"
-        }
-      ]
-    },
-    {
       "id": "timeline-runtime-orchestration",
       "reason": "Timeline planning and materialization coordinate audio, cue, and FX domain behavior.",
       "edges": [

@@ -133,7 +133,7 @@ fn forward_desk_commands_ignores_non_log_level() {
     app.add_systems(Update, forward_desk_commands);
 
     app.world_mut().write_message(CommandEnvelope::new(
-        DeskCommand::ReleaseStaleInputs,
+        DeskCommand::ClearTracingFilter,
         CommandOrigin::WebUi,
         ReplyTarget::Detached,
     ));

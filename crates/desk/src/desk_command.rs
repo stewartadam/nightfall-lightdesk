@@ -254,9 +254,6 @@ pub enum DeskCommand {
 
     /// Clear all existing log tracing filters
     ClearTracingFilter,
-
-    /// Clear transport input assertions whose source universes are stale.
-    ReleaseStaleInputs,
 }
 
 impl IngressCommand for DeskCommand {}
@@ -289,8 +286,7 @@ impl DeskCommand {
             | Self::SetLogLevel(_)
             | Self::TraceFixture { .. }
             | Self::SetTracingFilter { .. }
-            | Self::ClearTracingFilter
-            | Self::ReleaseStaleInputs => false,
+            | Self::ClearTracingFilter => false,
         }
     }
 }

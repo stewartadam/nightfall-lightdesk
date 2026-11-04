@@ -436,18 +436,3 @@ fn test_release_channel_conversion() {
         }
     );
 }
-
-/// Verifies stale input release syntax converts to the desk cleanup command.
-#[test]
-fn test_release_stale_inputs_conversion() {
-    let ast = generate_ast("release stale-inputs").expect("Failed to parse 'release stale-inputs'");
-    let commands = ProgrammerAstConverter::convert(&ast).expect("Failed to convert AST");
-
-    assert_eq!(commands.len(), 1);
-    let cmd = commands[0]
-        .as_any()
-        .downcast_ref::<DeskCommand>()
-        .expect("Expected DeskCommand");
-
-    assert!(matches!(cmd, DeskCommand::ReleaseStaleInputs));
-}

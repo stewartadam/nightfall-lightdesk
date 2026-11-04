@@ -443,7 +443,7 @@ mod tests {
     #[test]
     fn non_storage_commands_pass_the_disk_storage_guard() {
         let mut app = disk_storage_guard_app(RuntimeCapabilities::embedded_demo());
-        let command_id = submit_desk_command(&mut app, DeskCommand::ReleaseStaleInputs);
+        let command_id = submit_desk_command(&mut app, DeskCommand::ClearTracingFilter);
 
         app.update();
 

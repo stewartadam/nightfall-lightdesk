@@ -176,3 +176,21 @@ fn test_clear_attr_conversion() {
         other => panic!("Expected attribute clear target, got {:?}", other),
     }
 }
+
+/// Verifies stale input release syntax converts to the fixture command that clears them.
+#[test]
+fn test_release_stale_inputs_conversion() {
+    let ast = generate_ast("release stale-inputs").expect("Failed to parse 'release stale-inputs'");
+    let commands = ProgrammerAstConverter::convert(&ast).expect("Failed to convert AST");
+
+    assert_eq!(commands.len(), 1);
+    let cmd = commands[0]
+        .as_any()
+        .downcast_ref::<nightfall_fixtures::FixtureCommand>()
+        .expect("Expected FixtureCommand");
+
+    assert!(matches!(
+        cmd,
+        nightfall_fixtures::FixtureCommand::ReleaseStaleInputs
+    ));
+}

@@ -10,11 +10,11 @@ use std::env;
 
 use bevy_app::{App, Update};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use nightfall_desk::systems::vdim::apply_vdim;
 use nightfall_dmx::prelude::{Attribute, DmxValueResolution};
 use nightfall_fixtures::testing::{
     BENCH_FIXTURE_PARAMETERS, BENCH_VDIM_FIXTURE_PARAMETERS, patch_bench_fixtures_with_profile,
 };
+use nightfall_fixtures::vdim::apply_vdim;
 use nightfall_io::OutputTransport;
 
 const DEFAULT_FIXTURE_COUNTS: &[usize] = &[64, 512, 2_048];

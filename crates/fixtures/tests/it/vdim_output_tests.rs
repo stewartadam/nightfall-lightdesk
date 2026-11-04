@@ -11,11 +11,11 @@ use bevy_ecs::prelude::*;
 use moonshine_kind::Instance;
 use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
-use nightfall_desk::prelude::{DEFAULT_GAMMA, apply_vdim};
 use nightfall_dmx::prelude::*;
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::universe::dmx_universes;
+use nightfall_fixtures::vdim::{DEFAULT_GAMMA, apply_vdim};
 use nightfall_io::prelude::*;
 use uuid::Uuid;
 
@@ -189,7 +189,7 @@ fn virtual_intensity_scales_higher_priority_color_output() {
 
     assert_eq!(vdim.values.current_value, 64.0);
 
-    let expected_scale = nightfall_desk::prelude::gamma_correct(64.0 / 255.0, DEFAULT_GAMMA);
+    let expected_scale = nightfall_fixtures::vdim::gamma_correct(64.0 / 255.0, DEFAULT_GAMMA);
     let expected_color = 255.0 * expected_scale;
     assert!(
         (red.values.current_value - expected_color).abs() < 0.001,

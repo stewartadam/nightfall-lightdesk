@@ -16,7 +16,8 @@
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::*;
 use nightfall_dmx::prelude::*;
-use nightfall_fixtures::prelude::*;
+
+use crate::prelude::*;
 
 /// Default gamma value for perceptually linear LED dimming
 /// TODO: 2.2 is the sRGB standard, but until we can add dithering to smooth out

@@ -226,7 +226,7 @@ impl AstConvert for ProgrammerAstConverter {
                         }
                         Some(ast::ReleaseTargetAst::StaleInputs) => {
                             return Ok(vec![Box::new(
-                                nightfall_desk::prelude::DeskCommand::ReleaseStaleInputs,
+                                nightfall_fixtures::FixtureCommand::ReleaseStaleInputs,
                             )]);
                         }
                     };

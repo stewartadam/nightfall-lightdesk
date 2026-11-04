@@ -384,7 +384,7 @@ fn current_fixture_transport(
     {
         match &route.target {
             OutputTarget::Transport { target, .. } => {
-                return nightfall_fixtures::route_resolution::output_transport_from_target_id(
+                return crate::route_resolution::output_transport_from_target_id(
                     target,
                     network_outputs,
                     usb_outputs,
