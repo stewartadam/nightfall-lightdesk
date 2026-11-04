@@ -288,15 +288,6 @@ export function SettingsOverlay() {
       </Show>
     );
   };
-  /** Refreshes backend-provided device choices whenever settings becomes visible. */
-  createEffect(() => {
-    if (!isSettingsOpen()) return;
-    commandClient.emit("SettingsCommand", {
-      type: "GetAvailableNetworkInterfaces",
-    });
-    commandClient.emit("SettingsCommand", { type: "GetAvailableAudioDevices" });
-  });
-
   let dmxOutputRateInput: HTMLInputElement | undefined;
   /** Writes the saved DMX output rate into the rate field, replacing whatever the user typed. */
   const showDmxOutputRate = () => {
@@ -331,7 +322,7 @@ export function SettingsOverlay() {
   };
 
   const setNetworkInterface = (value: string | null) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("IoSettingsCommand", {
       type: "SetNetworkInterface",
       data: value,
     });
@@ -345,7 +336,7 @@ export function SettingsOverlay() {
   };
 
   const setInputSignalLossPolicy = (value: InputSignalLossPolicy) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("IoSettingsCommand", {
       type: "SetInputSignalLossPolicy",
       data: value,
     });
@@ -354,7 +345,7 @@ export function SettingsOverlay() {
   const setInputUniverseVisibilityMode = (
     value: InputUniverseVisibilityMode,
   ) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("IoSettingsCommand", {
       type: "SetInputUniverseVisibilityMode",
       data: value,
     });
@@ -404,8 +395,8 @@ export function SettingsOverlay() {
   };
 
   const setRouteValidationMode = (value: RouteValidationMode) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetRouteValidationMode",
+    commandClient.emit("RouteValidationCommand", {
+      type: "SetMode",
       data: value,
     });
   };
@@ -458,7 +449,7 @@ export function SettingsOverlay() {
       // The backend sends no settings change when it clamps back to the rate it already had, so
       // the field is rewritten once the command finishes either way.
       await commandClient
-        .invoke("SettingsCommand", {
+        .invoke("IoSettingsCommand", {
           type: "SetDmxOutputRate",
           data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
         })
@@ -470,7 +461,7 @@ export function SettingsOverlay() {
   };
 
   const setInputSignalLossTimeout = (value: number) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("IoSettingsCommand", {
       type: "SetInputSignalLossTimeout",
       data: msToDuration(value),
     });

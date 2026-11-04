@@ -6,7 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Host-scoped listener preferences, persistence, and interface resolution.
+//! External control: whether other computers may connect to the backend and on which
+//! interface, with the host-scoped preferences, their command and client feed, and the alerts
+//! shown when the chosen interface disappears or returns.
 
 use std::{
     net::{Ipv4Addr, SocketAddr},
@@ -14,10 +16,39 @@ use std::{
 };
 
 use bevy_ecs::prelude::*;
-use nightfall_io::{ExternalControlSettings, ExternalControlState, NetworkInterfaceState};
+use nightfall_io::NetworkInterfaceState;
+use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
 use crate::host_preferences::{LoadedPreferences, load_preferences, save_preferences};
+
+pub(crate) mod alerts;
+pub(crate) mod commands;
+
+/// Host-owned external control preferences, deliberately excluded from showfiles.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+#[serde(default)]
+pub struct ExternalControlSettings {
+    /// Whether other computers may connect to the backend.
+    pub enabled: bool,
+    /// Selected interface name, or `None` to listen on all IPv4 interfaces.
+    pub interface: Option<String>,
+}
+
+/// Host control preferences and the native listener's actual runtime state.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, Resource)]
+#[typeshare::typeshare]
+pub struct ExternalControlState {
+    /// Whether this runtime hosts a native network listener.
+    pub available: bool,
+    /// Preferences persisted independently from the active showfile.
+    pub settings: ExternalControlSettings,
+    /// Addresses on which the backend is currently listening.
+    pub listening_addresses: Vec<String>,
+    /// Binding or persistence failure requiring operator attention.
+    pub error: Option<String>,
+}
 
 /// Listener configuration passed from the engine to its native host task.
 #[derive(Clone, Debug, PartialEq, Eq)]

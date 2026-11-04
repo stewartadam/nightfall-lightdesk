@@ -31,6 +31,7 @@ use nightfall_engine::{
 use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
 use nightfall_flow::prelude::FlowPlugin;
 use nightfall_fx::prelude::FxPlugin;
+use nightfall_io::IoPlugin;
 use nightfall_macros::prelude::MacrosPlugin;
 use nightfall_programming::prelude::ProgrammingPlugin;
 use nightfall_references::ReferencesPlugin;
@@ -84,6 +85,7 @@ impl PluginGroup for CorePlugins {
             })
             .add(UndoPlugin)
             .add(ClientBridgePlugin)
+            .add(IoPlugin)
             .add(ActionsPlugin)
             .add(FixturePlugin)
             .add(SceneObjectPlugin)

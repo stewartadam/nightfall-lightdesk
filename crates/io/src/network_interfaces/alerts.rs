@@ -6,8 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Tells operators when a network interface their show or remote devices rely on disappears or
-//! returns.
+//! Tells operators when the network interface Art-Net and sACN bind to disappears or returns.
 //!
 //! Transports never fall back from a missing configured interface to another one; they stay
 //! unbound until the same interface reappears. These toasts make that state visible and point the
@@ -15,13 +14,11 @@
 
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::{ToastAction, ToastLevel, UiNotification};
-use nightfall_io::prelude::{
-    ExternalControlSettings, ExternalControlState, IoRuntimeSettings, NetworkInterfaceInfo,
-    NetworkInterfaceState, TransportRuntimePolicy,
-};
+
+use crate::{IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy};
 
 /// Compares each new host interface snapshot with the previous one and toasts the transitions
-/// that affect configured DMX transports or the External control listener.
+/// that affect configured DMX transports.
 ///
 /// The first snapshot seen is only recorded: a show that starts with its interface missing is
 /// already reported by Settings, and toasting at startup would repeat on every launch.
@@ -29,7 +26,6 @@ pub fn announce_network_interface_changes(
     interfaces: Res<NetworkInterfaceState>,
     io_settings: Res<IoRuntimeSettings>,
     transport_policy: Option<Res<TransportRuntimePolicy>>,
-    external_control: Option<Res<ExternalControlState>>,
     mut previous: Local<Option<NetworkInterfaceState>>,
     mut ui_notifications: MessageWriter<UiNotification>,
 ) {
@@ -41,15 +37,12 @@ pub fn announce_network_interface_changes(
         return;
     }
     let policy = transport_policy.map(|policy| *policy).unwrap_or_default();
-    let mut toasts = dmx_interface_toasts(last, &interfaces, &io_settings, &policy);
-    if let Some(external_control) = external_control.filter(|state| state.available) {
-        toasts.extend(external_control_toasts(
-            last,
-            &interfaces,
-            &external_control.settings,
-        ));
-    }
-    ui_notifications.write_batch(toasts);
+    ui_notifications.write_batch(dmx_interface_toasts(
+        last,
+        &interfaces,
+        &io_settings,
+        &policy,
+    ));
     *previous = Some(interfaces.clone());
 }
 
@@ -86,13 +79,13 @@ fn dmx_interface_toasts(
     };
     let open_settings = vec![ToastAction::OpenNetworkSettings];
     let toast = match &settings.network_interface {
-        Some(name) => match (find(previous, name), find(current, name)) {
+        Some(name) => match (previous.find(name), current.find(name)) {
             (Some(lost), None) => UiNotification::toast_with_actions(
                 ToastLevel::Warning,
                 format!(
                     "Network interface {} disconnected. {transports} stopped and resumes when it \
                      reconnects, or choose another interface.",
-                    label(lost)
+                    lost.display_label()
                 ),
                 open_settings,
             ),
@@ -100,7 +93,7 @@ fn dmx_interface_toasts(
                 ToastLevel::Info,
                 format!(
                     "Network interface {} reconnected. {transports} resumed.",
-                    label(back)
+                    back.display_label()
                 ),
             ),
             _ => return Vec::new(),
@@ -110,9 +103,9 @@ fn dmx_interface_toasts(
                 ToastLevel::Info,
                 format!(
                     "The system default network changed from {} to {}. {transports} moved to {}.",
-                    label(old),
-                    label(new),
-                    label(new)
+                    old.display_label(),
+                    new.display_label(),
+                    new.display_label()
                 ),
                 open_settings,
             ),
@@ -121,7 +114,7 @@ fn dmx_interface_toasts(
                 format!(
                     "Network interface {} disconnected and no other network is available. \
                      {transports} stopped.",
-                    label(lost)
+                    lost.display_label()
                 ),
                 open_settings,
             ),
@@ -129,7 +122,7 @@ fn dmx_interface_toasts(
                 ToastLevel::Info,
                 format!(
                     "{transports} resumed on {}, the system default network.",
-                    label(new)
+                    new.display_label()
                 ),
             ),
             _ => return Vec::new(),
@@ -138,65 +131,13 @@ fn dmx_interface_toasts(
     vec![toast]
 }
 
-/// Builds toasts for the interface External control listens on.
-///
-/// Listening on all interfaces cannot lose a selection, and a missing selection leaves only local
-/// control available until the same interface returns.
-fn external_control_toasts(
-    previous: &NetworkInterfaceState,
-    current: &NetworkInterfaceState,
-    settings: &ExternalControlSettings,
-) -> Vec<UiNotification> {
-    let Some(name) = settings.interface.as_ref().filter(|_| settings.enabled) else {
-        return Vec::new();
-    };
-    let toast = match (find(previous, name), find(current, name)) {
-        (Some(lost), None) => UiNotification::toast_with_actions(
-            ToastLevel::Warning,
-            format!(
-                "External control interface {} disconnected. Other devices can't connect until \
-                 it reconnects, or choose another interface.",
-                label(lost)
-            ),
-            vec![ToastAction::OpenExternalControlSettings],
-        ),
-        (None, Some(back)) => UiNotification::toast(
-            ToastLevel::Info,
-            format!(
-                "External control interface {} reconnected. Other devices can connect again.",
-                label(back)
-            ),
-        ),
-        _ => return Vec::new(),
-    };
-    vec![toast]
-}
-
-/// Looks up an interface by its system name in a host snapshot.
-fn find<'a>(state: &'a NetworkInterfaceState, name: &str) -> Option<&'a NetworkInterfaceInfo> {
-    state
-        .available_interfaces
-        .iter()
-        .find(|interface| interface.name == name)
-}
-
-/// Formats an interface as its friendly name with the system name in parentheses, or just the
-/// system name when the platform reports no friendly name.
-fn label(interface: &NetworkInterfaceInfo) -> String {
-    match interface.friendly_name.as_deref() {
-        Some(friendly) if friendly != interface.name => {
-            format!("{friendly} ({})", interface.name)
-        }
-        _ => interface.name.clone(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use bevy_app::{App, Update};
     use bevy_ecs::message::Messages;
 
     use super::*;
+    use crate::NetworkInterfaceInfo;
 
     /// Builds an interface with one IPv4 address and an optional friendly name.
     fn iface(name: &str, friendly: Option<&str>) -> NetworkInterfaceInfo {
@@ -324,40 +265,6 @@ mod tests {
 
         let back = dmx_interface_toasts(&offline, &on_ethernet, &settings, &policy);
         assert!(parts(&back[0]).1.contains("resumed on Ethernet (en1)"));
-    }
-
-    /// External control warns only for an enabled listener bound to one interface.
-    #[test]
-    fn external_control_interface_loss_is_announced() {
-        let lan = iface("en7", None);
-        let with_lan = snapshot(std::slice::from_ref(&lan), None);
-        let without_lan = snapshot(&[], None);
-        let selected = ExternalControlSettings {
-            enabled: true,
-            interface: Some("en7".to_string()),
-        };
-
-        let lost = external_control_toasts(&with_lan, &without_lan, &selected);
-        let (level, message, actions) = parts(&lost[0]);
-        assert_eq!(level, ToastLevel::Warning);
-        assert!(message.starts_with("External control interface en7 disconnected."));
-        assert_eq!(actions, [ToastAction::OpenExternalControlSettings]);
-        assert!(
-            parts(&external_control_toasts(&without_lan, &with_lan, &selected)[0])
-                .1
-                .contains("reconnected")
-        );
-
-        let all_interfaces = ExternalControlSettings {
-            enabled: true,
-            interface: None,
-        };
-        assert!(external_control_toasts(&with_lan, &without_lan, &all_interfaces).is_empty());
-        let disabled = ExternalControlSettings {
-            enabled: false,
-            ..selected
-        };
-        assert!(external_control_toasts(&with_lan, &without_lan, &disabled).is_empty());
     }
 
     /// The system records the startup snapshot silently and toasts once per later transition.

@@ -6,9 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-pub mod event_handlers;
-pub mod network_interface_alerts;
+//! Integration tests, linked into one binary to avoid per-file link overhead.
 
-pub mod prelude {
-    pub use super::{event_handlers, network_interface_alerts};
-}
+mod settings_command;

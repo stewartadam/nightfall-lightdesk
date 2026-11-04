@@ -28,8 +28,7 @@ nightfall-composition = { path = "../composition" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-controls = { path = "../controls" }
 nightfall-cues = { path = "../cues" }
-nightfall-desk = { path = "../desk", default-features = false, features = ["native-network-watch"] }
-nightfall-desk-audio = { path = "../desk_audio", optional = true }
+nightfall-desk = { path = "../desk", default-features = false }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
@@ -37,7 +36,7 @@ nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-framepace = { path = "../framepace" }
 nightfall-fx = { path = "../fx" }
 nightfall-fixtures = { path = "../fixtures" }
-nightfall-io = { path = "../io" }
+nightfall-io = { path = "../io", features = ["native-network-watch"] }
 nightfall-fixture-library = { path = "../fixture-library", optional = true }
 nightfall-gdtf-share = { path = "../gdtf-share", optional = true }
 nightfall-object-library = { path = "../object-library", optional = true }
@@ -74,6 +73,7 @@ tower-http = { workspace = true, features = ["fs"] }
 tracing-appender = "0.2"
 tracing-subscriber = { workspace = true, features = ["json"] }
 tracing.workspace = true
+typeshare.workspace = true
 uuid.workspace = true
 zip = { version = "9.1", default-features = false, features = ["deflate"] }
 tempfile.workspace = true
@@ -86,7 +86,7 @@ gdt-cpus = "0.2606.1"
 [features]
 default = ["full", "beat-detection", "telemetry"]
 full = ["audio", "ltc", "midi", "osc", "artnet", "sacn", "usb", "fixture-library", "gdtf-share", "object-library"]
-audio = ["dep:nightfall-audio", "dep:nightfall-desk-audio", "nightfall-timeline/audio"]
+audio = ["dep:nightfall-audio", "nightfall-timeline/audio"]
 beat-detection = ["dep:nightfall-beat-detection", "dep:reqwest"]
 ltc = ["dep:nightfall-input-ltc"]
 midi = ["dep:nightfall-input-midi", "nightfall-showfile/midi"]

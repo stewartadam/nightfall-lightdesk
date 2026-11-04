@@ -10,7 +10,6 @@ import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, For, onMount } from "solid-js";
 import { Table, TableScroll } from "../../../components/ui/table";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
-import { commandClient } from "../../../lib/engine-commands";
 import {
   sendNetworkDmxOutputs,
   sendNetworkInputEnabled,
@@ -85,13 +84,6 @@ export function IoTransportsController() {
 
   onMount(() => {
     void refreshReservedOutputTargetKeywords().then(setReservedKeywordsReady);
-  });
-
-  /** Requests compatible USB adapter choices when the panel is mounted. */
-  createEffect(() => {
-    commandClient.emit("SettingsCommand", {
-      type: "GetAvailableUsbDmxDevices",
-    });
   });
 
   const targets = createMemo(

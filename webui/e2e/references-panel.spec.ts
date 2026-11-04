@@ -343,7 +343,7 @@ test("references panel surfaces missing output transport targets", async ({
   );
   try {
     await sendCommand(page, {
-      module: "SettingsCommand",
+      module: "IoSettingsCommand",
       command: {
         type: "SetNetworkDmxOutputs",
         data: {
@@ -371,7 +371,7 @@ test("references panel surfaces missing output transport targets", async ({
     await expect(panel.getByText("OK").first()).toBeVisible();
 
     await sendCommand(page, {
-      module: "SettingsCommand",
+      module: "IoSettingsCommand",
       command: { type: "SetNetworkDmxOutputs", data: originalOutputs },
     });
     await expect(panel.getByText("Missing").first()).toBeVisible();
@@ -386,7 +386,7 @@ test("references panel surfaces missing output transport targets", async ({
     });
   } finally {
     await sendCommand(page, {
-      module: "SettingsCommand",
+      module: "IoSettingsCommand",
       command: { type: "SetNetworkDmxOutputs", data: originalOutputs },
     });
   }

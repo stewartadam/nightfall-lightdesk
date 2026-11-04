@@ -170,7 +170,7 @@ A Bevy app is assembled from plugins, and each Nightfall domain, such as cues or
 
 Nesting a group flattens its plugins into the parent's list, so a host can insert its own plugins next to any shared plugin they depend on, or disable one, wherever that plugin's group sits.
 
-- The native hosts build `NativePlugins`. It adds audio after the engine, the websocket server after the fixture compositor, desk audio after the desk, the fixture and object libraries after macros, and FX modules after FX, then appends the output and input groups. The systems that load, save, and swap showfiles are added separately.
+- The native hosts build `NativePlugins`. It adds audio after the engine, the websocket server after the fixture compositor, telemetry commands after the websocket server, the fixture and object libraries after macros, and FX modules after FX, then appends the output and input groups. The systems that load, save, and swap showfiles are added separately.
 - The browser demo builds `ShowPlugins` with a timeline plugin variant that asks the browser to play bundled audio, and adds a built-in fixture library after the fixture plugin. It has no sockets, threads, file system, or WASM runtime of its own, so it leaves out the native plugins above and the showfile handling systems, such as draft autosave and showfile loading.
 
 When you add a show domain plugin, add it to its domain group and both hosts pick it up. A plugin that needs a native-only service belongs in `NativePlugins`, inserted after the plugin it depends on; report the missing feature through the runtime capabilities so the demo UI can hide it. The `check:browser-demo-dependencies` script confirms that the browser build pulls in no native-only packages, such as Tokio or Wasmtime.

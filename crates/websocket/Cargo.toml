@@ -24,6 +24,7 @@ tracing.workspace = true
 tokio.workspace = true
 tower-http = { workspace = true, features = ["cors"] }
 tower-service.workspace = true
+typeshare.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

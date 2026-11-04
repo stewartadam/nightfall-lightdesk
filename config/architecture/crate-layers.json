@@ -11,7 +11,6 @@
       "nightfall-dmx",
       "nightfall-engine-derive",
       "nightfall-fixture-model",
-      "nightfall-io",
       "nightfall-lookahead-projection",
       "nightfall-instances",
       "nightfall-playback-planner",
@@ -26,6 +25,7 @@
       "nightfall-clips",
       "nightfall-fixtures",
       "nightfall-framepace",
+      "nightfall-io",
       "nightfall-lookahead",
       "nightfall-selection-runtime",
       "nightfall-service-host",
@@ -59,7 +59,6 @@
     "cross-plugin": [
       "nightfall-boards",
       "nightfall-desk",
-      "nightfall-desk-audio",
       "nightfall-macros",
       "nightfall-references",
       "nightfall-showfile",

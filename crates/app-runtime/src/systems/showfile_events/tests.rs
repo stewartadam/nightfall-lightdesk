@@ -17,7 +17,6 @@ use nightfall_engine::prelude::{
     PanelLayouts, UiPreferences, register_settings_section, sync_settings_values,
 };
 use nightfall_fixture_model::prelude::*;
-use nightfall_fixtures::IO_SETTINGS_SECTION;
 use nightfall_fixtures::prelude::ParameterStreamSettings;
 use nightfall_flow::prelude::*;
 use nightfall_fx::prelude::*;
@@ -25,6 +24,7 @@ use nightfall_fx::prelude::*;
 use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
+use nightfall_io::IO_SETTINGS_SECTION;
 use nightfall_io::RouteTransport;
 use nightfall_io::{InputSignalLossPolicy, IoRuntimeSettings, TransportRuntimePolicy};
 #[cfg(feature = "object-library")]

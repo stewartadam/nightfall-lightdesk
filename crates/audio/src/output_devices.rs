@@ -6,26 +6,85 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Watches the system's audio output devices for the desk.
-//!
-//! [`DeskAudioPlugin`] discovers output devices on a background worker so the engine never waits
-//! on the operating system's audio APIs. When the chosen device appears or disappears, it moves
-//! timeline audio to the right device and tells the operator.
+//! The host's audio output devices: background discovery, the client feed, and rerouting playback
+//! with a toast when the selected or default output disappears or returns.
 
 use std::collections::HashMap;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use nightfall_audio::prelude::AudioSettings;
-use nightfall_audio::{
-    AudioController, AudioPlugin, available_output_devices, default_output_device,
-};
-use nightfall_desk::prelude::{AvailableAudioDevices, DeskPlugin};
-use nightfall_engine::prelude::{
-    EventHandling, SettingsCommandHandling, ToastLevel, UiNotification,
-};
+use nightfall_engine::prelude::*;
+use serde::Serialize;
+
+use crate::settings::AudioSettings;
+use crate::{AudioController, available_output_devices, default_output_device};
+
+/// Audio outputs the host can play through, keyed by stable device id with display names.
+#[derive(Resource, Debug, Default, Clone)]
+pub struct AvailableAudioDevices(pub HashMap<String, String>);
+
+/// Audio device messages sent to clients.
+#[derive(Serialize)]
+#[serde(tag = "type", content = "data")]
+#[typeshare::typeshare]
+enum AudioWsMessage<'a> {
+    /// Audio outputs as a map of stable id to display name.
+    AvailableAudioDevices(
+        #[typeshare(serialized_as = "Record<String, String>")] &'a HashMap<String, String>,
+    ),
+}
+
+/// Publishes the audio output devices to clients.
+fn send_available_audio_devices(devices: &AvailableAudioDevices, broadcaster: &ClientEventSink) {
+    broadcaster.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &AudioWsMessage::AvailableAudioDevices(&devices.0),
+    );
+    tracing::trace!("Sending available audio devices to websocket clients");
+}
+
+/// Publishes the device list whenever discovery changes it.
+fn send_available_audio_devices_on_change(
+    devices: Res<AvailableAudioDevices>,
+    broadcaster: Res<ClientEventSink>,
+) {
+    if devices.is_changed() {
+        send_available_audio_devices(&devices, &broadcaster);
+    }
+}
+
+/// Sends the device list to a client that asked for a full resync.
+fn handle_resync_state(mut resync: ResyncReplies, devices: Res<AvailableAudioDevices>) {
+    let Some(broadcaster) = resync.sink() else {
+        return;
+    };
+    send_available_audio_devices(&devices, &broadcaster);
+}
+
+/// Registers the device list, its discovery and rerouting monitor, the client feed, and the
+/// resync reply.
+pub(crate) fn register(app: &mut bevy_app::App) {
+    use bevy_app::Update;
+    app.init_resource::<AvailableAudioDevices>();
+    app.init_resource::<AudioOutputDiscovery>();
+    app.add_systems(
+        Update,
+        monitor_audio_output_changes
+            .in_set(EventHandling)
+            .after(SettingsCommandHandling),
+    );
+    app.add_systems(
+        Render,
+        send_available_audio_devices_on_change.in_set(ClientOutput),
+    );
+    app.add_systems(
+        Update,
+        handle_resync_state
+            .in_set(ResyncHandling)
+            .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
+    );
+}
 
 const AUDIO_DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -133,32 +192,6 @@ struct AudioOutputMonitorPlan {
     reroute_device: Option<Option<String>>,
     immediate_toasts: Vec<AudioOutputToast>,
     reroute_success_toast: Option<AudioOutputToast>,
-}
-
-/// Plugin that wires desk audio monitoring into the Bevy app.
-pub struct DeskAudioPlugin;
-
-impl Plugin for DeskAudioPlugin {
-    /// Registers desk audio resources and monitor systems.
-    fn build(&self, app: &mut App) {
-        tracing::debug!("Registering DeskAudioPlugin");
-        assert!(
-            app.is_plugin_added::<DeskPlugin>(),
-            "DeskAudioPlugin requires DeskPlugin (provides the available audio device list)"
-        );
-        assert!(
-            app.is_plugin_added::<AudioPlugin>(),
-            "DeskAudioPlugin requires AudioPlugin (provides AudioController)"
-        );
-
-        app.init_resource::<AudioOutputDiscovery>();
-        app.add_systems(
-            Update,
-            monitor_audio_output_changes
-                .in_set(EventHandling)
-                .after(SettingsCommandHandling),
-        );
-    }
 }
 
 impl AudioOutputDeviceSnapshot {
@@ -354,12 +387,10 @@ fn monitor_audio_output_changes(
     state.selected_device_missing = plan.selected_device_missing;
 }
 
-pub mod prelude {
-    pub use crate::DeskAudioPlugin;
-}
-
 #[cfg(test)]
 mod tests {
+    use bevy_app::{App, Update};
+
     use super::*;
 
     /// Counts engine updates independently of discovery progress.

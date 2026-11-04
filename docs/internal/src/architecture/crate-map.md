@@ -20,10 +20,10 @@ flowchart TB
   accTitle: Crate layers, their crates, and allowed dependencies
   accDescr: Five layers from hosts down to base, each listing its crates. Each layer may depend on any layer below it. Plugin crates may not depend on other plugin crates.
   hosts["<b>Hosts</b><br/>app-runtime · app-tauri · browser-runtime · cli · composition"]
-  crossPlugin["<b>Cross-plugin</b><br/>boards · desk · desk-audio · macros · references · showfile · wasm-bridge"]
+  crossPlugin["<b>Cross-plugin</b><br/>boards · desk · macros · references · showfile · wasm-bridge"]
   plugins["<b>Plugins</b><br/>audio · controls · cues · fixture-library · flow · fx · fx-module · object-library · programming <br/> scene-objects · timeline · input-artnet · input-ltc · input-midi · input-osc <br /> input-sacn · output-artnet · output-sacn · output-usb"]
-  engineCore["<b>Engine core</b><br/>actions · clips · compositor · engine · fixtures · framepace · lookahead · selection-runtime <br /> service-host · tempo · timecode · undo · websocket"]
-  base["<b>Base</b><br/>nightfall · open-fixture-library · beat-detection · cmd-parse · config <br /> coremidi-hotplug · dmx · engine-derive · fixture-model · instances · io <br /> lookahead-projection · playback-planner · selection · waveform · workspace-hack"]
+  engineCore["<b>Engine core</b><br/>actions · clips · compositor · engine · fixtures · framepace · io · lookahead <br /> selection-runtime · service-host · tempo · timecode · undo · websocket"]
+  base["<b>Base</b><br/>nightfall · open-fixture-library · beat-detection · cmd-parse · config <br /> coremidi-hotplug · dmx · engine-derive · fixture-model · instances <br /> lookahead-projection · playback-planner · selection · waveform · workspace-hack"]
   hosts --> crossPlugin --> plugins --> engineCore --> base
 ```
 
@@ -60,7 +60,6 @@ Base crates hold data types and algorithms with no engine runtime. Most don't us
 | `cmd-parse` | Bridge and demo | Lexer, parser, and autocomplete for the desk command language, such as `fixture 1 @ 50`. |
 | `selection` | Bridge and demo | Fixture selection contracts and resolution, including spatial selections and the store of object references. |
 | `lookahead-projection` | Bridge and demo | Lookahead projection for previews in the sequence editor. |
-| `io` | Bridge and demo | IO transport settings, named output targets, and IO constants. Bevy support sits behind the default `ecs` feature, which the WASM bridge turns off. |
 | `instances` | Demo | Contract types for a running playback's identity, clock, controls, and status. |
 | `playback-planner` | Demo | Contracts for deterministic playback planning, such as rebuilding a playback clock from a planned position. |
 | `waveform` | Demo | Waveform sampling, such as sine and square, shared by FX and flows. |
@@ -82,14 +81,15 @@ Engine core crates build the engine's runtime that every plugin plugs into.
 | `actions` | Demo | Registry of bindable actions and how each one turns into a command or an update, plus the eval action that runs a line of the command language. |
 | `clips` | Demo | Clip model, clip commands, lookups by identifier, and clip playback: routing clip starts and stops to the plugin registered for each clip source, launch quantize, the lifecycle and clocks of running playbacks, and the bindable clip actions. |
 | `compositor` | Demo | Layer compositing pipeline: builds the layer stack and merges layers by priority and merge rule. |
-| `fixtures` | Demo | Fixtures, parameters, universes, patch bindings and their validation, the fixture and patch commands, DMX input and the release of stale input values, virtual dimmers and virtual relations, and the composition of output DMX frames. |
+| `fixtures` | Demo | Fixtures, parameters, universes, patch bindings and their validation mode, the fixture and patch commands, DMX input and the release of stale input values, virtual dimmers and virtual relations, and the composition of output DMX frames. |
 | `framepace` | Demo | Frame limiter that starts engine frames just before each DMX send time on the shared schedule, adapted from `bevy_framepace`. The browser demo uses only its `fps` command handling. |
+| `io` | Bridge and demo | IO transport settings with their `io` settings section and command, named output targets, IO constants, the host's network interfaces with their client feed and the alerts shown when the interface the transports bind to disappears or returns, and IO failure toasts. The plugin sits behind the default `plugin` feature, which the WASM bridge turns off. |
 | `lookahead` | Demo | Runtime lookahead contracts shared by the playback domains. |
 | `selection-runtime` | Demo | Bevy system parameters that resolve fixture selections against the live patch, and the per-frame cache of resolved selections. |
 | `service_host` | Demo | Process-lifetime worker slots, fixed-rate worker threads, and the shared schedule of DMX send times. |
 | `tempo` | Demo | Show-wide live tempo: one BPM and beat phase, the `tempo` command, and mappable tempo actions. |
 | `timecode` | Demo | Timecode objects and the generators that advance them. |
-| `websocket` | No | Native websocket and HTTP server: client connections, per-client queues, origin checks, pairing, and serving the built web UI. |
+| `websocket` | No | Native websocket and HTTP server: client connections, per-client queues, origin checks, pairing, serving the built web UI, and external control, which decides whether other computers may connect and on which interface. |
 
 ## Plugins: show domains
 
@@ -107,7 +107,7 @@ Plugin crates each own one area of the show. They add themselves to the engine a
 | `scene-objects` | Demo | Non-fixture 3D objects for the visualizer, such as trusses and stage elements. |
 | `fixture-library` | No | Finds GDTF and OFL files in the data directory, converts them to fixture profiles, and watches for changes. |
 | `object-library` | No | Finds `.robj` object bundles in the data directory and watches for changes. |
-| `audio` | No | Audio playback service for timeline audio. |
+| `audio` | No | Audio playback service for timeline audio, the list of audio outputs, and moving timeline audio when the chosen output appears or disappears. |
 
 ## Plugins: IO transports
 
@@ -122,7 +122,7 @@ The IO crates are plugin crates too. Each one runs a process-lifetime service on
 | `input_osc` | No | OSC input over UDP and mappings from OSC addresses to actions. |
 | `output_artnet` | No | Art-Net DMX output. |
 | `output_sacn` | No | sACN DMX output. |
-| `output_usb` | No | DMX output through uDMX USB interfaces. |
+| `output_usb` | No | DMX output through uDMX USB interfaces and the list of connected uDMX devices. |
 
 ## Cross-plugin: crates that coordinate plugins
 
@@ -131,7 +131,6 @@ Cross-plugin crates combine several plugins, which plugin crates can't do themse
 | Crate | WASM | Description |
 |-------|------|-------------|
 | `desk` | Demo | Shared desk behavior that spans domains. See [what lives in `desk` and why](#what-lives-in-desk-and-why). |
-| `desk_audio` | No | Watches the system's audio output devices and moves timeline audio when the chosen device appears or disappears. |
 | `boards` | Demo | Boards: grids of buttons, button presses, and button status. |
 | `macros` | Demo | Macros: numbered command-line scripts, the backend runner that executes them line by line, and the `macro.start`, `macro.release`, and `macro.stop` actions. |
 | `references` | Demo | Show-wide report of which objects use which, for the **References** panel and delete guards. |
@@ -144,7 +143,7 @@ Host crates assemble the others into programs.
 
 | Crate | WASM | Description |
 |-------|------|-------------|
-| `app-runtime` (`app-runtime`) | No | The native host library and the `nightfall-headless` binary: engine assembly, the session loop and showfile swaps, showfile storage, sample shows, logging, diagnostics, and error and usage reports. |
+| `app-runtime` (`app-runtime`) | No | The native host library and the `nightfall-headless` binary: engine assembly, the session loop and showfile swaps, showfile storage, sample shows, logging, diagnostics, telemetry consent, and error and usage reports. |
 | `browser-runtime` | Is the demo | The browser demo engine, built from the shared show plugins plus a built-in fixture library. |
 | `cli` | No | `nightfall-cli`, an interactive terminal client that sends commands to the engine over a websocket. |
 | `composition` | Yes | The shared show plugin groups by domain (core, desk, FX, timecode), nested in `ShowPlugins` for every host to build. |
@@ -164,7 +163,7 @@ The `wasm-bridge` exports a small set of code from Nightfall crates to WASM so t
 | Sequence previews | `project_sequence_lookahead`, `sequence_duration_summary` | `lookahead-projection` |
 | Fixture evaluation | `FixtureChannelEvaluator`, `fixture_reading_stride` | `fixture-model` |
 | Board placement | `BoardPlacement`, `board_max_dimension` | `common` |
-| Output target names | `output_target_ids`, `reserved_network_dmx_target_keywords`, `reserved_usb_dmx_target_keywords` | `io`, without its `ecs` feature |
+| Output target names | `output_target_ids`, `reserved_network_dmx_target_keywords`, `reserved_usb_dmx_target_keywords` | `io`, without its default features |
 
 ## Where settings live
 
@@ -176,7 +175,6 @@ To add a setting, add a field to its owner's section. Register a new section wit
 
 The `desk` crate is the largest cross-plugin crate. It holds the behavior that belongs to the console as a whole rather than to one domain:
 
-- Host settings: network interface, telemetry, external control, and the device lists.
 - The playback feed of running clips and instances.
 - Diagnostics, network statistics, and the layer stack that the **Layers** panel shows.
 

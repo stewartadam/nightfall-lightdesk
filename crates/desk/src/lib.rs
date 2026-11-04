@@ -9,33 +9,22 @@
 //! Desk behavior that spans several show domains.
 //!
 //! Plugin crates can't depend on each other, so behavior that touches several of them lives
-//! here: host settings, the playback and layer stack feeds, and diagnostics. Code that concerns
-//! one domain only belongs in that domain's crate.
+//! here: the playback and layer stack feeds, and diagnostics. Code that concerns one domain only
+//! belongs in that domain's crate.
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_controls::ControlsPlugin;
 use nightfall_engine::{EnginePlugin, prelude::*};
 use nightfall_framepace::FramePaceStats;
-use nightfall_io::{
-    AvailableUsbDmxDevices, IoRuntimeSettings, NetworkInterfaceState, NetworkStats,
-};
 use nightfall_undo::UndoPlugin;
 
-use crate::{prelude::*, systems::event_handlers};
-
 pub mod resources;
-pub mod settings;
-pub mod systems;
 pub mod websocket;
 
 pub mod prelude {
     pub use crate::DeskPlugin;
     pub use crate::resources::ExclusiveResource;
-    pub use crate::settings::{
-        AvailableAudioDevices, GraphicsReport, ReportedGraphics, SettingsCommand, TelemetryConsent,
-        TelemetryState,
-    };
 }
 
 /// Plugin for adding desk functionality to the app
@@ -58,56 +47,9 @@ impl Plugin for DeskPlugin {
         );
 
         app.init_resource::<websocket::LayerStackPublication>();
-        app.add_message::<OperationResult<(), CommandError>>();
-        app.add_message::<NotificationEnvelope<nightfall_io::IoRuntimeNotification>>();
-        app.add_systems(
-            PostUpdate,
-            event_handlers::forward_io_runtime_notifications
-                .in_set(ClientFeedback)
-                .before(nightfall_engine::ui_notification::forward_ui_notifications),
-        );
-        register_client_command::<SettingsCommand>(app, Undo::Skipped);
-        app.add_message::<event_handlers::settings_events::SettingsCommandResult>();
-
         app.init_resource::<GlobalVariables>();
-        app.init_resource::<NetworkStats>();
-        app.init_resource::<IoRuntimeSettings>();
-        app.init_resource::<nightfall_io::ExternalControlState>();
-        app.init_resource::<crate::settings::TelemetryState>();
-        app.init_resource::<crate::settings::ReportedGraphics>();
-        app.init_resource::<AvailableAudioDevices>();
-        app.init_resource::<AvailableUsbDmxDevices>();
-        app.init_resource::<NetworkInterfaceState>();
         app.init_resource::<FramePaceStats>();
         websocket::register_websocket_performance_diagnostics(app);
-
-        app.add_systems(
-            Update,
-            (
-                event_handlers::settings_events::handle_events,
-                event_handlers::settings_events::finish_commands,
-                event_handlers::settings_events::sync_network_dmx_outputs_from_settings,
-                event_handlers::settings_events::sync_input_stale_timeout_from_settings,
-            )
-                .chain()
-                .in_set(EventHandling),
-        );
-
-        #[cfg(feature = "native-network-watch")]
-        app.add_systems(
-            Startup,
-            event_handlers::settings_events::init_network_interface_watcher,
-        );
-        #[cfg(feature = "native-network-watch")]
-        app.add_systems(
-            Update,
-            (
-                event_handlers::settings_events::refresh_network_interface_state,
-                systems::network_interface_alerts::announce_network_interface_changes,
-            )
-                .chain()
-                .in_set(EventHandling),
-        );
 
         app.add_systems(
             PostUpdate,
@@ -116,13 +58,9 @@ impl Plugin for DeskPlugin {
         );
         app.add_systems(
             Render,
-            (
-                websocket::send_host_state_on_change,
-                websocket::send_available_audio_devices_on_change,
-                websocket::send_available_usb_dmx_devices_on_change,
-                // Layer stack slots refer to the parameter layout published before it.
-                websocket::handle_low_freq_updates.after(websocket::send_parameter_state),
-            )
+            // Layer stack slots refer to the parameter layout published before it.
+            websocket::handle_low_freq_updates
+                .after(websocket::send_parameter_state)
                 .in_set(ClientOutput),
         );
 

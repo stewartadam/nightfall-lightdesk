@@ -100,22 +100,25 @@ export type AnyCommand =
   | types.LogCommand
   | types.ShowfileCommand
   | types.EngineCommand
+  | types.ExternalControlCommand
   | types.ClipCommand
   | flowTypes.FlowCommand
   | types.FixtureCommand
   | types.FxCommand
   | types.FxModuleCommand
   | types.GroupCommand
+  | types.IoSettingsCommand
   | types.MacroCommand
   | types.PanelLayoutCommand
   | types.ParameterStreamSettingsCommand
   | types.ProgrammerCommand
   | types.ProgrammingSettingsCommand
+  | types.RouteValidationCommand
   | types.SceneObjectCommand
-  | types.SettingsCommand
   | types.ShowfileSettingsCommand
   | types.FaderCommand
   | types.StepFxCommand
+  | types.TelemetryCommand
   | types.TempoCommand
   | types.TimecodeCommand
   | types.TimelineCommand
@@ -124,11 +127,14 @@ export type AnyCommand =
 
 /** Union of websocket payloads handled on the main thread. */
 export type AnyWsMessage =
+  | types.AudioWsMessage
   | types.BoardWsMessage
   | types.ClipWsMessage
   | types.ControlsWsMessage
   | types.CueWsMessage
   | types.DefinitionWsMessage
+  | types.ExternalControlWsMessage
+  | types.IoWsMessage
   | types.MacroWsMessage
   | Exclude<types.FixtureWsMessage, { type: "ParameterState" }>
   | ParameterStateWsMessage
@@ -155,4 +161,6 @@ export type AnyWsMessage =
   | types.LogWsMessage
   | types.SceneObjectWsMessage
   | types.ReferenceWsMessage
+  | types.TelemetryWsMessage
+  | types.UsbDmxWsMessage
   | AnyCommand;

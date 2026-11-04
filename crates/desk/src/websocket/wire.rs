@@ -127,21 +127,6 @@ pub struct DeskMetrics {
 #[serde(tag = "type", content = "data")]
 #[typeshare::typeshare]
 pub(super) enum DeskWsMessage<'a> {
-    /// Host-owned external control settings and listener status.
-    ExternalControlState(&'a ExternalControlState),
-    /// Host-owned telemetry consent and anonymous identifier.
-    TelemetryState(&'a crate::settings::TelemetryState),
-    /// Network interfaces list
-    AvailableNetworkInterfaces(&'a [NetworkInterfaceInfo]),
-    /// Current/default network interface status
-    NetworkInterfaceStatus(&'a NetworkInterfaceStatus),
-    /// Audio devices list (map of stable id -> display name)
-    AvailableAudioDevices(
-        #[typeshare(serialized_as = "Record<String, String>")]
-        &'a std::collections::HashMap<String, String>,
-    ),
-    /// Compatible USB DMX devices list
-    AvailableUsbDmxDevices(&'a [UsbDmxDeviceInfo]),
     /// Layer stack with computed values (sorted by priority)
     LayerStack(&'a OutboundLayerStack),
     /// Engine performance metrics

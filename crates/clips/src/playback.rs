@@ -65,6 +65,7 @@ impl Plugin for ClipsPlugin {
         register_engine_operation::<PlaybackOperation>(app);
         register_engine_operation::<PlaybackReleaseOperation>(app);
         app.add_message::<InstanceControlUpdate>();
+        app.add_message::<OperationResult<(), CommandError>>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
         {

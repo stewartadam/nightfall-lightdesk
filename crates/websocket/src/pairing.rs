@@ -35,9 +35,36 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use nightfall_io::{RemotePairingAttempt, RemotePairingPin, RemotePairingStatus};
+use serde::{Deserialize, Serialize};
 
 use crate::{origin::is_local_client, websocket::AxumAppState};
+
+/// Whether the requesting device must pair before it may control the backend.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+pub struct RemotePairingStatus {
+    /// Whether the device connects from another computer and so needs the pairing PIN.
+    pub required: bool,
+    /// Whether the device may control the backend now, either because it is local or
+    /// because it already paired during this app session.
+    pub paired: bool,
+}
+
+/// Pairing PIN entered by a device on the network.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+pub struct RemotePairingAttempt {
+    /// Digits the user typed or scanned.
+    pub pin: String,
+}
+
+/// Pairing PIN shown to the operator on the computer running Nightfall.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+pub struct RemotePairingPin {
+    /// Six-digit PIN other devices enter to pair for this app session.
+    pub pin: String,
+}
 
 /// Endpoint a device uses to learn whether it must pair and to submit the PIN.
 pub(crate) const PAIRING_PATH: &str = "/api/pairing";

@@ -20,17 +20,20 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_io::prelude::{
-    AvailableUsbDmxDevices, TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
-    UsbDmxDeviceInfo, usb_dmx_device_label, usb_dmx_device_selector_with_tiebreaker,
+    TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UsbDmxDeviceInfo,
+    usb_dmx_device_label, usb_dmx_device_selector_with_tiebreaker,
 };
 use nusb::MaybeFuture;
 
+mod device_list;
 mod service;
 pub mod udmx;
 
+pub use device_list::AvailableUsbDmxDevices;
+
 /// Prelude for ergonomic imports
 pub mod prelude {
-    pub use crate::OutputUdmxUsbPlugin;
+    pub use crate::{AvailableUsbDmxDevices, OutputUdmxUsbPlugin};
 }
 
 /// Plugin for adding uDMX USB output to the app
@@ -167,7 +170,7 @@ fn get_available_usb_dmx_devices() -> Vec<UsbDmxDeviceInfo> {
     devices
 }
 
-/// Refreshes the desk-facing USB DMX device list after output-service hotplug events.
+/// Refreshes the USB DMX device list after output-service hotplug events.
 fn refresh_available_usb_dmx_devices(
     mut available_usb_dmx_devices: ResMut<AvailableUsbDmxDevices>,
     mut notifications: NonSendMut<UdmxDeviceHotplugNotifications>,
@@ -207,14 +210,14 @@ fn refresh_available_usb_dmx_devices(
 }
 
 impl Plugin for OutputUdmxUsbPlugin {
-    /// Registers the uDMX output worker and hotplug-driven USB discovery refresh.
+    /// Registers the uDMX output worker, hotplug-driven USB discovery refresh, and the device
+    /// list feed.
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering OutputUdmxUsbPlugin");
         app.init_resource::<TransportRuntimePolicy>();
         let udmx_service = service::process_udmx_output_service();
         let _ = udmx_service.ensure_started();
-        app.world_mut().resource_mut::<AvailableUsbDmxDevices>().0 =
-            get_available_usb_dmx_devices();
+        app.insert_resource(AvailableUsbDmxDevices(get_available_usb_dmx_devices()));
         app.insert_non_send(UdmxDeviceHotplugNotifications {
             event_rx: udmx_service.subscribe_hotplug_events(),
             disconnected: false,
@@ -223,6 +226,16 @@ impl Plugin for OutputUdmxUsbPlugin {
         app.add_systems(
             Update,
             refresh_available_usb_dmx_devices.in_set(EventHandling),
+        );
+        app.add_systems(
+            Render,
+            device_list::send_available_usb_dmx_devices_on_change.in_set(ClientOutput),
+        );
+        app.add_systems(
+            Update,
+            device_list::handle_resync_state
+                .in_set(ResyncHandling)
+                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
         );
         app.add_systems(
             Render,

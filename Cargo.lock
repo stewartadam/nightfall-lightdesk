@@ -266,7 +266,6 @@ dependencies = [
  "nightfall-controls",
  "nightfall-cues",
  "nightfall-desk",
- "nightfall-desk-audio",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-library",
@@ -314,6 +313,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "typeshare",
  "uuid",
  "zip",
 ]
@@ -5445,6 +5445,7 @@ dependencies = [
  "nightfall-fixtures",
  "nightfall-flow",
  "nightfall-fx",
+ "nightfall-io",
  "nightfall-macros",
  "nightfall-programming",
  "nightfall-references",
@@ -5575,7 +5576,6 @@ dependencies = [
  "criterion",
  "minicbor-serde",
  "moonshine-kind",
- "netwatcher",
  "nightfall",
  "nightfall-clips",
  "nightfall-compositor",
@@ -5592,24 +5592,10 @@ dependencies = [
  "nightfall-undo",
  "nightfall-workspace-hack",
  "serde",
- "serde_json",
  "tracing",
  "typeshare",
  "uuid",
  "web-time",
-]
-
-[[package]]
-name = "nightfall-desk-audio"
-version = "0.1.0-alpha.5"
-dependencies = [
- "bevy_app",
- "bevy_ecs",
- "nightfall-audio",
- "nightfall-desk",
- "nightfall-engine",
- "nightfall-workspace-hack",
- "tracing",
 ]
 
 [[package]]
@@ -6010,9 +5996,14 @@ dependencies = [
 name = "nightfall-io"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "async-channel",
+ "bevy_app",
  "bevy_ecs",
+ "minicbor-serde",
  "netdev",
+ "netwatcher",
  "nightfall-dmx",
+ "nightfall-engine",
  "nightfall-workspace-hack",
  "serde",
  "serde_json",
@@ -6138,8 +6129,10 @@ dependencies = [
  "nightfall-service-host",
  "nightfall-workspace-hack",
  "nusb",
+ "serde",
  "tokio",
  "tracing",
+ "typeshare",
 ]
 
 [[package]]
@@ -6448,6 +6441,7 @@ dependencies = [
  "tower-http 0.7.1",
  "tower-service",
  "tracing",
+ "typeshare",
  "uuid",
 ]
 
@@ -6473,6 +6467,7 @@ dependencies = [
  "byteorder",
  "cc",
  "chrono",
+ "concurrent-queue",
  "cranelift-bitset",
  "crc32fast",
  "crossbeam-channel",

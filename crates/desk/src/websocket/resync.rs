@@ -10,22 +10,10 @@
 
 use super::*;
 
-/// Websocket request payload for resyncing runtime settings.
-#[derive(SystemParam)]
-pub(crate) struct ResyncSettingsParams<'w> {
-    io_settings: Res<'w, IoRuntimeSettings>,
-    external_control: Res<'w, ExternalControlState>,
-    telemetry: Res<'w, crate::settings::TelemetryState>,
-    available_audio_devices: Res<'w, AvailableAudioDevices>,
-    available_usb_dmx_devices: Res<'w, AvailableUsbDmxDevices>,
-    network_interface_state: Res<'w, NetworkInterfaceState>,
-}
-
 /// Handle ResyncState by sending desk-owned lists immediately
 pub(crate) fn handle_resync_state(
     mut resync: ResyncReplies,
     exec_query: Query<&Clip>,
-    resync_settings: ResyncSettingsParams,
     mut layer_stack_publication: ResMut<LayerStackPublication>,
     instance_query: Query<super::instances::InstanceSnapshotData>,
     materialized_clips: Query<&MaterializedClip>,
@@ -42,18 +30,6 @@ pub(crate) fn handle_resync_state(
         &held_buttons,
         &broadcaster,
     );
-    send_external_control_state(&resync_settings.external_control, &broadcaster);
-    send_telemetry_state(&resync_settings.telemetry, &broadcaster);
-    send_network_interface_state(
-        &resync_settings.io_settings,
-        &resync_settings.network_interface_state,
-        &broadcaster,
-    );
-    send_available_audio_devices(
-        resync_settings.available_audio_devices.as_ref(),
-        &broadcaster,
-    );
-    send_available_usb_dmx_devices(&resync_settings.available_usb_dmx_devices.0, &broadcaster);
     // Sent by the next low-frequency pass, after the parameter layout its slots refer to.
     layer_stack_publication.invalidate();
 }
@@ -71,8 +47,6 @@ pub(crate) struct LayerStackParams<'w, 's> {
 /// Emits rate-limited droppable metrics, layer, and playback snapshots.
 pub(crate) fn handle_low_freq_updates(
     mut layer_stack: LayerStackParams,
-    io_settings: Res<IoRuntimeSettings>,
-    network_interface_state: Res<NetworkInterfaceState>,
     output_frames: Res<OutputDmxFrames>,
     network_stats: Res<nightfall_io::NetworkStats>,
     layer_only_query: Query<&Layer>,
@@ -86,9 +60,6 @@ pub(crate) fn handle_low_freq_updates(
     broadcaster: Res<ClientEventSink>,
 ) {
     let now_ms = current_time_ms();
-    if io_settings.is_changed() || network_interface_state.is_changed() {
-        send_network_interface_state(&io_settings, &network_interface_state, &broadcaster);
-    }
 
     // Apply rate limit
     let last_send = LAST_DROPPABLE_SEND_MS.load(std::sync::atomic::Ordering::Relaxed);

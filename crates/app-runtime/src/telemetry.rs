@@ -14,11 +14,15 @@ use std::{
 };
 
 use bevy::prelude::*;
-use nightfall_desk::prelude::{TelemetryConsent, TelemetryState};
 use nightfall_websocket::host_preferences::{
     LoadedPreferences, load_preferences, save_preferences,
 };
 use serde::{Deserialize, Serialize};
+
+mod commands;
+
+pub(crate) use commands::TelemetryCommandsPlugin;
+pub(crate) use commands::{GraphicsReport, ReportedGraphics, TelemetryConsent, TelemetryState};
 
 /// File name of the telemetry preferences inside the host data directory.
 const TELEMETRY_FILE_NAME: &str = "telemetry.json";

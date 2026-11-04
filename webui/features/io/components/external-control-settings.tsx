@@ -29,10 +29,10 @@ export function ExternalControlSettings() {
       ? selected
       : undefined;
   });
-  /** Submits complete host preferences through the settings command lifecycle. */
+  /** Submits the complete external control preferences with the patch applied. */
   const updateSettings = (patch: Partial<ControlSettings>) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetExternalControl",
+    commandClient.emit("ExternalControlCommand", {
+      type: "SetSettings",
       data: { ...state().settings, ...patch },
     });
   };

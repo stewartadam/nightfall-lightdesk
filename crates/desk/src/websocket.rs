@@ -9,7 +9,7 @@
 //! Desk-specific WebSocket protocol integration.
 //!
 //! This facade preserves the public desk WebSocket API while responsibility-focused child
-//! modules own wire schemas, inbound routing, state projection, metrics, and resynchronization.
+//! modules own wire schemas, state projection, metrics, and resynchronization.
 
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
@@ -39,19 +39,11 @@ use nightfall_instances::{
     EditorPreviewInstance, InstanceClock, InstanceControls, InstanceDisplayKind, InstanceId,
     InstanceKind, InstanceMetadata, InstancePosition, InstanceStatus, Owner, activation_epoch_ms,
 };
-use nightfall_io::{
-    AvailableUsbDmxDevices, ExternalControlState, IoRuntimeSettings, NetworkInterfaceInfo,
-    NetworkInterfaceState, NetworkInterfaceStatus, UsbDmxDeviceInfo,
-    resolve_network_interface_status,
-};
 use nightfall_lookahead::LookaheadAssertions;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use web_time::Instant;
 
-use crate::prelude::*;
-
-mod desk_state;
 mod diagnostics;
 mod instances;
 mod layers;
@@ -59,7 +51,6 @@ mod metrics;
 mod resync;
 mod wire;
 
-pub use desk_state::*;
 use diagnostics::record_elapsed_ms;
 pub use diagnostics::{
     LAYER_STACK_BROADCAST_MS, LAYER_STACK_BUILD_MS, LAYER_STACK_TRANSITION_BUILD_MS,

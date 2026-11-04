@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_io::{ExternalControlState, NetworkInterfaceState};
+use nightfall_io::NetworkInterfaceState;
 use tokio::sync::broadcast::Sender as BroadcastSender;
 
 use crate::websocket::create_axum_task;
@@ -32,7 +32,10 @@ pub mod routes;
 mod web_ui;
 pub mod websocket;
 
+pub use external_control::commands::ExternalControlCommand;
+pub use external_control::{ExternalControlSettings, ExternalControlState};
 pub use origin::is_local_client;
+pub use pairing::{RemotePairingAttempt, RemotePairingPin, RemotePairingStatus};
 pub use web_ui::{SharedWebUiAssets, WebUiAssets};
 
 /// Prelude for ergonomic imports
@@ -141,8 +144,33 @@ impl Plugin for WebsocketPlugin {
 
         app.init_resource::<ExternalControlState>();
         app.init_resource::<NetworkInterfaceState>();
+        register_client_command::<ExternalControlCommand>(app, Undo::Skipped);
         app.add_systems(Startup, start_or_attach_axum_task);
-        app.add_systems(Update, external_control::sync_listener_control);
+        app.add_systems(
+            Update,
+            (
+                external_control::commands::handle_external_control_commands,
+                external_control::sync_listener_control,
+            )
+                .chain()
+                .in_set(EventHandling),
+        );
+        app.add_systems(
+            Update,
+            external_control::alerts::announce_external_control_interface_changes
+                .in_set(EventHandling)
+                .after(nightfall_io::IoStateSync),
+        );
+        app.add_systems(
+            Render,
+            external_control::commands::send_external_control_state_on_change.in_set(ClientOutput),
+        );
+        app.add_systems(
+            Update,
+            external_control::commands::handle_resync_state
+                .in_set(ResyncHandling)
+                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
+        );
         app.add_systems(Update, notify_axum_shutdown_on_exit.in_set(EventHandling));
     }
 }

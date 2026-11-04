@@ -731,7 +731,7 @@ test("dmx shared controls switch direction and request external traffic visibili
   await expect
     .poll(() => page.evaluate(() => (window as any).__dmxSettingsCommands))
     .toContainEqual({
-      module: "SettingsCommand",
+      module: "IoSettingsCommand",
       command: { type: "SetInputUniverseVisibilityMode", data: "AllDetected" },
     });
   await panel.screenshot({ path: testInfo.outputPath("shared-dmx-input.png") });

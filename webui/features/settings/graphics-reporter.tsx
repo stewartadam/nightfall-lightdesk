@@ -92,7 +92,7 @@ export function GraphicsReporter() {
     reportedForConnection = true;
     void collectGraphicsReport()
       .then((report) =>
-        commandClient.emit("SettingsCommand", {
+        commandClient.emit("TelemetryCommand", {
           type: "ReportGraphics",
           data: report,
         }),
