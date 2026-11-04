@@ -147,12 +147,12 @@ async function installProbe(
       stores.engineMetrics.subscribe((metrics: any) => {
         if (
           probe.measuring &&
-          Number.isFinite(metrics?.frame_time_ms) &&
-          metrics.frame_time_ms > 0
+          Number.isFinite(metrics?.frame_time) &&
+          metrics.frame_time > 0
         ) {
           probe.engineSamples.push({
             positionMs: positionMs(),
-            engineMs: metrics.frame_time_ms,
+            engineMs: metrics.frame_time,
           });
         }
       });
@@ -257,9 +257,9 @@ async function waitForSettledBaseline(page: Page): Promise<void> {
           const metrics = stores.engineMetrics.get();
           const ws = stores.wsStats.get();
           return (
-            Number.isFinite(metrics?.frame_time_ms) &&
-            metrics.frame_time_ms > 0 &&
-            metrics.frame_time_ms < 35 &&
+            Number.isFinite(metrics?.frame_time) &&
+            metrics.frame_time > 0 &&
+            metrics.frame_time < 35 &&
             !ws?.main?.backlogLagging &&
             Number.isFinite(ws?.main?.lastDeliveryLagMs) &&
             ws.main.lastDeliveryLagMs < 40 &&

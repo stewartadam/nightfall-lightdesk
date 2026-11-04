@@ -15,7 +15,7 @@ use nightfall_engine::prelude::*;
 use crate::{
     InputUniverseVisibilityMode, IoRuntimeNotification, IoRuntimeSettings, NetworkDmxOutputTargets,
     NetworkInterfaceState, NetworkStats, RouteTransport, UsbDmxOutputTargets, network_interfaces,
-    sanitize_input_signal_loss_timeout, settings_command,
+    network_stats, sanitize_input_signal_loss_timeout, settings_command,
 };
 
 /// Section the showfile's input and output transport settings are saved and sent under.
@@ -80,11 +80,18 @@ impl Plugin for IoPlugin {
         );
         app.add_systems(
             Render,
-            network_interfaces::send_network_interfaces_on_change.in_set(ClientOutput),
+            (
+                network_interfaces::send_network_interfaces_on_change,
+                network_stats::feed::send_failures_on_change,
+            )
+                .in_set(ClientOutput),
         );
         app.add_systems(
             Update,
-            network_interfaces::handle_resync_state
+            (
+                network_interfaces::handle_resync_state,
+                network_stats::feed::handle_resync_state,
+            )
                 .in_set(ResyncHandling)
                 .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
         );

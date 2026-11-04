@@ -166,7 +166,7 @@ The engine reports what it supports to the UI as runtime capabilities, so the UI
 
 ### Both hosts share one show plugin list
 
-A Bevy app is assembled from plugins, and each Nightfall domain, such as cues or fixtures, adds itself to the engine as one or more plugins. The `nightfall-composition` crate groups the shared plugins by domain: `CorePlugins` (engine, undo, client bridge, actions, fixtures, scene objects, and the fixture compositor), `DeskPlugins` (desk, programmer, cues, boards, and macros), `FxPlugins` (tempo, FX, flow, and references), and `TimecodePlugins` (timecode and timeline). `ShowPlugins` nests the four groups in build order, and every host builds it.
+A Bevy app is assembled from plugins, and each Nightfall domain, such as cues or fixtures, adds itself to the engine as one or more plugins. The `nightfall-composition` crate groups the shared plugins by domain: `CorePlugins` (engine, undo, client bridge, actions, fixtures, scene objects, and the fixture compositor), `DeskPlugins` (masters and faders, programmer, cues, showfile, boards, and macros), `FxPlugins` (tempo, FX, flow, and references), and `TimecodePlugins` (timecode and timeline). `ShowPlugins` nests the four groups in build order, and every host builds it.
 
 Nesting a group flattens its plugins into the parent's list, so a host can insert its own plugins next to any shared plugin they depend on, or disable one, wherever that plugin's group sits.
 

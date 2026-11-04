@@ -15,6 +15,7 @@ import {
   engineMetrics,
   type FaderState,
   faders,
+  networkOutputSendFailures,
   type UndoState,
   undoState,
 } from "./appStores";
@@ -49,6 +50,17 @@ export function undoStateMessageToStoreValue(
 /** Applies the latest backend engine metrics snapshot to the metrics store. */
 export function applyMetricsSnapshot(metrics: EngineMetrics): void {
   setStoreAction(engineMetrics, "Receive Metrics", metrics);
+}
+
+/** Applies the latest list of failing network outputs. */
+export function applyNetworkOutputSendFailuresSnapshot(
+  failures: types.NetworkOutputSendFailure[],
+): void {
+  setStoreAction(
+    networkOutputSendFailures,
+    "Receive NetworkOutputSendFailures",
+    failures,
+  );
 }
 
 /** Applies active instance snapshots using the UI instance-id keyed map shape. */

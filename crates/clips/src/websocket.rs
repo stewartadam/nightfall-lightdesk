@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Websocket publication of clip definitions, clip deletions, and armed launches.
+//! Websocket publication of clip definitions, clip deletions, armed launches and running
+//! playbacks.
 
 use std::collections::HashSet;
 
@@ -16,6 +17,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::launch_quantize::{ArmedLaunch, ArmedLaunches};
 use crate::{Clip, ClipCommand, MaterializedClip};
+
+mod playbacks;
+
+pub use playbacks::InstanceInfo;
+pub(crate) use playbacks::{
+    handle_resync_state as handle_playbacks_resync, refresh_playbacks_at_interval,
+    send_playbacks_on_change,
+};
 
 /// A clip definition as sent to clients, with whether it is running.
 #[derive(Clone, Debug, Serialize, Deserialize)]

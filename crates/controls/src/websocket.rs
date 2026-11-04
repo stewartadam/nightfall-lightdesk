@@ -12,11 +12,11 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use nightfall_clips::{Clip, InstanceIndex, MaterializedClip};
 use nightfall_engine::prelude::*;
-use nightfall_instances::InstanceControls;
+use nightfall_instances::{HeldButtonEffect, InstanceControls};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::faders::{FaderSnapshot, FaderUpdate, Faders, HeldButtonEffects};
+use crate::faders::{FaderSnapshot, FaderUpdate, Faders};
 use crate::masters::{Master, MasterUpdate};
 
 /// Master and fader messages sent to clients.
@@ -59,7 +59,7 @@ pub struct FaderSnapshotParams<'w, 's> {
     materialized_clips: Query<'w, 's, &'static MaterializedClip>,
     instance_index: Res<'w, InstanceIndex>,
     controls: Query<'w, 's, &'static InstanceControls>,
-    held_buttons: Res<'w, HeldButtonEffects>,
+    held_buttons: Query<'w, 's, &'static HeldButtonEffect>,
 }
 
 impl FaderSnapshotParams<'_, '_> {
@@ -89,17 +89,22 @@ pub fn send_faders_on_change(
     added_materialized_clips: Query<(), Added<MaterializedClip>>,
     mut removed_materialized_clips: RemovedComponents<MaterializedClip>,
     changed_instance_controls: Query<(), Changed<InstanceControls>>,
+    changed_held_buttons: Query<(), Changed<HeldButtonEffect>>,
+    mut removed_held_buttons: RemovedComponents<HeldButtonEffect>,
     broadcaster: Res<ClientEventSink>,
 ) {
     let materialized_removed = !removed_materialized_clips.is_empty();
     removed_materialized_clips.clear();
+    let held_buttons_removed = !removed_held_buttons.is_empty();
+    removed_held_buttons.clear();
     let materialized_changed = !added_materialized_clips.is_empty() || materialized_removed;
 
     if !faders.faders.is_changed()
         && !faders.masters.is_changed()
         && changed_instance_controls.is_empty()
         && !materialized_changed
-        && !faders.held_buttons.is_changed()
+        && changed_held_buttons.is_empty()
+        && !held_buttons_removed
     {
         return;
     }

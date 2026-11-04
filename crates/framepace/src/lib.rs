@@ -52,6 +52,7 @@ use std::{
 };
 
 use bevy_app::prelude::*;
+use bevy_diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, RegisterDiagnostic};
 use bevy_ecs::prelude::*;
 use bevy_reflect::prelude::*;
 use nightfall_engine::prelude::*;
@@ -65,6 +66,15 @@ pub mod prelude {
     pub use crate::FramepaceSettings;
     pub use crate::Limiter;
 }
+
+/// Last render frame's work time, in milliseconds.
+pub const FRAMEPACE_FRAME_TIME_MS: DiagnosticPath =
+    DiagnosticPath::const_new("framepace/frame_time_ms");
+/// How much longer the limiter's last sleep took than requested, in milliseconds.
+pub const FRAMEPACE_OVERSLEEP_MS: DiagnosticPath =
+    DiagnosticPath::const_new("framepace/oversleep_ms");
+/// How far the last render frame's work exceeded the frame target, in milliseconds.
+pub const FRAMEPACE_OVERRUN_MS: DiagnosticPath = DiagnosticPath::const_new("framepace/overrun_ms");
 
 /// Adds framepacing and framelimiting functionality to your [`App`].
 #[derive(Debug, Clone, Component)]
@@ -80,8 +90,29 @@ impl Plugin for FramepacePlugin {
         app.insert_resource(settings);
         app.insert_resource(FrameTimer::default());
         app.insert_resource(stats.clone());
+        app.register_diagnostic(Diagnostic::new(FRAMEPACE_FRAME_TIME_MS).with_suffix(" ms"))
+            .register_diagnostic(Diagnostic::new(FRAMEPACE_OVERSLEEP_MS).with_suffix(" ms"))
+            .register_diagnostic(Diagnostic::new(FRAMEPACE_OVERRUN_MS).with_suffix(" ms"));
         app.add_systems(Update, handle_events.in_set(EventHandling));
-        app.add_systems(PostUpdate, framerate_limiter.after(CommandFeedbackEgress));
+        app.add_systems(
+            PostUpdate,
+            (record_framepace_diagnostics, framerate_limiter)
+                .chain()
+                .after(CommandFeedbackEgress),
+        );
+    }
+}
+
+/// Records the limiter's last measurements as diagnostics, before it sleeps again.
+fn record_framepace_diagnostics(stats: Res<FramePaceStats>, mut diagnostics: Diagnostics) {
+    for (path, value) in [
+        (&FRAMEPACE_FRAME_TIME_MS, stats.frametime()),
+        (&FRAMEPACE_OVERSLEEP_MS, stats.oversleep()),
+        (&FRAMEPACE_OVERRUN_MS, stats.overrun()),
+    ] {
+        if let Some(value) = value {
+            diagnostics.add_measurement(path, || value.as_secs_f64() * 1000.0);
+        }
     }
 }
 

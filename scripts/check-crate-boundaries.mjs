@@ -195,11 +195,7 @@ export function forbiddenEdges(metadata, crateLayers = CRATE_LAYERS) {
 /** Rejects normal dependency paths from DMX input adapters into routing or UI implementation. */
 export function validateInputAdapterIsolation(metadata) {
   const packages = new Map(metadata.packages.map((pkg) => [pkg.name, pkg]));
-  const forbidden = new Set([
-    "nightfall-fixtures",
-    "nightfall-compositor",
-    "nightfall-desk",
-  ]);
+  const forbidden = new Set(["nightfall-fixtures", "nightfall-compositor"]);
   for (const adapter of ["nightfall-input-artnet", "nightfall-input-sacn"]) {
     const pending = [[adapter]];
     const visited = new Set();

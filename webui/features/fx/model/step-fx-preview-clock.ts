@@ -7,26 +7,20 @@
  */
 
 import { durationToSeconds } from "../../../lib/duration";
-import * as types from "../../../types";
+import type * as types from "../../../types";
 import { FxDirection } from "../../../types";
 
 export type StepFxPreviewTrackKind = "absolute" | "relative";
 
 /** Finds the backend runtime anchor owned by one editor-local preview session. */
 export function findStepFxPreviewStatus(
-  playbacks: Record<string, types.InstanceInfo>,
+  previews: readonly types.StepFxPreviewPlaybackStatus[],
   sessionId: string,
 ): types.StepFxPreviewPlaybackStatus | undefined {
   const normalizedSessionId = normalizeSessionId(sessionId);
-  return Object.values(playbacks).find((playback) => {
-    const preview = playback.step_fx_preview;
-    return (
-      playback.is_preview &&
-      playback.display_kind === types.InstanceDisplayKind.StepFx &&
-      preview !== undefined &&
-      normalizeSessionId(preview.session_id) === normalizedSessionId
-    );
-  })?.step_fx_preview;
+  return previews.find(
+    (preview) => normalizeSessionId(preview.session_id) === normalizedSessionId,
+  );
 }
 
 /** Resolves the first selection index's track beat from one backend clock anchor. */

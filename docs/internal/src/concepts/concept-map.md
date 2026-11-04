@@ -95,7 +95,7 @@ The following table lists the main terms. "Owning crate" is the crate under `cra
 | Cue | `cues` | Stored instructions, with timing, that a sequence plays. |
 | Cue part | `cues` | A subset of a cue's instructions with its own timing. |
 | Element | `fixtures` | An independently controlled part of a fixture, such as one cell of an LED bar. |
-| Fader | `desk` | A numbered strip with a level and a button that drives a clip or master. |
+| Fader | `controls` | A numbered strip with a level and a button that drives a clip or master. |
 | Fixture | `fixtures` | A patched light, using one mode of a fixture profile. |
 | Fixture profile | `fixture-model`, `fixture-library` | The definition of a fixture type: modes, attributes, channels, and value ranges. Imported from GDTF or Open Fixture Library (OFL) files. |
 | Flow | `flow` | A node graph that generates values or triggers actions, such as an oscillator driving intensity on the beat. |
@@ -104,7 +104,7 @@ The following table lists the main terms. "Owning crate" is the crate under `cra
 | Group | `common` | A stored, ordered fixture selection. |
 | Layer | `compositor` | The set of values one playback contributes in a frame, with a priority. |
 | Merge rule (HTP and LTP) | `fixture-model` | How equal-priority layers combine an attribute: highest takes precedence (HTP) keeps the larger value, and latest takes precedence (LTP) keeps the most recently started layer's value. |
-| Master | `desk` | A control that scales intensity of targeted fixtures or the rate of targeted playbacks. |
+| Master | `controls` | A control that scales intensity of targeted fixtures or the rate of targeted playbacks. |
 | Output transport | `io` | A connection that sends DMX to hardware: an Art-Net or sACN network gateway, or a USB DMX interface. |
 | Parameter | `fixtures` | One attribute on one fixture element. The engine stores values per parameter. |
 | Patch binding | `fixtures` | A route between console channels, fixtures, and input or output transports. |

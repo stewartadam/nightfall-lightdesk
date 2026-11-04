@@ -8,6 +8,7 @@
 
 //! Hands composed sACN frames to the process-lifetime output worker.
 
+use bevy_diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, RegisterDiagnostic};
 use bevy_ecs::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_io::prelude::*;
@@ -25,11 +26,16 @@ pub fn output(
     sacn_client: Option<Res<SacnOutputClient>>,
     frames: Res<OutputDmxFrames>,
     mut network_stats: ResMut<NetworkStats>,
+    mut diagnostics: Diagnostics,
 ) {
     let Some(sacn_client) = sacn_client else {
         return;
     };
-    apply_report(sacn_client.take_report(), &mut network_stats);
+    apply_report(
+        sacn_client.take_report(),
+        &mut network_stats,
+        &mut diagnostics,
+    );
     if !sacn_client.is_available() {
         return;
     }
@@ -55,8 +61,28 @@ pub fn output(
     );
 }
 
-/// Records the worker's send failures, recoveries, and tick timing in [`NetworkStats`].
-fn apply_report(report: SacnOutputReport, network_stats: &mut NetworkStats) {
+/// Time the output worker spent sending sACN universes on its last tick, in milliseconds.
+pub const OUTPUT_SACN_SEND_MS: DiagnosticPath = DiagnosticPath::const_new("output_sacn/send_ms");
+/// Number of sACN universes the output worker sent on its last tick.
+pub const OUTPUT_SACN_UNIVERSES: DiagnosticPath =
+    DiagnosticPath::const_new("output_sacn/universes");
+
+/// Registers the sACN send timings.
+pub(crate) fn register_diagnostics(app: &mut bevy_app::App) {
+    app.register_diagnostic(Diagnostic::new(OUTPUT_SACN_SEND_MS).with_suffix(" ms"))
+        // A count reports its latest value rather than an average that lags behind it.
+        .register_diagnostic(
+            Diagnostic::new(OUTPUT_SACN_UNIVERSES).with_smoothing_factor(f64::MIN_POSITIVE),
+        );
+}
+
+/// Records the worker's send failures and recoveries in [`NetworkStats`], and its tick timing
+/// as diagnostics.
+fn apply_report(
+    report: SacnOutputReport,
+    network_stats: &mut NetworkStats,
+    diagnostics: &mut Diagnostics,
+) {
     for ((universe_id, unicast_ip), outcome) in report.outcomes {
         match outcome {
             Ok(()) => network_stats.clear_send_failure("Sacn", universe_id, unicast_ip),
@@ -77,7 +103,8 @@ fn apply_report(report: SacnOutputReport, network_stats: &mut NetworkStats) {
         }
     }
     if let Some((elapsed, sent_count)) = report.last_tick {
-        network_stats.set_sacn_timing(elapsed, sent_count);
+        diagnostics.add_measurement(&OUTPUT_SACN_SEND_MS, || elapsed.as_secs_f64() * 1000.0);
+        diagnostics.add_measurement(&OUTPUT_SACN_UNIVERSES, || f64::from(sent_count));
     }
 }
 
@@ -119,6 +146,7 @@ mod tests {
         app.insert_resource(client.clone());
         app.init_resource::<OutputDmxFrames>();
         app.init_resource::<NetworkStats>();
+        register_diagnostics(&mut app);
         app.world_mut()
             .resource_mut::<OutputDmxFrames>()
             .set(frames);
@@ -221,6 +249,14 @@ mod tests {
 
         let stats = app.world().resource::<NetworkStats>();
         assert!(stats.recent_send_failures().is_empty());
-        assert_eq!(stats.sacn_universe_count(), 1);
+        assert_eq!(last_universes(&app), Some(1.0));
+    }
+
+    /// Returns the universe count the last applied worker tick recorded.
+    fn last_universes(app: &App) -> Option<f64> {
+        app.world()
+            .resource::<bevy_diagnostic::DiagnosticsStore>()
+            .get(&OUTPUT_SACN_UNIVERSES)
+            .and_then(|diagnostic| diagnostic.value())
     }
 }

@@ -47,9 +47,7 @@ pub mod prelude {
     pub use crate::materialized_fx::{
         MaterializedFx, MaterializedFxReconstructionHandle, spawn_reconstructed_fx_for_clip,
     };
-    pub use crate::preview_status::{
-        StepFxPreviewPlaybackStatus, StepFxPreviewTrackPhaseOffsets, step_fx_preview_status,
-    };
+    pub use crate::preview_status::{StepFxPreviewPlaybackStatus, StepFxPreviewTrackPhaseOffsets};
     pub use crate::step_fx::{
         ActiveStepFx, Bezier, CurveType, DurationInput, FxDirection, FxLane, FxLaneSample, FxStep,
         FxTrack, Linear, MaterializedStepFxReconstructionHandle, PhaseGroups, Point2D, Snap,
@@ -154,13 +152,23 @@ impl Plugin for FxPlugin {
                 websocket::forward_fx_commands,
                 websocket::send_fx_on_change,
                 websocket::send_step_fx_on_change,
+                // Reads preview removals, which only last two updates.
+                preview_status::send_step_fx_previews_on_change,
             )
                 .in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Render,
+            preview_status::reanchor_step_fx_previews.in_set(ClientOutput),
         );
 
         app.add_systems(
             Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
+            (
+                websocket::handle_resync_state,
+                preview_status::handle_resync_state,
+            )
+                .in_set(ResyncHandling),
         );
     }
 }

@@ -141,12 +141,15 @@ export type AnyWsMessage =
   | types.FixtureLibraryWsMessage
   | types.ObjectLibraryWsMessage
   | flowTypes.FlowWsMessage
-  | Exclude<types.DeskWsMessage, { type: "LayerStack" }>
+  | types.PlaybackWsMessage
+  | types.MetricsWsMessage
+  | types.NetworkOutputWsMessage
   | LayerStackWsMessage
   | types.TimelineWsMessage
   | TimelineAudioDirectiveWsMessage
   | types.ProgrammerWsMessage
   | StepFxDefinitionsWsMessage
+  | types.StepFxPreviewWsMessage
   | types.FxWsMessage
   | types.FxModuleWsMessage
   | types.TempoWsMessage

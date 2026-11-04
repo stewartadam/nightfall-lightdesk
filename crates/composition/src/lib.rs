@@ -23,7 +23,6 @@ use nightfall_boards::prelude::BoardsPlugin;
 use nightfall_clips::ClipsPlugin;
 use nightfall_controls::ControlsPlugin;
 use nightfall_cues::prelude::CuePlugin;
-use nightfall_desk::prelude::DeskPlugin;
 use nightfall_engine::{
     EnginePlugin,
     prelude::{ClientBridgePlugin, LogConfig, LoggingPlugin},
@@ -51,8 +50,8 @@ pub struct ShowPlugins {
 }
 
 impl PluginGroup for ShowPlugins {
-    /// Nests the domain groups so the core comes before the desk that reads fixtures and scene
-    /// objects, and the desk before FX, flow and the timeline that drive it.
+    /// Nests the domain groups so the core comes before the desk plugins that read fixtures and
+    /// scene objects, and those before FX, flow and the timeline that drive them.
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
             .add_group(CorePlugins {
@@ -76,7 +75,7 @@ impl PluginGroup for CorePlugins {
     /// Lists the core plugins in build order. Engine, logging, undo, client bridge and actions
     /// come first because later plugins assert they are present or read their commands; fixtures
     /// and scene objects precede the compositor that reads them. Clip playback comes last, since
-    /// the desk asserts it is present.
+    /// the desk plugins assert it is present.
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
             .add(EnginePlugin)
@@ -99,13 +98,11 @@ impl PluginGroup for CorePlugins {
 pub struct DeskPlugins;
 
 impl PluginGroup for DeskPlugins {
-    /// Adds masters and faders before the desk, whose playback feeds read held fader buttons,
-    /// and the desk before the programmer, cues, boards and macros that register against it.
-    /// The showfile requests and settings go with the desk.
+    /// Adds masters and faders first, then the programmer, cues, boards and macros. The
+    /// showfile requests and settings go with them.
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
             .add(ControlsPlugin)
-            .add(DeskPlugin)
             .add(ProgrammingPlugin)
             .add(CuePlugin)
             .add(ShowfilePlugin)

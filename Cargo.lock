@@ -265,7 +265,6 @@ dependencies = [
  "nightfall-config",
  "nightfall-controls",
  "nightfall-cues",
- "nightfall-desk",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-library",
@@ -5391,6 +5390,7 @@ dependencies = [
  "async-channel",
  "bevy_app",
  "bevy_ecs",
+ "criterion",
  "moonshine-kind",
  "nightfall",
  "nightfall-actions",
@@ -5440,7 +5440,6 @@ dependencies = [
  "nightfall-clips",
  "nightfall-controls",
  "nightfall-cues",
- "nightfall-desk",
  "nightfall-engine",
  "nightfall-fixtures",
  "nightfall-flow",
@@ -5463,6 +5462,7 @@ name = "nightfall-compositor"
 version = "0.1.0"
 dependencies = [
  "bevy_app",
+ "bevy_diagnostic",
  "bevy_ecs",
  "moonshine-kind",
  "nightfall",
@@ -5558,40 +5558,6 @@ dependencies = [
  "serde_json",
  "serde_with",
  "smart-default",
- "tracing",
- "typeshare",
- "uuid",
- "web-time",
-]
-
-[[package]]
-name = "nightfall-desk"
-version = "0.1.0-alpha.5"
-dependencies = [
- "async-channel",
- "bevy_app",
- "bevy_diagnostic",
- "bevy_ecs",
- "bevy_platform",
- "criterion",
- "minicbor-serde",
- "moonshine-kind",
- "nightfall",
- "nightfall-clips",
- "nightfall-compositor",
- "nightfall-controls",
- "nightfall-dmx",
- "nightfall-engine",
- "nightfall-fixture-model",
- "nightfall-fixtures",
- "nightfall-framepace",
- "nightfall-fx",
- "nightfall-instances",
- "nightfall-io",
- "nightfall-lookahead",
- "nightfall-undo",
- "nightfall-workspace-hack",
- "serde",
  "tracing",
  "typeshare",
  "uuid",
@@ -5770,6 +5736,7 @@ name = "nightfall-framepace"
 version = "0.1.0-alpha.5"
 dependencies = [
  "bevy_app",
+ "bevy_diagnostic",
  "bevy_ecs",
  "bevy_reflect",
  "nightfall-engine",
@@ -5783,11 +5750,13 @@ dependencies = [
 name = "nightfall-fx"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "async-channel",
  "bevy_app",
  "bevy_ecs",
  "bevy_state",
  "criterion",
  "enum_dispatch",
+ "minicbor-serde",
  "moonshine-kind",
  "nightfall",
  "nightfall-clips",
@@ -5814,6 +5783,7 @@ dependencies = [
  "tracing",
  "typeshare",
  "uuid",
+ "web-time",
 ]
 
 [[package]]
@@ -6089,6 +6059,7 @@ version = "0.1.0-alpha.5"
 dependencies = [
  "artnet_protocol",
  "bevy_app",
+ "bevy_diagnostic",
  "bevy_ecs",
  "nightfall-dmx",
  "nightfall-engine",
@@ -6104,6 +6075,7 @@ name = "nightfall-output-sacn"
 version = "0.1.0-alpha.5"
 dependencies = [
  "bevy_app",
+ "bevy_diagnostic",
  "bevy_ecs",
  "nightfall-dmx",
  "nightfall-engine",
@@ -6455,7 +6427,6 @@ dependencies = [
  "arrayvec",
  "axum",
  "bevy_ecs",
- "bevy_platform",
  "bevy_reflect",
  "bevy_reflect_derive",
  "bevy_time",

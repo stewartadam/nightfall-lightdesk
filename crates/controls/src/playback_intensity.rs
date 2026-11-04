@@ -18,9 +18,7 @@ use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_instances::{InstanceControls, InstanceId};
-
-use crate::faders::{HeldButtonEffect, HeldButtonEffects};
+use nightfall_instances::{HeldButtonEffect, InstanceControls};
 
 /// Attributes affected by playback intensity scaling.
 const INTENSITY_ATTRIBUTES: &[Attribute] = &[Attribute::Intensity, Attribute::VirtualIntensity];
@@ -68,14 +66,13 @@ fn effective_intensity_scale(intensity_scale: f32, effect: Option<HeldButtonEffe
 /// This runs after layer generation but before compositing, scaling Intensity and
 /// VirtualIntensity parameters by the playback's intensity_scale. Playbacks a held fader Flash
 /// or Swop plays render at full instead, and those a Swop takes out (see
-/// [`HeldButtonEffects`]) drop out entirely.
+/// [`HeldButtonEffect`]) drop out entirely.
 pub fn apply_playback_intensity(
-    mut layer_query: Query<(&mut Layer, &InstanceControls, Option<&InstanceId>)>,
+    mut layer_query: Query<(&mut Layer, &InstanceControls, Option<&HeldButtonEffect>)>,
     param_query: Query<InstanceRef<Parameter>>,
-    held_buttons: Res<HeldButtonEffects>,
 ) {
-    for (mut layer, instance_controls, instance_id) in layer_query.iter_mut() {
-        let effect = instance_id.and_then(|instance_id| held_buttons.get(instance_id));
+    for (mut layer, instance_controls, effect) in layer_query.iter_mut() {
+        let effect = effect.copied();
         if matches!(effect, Some(HeldButtonEffect::SwoppedOut { .. })) {
             // A swop silences every attribute, not only intensity, so colour or position looks
             // on other playbacks cannot cover the swopped one.

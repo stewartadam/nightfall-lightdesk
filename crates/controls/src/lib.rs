@@ -36,7 +36,7 @@ pub mod prelude {
     };
     pub use crate::faders::{
         FaderAssignment, FaderButtonMode, FaderCommand, FaderConfig, FaderSnapshot, FaderUpdate,
-        Faders, HeldButtonEffect, HeldButtonEffects,
+        Faders,
     };
     pub use crate::masters::{
         FixtureMasterTarget, InstanceMasterTarget, MASTER_INTENSITY_ATTRIBUTES, Master,
@@ -78,7 +78,6 @@ impl Plugin for ControlsPlugin {
 
         app.init_resource::<DataProvider<Master>>();
         app.init_resource::<Faders>();
-        app.init_resource::<HeldButtonEffects>();
         app.world_mut()
             .resource_mut::<UndoRegistry>()
             .register::<MasterCommand>();

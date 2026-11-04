@@ -81,6 +81,7 @@ impl Plugin for OutputSacnPlugin {
         tracing::debug!("Registering OutputSacnPlugin");
         app.init_resource::<TransportRuntimePolicy>();
         app.init_resource::<nightfall_io::NetworkStats>();
+        output_sacn::register_diagnostics(app);
         let sacn_service = service::process_sacn_output_service();
         let _ = sacn_service.configure_network_output_enabled(self.network_output_enabled);
         let sacn_client = sacn_service.client();

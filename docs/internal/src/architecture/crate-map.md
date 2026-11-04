@@ -20,7 +20,7 @@ flowchart TB
   accTitle: Crate layers, their crates, and allowed dependencies
   accDescr: Five layers from hosts down to base, each listing its crates. Each layer may depend on any layer below it. Plugin crates may not depend on other plugin crates.
   hosts["<b>Hosts</b><br/>app-runtime · app-tauri · browser-runtime · cli · composition"]
-  crossPlugin["<b>Cross-plugin</b><br/>boards · desk · macros · references · showfile · wasm-bridge"]
+  crossPlugin["<b>Cross-plugin</b><br/>boards · macros · references · showfile · wasm-bridge"]
   plugins["<b>Plugins</b><br/>audio · controls · cues · fixture-library · flow · fx · fx-module · object-library · programming <br/> scene-objects · timeline · input-artnet · input-ltc · input-midi · input-osc <br /> input-sacn · output-artnet · output-sacn · output-usb"]
   engineCore["<b>Engine core</b><br/>actions · clips · compositor · engine · fixtures · framepace · io · lookahead <br /> selection-runtime · service-host · tempo · timecode · undo · websocket"]
   base["<b>Base</b><br/>nightfall · open-fixture-library · beat-detection · cmd-parse · config <br /> coremidi-hotplug · dmx · engine-derive · fixture-model · instances <br /> lookahead-projection · playback-planner · selection · waveform · workspace-hack"]
@@ -60,7 +60,7 @@ Base crates hold data types and algorithms with no engine runtime. Most don't us
 | `cmd-parse` | Bridge and demo | Lexer, parser, and autocomplete for the desk command language, such as `fixture 1 @ 50`. |
 | `selection` | Bridge and demo | Fixture selection contracts and resolution, including spatial selections and the store of object references. |
 | `lookahead-projection` | Bridge and demo | Lookahead projection for previews in the sequence editor. |
-| `instances` | Demo | Contract types for a running playback's identity, clock, controls, and status. |
+| `instances` | Demo | Contract types for a running playback's identity, clock, controls, status, and held fader button effect. |
 | `playback-planner` | Demo | Contracts for deterministic playback planning, such as rebuilding a playback clock from a planned position. |
 | `waveform` | Demo | Waveform sampling, such as sine and square, shared by FX and flows. |
 | `engine-derive` | Build time | The `EnginePayload` derive macro for engine command types. |
@@ -76,12 +76,12 @@ Engine core crates build the engine's runtime that every plugin plugs into.
 
 | Crate | WASM | Description |
 |-------|------|-------------|
-| `engine` | Demo | Core of the Bevy app: app states, schedules and their ordering, the `Render` schedule, the command and update protocol, the client bridge, object stores, runtime capabilities, the settings registry, runtime log filters, and the UI preference and panel layout settings sections. |
+| `engine` | Demo | Core of the Bevy app: app states, schedules and their ordering, the `Render` schedule, the command and update protocol, the client bridge, object stores, runtime capabilities, the settings registry, runtime log filters, the UI preference and panel layout settings sections, and the metrics feed. |
 | `undo` | Demo | Undo and redo: captures undoable commands and stores their inverses. |
 | `actions` | Demo | Registry of bindable actions and how each one turns into a command or an update, plus the eval action that runs a line of the command language. |
-| `clips` | Demo | Clip model, clip commands, lookups by identifier, and clip playback: routing clip starts and stops to the plugin registered for each clip source, launch quantize, the lifecycle and clocks of running playbacks, and the bindable clip actions. |
+| `clips` | Demo | Clip model, clip commands, lookups by identifier, and clip playback: routing clip starts and stops to the plugin registered for each clip source, launch quantize, the lifecycle and clocks of running playbacks, the running playbacks feed, and the bindable clip actions. |
 | `compositor` | Demo | Layer compositing pipeline: builds the layer stack and merges layers by priority and merge rule. |
-| `fixtures` | Demo | Fixtures, parameters, universes, patch bindings and their validation mode, the fixture and patch commands, DMX input and the release of stale input values, virtual dimmers and virtual relations, and the composition of output DMX frames. |
+| `fixtures` | Demo | Fixtures, parameters, universes, patch bindings and their validation mode, the fixture and patch commands, DMX input and the release of stale input values, virtual dimmers and virtual relations, the composition of output DMX frames, lookahead assertions, and the layer stack feed. |
 | `framepace` | Demo | Frame limiter that starts engine frames just before each DMX send time on the shared schedule, adapted from `bevy_framepace`. The browser demo uses only its `fps` command handling. |
 | `io` | Bridge and demo | IO transport settings with their `io` settings section and command, named output targets, IO constants, the host's network interfaces with their client feed and the alerts shown when the interface the transports bind to disappears or returns, and IO failure toasts. The plugin sits behind the default `plugin` feature, which the WASM bridge turns off. |
 | `lookahead` | Demo | Runtime lookahead contracts shared by the playback domains. |
@@ -130,7 +130,6 @@ Cross-plugin crates combine several plugins, which plugin crates can't do themse
 
 | Crate | WASM | Description |
 |-------|------|-------------|
-| `desk` | Demo | Shared desk behavior that spans domains. See [what lives in `desk` and why](#what-lives-in-desk-and-why). |
 | `boards` | Demo | Boards: grids of buttons, button presses, and button status. |
 | `macros` | Demo | Macros: numbered command-line scripts, the backend runner that executes them line by line, and the `macro.start`, `macro.release`, and `macro.stop` actions. |
 | `references` | Demo | Show-wide report of which objects use which, for the **References** panel and delete guards. |
@@ -171,18 +170,13 @@ Each setting belongs to the crate whose behavior it changes. That crate defines 
 
 To add a setting, add a field to its owner's section. Register a new section with `register_settings_section` and its command with `add_settings_command`.
 
-## What lives in `desk` and why
+## Where client feeds and metrics live
 
-The `desk` crate is the largest cross-plugin crate. It holds the behavior that belongs to the console as a whole rather than to one domain:
+Each crate sends the client feed for the state it owns, so no crate gathers feeds from several plugins. For example, `clips` sends the running playbacks, `fixtures` sends the layer stack that the **Layers** panel shows, and `fx` sends the clock of each Step FX editor preview. A held fader Flash or Swop reaches every feed as a `HeldButtonEffect` component that `controls` puts on the playback it changes.
 
-- The playback feed of running clips and instances.
-- Diagnostics, network statistics, and the layer stack that the **Layers** panel shows.
+Metrics work the same way. Each crate registers and records its own Bevy diagnostics, such as the compositor's layer count or a timeline system's run time, and `engine` sends the smoothed value of every diagnostic, keyed by its path. A new measurement reaches the **All Diagnostics** list in the **Instrumentation** panel without any change to the feed.
 
 Running a line of the command language (`EngineCommand::Eval`), quitting, log filters, delayed commands, and user notifications live in `engine`, so any crate can use them. Each crate converts the command-language words it owns: `engine` converts `sleep`, `fps`, `quit`, and `log`, `showfile` converts `save`, `load`, and `new show`, and `clips` and `undo` convert theirs.
-
-The plugin rules explain why this code collects in `desk`. A plugin crate can't depend on another plugin crate, so behavior that touches several plugins, such as the playback feed that reports Step FX previews next to every running clip, needs a crate above them. The browser demo compiles all of it.
-
-Before you add code to `desk`, check whether it concerns one plugin only. If it does, put it in that plugin's crate. Add to `desk` only when the code needs several plugins at once.
 
 ## Folders outside `crates`
 
@@ -212,7 +206,7 @@ The rest of the repository holds the web UI, the desktop shell, and the tooling 
 | WASM bridge dependencies | `crates/wasm-bridge/Cargo.toml` |
 | WASM bridge exports | `crates/wasm-bridge/src/lib.rs`, `board_placement.rs`, `fixture_evaluation.rs` |
 | Native feature selection | `crates/app-runtime/Cargo.toml` |
-| `desk` plugin registration | `crates/desk/src/lib.rs` |
+| Metrics feed | `crates/engine/src/metrics.rs` |
 
 ## Related topics
 

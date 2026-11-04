@@ -597,29 +597,31 @@ async function sampleWebsocketLag(
           visibleLaggingTextCount: visibleTextCount("Lagging"),
           visibleDegradedTextCount: visibleTextCount("Degraded"),
           backendFps: engineMetrics?.fps,
-          backendFrameTimeMs: engineMetrics?.frame_time_ms,
-          framepaceTimeMs: engineMetrics?.framepace_time_ms,
-          framepaceOversleepMs: engineMetrics?.framepace_oversleep_ms,
-          parameterStateBuildMs: engineMetrics?.parameter_state_build_ms,
+          backendFrameTimeMs: engineMetrics?.["frame_time"],
+          framepaceTimeMs: engineMetrics?.["framepace/frame_time_ms"],
+          framepaceOversleepMs: engineMetrics?.["framepace/oversleep_ms"],
+          parameterStateBuildMs:
+            engineMetrics?.["fixtures/parameter_state/build_ms"],
           parameterStateBroadcastMs:
-            engineMetrics?.parameter_state_broadcast_ms,
-          layerStackBuildMs: engineMetrics?.layer_stack_build_ms,
+            engineMetrics?.["fixtures/parameter_state/broadcast_ms"],
+          layerStackBuildMs: engineMetrics?.["fixtures/layer_stack/build_ms"],
           layerStackTransitionBuildMs:
-            engineMetrics?.layer_stack_transition_build_ms,
-          layerStackBroadcastMs: engineMetrics?.layer_stack_broadcast_ms,
+            engineMetrics?.["fixtures/layer_stack/transition_build_ms"],
+          layerStackBroadcastMs:
+            engineMetrics?.["fixtures/layer_stack/broadcast_ms"],
           timelineLayerGenerationMs:
-            engineMetrics?.timeline_layer_generation_ms,
-          timelineUpdateMs: engineMetrics?.timeline_update_ms,
-          timelineAudioMs: engineMetrics?.timeline_audio_ms,
+            engineMetrics?.["timeline/layer_generation_ms"],
+          timelineUpdateMs: engineMetrics?.["timeline/update_ms"],
+          timelineAudioMs: engineMetrics?.["timeline/audio_ms"],
           timelineLookaheadSourcesMs:
-            engineMetrics?.timeline_lookahead_sources_ms,
+            engineMetrics?.["timeline/lookahead_sources_ms"],
           timelineLookaheadAssertionsMs:
-            engineMetrics?.timeline_lookahead_assertions_ms,
+            engineMetrics?.["timeline/lookahead_assertions_ms"],
           timelineLookaheadLayersMs:
-            engineMetrics?.timeline_lookahead_layers_ms,
-          timelineActionsMs: engineMetrics?.timeline_actions_ms,
-          timelineParametersMs: engineMetrics?.timeline_parameters_ms,
-          timelineSeekMs: engineMetrics?.timeline_seek_ms,
+            engineMetrics?.["timeline/lookahead_layers_ms"],
+          timelineActionsMs: engineMetrics?.["timeline/actions_ms"],
+          timelineParametersMs: engineMetrics?.["timeline/parameters_ms"],
+          timelineSeekMs: engineMetrics?.["timeline/seek_ms"],
         };
       }),
     );

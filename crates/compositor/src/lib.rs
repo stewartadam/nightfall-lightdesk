@@ -18,6 +18,7 @@
 use std::marker::PhantomData;
 
 use bevy_app::prelude::*;
+use bevy_diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, RegisterDiagnostic};
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::Render;
 use nightfall_engine::Compositing;
@@ -70,6 +71,15 @@ pub fn add_compositor_removal_observers<P: CompositorParameter>(app: &mut App) {
     );
 }
 
+/// Number of layers composited each frame.
+pub const COMPOSITOR_LAYERS: DiagnosticPath = DiagnosticPath::const_new("compositor/layers");
+
+/// Records how many layers the compositor merges this frame.
+fn record_layer_count(layers: Query<(), With<crate::types::Layer>>, mut diagnostics: Diagnostics) {
+    let count = layers.count() as f64;
+    diagnostics.add_measurement(&COMPOSITOR_LAYERS, || count);
+}
+
 /// Compositor plugin that adds the layer compositing system to a Bevy app.
 ///
 /// The compositor layer stack and final layer resources are global for the app, so this plugin is
@@ -93,12 +103,16 @@ impl<P: CompositorParameter> Plugin for CompositorPlugin<P> {
         app.init_resource::<FinalLayerAttributedAssertions>();
         app.init_resource::<FinalLayerOutput>();
         add_compositor_removal_observers::<P>(app);
+        // A count reports its latest value rather than an average that lags behind it.
+        app.register_diagnostic(
+            Diagnostic::new(COMPOSITOR_LAYERS).with_smoothing_factor(f64::MIN_POSITIVE),
+        );
 
         // Add system to compose the layers from materialized outputs
         app.add_systems(
             Render,
             (
-                crate::system::compositor::<P>.in_set(Compositing),
+                (crate::system::compositor::<P>, record_layer_count).in_set(Compositing),
                 // ensure current OutputLayer is available for the next systems
                 ApplyDeferred,
             )

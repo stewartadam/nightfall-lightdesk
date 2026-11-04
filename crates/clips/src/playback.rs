@@ -136,16 +136,27 @@ impl Plugin for ClipsPlugin {
                 // Reads playback stops (MaterializedClip removals), which only last two updates.
                 crate::websocket::send_clips_on_change,
                 crate::websocket::send_armed_launches_on_change,
+                // Reads playback despawns, which only last two updates.
+                crate::websocket::send_playbacks_on_change,
             )
                 .in_set(ClientFeedback),
         );
         app.add_systems(
             Render,
-            crate::websocket::send_clips_on_clip_change.in_set(ClientOutput),
+            (
+                crate::websocket::send_clips_on_clip_change,
+                crate::websocket::refresh_playbacks_at_interval,
+            )
+                .in_set(ClientOutput),
         );
         app.add_systems(
             Update,
-            crate::websocket::handle_resync_state
+            (
+                crate::websocket::handle_resync_state,
+                // Playbacks refer to the clips sent before them.
+                crate::websocket::handle_playbacks_resync,
+            )
+                .chain()
                 .in_set(ResyncHandling)
                 // The showfile identity follows the clips it describes.
                 .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),

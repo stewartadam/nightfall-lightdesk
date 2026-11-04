@@ -27,6 +27,7 @@ function previewStatus(
   options: Partial<types.StepFxPreviewPlaybackStatus> = {},
 ): types.StepFxPreviewPlaybackStatus {
   return {
+    instance_id: "preview-playback",
     session_id: SESSION_ID,
     sampled_at_epoch_ms: 10_000,
     elapsed: { secs: 1, nanos: 0 },
@@ -36,44 +37,17 @@ function previewStatus(
   };
 }
 
-/** Builds the minimal active playback record needed for preview-session matching. */
-function playback(
-  preview: types.StepFxPreviewPlaybackStatus | undefined,
-): types.InstanceInfo {
-  return {
-    instance_id: "preview-playback",
-    kind: types.InstanceKind.Fx,
-    display_kind: types.InstanceDisplayKind.StepFx,
-    tags: [],
-    is_preview: true,
-    is_releasing: false,
-    is_paused: false,
-    owner_uids: [],
-    intensity_scale: 1,
-    speed: 1,
-    speed_master_scale: 1,
-    effective_speed: 1,
-    step_fx_preview: preview,
-    status: {
-      position: { type: "None" },
-    },
-  };
-}
-
 /** Verifies preview lookup accepts the UUID formatting difference introduced by serialization. */
 test("findStepFxPreviewStatus matches the editor session only", () => {
   const expected = previewStatus();
   const found = findStepFxPreviewStatus(
-    { preview: playback(expected) },
+    [expected],
     "12345678-1234-5678-1234-567812345678",
   );
 
   assert.equal(found, expected);
   assert.equal(
-    findStepFxPreviewStatus(
-      { preview: playback(expected) },
-      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-    ),
+    findStepFxPreviewStatus([expected], "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
     undefined,
   );
 });

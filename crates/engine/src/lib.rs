@@ -30,11 +30,11 @@ pub mod client_bridge;
 pub mod client_ingress;
 pub mod command_lifecycle;
 pub mod data_provider;
-pub mod diagnostic_paths;
 pub mod eval;
 pub mod eval_action;
 pub mod frame_waker;
 pub mod logging;
+mod metrics;
 pub mod object_changes;
 pub mod object_crud;
 pub mod object_registry;
@@ -242,6 +242,11 @@ impl Plugin for EnginePlugin {
             PostUpdate,
             broadcast_app_state_on_change.in_set(ClientFeedback),
         );
+        app.add_systems(
+            Render,
+            metrics::send_metrics_at_interval.in_set(ClientOutput),
+        );
+        app.init_resource::<GlobalVariables>();
 
         register_ingress_command::<EngineCommand>(app);
         register_command_deserializer::<EngineCommand>(app, eval::deserialize_engine_command);

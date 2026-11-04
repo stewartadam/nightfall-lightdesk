@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use async_channel::{Receiver, Sender};
 use bevy_app::{App, PluginGroup};
-use bevy_diagnostic::{FrameCountPlugin, FrameTimeDiagnosticsPlugin};
+use bevy_diagnostic::{EntityCountDiagnosticsPlugin, FrameCountPlugin, FrameTimeDiagnosticsPlugin};
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::NextState;
 use bevy_time::{TimePlugin, TimeUpdateStrategy};
@@ -204,7 +204,11 @@ impl BrowserEngine {
             std::time::Duration::ZERO,
         ));
         // Real time advances by the host tick delta, so these report the worker's engine rate.
-        app.add_plugins((FrameCountPlugin, FrameTimeDiagnosticsPlugin::default()));
+        app.add_plugins((
+            FrameCountPlugin,
+            FrameTimeDiagnosticsPlugin::default(),
+            EntityCountDiagnosticsPlugin::default(),
+        ));
         // The worker paces ticks itself, so only the `fps` command handling is shared with the
         // native frame limiter, whose sleeping limiter cannot run in a browser.
         app.insert_resource(

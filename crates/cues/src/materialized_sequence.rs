@@ -16,12 +16,14 @@ use nightfall_clips::{Clip, ClipReleaseAfterInstance, MaterializedClip};
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::{ParameterDmxValue, prelude::ParameterValue};
 use nightfall_engine::prelude::*;
+use nightfall_fixtures::lookahead_assertions::{
+    LookaheadAssertion, LookaheadAssertions, LookaheadReason,
+};
 use nightfall_fixtures::prelude::*;
 use nightfall_instances::{
     InstanceClock, InstanceId, InstanceOptions, InstancePosition, InstanceSequenceCueStatus,
     InstanceStatus, activation_epoch_ms,
 };
-use nightfall_lookahead::{LookaheadAssertion, LookaheadAssertions, LookaheadReason};
 use nightfall_playback_planner::PlaybackReconstructionTiming;
 use nightfall_selection_runtime::SpatialSelectionResolver;
 use partially::Partial;

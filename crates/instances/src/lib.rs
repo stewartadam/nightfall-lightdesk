@@ -21,6 +21,10 @@ use smart_default::SmartDefault;
 use uuid::Uuid;
 use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+mod held_button;
+
+pub use held_button::HeldButtonEffect;
+
 /// Request emitted by deterministic seek for domain-owned playback reconstruction.
 #[derive(Debug, Clone, Message)]
 pub struct DomainInstanceReconstructionRequest {

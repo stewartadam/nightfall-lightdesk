@@ -25,7 +25,9 @@ pub mod fixture_events;
 pub mod geometry;
 pub mod input_apply;
 mod input_universe_settings;
+pub mod layer_stack;
 pub mod library;
+pub mod lookahead_assertions;
 pub mod output_frames;
 pub mod parameter;
 pub mod parameter_index;
@@ -52,6 +54,7 @@ pub mod websocket;
 pub mod wire_layout;
 
 use bevy_app::prelude::*;
+use bevy_diagnostic::{Diagnostic, RegisterDiagnostic};
 use bevy_ecs::prelude::*;
 use nightfall::command_types::{DmxChannelExpr, DmxChannelRef};
 use nightfall::prelude::{ColorPathId, FixtureRef};
@@ -225,6 +228,13 @@ impl Plugin for FixturePlugin {
         app.init_resource::<output_frames::OutputDmxFrames>();
         app.add_message::<websocket::SuppressFixtureChangedSnapshot>();
         websocket::register_fixture_websocket_diagnostics(app);
+        layer_stack::register_diagnostics(app);
+        // A count reports its latest value rather than an average that lags behind it.
+        app.register_diagnostic(
+            Diagnostic::new(output_frames::OUTPUT_UNIVERSES)
+                .with_smoothing_factor(f64::MIN_POSITIVE),
+        );
+        app.init_resource::<layer_stack::LayerStackPublication>();
         register_client_command::<trace::FixtureTraceCommand>(app, Undo::Skipped);
         app.add_systems(Update, trace::handle_trace_fixture.in_set(EventHandling));
         register_client_command::<route_validation::RouteValidationCommand>(app, Undo::Skipped);
@@ -318,6 +328,7 @@ impl Plugin for FixturePlugin {
                 universe::dmx_universes,
                 transport_holds::resolve_transport_holds,
                 output_frames::compose_output_frames,
+                output_frames::record_output_universes,
                 universe::dmx_universes_debug,
             )
                 .chain()
@@ -343,13 +354,19 @@ impl Plugin for FixturePlugin {
                 websocket::send_color_path_defaults_on_change,
                 websocket::send_route_validation_settings_on_change,
                 websocket::send_parameter_state.after(DmxOutput),
+                // Layer stack slots refer to the parameter layout published before it.
+                layer_stack::send_layer_stack_at_interval.after(websocket::send_parameter_state),
             )
                 .in_set(ClientOutput),
         );
 
         app.add_systems(
             Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
+            (
+                websocket::handle_resync_state,
+                layer_stack::handle_resync_state,
+            )
+                .in_set(ResyncHandling),
         );
         app.add_systems(
             Update,

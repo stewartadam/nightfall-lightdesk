@@ -79,10 +79,10 @@ pub(crate) enum FixtureWsMessage<'a> {
 
 /// Time spent projecting the current parameter state for clients.
 pub const PARAMETER_STATE_BUILD_MS: DiagnosticPath =
-    DiagnosticPath::const_new("desk/parameter_state/build_ms");
+    DiagnosticPath::const_new("fixtures/parameter_state/build_ms");
 /// Time spent encoding and publishing the current parameter state.
 pub const PARAMETER_STATE_BROADCAST_MS: DiagnosticPath =
-    DiagnosticPath::const_new("desk/parameter_state/broadcast_ms");
+    DiagnosticPath::const_new("fixtures/parameter_state/broadcast_ms");
 
 /// Beam properties for visualization, derived from FixturePhysical.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,7 +219,11 @@ pub fn send_parameter_state(
 }
 
 /// Add one elapsed duration to a Bevy diagnostic in milliseconds.
-fn record_elapsed_ms(diagnostics: &mut Diagnostics, path: &DiagnosticPath, elapsed: Duration) {
+pub(crate) fn record_elapsed_ms(
+    diagnostics: &mut Diagnostics,
+    path: &DiagnosticPath,
+    elapsed: Duration,
+) {
     let elapsed_ms = elapsed.as_secs_f64() * 1000.0;
     diagnostics.add_measurement(path, || elapsed_ms);
 }

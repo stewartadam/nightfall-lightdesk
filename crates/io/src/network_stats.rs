@@ -6,12 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Network output timing statistics for instrumentation
+//! Network output send failures, kept for the operator until the output recovers.
 
 use std::net::Ipv4Addr;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "plugin")]
+pub(crate) mod feed;
 
 const MAX_RECENT_SEND_FAILURES: usize = 32;
 
@@ -33,35 +35,15 @@ pub struct NetworkOutputSendFailure {
     pub count: u32,
 }
 
-/// Tracks timing statistics for network output operations
+/// Recent send failures of the network outputs, one per physical output.
 #[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 #[derive(Default, Debug, Clone)]
 pub struct NetworkStats {
-    /// Time spent sending Art-Net universes on the last output tick
-    artnet_send_time: Option<Duration>,
-    /// Number of Art-Net universes sent on the last output tick
-    artnet_universe_count: u32,
-    /// Time spent sending sACN universes on the last output tick
-    sacn_send_time: Option<Duration>,
-    /// Number of sACN universes sent on the last output tick
-    sacn_universe_count: u32,
     /// Recent network output send failures.
     recent_send_failures: Vec<NetworkOutputSendFailure>,
 }
 
 impl NetworkStats {
-    /// Records Art-Net send timing for the latest output tick
-    pub fn set_artnet_timing(&mut self, duration: Duration, universe_count: u32) {
-        self.artnet_send_time = Some(duration);
-        self.artnet_universe_count = universe_count;
-    }
-
-    /// Records sACN send timing for the latest output tick
-    pub fn set_sacn_timing(&mut self, duration: Duration, universe_count: u32) {
-        self.sacn_send_time = Some(duration);
-        self.sacn_universe_count = universe_count;
-    }
-
     /// Records one network output send failure for operator diagnostics.
     pub fn record_send_failure(
         &mut self,
@@ -124,26 +106,6 @@ impl NetworkStats {
                 || failure.universe != universe
                 || failure.destination_ip != destination_ip
         });
-    }
-
-    /// Returns Art-Net send time in milliseconds
-    pub fn artnet_send_time_ms(&self) -> Option<f64> {
-        self.artnet_send_time.map(|d| d.as_secs_f64() * 1000.0)
-    }
-
-    /// Returns the number of Art-Net universes sent
-    pub fn artnet_universe_count(&self) -> u32 {
-        self.artnet_universe_count
-    }
-
-    /// Returns sACN send time in milliseconds
-    pub fn sacn_send_time_ms(&self) -> Option<f64> {
-        self.sacn_send_time.map(|d| d.as_secs_f64() * 1000.0)
-    }
-
-    /// Returns the number of sACN universes sent
-    pub fn sacn_universe_count(&self) -> u32 {
-        self.sacn_universe_count
     }
 
     /// Returns recent network output send failures.

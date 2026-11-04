@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use bevy::{
     app::{ScheduleRunnerPlugin, TaskPoolThreadAssignmentPolicy},
-    diagnostic::FrameTimeDiagnosticsPlugin,
+    diagnostic::{EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin},
     prelude::*,
 };
 use bevy_state::{app::AppExtStates, condition::in_state};
@@ -145,7 +145,10 @@ pub(super) fn init_bevy_with_transport_policy(
     );
     app.add_plugins(EngineLogTimePlugin);
 
-    app.add_plugins(FrameTimeDiagnosticsPlugin::default());
+    app.add_plugins((
+        FrameTimeDiagnosticsPlugin::default(),
+        EntityCountDiagnosticsPlugin::default(),
+    ));
     app.add_plugins(FramepacePlugin);
     app.world_mut().resource_mut::<FramepaceSettings>().limiter =
         Limiter::Manual(engine_frame_interval(&IoRuntimeSettings::default()));

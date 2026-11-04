@@ -11,10 +11,10 @@ use moonshine_kind::prelude::Instance;
 use nightfall_compositor::prelude::{FinalLayerOutput, ParameterRef};
 use nightfall_cues::prelude::LookaheadCandidateAssertion;
 use nightfall_dmx::prelude::Attribute;
-use nightfall_lookahead::{
-    FixtureFootprint, Lookahead, LookaheadAssertion, LookaheadAssertions as LookaheadAssertionSet,
-    LookaheadReason, PlaybackFootprint,
+use nightfall_fixtures::lookahead_assertions::{
+    LookaheadAssertion, LookaheadAssertions as LookaheadAssertionSet, LookaheadReason,
 };
+use nightfall_lookahead::{FixtureFootprint, Lookahead, PlaybackFootprint};
 
 use super::planner_adapter::planned_source_for_clip;
 use super::*;

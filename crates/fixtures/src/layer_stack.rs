@@ -6,14 +6,63 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Layer-stack projection and transition-state derivation.
+//! The layer stack feed: every layer's assertions and computed values, with what is still
+//! transitioning.
 //!
 //! Layer values are packed by the slots of the parameter state layout, the same numbering
 //! parameter state frames use, and a snapshot is only sent when it differs from the last one.
 
-use nightfall_fixture_model::prelude::*;
+use std::time::Duration;
 
-use super::*;
+use bevy_app::App;
+use bevy_diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, RegisterDiagnostic};
+use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
+use nightfall::prelude::{MaterializedTransition, ObjectRef, Priority};
+use nightfall_compositor::prelude::*;
+use nightfall_dmx::prelude::*;
+use nightfall_engine::prelude::*;
+use nightfall_fixture_model::prelude::*;
+use nightfall_instances::{HeldButtonEffect, InstancePosition, InstanceStatus};
+use serde::Serialize;
+use web_time::Instant;
+
+use crate::lookahead_assertions::LookaheadAssertions;
+use crate::parameter::Parameter;
+use crate::parameter_state::{ParameterStateProjection, assertion_kind};
+use crate::websocket::record_elapsed_ms;
+
+#[cfg(test)]
+mod tests;
+
+/// How often the layer stack is rebuilt and, when it changed, sent.
+const SEND_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Time spent building the outbound layer stack snapshot.
+pub const LAYER_STACK_BUILD_MS: DiagnosticPath =
+    DiagnosticPath::const_new("fixtures/layer_stack/build_ms");
+/// Time spent deriving which layer parameters are still transitioning.
+pub const LAYER_STACK_TRANSITION_BUILD_MS: DiagnosticPath =
+    DiagnosticPath::const_new("fixtures/layer_stack/transition_build_ms");
+/// Time spent encoding and publishing the layer stack snapshot.
+pub const LAYER_STACK_BROADCAST_MS: DiagnosticPath =
+    DiagnosticPath::const_new("fixtures/layer_stack/broadcast_ms");
+
+/// Registers the layer stack timings.
+pub(crate) fn register_diagnostics(app: &mut App) {
+    app.register_diagnostic(Diagnostic::new(LAYER_STACK_BUILD_MS).with_suffix(" ms"))
+        .register_diagnostic(Diagnostic::new(LAYER_STACK_TRANSITION_BUILD_MS).with_suffix(" ms"))
+        .register_diagnostic(Diagnostic::new(LAYER_STACK_BROADCAST_MS).with_suffix(" ms"));
+}
+
+/// Layer stack messages sent to clients.
+#[derive(Serialize)]
+#[serde(tag = "type", content = "data")]
+#[typeshare::typeshare]
+pub(crate) enum LayerStackWsMessage<'a> {
+    /// Layer stack with computed values (sorted by priority)
+    LayerStack(&'a OutboundLayerStack),
+}
 
 /// Layer components projected into websocket layer snapshots.
 pub type LayerSnapshotData = (
@@ -24,7 +73,7 @@ pub type LayerSnapshotData = (
     Option<&'static LayerCompositingContext>,
     Option<&'static LookaheadAssertions>,
     Option<&'static InstanceStatus>,
-    Option<&'static InstanceId>,
+    Option<&'static HeldButtonEffect>,
 );
 
 /// Encoded payload of the last layer stack snapshot sent to clients.
@@ -77,7 +126,7 @@ fn packed_computed_values(
 /// Returns the layout slots of every parameter whose computed value in this layer is still
 /// transitioning, because the layer is releasing, the compositor flagged it, or its fade has not
 /// reached the target yet.
-pub(super) fn computed_transitioning_slots(
+pub(crate) fn computed_transitioning_slots(
     layer: &Layer,
     output: &ComputedLayer,
     slot_of: &impl Fn(ParameterRef) -> Option<u32>,
@@ -119,7 +168,7 @@ pub(super) fn computed_transitioning_slots(
 }
 
 /// Reports whether a materialized transition is still changing its parameter output.
-pub(super) fn is_transition_active(
+pub(crate) fn is_transition_active(
     parameters_query: &Query<&Parameter>,
     param_instance: ParameterRef,
     value: &ParameterValue,
@@ -198,7 +247,6 @@ pub fn send_layer_stack(
     parameters_query: Query<&Parameter>,
     layers: Query<LayerSnapshotData>,
     publication: &mut LayerStackPublication,
-    held_buttons: &HeldButtonEffects,
     mut diagnostics: Option<&mut Diagnostics>,
     broadcaster: &ClientEventSink,
 ) {
@@ -219,7 +267,7 @@ pub fn send_layer_stack(
                 compositing_context,
                 lookahead_assertions,
                 runtime_status,
-                instance_id,
+                held_button,
             )| {
                 let transition_start = Instant::now();
                 let is_releasing = release_marker.is_some();
@@ -243,8 +291,7 @@ pub fn send_layer_stack(
                         priority: layer.priority,
                         is_releasing,
                         runtime_position: runtime_status.map(|status| status.position.clone()),
-                        held_button: instance_id
-                            .and_then(|instance_id| held_buttons.get(instance_id)),
+                        held_button: held_button.copied(),
                         asserted_absolute: packed_assertions(
                             layer
                                 .absolute
@@ -291,9 +338,10 @@ pub fn send_layer_stack(
     }
 
     let broadcast_start = Instant::now();
-    let Some(message) =
-        EncodedClientMessage::new(DISCRIMINATOR_DROPPABLE, &DeskWsMessage::LayerStack(&stack))
-    else {
+    let Some(message) = EncodedClientMessage::new(
+        DISCRIMINATOR_DROPPABLE,
+        &LayerStackWsMessage::LayerStack(&stack),
+    ) else {
         tracing::warn!("Failed to serialize layer stack");
         return;
     };
@@ -314,4 +362,143 @@ pub fn send_layer_stack(
         broadcast_ms = broadcast_elapsed.as_secs_f64() * 1000.0,
         "LayerStack websocket baseline"
     );
+}
+
+/// Layer stack snapshot whose parameter values are indexed by the slots of a
+/// [`ParameterLayout`](nightfall_fixtures::parameter_state::ParameterLayout).
+///
+/// Clients resolve each slot to its fixture, element and attribute with the layout they already
+/// hold for parameter state frames, so the snapshot carries no fixture ids or attribute names.
+#[derive(Debug, Default, Serialize)]
+#[typeshare::typeshare]
+pub(crate) struct OutboundLayerStack {
+    /// Layout the slots are indexed by. Clients holding a different layout discard the snapshot;
+    /// the backend sends a new one after every layout change.
+    pub layout_id: u32,
+    /// Layers in compositing order, lowest priority first.
+    pub layers: Vec<OutboundLayerState>,
+}
+
+/// Wire representation of a single layer's computation information sent to the UI
+#[derive(Debug, Serialize)]
+#[typeshare::typeshare]
+pub(crate) struct OutboundLayerState {
+    /// Creator name of the layer (cue / programmer / etc.)
+    pub creator: String,
+    /// Source object that created the layer, if available
+    pub object_ref: Option<ObjectRef>,
+    /// Numeric priority – lower values are merged first
+    pub priority: Priority,
+    /// Whether this layer is fading out before removal
+    pub is_releasing: bool,
+    /// Current source-specific playback position for playback-backed layers.
+    pub runtime_position: Option<InstancePosition>,
+    /// How a held fader Flash or Swop changes this layer's playback; a playback a Swop
+    /// takes out asserts nothing while the Swop is held.
+    pub held_button: Option<HeldButtonEffect>,
+    /// Asserted absolute parameter values for this layer.
+    pub asserted_absolute: PackedLayerAssertions,
+    /// Asserted relative parameter values for this layer.
+    pub asserted_relative: PackedLayerAssertions,
+    /// Backend-owned lookahead assertions, such as lookahead values.
+    pub lookahead_asserted: PackedLayerAssertions,
+    /// Layout slot of each computed absolute value as a `u32`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub computed_slots: PackedBytes,
+    /// Computed absolute value of each slot in `computed_slots` as an `f32`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub computed_values: PackedBytes,
+    /// Layout slot of each parameter whose computed value is still transitioning, as a `u32`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub transitioning_slots: PackedBytes,
+}
+
+/// Asserted parameter values of one layer, packed like parameter state frame assertions.
+#[derive(Debug, Default, Serialize)]
+#[typeshare::typeshare]
+pub(crate) struct PackedLayerAssertions {
+    /// Layout slot of each assertion as a `u32`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub slots: PackedBytes,
+    /// Kind code of each assertion as a `u8`, indexing the layout's `assertion_variants`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub kinds: PackedBytes,
+    /// Value or offset of each assertion as an `f32`.
+    #[typeshare(serialized_as = "Uint8Array<ArrayBufferLike>")]
+    pub values: PackedBytes,
+}
+
+impl PackedLayerAssertions {
+    /// Appends one assertion for `slot`, encoded with the parameter state assertion kind codes.
+    pub(crate) fn push(&mut self, slot: u32, value: &ParameterValue) {
+        let (kind, number) = assertion_kind(value);
+        self.slots.push_u32(slot);
+        self.kinds.0.push(kind);
+        self.values.push_f32(number);
+    }
+}
+
+/// Little-endian packed numbers serialized as one binary string, so clients can view them as a
+/// typed array instead of decoding each value.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub(crate) struct PackedBytes(pub Vec<u8>);
+
+impl PackedBytes {
+    /// Appends a `u32` in little-endian order.
+    pub(crate) fn push_u32(&mut self, value: u32) {
+        self.0.extend_from_slice(&value.to_le_bytes());
+    }
+
+    /// Appends an `f32` in little-endian order.
+    pub(crate) fn push_f32(&mut self, value: f32) {
+        self.0.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
+impl Serialize for PackedBytes {
+    /// Writes the bytes through `serialize_bytes`, which CBOR encodes as a single byte string.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_bytes(&self.0)
+    }
+}
+
+/// State the layer stack snapshot is built from and change-checked against.
+#[derive(SystemParam)]
+pub(crate) struct LayerStackParams<'w, 's> {
+    projection: Res<'w, ParameterStateProjection>,
+    parameters: Query<'w, 's, &'static Parameter>,
+    layers: Query<'w, 's, LayerSnapshotData>,
+    publication: ResMut<'w, LayerStackPublication>,
+}
+
+/// Sends the layer stack every [`SEND_INTERVAL`] when it changed, timing each pass.
+pub(crate) fn send_layer_stack_at_interval(
+    mut layer_stack: LayerStackParams,
+    mut diagnostics: Diagnostics,
+    mut last_sent: Local<Option<Instant>>,
+    broadcaster: Res<ClientEventSink>,
+) {
+    if last_sent.is_some_and(|sent_at| sent_at.elapsed() < SEND_INTERVAL) {
+        return;
+    }
+    *last_sent = Some(Instant::now());
+    send_layer_stack(
+        &layer_stack.projection,
+        layer_stack.parameters,
+        layer_stack.layers,
+        &mut layer_stack.publication,
+        Some(&mut diagnostics),
+        &broadcaster,
+    );
+}
+
+/// Makes the next layer stack pass send its snapshot to a client that asked for a full resync,
+/// after the parameter layout its slots refer to.
+pub(crate) fn handle_resync_state(
+    mut resync: ResyncReplies,
+    mut publication: ResMut<LayerStackPublication>,
+) {
+    if resync.sink().is_some() {
+        publication.invalidate();
+    }
 }

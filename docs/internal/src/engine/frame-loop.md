@@ -61,7 +61,7 @@ Each set has one job:
 | `EventHandling` | Domain handlers read those messages and change world state: they spawn playbacks, store cues, change masters, and so on. |
 | `ResyncHandling` | Plugins resend their full state to clients that requested a resync. |
 
-The `ActionInvocationHandling` set belongs to the actions crate, which orders it after `InputHandling` and before `PendingCommandExpansion`. Several other sets hang off `EventHandling`, such as the desk's `DeskEventSet` clip and blueprint sets that domain plugins order their handlers against, and the app's showfile handling.
+The `ActionInvocationHandling` set belongs to the actions crate, which orders it after `InputHandling` and before `PendingCommandExpansion`. Several other sets hang off `EventHandling`, such as the engine's `DeskEventSet` clip and blueprint sets that domain plugins order their handlers against, and the app's showfile handling.
 
 Resync runs in `Update` on purpose. The resync completion message goes out before clock and layer work starts, so a slow first render after a show load doesn't delay the moment a client knows it has the full state.
 
@@ -100,7 +100,7 @@ The stages map onto the journey from [how a show becomes light](../concepts/show
 |-------|-----------------|----------------------------------|
 | `ClockUpdate` | Adds a clock to new playbacks, applies rate masters, and advances every real-time clock by the wall-clock time since the previous render pass. The show tempo and timecode generators also advance here. | `First playback` gets its clock and moves up to one frame period into the `Red` cue's fade. |
 | `LayerGeneration` | Each playback type paints its layer: sequences, cues, FX, Step FX, FX modules, flows, timelines, and the programmer. Incoming DMX also lands in its input layer here. | `First playback` paints a priority 0 layer with intensity and red partway up the fade. The programmer paints a priority 127 layer with intensity at 50%. |
-| Between layers and compositing | The desk resolves held Flash and Swop buttons and scales each playback's intensity values by its level. These systems belong to no set. They order themselves after `LayerGeneration` and before `Compositing`. | If `First playback`'s fader sits at 50%, its intensity contribution halves. The programmer layer is unaffected. |
+| Between layers and compositing | `controls` resolves held Flash and Swop buttons and scales each playback's intensity values by its level. These systems belong to no set. They order themselves after `LayerGeneration` and before `Compositing`. | If `First playback`'s fader sits at 50%, its intensity contribution halves. The programmer layer is unaffected. |
 | `Compositing` | The compositor sorts layers by priority and activation time, merges them, and writes the final value into each fixture parameter. | Intensity comes out at 50% from the programmer, and red follows `First playback`'s fade. |
 | `VdimProcessing` | Applies intensity masters, then virtual dimmers, then virtual relations to the merged values. | An intensity master that targets `Par 1` scales its intensity. Virtual dimming does not apply, because `Par 1` has a real intensity channel. |
 | `DmxOutput` | Resolves patch bindings, packs parameter values into console universes, composes output frames, and hands them to the Art-Net, sACN, and USB outputs. | Intensity, red, green, and blue land in channels 1 to 4 of console universe 1. If a binding routes that universe to Art-Net, the Art-Net worker receives the new frame. |

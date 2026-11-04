@@ -81,9 +81,6 @@ incremental = false # for sccache
 [profile.dev.package.nightfall-engine]
 debug-assertions = true
 
-[profile.dev.package.nightfall-desk]
-debug-assertions = true
-
 [profile.dev.package.tauri-utils]
 # prevent IDE errors from generate_context macro
 # see https://github.com/tauri-apps/tauri/issues/13865

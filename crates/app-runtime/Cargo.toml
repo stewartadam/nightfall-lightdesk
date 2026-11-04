@@ -28,7 +28,6 @@ nightfall-composition = { path = "../composition" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-controls = { path = "../controls" }
 nightfall-cues = { path = "../cues" }
-nightfall-desk = { path = "../desk", default-features = false }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
@@ -97,7 +96,7 @@ usb = ["dep:nightfall-output-usb"]
 fixture-library = ["dep:nightfall-fixture-library"]
 gdtf-share = ["dep:nightfall-gdtf-share", "fixture-library"]
 object-library = ["dep:nightfall-object-library"]
-debug = ["nightfall-engine/debug", "nightfall-desk/debug"]
+debug = ["nightfall-engine/debug"]
 telemetry = ["dep:sentry", "dep:reqwest", "dep:sysinfo"]
 
 [dev-dependencies]

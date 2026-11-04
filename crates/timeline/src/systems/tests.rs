@@ -28,6 +28,7 @@ use nightfall_cues::prelude::*;
 use nightfall_dmx::prelude::{Attribute, DmxValueResolution, ParameterValue};
 use nightfall_engine::prelude::*;
 use nightfall_fixture_model::prelude::*;
+use nightfall_fixtures::lookahead_assertions::LookaheadAssertions;
 use nightfall_fixtures::prelude::{
     Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
 };
@@ -39,7 +40,6 @@ use nightfall_instances::{
     InstanceClock, InstanceClockSource, InstanceControls, InstanceDisplayKind, InstanceId,
     InstanceKind, InstanceMetadata, InstanceOptions, InstancePosition, InstanceStatus, Timebase,
 };
-use nightfall_lookahead::LookaheadAssertions;
 use nightfall_playback_planner::{
     EvaluatedInstanceState, PlannedPlaybackIntervention, PlannedPlaybackInterventionKind,
     PlannedPlaybackLifecycle, PlannedPlaybackSource, PlaybackPositionSource, TimelinePlaybackOwner,

@@ -6,11 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+//! Assertions a playback asks for on fixture parameters before it activates, such as
+//! pre-positioning a dark fixture, kept apart from its layer so views can tell them apart.
+
 use bevy_ecs::prelude::Component;
 use moonshine_kind::prelude::Instance;
 use nightfall_compositor::prelude::Layer;
 use nightfall_dmx::prelude::ParameterValue;
-use nightfall_fixtures::prelude::Parameter;
+
+use crate::parameter::Parameter;
 
 /// Reason a playback is asking to assert a parameter before normal activation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

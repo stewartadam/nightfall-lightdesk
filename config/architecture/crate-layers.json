@@ -58,7 +58,6 @@
     ],
     "cross-plugin": [
       "nightfall-boards",
-      "nightfall-desk",
       "nightfall-macros",
       "nightfall-references",
       "nightfall-showfile",

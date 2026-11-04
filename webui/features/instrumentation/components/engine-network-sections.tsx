@@ -6,16 +6,43 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { Show } from "solid-js";
+import { For, Show } from "solid-js";
 import { Collapsible } from "../../../components/ui/collapsible";
 import { Sparkline } from "../../../components/ui/sparkline";
-import type {
-  EngineMetrics,
-  MetricsHistory,
-  SmoothedEngineMetrics,
+import {
+  type EngineMetrics,
+  METRIC_PATHS,
+  type MetricsHistory,
+  type SmoothedEngineMetrics,
 } from "../../../state/appStores";
 import { formatNumber } from "../model/metrics";
 import { MetricRow } from "./metric-sections";
+
+/** Formats a smoothed backend count as a whole number, or a dash before the first value. */
+function formatCount(value: number | undefined): string {
+  return value === undefined ? "—" : String(Math.round(value));
+}
+
+/** Lists every backend diagnostic by path, so newly recorded values show without UI changes. */
+export function AllDiagnosticsSection(props: {
+  metrics: EngineMetrics | null;
+}) {
+  const entries = () =>
+    Object.entries(props.metrics ?? {}).sort(([left], [right]) =>
+      left.localeCompare(right),
+    );
+  return (
+    <Collapsible lazy title="All Diagnostics" contentClass="p-3">
+      <div class="space-y-2 rounded-lg bg-neutral-800 p-3">
+        <For each={entries()}>
+          {([path, value]) => (
+            <MetricRow label={path} value={formatNumber(value, 2)} />
+          )}
+        </For>
+      </div>
+    </Collapsible>
+  );
+}
 
 interface EngineStatsSectionProps {
   metrics: EngineMetrics | null;
@@ -28,19 +55,17 @@ export function EngineStatsSection(props: EngineStatsSectionProps) {
       <div class="space-y-2 rounded-lg bg-neutral-800 p-3">
         <MetricRow
           label="Active Layers"
-          value={props.metrics?.active_layers ?? "—"}
+          value={formatCount(props.metrics?.[METRIC_PATHS.activeLayers])}
         />
         <MetricRow
           label="Active Universes"
-          value={props.metrics?.active_universes ?? "—"}
+          value={formatCount(props.metrics?.[METRIC_PATHS.activeUniverses])}
         />
-        <Show
-          when={
-            props.metrics?.entity_count !== undefined &&
-            props.metrics?.entity_count !== null
-          }
-        >
-          <MetricRow label="Entity Count" value={props.metrics?.entity_count} />
+        <Show when={props.metrics?.[METRIC_PATHS.entityCount] !== undefined}>
+          <MetricRow
+            label="Entity Count"
+            value={formatCount(props.metrics?.[METRIC_PATHS.entityCount])}
+          />
         </Show>
       </div>
     </Collapsible>
@@ -85,9 +110,13 @@ export function NetworkMetricsSection(props: NetworkMetricsSectionProps) {
           value={
             <>
               {formatNumber(props.smoothedMetrics.artnetSendTimeMs, 2, " ms")}
-              <Show when={(props.metrics?.artnet_universe_count ?? 0) > 0}>
+              <Show
+                when={
+                  (props.metrics?.[METRIC_PATHS.artnetUniverseCount] ?? 0) > 0
+                }
+              >
                 <span class="ml-1 text-neutral-400">
-                  ({props.metrics?.artnet_universe_count} univ)
+                  {`(${formatCount(props.metrics?.[METRIC_PATHS.artnetUniverseCount])} univ)`}
                 </span>
               </Show>
             </>
@@ -98,9 +127,13 @@ export function NetworkMetricsSection(props: NetworkMetricsSectionProps) {
           value={
             <>
               {formatNumber(props.smoothedMetrics.sacnSendTimeMs, 2, " ms")}
-              <Show when={(props.metrics?.sacn_universe_count ?? 0) > 0}>
+              <Show
+                when={
+                  (props.metrics?.[METRIC_PATHS.sacnUniverseCount] ?? 0) > 0
+                }
+              >
                 <span class="ml-1 text-neutral-400">
-                  ({props.metrics?.sacn_universe_count} univ)
+                  {`(${formatCount(props.metrics?.[METRIC_PATHS.sacnUniverseCount])} univ)`}
                 </span>
               </Show>
             </>

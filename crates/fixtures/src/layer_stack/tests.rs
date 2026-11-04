@@ -6,14 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::time::Duration;
-
 use bevy_app::{App, Update};
 use moonshine_kind::Instance;
-use nightfall_fixture_model::prelude::*;
-use nightfall_fixtures::prelude::{Parameter, ParameterValues};
+use nightfall::prelude::FadeCurve;
 
 use super::*;
+use crate::parameter::ParameterValues;
+use crate::prelude::FixtureDataProviderExt;
 
 /// Spawns a parameter with the requested attribute and merge strategy for layer tests.
 fn spawn_parameter(
@@ -71,7 +70,7 @@ fn is_transition_active_reports_active_during_fade_in() {
             release_position: None,
         },
         51.0,
-        Some(&nightfall_compositor::types::LayerCompositingContext {
+        Some(&LayerCompositingContext {
             position: Duration::from_millis(200),
             released_at: None,
         }),
@@ -103,7 +102,7 @@ fn is_transition_active_reports_inactive_after_fade_in_completes() {
             release_position: None,
         },
         255.0,
-        Some(&nightfall_compositor::types::LayerCompositingContext {
+        Some(&LayerCompositingContext {
             position: Duration::from_secs(1),
             released_at: None,
         }),
@@ -135,7 +134,7 @@ fn is_transition_active_uses_fade_out_timing_for_htp_relative_fade_down() {
             release_position: None,
         },
         90.0,
-        Some(&nightfall_compositor::types::LayerCompositingContext {
+        Some(&LayerCompositingContext {
             position: Duration::from_millis(300),
             released_at: None,
         }),
@@ -167,7 +166,7 @@ fn is_transition_active_uses_explicit_compositing_context_when_present() {
             release_position: None,
         },
         127.0,
-        Some(&nightfall_compositor::types::LayerCompositingContext {
+        Some(&LayerCompositingContext {
             position: Duration::from_millis(500),
             released_at: None,
         }),
@@ -241,7 +240,6 @@ fn publish_layer_stack_each_update(
         parameters,
         layers,
         &mut publication,
-        &HeldButtonEffects::default(),
         None,
         &broadcaster,
     );
@@ -251,11 +249,11 @@ fn publish_layer_stack_each_update(
 /// every update, returning the patched parameters and the outbound frame receiver.
 fn layer_stack_app() -> (
     App,
-    Vec<nightfall_fixtures::testing::BenchParameter>,
+    Vec<crate::testing::BenchParameter>,
     async_channel::Receiver<OutboundFrame>,
 ) {
     let mut app = App::new();
-    let parameters = nightfall_fixtures::testing::patch_bench_fixtures(
+    let parameters = crate::testing::patch_bench_fixtures(
         app.world_mut(),
         2,
         &nightfall_io::OutputTransport::Disabled,
@@ -314,7 +312,7 @@ fn layer_stack_is_packed_by_layout_slot_and_sent_only_when_changed() {
     };
     let expected_bytes = EncodedClientMessage::new(
         DISCRIMINATOR_DROPPABLE,
-        &DeskWsMessage::LayerStack(&expected),
+        &LayerStackWsMessage::LayerStack(&expected),
     )
     .expect("layer stack encodes")
     .to_bytes();
@@ -344,5 +342,4 @@ fn layer_stack_is_packed_by_layout_slot_and_sent_only_when_changed() {
 }
 
 /// Index of the second bench fixture's first parameter, so the test exercises a slot past zero.
-const BENCH_PARAMETER_COUNT_FOR_TEST: usize =
-    nightfall_fixtures::testing::BENCH_FIXTURE_PARAMETERS.len();
+const BENCH_PARAMETER_COUNT_FOR_TEST: usize = crate::testing::BENCH_FIXTURE_PARAMETERS.len();

@@ -29,6 +29,7 @@ web-time.workspace = true
 
 [dev-dependencies]
 async-channel.workspace = true
+criterion.workspace = true
 nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
 nightfall-io = { path = "../io" }
 
@@ -37,3 +38,7 @@ nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "clip_lookup"
+harness = false

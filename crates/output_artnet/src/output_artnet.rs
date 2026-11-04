@@ -8,6 +8,7 @@
 
 //! Hands composed Art-Net frames to the process-lifetime output worker.
 
+use bevy_diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, RegisterDiagnostic};
 use bevy_ecs::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_io::prelude::*;
@@ -25,11 +26,16 @@ pub fn output(
     artnet_client: Option<Res<ArtNetOutputClient>>,
     frames: Res<OutputDmxFrames>,
     mut network_stats: ResMut<NetworkStats>,
+    mut diagnostics: Diagnostics,
 ) {
     let Some(artnet_client) = artnet_client else {
         return;
     };
-    apply_report(artnet_client.take_report(), &mut network_stats);
+    apply_report(
+        artnet_client.take_report(),
+        &mut network_stats,
+        &mut diagnostics,
+    );
     if !artnet_client.is_available() {
         return;
     }
@@ -55,8 +61,29 @@ pub fn output(
     );
 }
 
-/// Records the worker's send failures, recoveries, and tick timing in [`NetworkStats`].
-fn apply_report(report: ArtNetOutputReport, network_stats: &mut NetworkStats) {
+/// Time the output worker spent sending Art-Net universes on its last tick, in milliseconds.
+pub const OUTPUT_ARTNET_SEND_MS: DiagnosticPath =
+    DiagnosticPath::const_new("output_artnet/send_ms");
+/// Number of Art-Net universes the output worker sent on its last tick.
+pub const OUTPUT_ARTNET_UNIVERSES: DiagnosticPath =
+    DiagnosticPath::const_new("output_artnet/universes");
+
+/// Registers the Art-Net send timings.
+pub(crate) fn register_diagnostics(app: &mut bevy_app::App) {
+    app.register_diagnostic(Diagnostic::new(OUTPUT_ARTNET_SEND_MS).with_suffix(" ms"))
+        // A count reports its latest value rather than an average that lags behind it.
+        .register_diagnostic(
+            Diagnostic::new(OUTPUT_ARTNET_UNIVERSES).with_smoothing_factor(f64::MIN_POSITIVE),
+        );
+}
+
+/// Records the worker's send failures and recoveries in [`NetworkStats`], and its tick timing
+/// as diagnostics.
+fn apply_report(
+    report: ArtNetOutputReport,
+    network_stats: &mut NetworkStats,
+    diagnostics: &mut Diagnostics,
+) {
     for ((universe_id, unicast_ip), outcome) in report.outcomes {
         match outcome {
             Ok(()) => network_stats.clear_send_failure("ArtNet", universe_id, unicast_ip),
@@ -77,7 +104,8 @@ fn apply_report(report: ArtNetOutputReport, network_stats: &mut NetworkStats) {
         }
     }
     if let Some((elapsed, sent_count)) = report.last_tick {
-        network_stats.set_artnet_timing(elapsed, sent_count);
+        diagnostics.add_measurement(&OUTPUT_ARTNET_SEND_MS, || elapsed.as_secs_f64() * 1000.0);
+        diagnostics.add_measurement(&OUTPUT_ARTNET_UNIVERSES, || f64::from(sent_count));
     }
 }
 
@@ -119,6 +147,7 @@ mod tests {
         app.insert_resource(client.clone());
         app.init_resource::<OutputDmxFrames>();
         app.init_resource::<NetworkStats>();
+        register_diagnostics(&mut app);
         app.world_mut()
             .resource_mut::<OutputDmxFrames>()
             .set(frames);
@@ -210,13 +239,21 @@ mod tests {
 
         let stats = app.world().resource::<NetworkStats>();
         assert_eq!(stats.recent_send_failures().len(), 1);
-        assert_eq!(stats.artnet_universe_count(), 0);
+        assert_eq!(last_universes(&app), Some(0.0));
 
         client.record_tick([((3, None), Ok(()))], Duration::from_millis(1), 1);
         app.update();
 
         let stats = app.world().resource::<NetworkStats>();
         assert!(stats.recent_send_failures().is_empty());
-        assert_eq!(stats.artnet_universe_count(), 1);
+        assert_eq!(last_universes(&app), Some(1.0));
+    }
+
+    /// Returns the universe count the last applied worker tick recorded.
+    fn last_universes(app: &App) -> Option<f64> {
+        app.world()
+            .resource::<bevy_diagnostic::DiagnosticsStore>()
+            .get(&OUTPUT_ARTNET_UNIVERSES)
+            .and_then(|diagnostic| diagnostic.value())
     }
 }
