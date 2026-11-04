@@ -22,7 +22,7 @@ use nightfall_actions::{
     InvocationError, submit_command_in_undo_step,
 };
 use nightfall_clips::ClipCommand;
-use nightfall_desk::prelude::{MasterCommand, MasterMode};
+use nightfall_controls::prelude::{MasterCommand, MasterMode};
 use nightfall_engine::prelude::*;
 use nightfall_macros::prelude::MacroCommand;
 use nightfall_programming::prelude::{
@@ -315,7 +315,7 @@ mod tests {
     use std::collections::HashMap;
 
     use nightfall_clips::{Clip, MaterializedClip};
-    use nightfall_desk::prelude::{Master, MasterMode};
+    use nightfall_controls::prelude::{Master, MasterMode};
     use nightfall_dmx::prelude::{Attribute, ParameterValue};
     use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
     use nightfall_fixture_model::prelude::*;

@@ -10,7 +10,7 @@ bevy_ecs.workspace = true
 nightfall = { path = "../common" }
 nightfall-actions = { path = "../actions" }
 nightfall-clips = { path = "../clips" }
-nightfall-desk = { path = "../desk", default-features = false }
+nightfall-controls = { path = "../controls" }
 nightfall-engine = { path = "../engine" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-macros = { path = "../macros" }

@@ -12,6 +12,7 @@ use std::{
 };
 
 use nightfall::prelude::*;
+use nightfall_controls::prelude::*;
 use nightfall_cues::prelude::*;
 use nightfall_desk::prelude::*;
 use nightfall_engine::prelude::BoundAssertionSet;

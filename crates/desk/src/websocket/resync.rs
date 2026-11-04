@@ -21,16 +21,6 @@ pub(crate) struct ResyncSettingsParams<'w> {
     network_interface_state: Res<'w, NetworkInterfaceState>,
 }
 
-/// Resync state needed to send backend-owned fader snapshots.
-#[derive(SystemParam)]
-pub(crate) struct ResyncFaderParams<'w, 's> {
-    masters: Res<'w, DataProvider<Master>>,
-    faders: Res<'w, Faders>,
-    instance_index: Res<'w, InstanceIndex>,
-    controls_query: Query<'w, 's, &'static InstanceControls>,
-    held_buttons: Res<'w, HeldButtonEffects>,
-}
-
 /// Handle ResyncState by sending desk-owned lists immediately
 pub(crate) fn handle_resync_state(
     mut resync: ResyncReplies,
@@ -42,7 +32,7 @@ pub(crate) fn handle_resync_state(
     mut layer_stack_publication: ResMut<LayerStackPublication>,
     instance_query: Query<super::instances::InstanceSnapshotData>,
     materialized_clips: Query<&MaterializedClip>,
-    fader_params: ResyncFaderParams,
+    held_buttons: Res<HeldButtonEffects>,
     undo_manager: Res<UndoManager>,
 ) {
     let Some(broadcaster) = resync.sink() else {
@@ -50,23 +40,12 @@ pub(crate) fn handle_resync_state(
     };
 
     send_groups(group_data_provider, &broadcaster);
-    send_masters(&fader_params.masters, &broadcaster);
     send_clips(exec_query, materialized_clips, &broadcaster);
     send_instances(
         instance_query,
         materialized_clips,
         exec_query,
-        &fader_params.held_buttons,
-        &broadcaster,
-    );
-    send_faders(
-        &fader_params.faders,
-        &exec_query,
-        &fader_params.masters,
-        &materialized_clips,
-        &fader_params.instance_index,
-        &fader_params.controls_query,
-        &fader_params.held_buttons,
+        &held_buttons,
         &broadcaster,
     );
     send_blueprints(blueprint_data_provider, &broadcaster);

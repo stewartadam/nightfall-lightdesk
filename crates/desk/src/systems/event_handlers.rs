@@ -11,7 +11,6 @@ use nightfall_engine::prelude::{NotificationEnvelope, ToastLevel, UiNotification
 
 pub mod debug_events;
 pub mod desk_events;
-pub mod master_events;
 pub mod settings_events;
 
 /// Presents IO listener failures without coupling protocol adapters to UI contracts.

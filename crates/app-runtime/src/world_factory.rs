@@ -9,10 +9,8 @@
 use bevy::prelude::{App, Resource};
 use bevy_state::app::AppExtStates;
 use nightfall_config::RuntimeConfig;
-use nightfall_desk::{
-    prelude::{Master, add_default_show_masters},
-    resources::log_config::LogConfig,
-};
+use nightfall_controls::prelude::{Master, add_default_show_masters};
+use nightfall_desk::resources::log_config::LogConfig;
 use nightfall_engine::prelude::{
     AppState, DataProvider, ToastLevel, UiNotification, UiNotificationState,
 };

@@ -11,7 +11,7 @@ moonshine-kind.workspace = true
 nightfall = { path = "../common" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-cues = { path = "../cues" }
-nightfall-desk = { path = "../desk", default-features = false }
+nightfall-controls = { path = "../controls" }
 nightfall-engine = { path = "../engine" }
 nightfall-clips = { path = "../clips" }
 nightfall-fixtures = { path = "../fixtures" }

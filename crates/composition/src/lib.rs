@@ -21,6 +21,7 @@ use bevy_app::{PluginGroup, PluginGroupBuilder};
 use nightfall_actions::ActionsPlugin;
 use nightfall_boards::prelude::BoardsPlugin;
 use nightfall_clips::ClipsPlugin;
+use nightfall_controls::ControlsPlugin;
 use nightfall_cues::prelude::CuePlugin;
 use nightfall_desk::{prelude::DeskPlugin, resources::log_config::LogConfig};
 use nightfall_engine::{EnginePlugin, prelude::ClientBridgePlugin};
@@ -81,16 +82,20 @@ impl PluginGroup for CorePlugins {
     }
 }
 
-/// The desk and the show data it operates: programmer, cues, boards and macros.
+/// The desk and the show data it operates: masters and faders, programmer, cues, boards and
+/// macros.
 pub struct DeskPlugins {
     /// Log filter handle the desk's log-level commands update.
     pub log_config: LogConfig,
 }
 
 impl PluginGroup for DeskPlugins {
-    /// Adds the desk first, since the programmer, cues, boards and macros register against it. The showfile settings go with the desk, which saves and loads shows.
+    /// Adds masters and faders before the desk, whose playback feeds read held fader buttons,
+    /// and the desk before the programmer, cues, boards and macros that register against it.
+    /// The showfile settings go with the desk, which saves and loads shows.
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
+            .add(ControlsPlugin)
             .add(DeskPlugin {
                 log_config: self.log_config,
             })

@@ -23,11 +23,9 @@ use bevy::{
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 use nightfall_clips::{Clip, Source};
+use nightfall_controls::prelude::*;
 use nightfall_cues::prelude::*;
-use nightfall_desk::{
-    prelude::*,
-    resources::log_config::{LogConfig, TracingTarget},
-};
+use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixture_model::prelude::*;

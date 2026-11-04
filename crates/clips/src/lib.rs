@@ -29,10 +29,11 @@ mod source_routing;
 mod undo;
 
 pub use actions::{
-    CLIP_BACK_ACTION_ID, CLIP_GO_ACTION_ID, CLIP_GOTO_ACTION_ID, CLIP_SET_SPEED_ACTION_ID,
-    CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments, ClipGotoActionArguments,
-    ClipSpeedActionArguments, back_clip_action, go_clip_action, goto_clip_action,
-    set_clip_speed_action, start_clip_action, stop_clip_action,
+    CLIP_BACK_ACTION_ID, CLIP_GO_ACTION_ID, CLIP_GOTO_ACTION_ID, CLIP_LAUNCH_ARMED_ACTION_ID,
+    CLIP_SET_SPEED_ACTION_ID, CLIP_START_ACTION_ID, CLIP_STOP_ACTION_ID, ClipActionArguments,
+    ClipGotoActionArguments, ClipSpeedActionArguments, back_clip_action, clip_live_state,
+    go_clip_action, goto_clip_action, register_clip_actions, set_clip_speed_action,
+    start_clip_action, stop_clip_action,
 };
 pub use command::{ClipCommand, ClipOperation, clip_action_from_command};
 pub use instance_index::{

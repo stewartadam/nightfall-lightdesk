@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn faders_round_trip_and_replace_existing_bank() {
         use bevy_ecs::prelude::World;
-        use nightfall_desk::prelude::{FaderAssignment, FaderButtonMode, FaderConfig, Faders};
+        use nightfall_controls::prelude::{FaderAssignment, FaderButtonMode, FaderConfig, Faders};
 
         let mut world = World::new();
         initialize_showfile_resources(&mut world);

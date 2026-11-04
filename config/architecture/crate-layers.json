@@ -36,6 +36,7 @@
     ],
     "plugins": [
       "nightfall-audio",
+      "nightfall-controls",
       "nightfall-cues",
       "nightfall-fixture-library",
       "nightfall-flow",

@@ -7,9 +7,8 @@
  */
 
 pub mod event_handlers;
-pub mod instance_controls;
 pub mod network_interface_alerts;
 
 pub mod prelude {
-    pub use super::{event_handlers, instance_controls, network_interface_alerts};
+    pub use super::{event_handlers, network_interface_alerts};
 }

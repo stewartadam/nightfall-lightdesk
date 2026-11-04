@@ -31,14 +31,12 @@ use nightfall::prelude::{
 use nightfall_clips::{Clip, Source};
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_config::{RuntimeConfig, TransportConfig};
-use nightfall_cues::prelude::{Cue, MaterializedSequence, Sequence};
-use nightfall_desk::{
-    prelude::{
-        FixtureMasterTarget, InstanceMasterTarget, Master, MasterKind, MasterMode, MasterTarget,
-        fader_level_action,
-    },
-    resources::log_config::{LogConfig, TracingTarget},
+use nightfall_controls::prelude::{
+    FixtureMasterTarget, InstanceMasterTarget, Master, MasterKind, MasterMode, MasterTarget,
+    fader_level_action,
 };
+use nightfall_cues::prelude::{Cue, MaterializedSequence, Sequence};
+use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::{
     AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNoticeReply,
@@ -509,7 +507,7 @@ fn world_factory_new_shows_start_with_global_masters() {
         assert_eq!(intensity.identifiers.id, 1);
         assert_eq!(
             intensity.identifiers.uid,
-            nightfall_desk::masters::DEFAULT_INTENSITY_MASTER_UID
+            nightfall_controls::masters::DEFAULT_INTENSITY_MASTER_UID
         );
         assert_eq!(intensity.kind, MasterKind::InhibitiveIntensity);
         assert_eq!(
@@ -519,7 +517,7 @@ fn world_factory_new_shows_start_with_global_masters() {
         assert_eq!(speed.identifiers.id, 2);
         assert_eq!(
             speed.identifiers.uid,
-            nightfall_desk::masters::DEFAULT_SPEED_MASTER_UID
+            nightfall_controls::masters::DEFAULT_SPEED_MASTER_UID
         );
         assert_eq!(speed.kind, MasterKind::PlaybackSpeed);
         assert_eq!(
@@ -743,7 +741,7 @@ fn world_factory_sample_data_bootstrap_starts_ready() {
 /// Verify sample faders reference the intended clips and survive the portable snapshot path.
 #[test]
 fn world_factory_sample_data_seeds_fader_assignments() {
-    use nightfall_desk::prelude::{FaderAssignment, FaderConfig, Faders};
+    use nightfall_controls::prelude::{FaderAssignment, FaderConfig, Faders};
     let factory = WorldFactory::new(test_log_config(), false, false, false);
     let mut app = factory
         .build(WorldBootstrap::SampleData {
@@ -2448,7 +2446,7 @@ async fn automation_eval_action_expands_and_completes() {
 async fn automation_control_go_starts_assigned_clip() {
     use nightfall_actions::{ActionInvocation, ActionSurface};
     use nightfall_clips::MaterializedClip;
-    use nightfall_desk::prelude::fader_go_action;
+    use nightfall_controls::prelude::fader_go_action;
 
     let mut app = sample_app();
     let outcome = run_action(

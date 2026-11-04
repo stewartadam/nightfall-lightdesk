@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Undo/redo implementations for desk commands.
+//! Undo and redo for master commands.
 
 use nightfall_engine::prelude::*;
 use nightfall_undo::prelude::*;

@@ -13,7 +13,7 @@ use std::{
 
 use bevy_ecs::prelude::{Commands, World};
 use nightfall::prelude::*;
-use nightfall_desk::prelude::*;
+use nightfall_controls::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_tempo::prelude::*;
 use serde_json::Value;

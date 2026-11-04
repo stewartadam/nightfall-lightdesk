@@ -23,8 +23,9 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use nightfall::prelude::*;
 use nightfall_clips::launch_quantize::{ArmedLaunch, ArmedLaunches};
-use nightfall_clips::{Clip, ClipCommand, InstanceIndex, MaterializedClip};
+use nightfall_clips::{Clip, ClipCommand, MaterializedClip};
 use nightfall_compositor::prelude::*;
+use nightfall_controls::prelude::{HeldButtonEffect, HeldButtonEffects};
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::output_frames::OutputDmxFrames;
@@ -47,7 +48,6 @@ use nightfall_io::{
 use nightfall_lookahead::LookaheadAssertions;
 use nightfall_undo::prelude::{UndoGroup, UndoManager};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 use web_time::Instant;
 

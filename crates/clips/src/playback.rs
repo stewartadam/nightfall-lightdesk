@@ -55,6 +55,7 @@ impl Plugin for ClipsPlugin {
         register_engine_operation::<ClipOperation>(app);
         register_engine_operation::<RestoreClipSource>(app);
         register_clip_source_routing(app);
+        crate::register_clip_actions(app);
         register_client_command::<InstanceCommand>(app, Undo::Captured);
         register_engine_operation::<PlaybackOperation>(app);
         register_engine_operation::<PlaybackReleaseOperation>(app);

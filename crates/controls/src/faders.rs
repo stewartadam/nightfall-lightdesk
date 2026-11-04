@@ -9,7 +9,7 @@
 use bevy_ecs::{prelude::*, system::SystemParam};
 use nightfall::prelude::*;
 use nightfall_clips::{Clip, ClipCommand, ClipOperation, MaterializedClip};
-use nightfall_clips::{InstanceIndex, Source};
+use nightfall_clips::{InstanceIndex, Source, clip_live_state};
 use nightfall_engine::prelude::*;
 use nightfall_instances::{InstanceControlUpdate, InstanceControls, InstanceId};
 use serde::{Deserialize, Serialize};
@@ -871,32 +871,6 @@ fn runtime_state_for_clip(
         is_clip_active: true,
         attached_instance_id: Some(materialized_clip.attached_instance),
     })
-}
-
-/// Reads a clip's console level (percent) and whether it is running, from the live world.
-///
-/// A clip that is not running, or whose playback has no instance controls yet, reads as
-/// level zero, matching the runtime state fader snapshots use.
-pub(crate) fn clip_live_state(world: &World, clip_id: u32) -> (f32, bool) {
-    let attached = world
-        .try_query::<&MaterializedClip>()
-        .and_then(|mut materialized| {
-            materialized
-                .iter(world)
-                .find(|materialized| materialized.clip_id == clip_id)
-                .map(|materialized| materialized.attached_instance)
-        });
-    let Some(attached) = attached else {
-        return (0.0, false);
-    };
-    let level = world
-        .get_resource::<InstanceIndex>()
-        .and_then(|index| index.get(&attached))
-        .and_then(|entity| world.get::<InstanceControls>(entity))
-        .map_or(0.0, |controls| {
-            clamp_percent(controls.intensity_scale * 100.0)
-        });
-    (level, true)
 }
 
 /// Returns whether a master currently contributes: always-on masters always do, toggle
@@ -2647,7 +2621,7 @@ mod tests {
             Update,
             (
                 resolve_held_button_effects,
-                crate::systems::instance_controls::apply_playback_intensity,
+                crate::playback_intensity::apply_playback_intensity,
             )
                 .chain()
                 .after(end_released_flashes),

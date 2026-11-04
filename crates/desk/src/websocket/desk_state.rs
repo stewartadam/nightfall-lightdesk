@@ -33,29 +33,6 @@ pub fn send_groups_on_change(
     }
 }
 
-/// Send master definitions.
-pub fn send_masters(master_data_provider: &DataProvider<Master>, broadcaster: &ClientEventSink) {
-    let masters: Vec<Master> = master_data_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &DeskWsMessage::MasterDefinitions(&masters),
-    );
-    tracing::trace!("Sending master definitions to websocket clients");
-}
-
-/// Send masters when DataProvider<Master> changes.
-pub fn send_masters_on_change(
-    master_data_provider: Res<DataProvider<Master>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if master_data_provider.is_changed() {
-        send_masters(&master_data_provider, &broadcaster);
-    }
-}
-
 /// Send clip definitions to UI
 pub fn send_clips(
     exec_query: Query<&Clip>,

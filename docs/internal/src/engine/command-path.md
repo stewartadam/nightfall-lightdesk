@@ -219,7 +219,7 @@ To add a clause to an existing command, such as a new programmer option, skip st
 | Programmer instruction handler and inverse | `crates/programming/src/events/programmer/values.rs`, `crates/programming/src/undo.rs` |
 | Render schedule and render passes | `crates/engine/src/render_pass.rs` |
 | Action lowering to commands | `crates/actions/src/lowering.rs`, `dispatch_action_invocations` in `crates/actions/src/lib.rs` |
-| Clip actions and MIDI input | `crates/desk/src/automation_actions.rs`, `crates/input_midi/src/lib.rs` |
+| Clip actions and MIDI input | `crates/clips/src/actions.rs`, `crates/input_midi/src/lib.rs` |
 | Example command end to end | `crates/tempo/src/lib.rs`, `crates/tempo/src/ast_conv.rs` |
 
 ## Related topics

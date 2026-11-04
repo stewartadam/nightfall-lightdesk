@@ -106,7 +106,8 @@ fn bench_planned_cues(c: &mut Criterion) {
 /// a timeline starts `start_count` times, each start followed by [`GOS_PER_START`] Go actions.
 fn planned_cues_app(cue_count: usize, start_count: usize) -> App {
     let mut app = App::new();
-    nightfall_desk::automation_actions::register_desk_actions(&mut app);
+    nightfall_actions::register_eval_action(&mut app);
+    nightfall_clips::register_clip_actions(&mut app);
     app.init_resource::<DataProvider<Timeline>>();
     app.init_resource::<DataProvider<Cue>>();
     app.init_resource::<DataProvider<Sequence>>();

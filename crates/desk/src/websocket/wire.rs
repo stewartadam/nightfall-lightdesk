@@ -182,8 +182,6 @@ pub struct DeskMetrics {
 pub(super) enum DeskWsMessage<'a> {
     /// Definition of all groups
     GroupDefinitions(&'a [Group]),
-    /// Definition of all masters
-    MasterDefinitions(&'a [Master]),
     /// Definition of all clips
     ClipDefinitions(&'a [OutboundClipLocal]),
     /// Definition of all blueprints
@@ -215,8 +213,6 @@ pub(super) enum DeskWsMessage<'a> {
     Metrics(&'a DeskMetrics),
     /// Active instances list
     ActiveInstances(&'a [InstanceInfo]),
-    /// Backend-owned fader state
-    Faders(&'a [FaderSnapshot]),
     /// Current undo/redo state
     UndoState(&'a UndoStateMessage),
     /// Live clip launches waiting for the next beat or bar

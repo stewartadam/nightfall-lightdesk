@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use bevy::ecs::system::RunSystemOnce;
 use nightfall_clips::Clip;
+use nightfall_controls::prelude::*;
 use nightfall_cues::prelude::*;
 use nightfall_dmx::prelude::Attribute;
 use nightfall_engine::prelude::{

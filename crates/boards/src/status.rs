@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use bevy_ecs::{prelude::*, system::SystemParam};
 use nightfall::prelude::*;
 use nightfall_clips::{Clip, MaterializedClip};
-use nightfall_desk::prelude::Master;
+use nightfall_controls::prelude::Master;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
 use nightfall_macros::prelude::MacroRuns;
