@@ -288,6 +288,23 @@ pub struct UsbDmxDeviceInfo {
     pub location: Option<String>,
 }
 
+impl UsbDmxDeviceInfo {
+    /// Returns the adapter's manufacturer and product name, falling back to its full label,
+    /// as saved with a target so the adapter stays recognizable while unplugged.
+    pub fn friendly_name(&self) -> String {
+        let manufacturer = self.manufacturer.as_deref().map(str::trim);
+        let product = self.product.as_deref().map(str::trim);
+        match (
+            manufacturer.filter(|value| !value.is_empty()),
+            product.filter(|value| !value.is_empty()),
+        ) {
+            (Some(manufacturer), Some(product)) => format!("{manufacturer} {product}"),
+            (Some(name), None) | (None, Some(name)) => name.to_string(),
+            (None, None) => self.label.clone(),
+        }
+    }
+}
+
 /// Network interface information for UI display.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[typeshare::typeshare]

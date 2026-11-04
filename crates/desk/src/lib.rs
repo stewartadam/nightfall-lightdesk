@@ -30,6 +30,7 @@ use nightfall_instances::{
 };
 use nightfall_io::{
     AvailableUsbDmxDevices, IoRuntimeSettings, NetworkInterfaceState, NetworkStats,
+    UsbDmxTargetStates,
 };
 use nightfall_undo::{UndoPlugin, prelude::*};
 
@@ -175,6 +176,7 @@ impl Plugin for DeskPlugin {
         app.init_resource::<crate::settings::ReportedGraphics>();
         app.init_resource::<AvailableAudioDevices>();
         app.init_resource::<AvailableUsbDmxDevices>();
+        app.init_resource::<UsbDmxTargetStates>();
         app.init_resource::<Faders>();
         app.init_resource::<HeldButtonEffects>();
         app.init_resource::<NetworkInterfaceState>();
@@ -381,6 +383,16 @@ impl Plugin for DeskPlugin {
                 .in_set(EventHandling),
         );
 
+        app.add_systems(
+            Update,
+            (
+                systems::usb_dmx_targets::resolve_usb_dmx_target_states,
+                systems::usb_dmx_targets::announce_usb_dmx_target_changes,
+            )
+                .chain()
+                .after(EventHandling),
+        );
+
         // WebSocket forwarding systems owned by the desk plugin
         app.add_systems(Update, faders::sync_fader_state.after(EventHandling));
 
@@ -413,6 +425,7 @@ impl Plugin for DeskPlugin {
                 websocket::send_io_settings_on_change,
                 websocket::send_available_audio_devices_on_change,
                 websocket::send_available_usb_dmx_devices_on_change,
+                websocket::send_usb_dmx_target_states_on_change,
                 // Layer stack slots refer to the parameter layout published before it.
                 websocket::handle_low_freq_updates.after(websocket::send_parameter_state),
             )

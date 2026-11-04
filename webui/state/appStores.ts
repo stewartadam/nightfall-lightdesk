@@ -44,6 +44,7 @@ import {
   $networkInterfaceStatus,
   $settings,
   $telemetryState,
+  $usbDmxTargetStates,
 } from "./settings";
 
 // Local type definitions for types not yet exported from backend
@@ -1107,6 +1108,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     externalControlState: $externalControlState,
     telemetryState: $telemetryState,
     availableUsbDmxDevices: $availableUsbDmxDevices,
+    usbDmxTargetStates: $usbDmxTargetStates,
     networkInterfaceStatus: $networkInterfaceStatus,
     serverVersion,
     browserDemoRuntimeInfo,

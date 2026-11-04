@@ -21,7 +21,7 @@ use nightfall_fixtures::prelude::{
 use nightfall_io::prelude::{
     AvailableUsbDmxDevices, ExternalControlSettings, InputUniverseVisibilityMode,
     IoRuntimeSettings, NetworkDmxOutputTargets, NetworkInterfaceInfo, NetworkInterfaceState,
-    NetworkInterfaceStatus, UsbDmxDeviceInfo, UsbDmxOutputTargets,
+    NetworkInterfaceStatus, UsbDmxDeviceAssignment, UsbDmxDeviceInfo, UsbDmxOutputTargets,
     resolve_network_interface_status, sanitize_dmx_output_rate_hz,
     sanitize_input_signal_loss_timeout,
 };
@@ -148,6 +148,50 @@ impl SettingsCommandParams<'_> {
         *self.usb_dmx_outputs = sanitized;
         tracing::debug!("USB DMX output targets updated");
         SettingsCommandOutcome::Applied
+    }
+
+    /// Points one USB output target at an attached adapter, saving the adapter's current serial
+    /// and port along with its name. Refuses unknown targets, adapters that are not attached, and
+    /// adapters another target is already saved for.
+    fn assign_usb_dmx_device(
+        &mut self,
+        assignment: &UsbDmxDeviceAssignment,
+    ) -> SettingsCommandOutcome {
+        let Some(device) = self
+            .available_usb_dmx_devices
+            .0
+            .iter()
+            .find(|device| device.id == assignment.device)
+        else {
+            return SettingsCommandOutcome::Rejected(CommandError::new(
+                "usb_dmx.device_not_attached",
+                "That USB DMX adapter is no longer attached",
+            ));
+        };
+        let mut targets = self.usb_dmx_outputs.clone();
+        if targets
+            .targets
+            .iter()
+            .any(|target| target.id != assignment.target && target.device.trim() == device.id)
+        {
+            return SettingsCommandOutcome::Rejected(CommandError::new(
+                "usb_dmx.device_in_use",
+                "Another USB output already uses that adapter",
+            ));
+        }
+        let Some(target) = targets
+            .targets
+            .iter_mut()
+            .find(|target| target.id == assignment.target)
+        else {
+            return SettingsCommandOutcome::Rejected(CommandError::new(
+                "usb_dmx.unknown_target",
+                format!("There is no USB output named {}", assignment.target),
+            ));
+        };
+        target.device = device.id.clone();
+        target.device_label = Some(device.friendly_name());
+        self.set_usb_dmx_outputs(&targets)
     }
 
     /// Clamps the input signal-loss timeout and applies it to both the showfile settings and the
@@ -319,6 +363,9 @@ pub fn handle_events(
                     params.set_network_dmx_outputs(value)
                 },
                 SettingsCommand::SetUsbDmxOutputs(value) => params.set_usb_dmx_outputs(value),
+                SettingsCommand::AssignUsbDmxDevice(assignment) => {
+                    params.assign_usb_dmx_device(assignment)
+                },
                 SettingsCommand::SetInputSignalLossTimeout(value) => {
                     params.set_input_signal_loss_timeout(*value)
                 },

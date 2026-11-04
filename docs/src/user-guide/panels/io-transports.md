@@ -32,4 +32,19 @@ The PIN keeps casual visitors on your network out; it does not protect against a
 
 Choose a detected USB device for an output target, give the target a unique ID, and enable **USB output** when ready. Review Missing device or duplicate-device status before attempting output. If no device is listed, check the physical connection and host access to the device.
 
+### Adapters on a different port
+
+Nightfall saves each USB output with its adapter's serial number and the USB port it is plugged into. If you move an adapter to another port, output follows it and its status reads **Moved**. Select **Update port** to save the new port.
+
+### Adapters that share a serial number
+
+Some low-cost adapters all report the same serial number. Nightfall tells these adapters apart by the USB port they are plugged into, and the USB section shows a warning naming their ports. To keep each output on the right adapter:
+
+- Assign each adapter to its output while it is plugged into the port you plan to use.
+- Keep each adapter in that port. Label the cables if they are easy to swap.
+
+When an output's adapter is not on its saved port and another adapter with the same serial number is plugged in somewhere else, the output stays off and its status reads **Not on its port**. If that adapter belongs to the output, select **Update port**.
+
+If a show has two outputs saved for adapters with the same serial number and only one of them is plugged in, on a port neither output was saved with, Nightfall cannot tell which output it belongs to. Both outputs stay off, their status reads **Choose adapter**, and a notification asks which output the adapter drives. Select the output in the notification, or select **Use adapter** on the output's row in I/O Transports.
+
 Keep physical output off while rehearsing changes that should only affect the visualizer. Test one fixture and destination first, then expand the routing. Use [Console DMX](console-dmx.md) to separate programming problems from transport problems.

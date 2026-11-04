@@ -209,6 +209,8 @@ pub(super) enum DeskWsMessage<'a> {
     ),
     /// Compatible USB DMX devices list
     AvailableUsbDmxDevices(&'a [UsbDmxDeviceInfo]),
+    /// Status of each saved USB DMX output against the attached adapters
+    UsbDmxTargetStates(&'a [UsbDmxTargetState]),
     /// A desk command
     DeskCommand(&'a DeskCommand),
     /// UI-only notification

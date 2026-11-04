@@ -40,8 +40,8 @@ use nightfall_instances::{
 };
 use nightfall_io::{
     AvailableUsbDmxDevices, ExternalControlState, IoRuntimeSettings, NetworkInterfaceInfo,
-    NetworkInterfaceState, NetworkInterfaceStatus, UsbDmxDeviceInfo,
-    resolve_network_interface_status,
+    NetworkInterfaceState, NetworkInterfaceStatus, UsbDmxDeviceInfo, UsbDmxTargetState,
+    UsbDmxTargetStates, resolve_network_interface_status,
 };
 use nightfall_lookahead::LookaheadAssertions;
 use nightfall_undo::prelude::{UndoGroup, UndoManager};
