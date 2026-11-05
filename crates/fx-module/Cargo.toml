@@ -40,7 +40,6 @@ workspace = true
 [dev-dependencies]
 async-channel.workspace = true
 moonshine-kind.workspace = true
-nightfall-desk = { path = "../desk" }
 tempfile.workspace = true
 tokio.workspace = true
 wit-component.workspace = true

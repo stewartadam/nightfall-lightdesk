@@ -12,11 +12,11 @@ nightfall-boards = { path = "../boards" }
 nightfall-clips = { path = "../clips" }
 nightfall-cues = { path = "../cues" }
 nightfall-controls = { path = "../controls" }
-nightfall-desk = { path = "../desk", default-features = false }
 nightfall-engine = { path = "../engine" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-flow = { path = "../flow", default-features = false }
 nightfall-fx = { path = "../fx" }
+nightfall-io = { path = "../io" }
 nightfall-macros = { path = "../macros" }
 nightfall-programming = { path = "../programming" }
 nightfall-references = { path = "../references" }
@@ -26,6 +26,9 @@ nightfall-tempo = { path = "../tempo" }
 nightfall-timecode = { path = "../timecode" }
 nightfall-timeline = { path = "../timeline", default-features = false }
 nightfall-undo = { path = "../undo" }
+
+[dev-dependencies]
+bevy_ecs.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }

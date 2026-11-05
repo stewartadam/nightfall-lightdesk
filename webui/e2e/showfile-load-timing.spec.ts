@@ -64,7 +64,7 @@ test("showfile load timing", async ({ page }, testInfo) => {
       .showfileActions;
     const runtime = window.__nightfallTest.runtime;
     await runtime.engineRuntime.sendCommandAndAwait({
-      module: "DeskCommand",
+      module: "ShowfileCommand",
       command: actions.saveNamedShowfileCommand("load-timing"),
     });
   });

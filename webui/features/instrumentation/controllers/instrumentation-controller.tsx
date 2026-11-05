@@ -24,6 +24,7 @@ import {
 import { BackendMetricsSection } from "../components/backend-metrics-section";
 import { BrowserRenderingSection } from "../components/browser-rendering-section";
 import {
+  AllDiagnosticsSection,
   EngineStatsSection,
   NetworkMetricsSection,
 } from "../components/engine-network-sections";
@@ -135,6 +136,7 @@ export function InstrumentationController() {
           rows={sortedMessageTypes()}
           stats={$wsStats()}
         />
+        <AllDiagnosticsSection metrics={$metrics()} />
       </div>
     </div>
   );

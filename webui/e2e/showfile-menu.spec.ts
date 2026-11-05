@@ -104,7 +104,7 @@ async function captureWorkerSends(
       if (envelope?.type === "submit") {
         globalWindow.__nightfallWorkerSends?.push(envelope.data);
         const blockedCommands: Record<string, Set<string>> = {
-          DeskCommand: new Set([
+          ShowfileCommand: new Set([
             "DiscardDraftShowfile",
             "LoadDraftShowfile",
             "LoadNamedShowfile",
@@ -484,7 +484,7 @@ test("prompts to load a newer startup draft", async ({ page }) => {
           .__nightfallWorkerSends ?? [];
       return sends.filter(
         (send) =>
-          send?.module === "DeskCommand" &&
+          send?.module === "ShowfileCommand" &&
           send?.command?.type === "LoadDraftShowfile" &&
           send?.command?.data === "default",
       ).length;
@@ -548,7 +548,7 @@ test("load draft sends one startup draft load", async ({ page }) => {
           .__nightfallWorkerSends ?? [];
       return sends.filter(
         (send) =>
-          send?.module === "DeskCommand" &&
+          send?.module === "ShowfileCommand" &&
           send?.command?.type === "LoadDraftShowfile" &&
           send?.command?.data === "default",
       ).length;
@@ -629,7 +629,7 @@ test("opens another showfile from the startup draft prompt", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile" &&
             send?.command?.data === "tour",
         );
@@ -716,7 +716,7 @@ test("creates a new show from the startup draft prompt", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "NewNamedShowfile" &&
             send?.command?.data?.name === "recovered-new",
         );
@@ -778,7 +778,7 @@ test("enter in the new show name over the startup draft prompt creates the show"
   await nameInput.fill("recovered-enter");
   await nameInput.press("Enter");
 
-  /** Counts desk commands of one type captured from the worker bridge. */
+  /** Counts showfile commands of one type captured from the worker bridge. */
   const deskCommandCount = (type: string) =>
     page.evaluate((type) => {
       const sends =
@@ -786,7 +786,7 @@ test("enter in the new show name over the startup draft prompt creates the show"
           .__nightfallWorkerSends ?? [];
       return sends.filter(
         (send) =>
-          send?.module === "DeskCommand" &&
+          send?.module === "ShowfileCommand" &&
           send?.command?.type === type &&
           (type !== "NewNamedShowfile" ||
             send?.command?.data?.name === "recovered-enter"),
@@ -906,7 +906,7 @@ test("prompts for a saved showfile when no startup draft is newer", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile",
         );
       }),
@@ -927,7 +927,7 @@ test("prompts for a saved showfile when no startup draft is newer", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile" &&
             send?.command?.data === "tour",
         );
@@ -969,7 +969,7 @@ test("creates a new startup show when no showfiles are available", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             (send?.command?.type === "LoadNamedShowfile" ||
               send?.command?.type === "LoadShowfile" ||
               send?.command?.type === "NewNamedShowfile" ||
@@ -990,7 +990,7 @@ test("creates a new startup show when no showfiles are available", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "NewNamedShowfile" &&
             send?.command?.data?.name === "startup-new",
         );
@@ -1123,13 +1123,13 @@ test("keeps saved startup showfile by discarding draft and loading saved copy", 
             .__nightfallWorkerSends ?? [];
         const discardIndex = sends.findIndex(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "DiscardDraftShowfile" &&
             send?.command?.data === "tour",
         );
         const loadIndex = sends.findIndex(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile" &&
             send?.command?.data === "tour",
         );
@@ -1256,7 +1256,7 @@ test("shows an error when keeping the saved startup showfile fails", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile",
         );
       }),
@@ -1384,7 +1384,7 @@ test("opens a selected available showfile from the status bar menu", async ({
           .__nightfallWorkerSends;
         return sends?.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile" &&
             send?.command?.data === "tour",
         );
@@ -1475,7 +1475,7 @@ test("badges and disables a showfile that failed to parse", async ({
         .__nightfallWorkerSends;
       return sends?.some(
         (send) =>
-          send?.module === "DeskCommand" &&
+          send?.module === "ShowfileCommand" &&
           send?.command?.type === "LoadNamedShowfile" &&
           send?.command?.data === "broken",
       );
@@ -1554,7 +1554,7 @@ test("expands a showfile and opens a backup revision", async ({ page }) => {
           .__nightfallWorkerSends;
         return sends?.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadShowfileRevision" &&
             send?.command?.data?.showfileName === "tour" &&
             send?.command?.data?.revisionName ===
@@ -1699,7 +1699,7 @@ test("expands a showfile and opens a draft", async ({ page }) => {
           .__nightfallWorkerSends;
         return sends?.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadDraftShowfile" &&
             send?.command?.data === "tour",
         );

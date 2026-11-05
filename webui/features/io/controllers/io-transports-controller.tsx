@@ -10,7 +10,6 @@ import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, For, onMount } from "solid-js";
 import { Table, TableScroll } from "../../../components/ui/table";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
-import { commandClient } from "../../../lib/engine-commands";
 import {
   sendNetworkDmxOutputs,
   sendNetworkInputEnabled,
@@ -29,7 +28,10 @@ import {
   usbDmxOutputsFromSettings,
 } from "../../../lib/network-dmx-output-targets";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
-import { engineMetrics, runtimeCapabilities } from "../../../state/appStores";
+import {
+  networkOutputSendFailures,
+  runtimeCapabilities,
+} from "../../../state/appStores";
 import {
   $availableNetworkInterfaces,
   $availableUsbDmxDevices,
@@ -65,7 +67,7 @@ import {
 export function IoTransportsController() {
   const settings = useStore($ioSettings);
   const capabilities = useStore(runtimeCapabilities);
-  const metrics = useStore(engineMetrics);
+  const sendFailures = useStore(networkOutputSendFailures);
   const networkInterfaces = useStore($availableNetworkInterfaces);
   const externalControl = useStore($externalControlState);
   const networkInterfaceStatus = useStore($networkInterfaceStatus);
@@ -85,13 +87,6 @@ export function IoTransportsController() {
 
   onMount(() => {
     void refreshReservedOutputTargetKeywords().then(setReservedKeywordsReady);
-  });
-
-  /** Requests compatible USB adapter choices when the panel is mounted. */
-  createEffect(() => {
-    commandClient.emit("SettingsCommand", {
-      type: "GetAvailableUsbDmxDevices",
-    });
   });
 
   const targets = createMemo(
@@ -142,7 +137,7 @@ export function IoTransportsController() {
     setNewUsbDevice(availableDeviceIds[0] ?? "");
   });
   const sendFailuresByTargetId = createMemo(() => {
-    const failures = metrics()?.network_output_send_failures ?? [];
+    const failures = sendFailures();
     const entries = targets()
       .map((target): [string, types.NetworkOutputSendFailure | undefined] => [
         target.id,

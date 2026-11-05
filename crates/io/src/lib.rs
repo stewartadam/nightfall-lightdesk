@@ -6,19 +6,28 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! IO transport configuration and named output target definitions.
+//! IO transport configuration, named output target definitions, and the network interface the
+//! transports bind to.
 //!
-//! The Bevy ECS derives on these types are gated behind the default `ecs`
-//! feature. Disable default features to use the plain types and constants
-//! without pulling `bevy_ecs` into the dependency tree, as the WASM bridge does.
+//! The default `plugin` feature adds [`IoPlugin`], which owns the transport settings and their
+//! command, the network interface feed and its loss alerts, and IO failure toasts. The Bevy ECS
+//! derives on the plain types are gated behind the `ecs` feature. Disable default features to
+//! use the plain types and constants without pulling Bevy into the dependency tree, as the WASM
+//! bridge does.
 
 #![warn(missing_docs)]
 
 /// Shared IO-domain constants.
 pub mod constants;
 mod input;
+#[cfg(feature = "plugin")]
+mod network_interfaces;
 mod network_stats;
+#[cfg(feature = "plugin")]
+mod plugin;
 mod settings;
+#[cfg(feature = "plugin")]
+mod settings_command;
 
 use std::{collections::HashSet, net::Ipv4Addr};
 
@@ -27,7 +36,11 @@ pub use input::{
     RouteTransport, SacnOutputIdentity,
 };
 pub use network_stats::{NetworkOutputSendFailure, NetworkStats};
+#[cfg(feature = "plugin")]
+pub use plugin::{IO_SETTINGS_SECTION, IoPlugin, IoStateSync};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "plugin")]
+pub use settings_command::IoSettingsCommand;
 
 pub use crate::constants::{
     RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS, UDMX_PRODUCT_ID,
@@ -37,38 +50,37 @@ pub use crate::constants::{
 /// Prelude for ergonomic IO transport imports.
 pub mod prelude {
     pub use crate::{
-        AcceptedDmxFrame, ArtNetDelivery, ArtNetRecentFramesByUniverse, AvailableUsbDmxDevices,
+        AcceptedDmxFrame, ArtNetDelivery, ArtNetRecentFramesByUniverse,
         CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
         DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, DEFAULT_USB_DMX_DEVICE_SELECTOR, DmxInputSet,
-        ExternalControlSettings, ExternalControlState, InputSignalLossPolicy,
-        InputUniverseVisibilityMode, IoRuntimeNotification, IoRuntimeSettings,
-        MAX_DMX_OUTPUT_RATE_HZ, MIN_DMX_OUTPUT_RATE_HZ, NetworkDmxDelivery, NetworkDmxOutputTarget,
-        NetworkDmxOutputTargets, NetworkDmxProtocol, NetworkInterfaceInfo, NetworkInterfaceState,
-        NetworkInterfaceStatus, NetworkOutputSendFailure, NetworkStats, OutputTransport,
-        RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS,
-        RemotePairingAttempt, RemotePairingPin, RemotePairingStatus, RouteTransport, SacnDelivery,
-        SacnOutputIdentity, TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
-        UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets, dmx_output_interval,
-        get_available_interfaces, get_default_interface, is_reserved_network_dmx_target_id,
-        is_reserved_usb_dmx_target_id, is_valid_network_dmx_target_id,
-        output_transport_to_target_id, resolve_configured_network_interface,
-        resolve_network_interface_status, sanitize_dmx_output_rate_hz,
-        sanitize_input_signal_loss_timeout, usb_dmx_device_label, usb_dmx_device_selector,
-        usb_dmx_device_selector_matches, usb_dmx_device_selector_with_tiebreaker,
+        InputSignalLossPolicy, InputUniverseVisibilityMode, IoRuntimeNotification,
+        IoRuntimeSettings, MAX_DMX_OUTPUT_RATE_HZ, MIN_DMX_OUTPUT_RATE_HZ, NetworkDmxDelivery,
+        NetworkDmxOutputTarget, NetworkDmxOutputTargets, NetworkDmxProtocol, NetworkInterfaceInfo,
+        NetworkInterfaceState, NetworkInterfaceStatus, NetworkOutputSendFailure, NetworkStats,
+        OutputTransport, RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS,
+        RouteTransport, SacnDelivery, SacnOutputIdentity, TransportRuntimePolicy, UDMX_PRODUCT_ID,
+        UDMX_VENDOR_ID, UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets,
+        dmx_output_interval, get_available_interfaces, get_default_interface,
+        is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
+        is_valid_network_dmx_target_id, output_transport_to_target_id,
+        resolve_configured_network_interface, resolve_network_interface_status,
+        sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, usb_dmx_device_label,
+        usb_dmx_device_selector, usb_dmx_device_selector_matches,
+        usb_dmx_device_selector_with_tiebreaker,
     };
+    #[cfg(feature = "plugin")]
+    pub use crate::{IO_SETTINGS_SECTION, IoPlugin, IoSettingsCommand, IoStateSync};
 }
 
 pub use settings::{
-    AvailableUsbDmxDevices, CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
-    DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, ExternalControlSettings, ExternalControlState,
+    CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ, DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS,
     InputSignalLossPolicy, IoRuntimeSettings, MAX_DMX_OUTPUT_RATE_HZ, MIN_DMX_OUTPUT_RATE_HZ,
-    NetworkInterfaceInfo, NetworkInterfaceState, NetworkInterfaceStatus, RemotePairingAttempt,
-    RemotePairingPin, RemotePairingStatus, TransportRuntimePolicy, UsbDmxDeviceInfo,
-    default_dmx_output_rate_hz, default_input_signal_loss_timeout, default_network_input_enabled,
-    default_network_output_enabled, default_usb_output_enabled, dmx_output_interval,
-    get_available_interfaces, get_default_interface, resolve_configured_network_interface,
-    resolve_network_interface_status, sanitize_dmx_output_rate_hz,
-    sanitize_input_signal_loss_timeout, usb_dmx_device_label,
+    NetworkInterfaceInfo, NetworkInterfaceState, NetworkInterfaceStatus, TransportRuntimePolicy,
+    UsbDmxDeviceInfo, default_dmx_output_rate_hz, default_input_signal_loss_timeout,
+    default_network_input_enabled, default_network_output_enabled, default_usb_output_enabled,
+    dmx_output_interval, get_available_interfaces, get_default_interface,
+    resolve_configured_network_interface, resolve_network_interface_status,
+    sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, usb_dmx_device_label,
 };
 
 /// Art-Net delivery mode for a universe.

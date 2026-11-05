@@ -1132,7 +1132,7 @@ mod client_bridge_tests {
     fn wire_envelope_ignores_reply_target() {
         let envelope: CommandJsonEnvelope = serde_json::from_value(serde_json::json!({
             "command_id": CommandId::new().to_string(),
-            "module": "DeskCommand",
+            "module": "ShowfileCommand",
             "command": {},
             "reply_target": { "Client": 9 }
         }))

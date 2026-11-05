@@ -8,10 +8,11 @@
 
 //! Error reporting for builds without the `telemetry` feature: every entry point does nothing.
 
-use nightfall_desk::prelude::TelemetryState;
 use nightfall_websocket::prelude::HttpRouteRegistry;
 use tracing::Subscriber;
 use tracing_subscriber::{Layer, layer::Identity, registry::LookupSpan};
+
+use crate::telemetry::TelemetryState;
 
 /// Matches the reporting build's test lock; consent has no process-wide effect here.
 #[cfg(test)]

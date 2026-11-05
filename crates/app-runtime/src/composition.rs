@@ -10,13 +10,13 @@ use std::time::Duration;
 
 use bevy::{
     app::{ScheduleRunnerPlugin, TaskPoolThreadAssignmentPolicy},
-    diagnostic::FrameTimeDiagnosticsPlugin,
+    diagnostic::{EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin},
     prelude::*,
 };
 use bevy_state::{app::AppExtStates, condition::in_state};
 use nightfall_actions::ActionInvocationHandling;
 use nightfall_config::RuntimeConfig;
-use nightfall_desk::resources::log_config::LogConfig;
+use nightfall_engine::logging::LogConfig;
 use nightfall_engine::prelude::*;
 use nightfall_framepace::prelude::*;
 use nightfall_io::{IoRuntimeSettings, TransportRuntimePolicy, sanitize_dmx_output_rate_hz};
@@ -145,7 +145,10 @@ pub(super) fn init_bevy_with_transport_policy(
     );
     app.add_plugins(EngineLogTimePlugin);
 
-    app.add_plugins(FrameTimeDiagnosticsPlugin::default());
+    app.add_plugins((
+        FrameTimeDiagnosticsPlugin::default(),
+        EntityCountDiagnosticsPlugin::default(),
+    ));
     app.add_plugins(FramepacePlugin);
     app.world_mut().resource_mut::<FramepaceSettings>().limiter =
         Limiter::Manual(engine_frame_interval(&IoRuntimeSettings::default()));

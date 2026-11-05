@@ -27,6 +27,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use bevy_diagnostic::{DiagnosticPath, Diagnostics};
 use bevy_ecs::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_io::{ArtNetDelivery, OutputTransport, RouteTransport, SacnDelivery};
@@ -253,6 +254,10 @@ fn compose_frame(
     has_data.then_some(channels)
 }
 
+/// Number of DMX wire frames composed each engine frame: one per concrete transport and wire
+/// universe.
+pub const OUTPUT_UNIVERSES: DiagnosticPath = DiagnosticPath::const_new("fixtures/output_universes");
+
 /// Composes every routed wire frame, plus frames carrying only held channels, for this
 /// engine frame.
 pub fn compose_output_frames(
@@ -287,6 +292,12 @@ pub fn compose_output_frames(
         })
         .collect();
     frames.set(composed);
+}
+
+/// Records how many wire frames were composed this engine frame.
+pub(crate) fn record_output_universes(frames: Res<OutputDmxFrames>, mut diagnostics: Diagnostics) {
+    let universes = frames.len() as f64;
+    diagnostics.add_measurement(&OUTPUT_UNIVERSES, || universes);
 }
 
 /// Rebuilds input passthrough feeds when resolved input routes change.

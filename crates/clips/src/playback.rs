@@ -29,6 +29,8 @@ use crate::{
 pub mod clip_events;
 pub mod clocks;
 pub mod instance_events;
+#[cfg(test)]
+mod release_tests;
 
 /// Installs clip commands, clip playback routing, and playback lifecycle systems.
 ///
@@ -47,6 +49,9 @@ impl Plugin for ClipsPlugin {
             app.is_plugin_added::<nightfall_undo::UndoPlugin>(),
             "ClipsPlugin requires UndoPlugin (provides UndoRegistry)"
         );
+        nightfall_engine::protocol::dispatch_ast::register_converter::<
+            crate::ast_conv::ClipAstConverter,
+        >();
         app.init_resource::<clip_events::PendingClipPlaybackSpeeds>();
         app.init_resource::<ArmedLaunches>();
         app.init_resource::<InstanceIndex>();
@@ -60,6 +65,7 @@ impl Plugin for ClipsPlugin {
         register_engine_operation::<PlaybackOperation>(app);
         register_engine_operation::<PlaybackReleaseOperation>(app);
         app.add_message::<InstanceControlUpdate>();
+        app.add_message::<OperationResult<(), CommandError>>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
         {
@@ -121,6 +127,39 @@ impl Plugin for ClipsPlugin {
         app.add_systems(
             PostUpdate,
             clip_events::handle_clip_playback_attachments.before(ClientFeedback),
+        );
+
+        app.add_systems(
+            PostUpdate,
+            (
+                crate::websocket::forward_clip_commands,
+                // Reads playback stops (MaterializedClip removals), which only last two updates.
+                crate::websocket::send_clips_on_change,
+                crate::websocket::send_armed_launches_on_change,
+                // Reads playback despawns, which only last two updates.
+                crate::websocket::send_playbacks_on_change,
+            )
+                .in_set(ClientFeedback),
+        );
+        app.add_systems(
+            Render,
+            (
+                crate::websocket::send_clips_on_clip_change,
+                crate::websocket::refresh_playbacks_at_interval,
+            )
+                .in_set(ClientOutput),
+        );
+        app.add_systems(
+            Update,
+            (
+                crate::websocket::handle_resync_state,
+                // Playbacks refer to the clips sent before them.
+                crate::websocket::handle_playbacks_resync,
+            )
+                .chain()
+                .in_set(ResyncHandling)
+                // The showfile identity follows the clips it describes.
+                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
         );
     }
 }

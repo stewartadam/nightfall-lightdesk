@@ -8,6 +8,7 @@ edition = "2021"
 # Bevy integration
 bevy_ecs.workspace = true
 bevy_app.workspace = true
+bevy_diagnostic.workspace = true
 
 # Internal dependencies
 nightfall = { path = "../common" }

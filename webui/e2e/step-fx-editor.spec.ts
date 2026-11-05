@@ -274,13 +274,7 @@ async function deleteStoredStepFx(page: Page): Promise<void> {
 /** Returns the backend runtime anchor for the active Step FX editor preview. */
 async function stepFxPreviewStatus(page: Page): Promise<any | undefined> {
   return page.evaluate(
-    () =>
-      (
-        Object.values((window as any).appStores.activeInstances.get()) as any[]
-      ).find(
-        (playback: any) =>
-          playback.is_preview && playback.display_kind === "StepFx",
-      )?.step_fx_preview,
+    () => ((window as any).appStores.stepFxPreviews.get() as any[])[0],
   );
 }
 
@@ -298,11 +292,8 @@ async function stepFxPlayheadError(
   return page.evaluate(
     ({ phaseOffset, direction, totalBeats, cycleBeats, beatDuration }) => {
       const preview = (
-        Object.values((window as any).appStores.activeInstances.get()) as any[]
-      ).find(
-        (playback: any) =>
-          playback.is_preview && playback.display_kind === "StepFx",
-      )?.step_fx_preview;
+        (window as any).appStores.stepFxPreviews.get() as any[]
+      )[0];
       const playhead = document.querySelector(
         '[data-step-fx-waveform-playhead][data-selected="true"]',
       );

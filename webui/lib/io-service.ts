@@ -21,51 +21,51 @@ export function sendNetworkDmxOutputs(
   targets: types.NetworkDmxOutputTarget[],
 ): void {
   const outputs = normalizeNetworkDmxOutputs({ targets });
-  const command: types.SettingsCommand = {
+  const command: types.IoSettingsCommand = {
     type: "SetNetworkDmxOutputs",
     data: outputs,
   };
-  commandClient.emit("SettingsCommand", command);
+  commandClient.emit("IoSettingsCommand", command);
   log.info("Requested Network DMX output target update");
 }
 
 /** Sends updated USB DMX output targets to the backend. */
 export function sendUsbDmxOutputs(targets: types.UsbDmxOutputTarget[]): void {
   const outputs = normalizeUsbDmxOutputs({ targets });
-  const command: types.SettingsCommand = {
+  const command: types.IoSettingsCommand = {
     type: "SetUsbDmxOutputs",
     data: outputs,
   };
-  commandClient.emit("SettingsCommand", command);
+  commandClient.emit("IoSettingsCommand", command);
   log.info("Requested USB DMX output target update");
 }
 
 /** Sends the requested Network DMX output enabled state to the backend. */
 export function sendNetworkOutputEnabled(enabled: boolean): void {
-  const command: types.SettingsCommand = {
+  const command: types.IoSettingsCommand = {
     type: "SetNetworkOutputEnabled",
     data: enabled,
   };
-  commandClient.emit("SettingsCommand", command);
+  commandClient.emit("IoSettingsCommand", command);
   log.info("Requested Network DMX output enabled update");
 }
 
 /** Sends the requested Network DMX input enabled state to the backend. */
 export function sendNetworkInputEnabled(enabled: boolean): void {
-  const command: types.SettingsCommand = {
+  const command: types.IoSettingsCommand = {
     type: "SetNetworkInputEnabled",
     data: enabled,
   };
-  commandClient.emit("SettingsCommand", command);
+  commandClient.emit("IoSettingsCommand", command);
   log.info("Requested Network DMX input enabled update");
 }
 
 /** Sends the requested USB DMX output enabled state to the backend. */
 export function sendUsbOutputEnabled(enabled: boolean): void {
-  const command: types.SettingsCommand = {
+  const command: types.IoSettingsCommand = {
     type: "SetUsbOutputEnabled",
     data: enabled,
   };
-  commandClient.emit("SettingsCommand", command);
+  commandClient.emit("IoSettingsCommand", command);
   log.info("Requested USB DMX output enabled update");
 }

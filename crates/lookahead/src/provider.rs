@@ -11,11 +11,10 @@ use std::collections::HashSet;
 use bevy_ecs::prelude::*;
 use moonshine_kind::prelude::InstanceMut;
 use nightfall_compositor::prelude::Layer;
+use nightfall_fixtures::lookahead_assertions::LookaheadAssertions;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
 use nightfall_instances::InstanceOptions;
 use uuid::Uuid;
-
-use crate::LookaheadAssertions;
 
 /// Fixture-level playback footprint for lookahead safety checks.
 #[derive(Clone, Debug, PartialEq, Eq)]

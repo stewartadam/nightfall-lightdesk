@@ -11,16 +11,33 @@
 use std::time::Duration;
 
 use bevy_app::App;
-use bevy_diagnostic::{DiagnosticPath, Diagnostics};
+use bevy_diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, RegisterDiagnostic};
 use bevy_ecs::prelude::*;
-#[cfg(feature = "audio")]
-use nightfall_engine::diagnostic_paths::TIMELINE_AUDIO_MS;
-use nightfall_engine::diagnostic_paths::{
-    TIMELINE_ACTIONS_MS, TIMELINE_LAYER_GENERATION_MS, TIMELINE_LOOKAHEAD_ASSERTIONS_MS,
-    TIMELINE_LOOKAHEAD_LAYERS_MS, TIMELINE_LOOKAHEAD_SOURCES_MS, TIMELINE_PARAMETERS_MS,
-    TIMELINE_SEEK_MS, TIMELINE_UPDATE_MS,
-};
 use web_time::Instant;
+
+/// Time spent generating layers from timeline playback.
+pub const TIMELINE_LAYER_GENERATION_MS: DiagnosticPath =
+    DiagnosticPath::const_new("timeline/layer_generation_ms");
+/// Time spent in the main timeline update.
+pub const TIMELINE_UPDATE_MS: DiagnosticPath = DiagnosticPath::const_new("timeline/update_ms");
+/// Time spent synchronizing timeline audio.
+pub const TIMELINE_AUDIO_MS: DiagnosticPath = DiagnosticPath::const_new("timeline/audio_ms");
+/// Time spent resolving lookahead sources.
+pub const TIMELINE_LOOKAHEAD_SOURCES_MS: DiagnosticPath =
+    DiagnosticPath::const_new("timeline/lookahead_sources_ms");
+/// Time spent building lookahead assertions.
+pub const TIMELINE_LOOKAHEAD_ASSERTIONS_MS: DiagnosticPath =
+    DiagnosticPath::const_new("timeline/lookahead_assertions_ms");
+/// Time spent building lookahead layers.
+pub const TIMELINE_LOOKAHEAD_LAYERS_MS: DiagnosticPath =
+    DiagnosticPath::const_new("timeline/lookahead_layers_ms");
+/// Time spent dispatching timeline actions.
+pub const TIMELINE_ACTIONS_MS: DiagnosticPath = DiagnosticPath::const_new("timeline/actions_ms");
+/// Time spent applying timeline parameter automation.
+pub const TIMELINE_PARAMETERS_MS: DiagnosticPath =
+    DiagnosticPath::const_new("timeline/parameters_ms");
+/// Time spent seeking timelines.
+pub const TIMELINE_SEEK_MS: DiagnosticPath = DiagnosticPath::const_new("timeline/seek_ms");
 
 /// Holds start times for scheduled timeline diagnostic spans.
 #[derive(Default, Resource)]
@@ -70,9 +87,22 @@ impl TimelineDiagnosticStopwatch {
     }
 }
 
-/// Register timeline diagnostic support resources.
+/// Registers the timeline timings and the stopwatch that measures them.
 pub(crate) fn register_timeline_diagnostics(app: &mut App) {
     app.init_resource::<TimelineDiagnosticStopwatch>();
+    for path in [
+        TIMELINE_LAYER_GENERATION_MS,
+        TIMELINE_UPDATE_MS,
+        TIMELINE_AUDIO_MS,
+        TIMELINE_LOOKAHEAD_SOURCES_MS,
+        TIMELINE_LOOKAHEAD_ASSERTIONS_MS,
+        TIMELINE_LOOKAHEAD_LAYERS_MS,
+        TIMELINE_ACTIONS_MS,
+        TIMELINE_PARAMETERS_MS,
+        TIMELINE_SEEK_MS,
+    ] {
+        app.register_diagnostic(Diagnostic::new(path).with_suffix(" ms"));
+    }
 }
 
 /// Stores the current instant for a diagnostic stage.

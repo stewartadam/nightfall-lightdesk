@@ -22,7 +22,7 @@ export interface CommandResultWaiter {
   reject: (error: Error) => void;
 }
 
-/** Showfile name a desk command will make current once it succeeds. */
+/** Showfile name a showfile command will make current once it succeeds. */
 export interface PendingCurrentShowfileName {
   name: string;
 }
@@ -93,7 +93,7 @@ export function rejectPendingCommandWaiters(error: Error): void {
   }
 }
 
-/** Extracts the current showfile name implied by a successful desk command. */
+/** Extracts the current showfile name implied by a successful showfile command. */
 function currentShowfileNameFromCommand(
   data: object,
 ): PendingCurrentShowfileName | null {
@@ -101,7 +101,7 @@ function currentShowfileNameFromCommand(
     module?: unknown;
     command?: { type?: unknown; data?: unknown };
   };
-  if (envelope.module !== "DeskCommand") {
+  if (envelope.module !== "ShowfileCommand") {
     return null;
   }
 

@@ -80,10 +80,10 @@ export function expectedStartupShowfileName(): string {
 }
 
 /**
- * Builds the desk command that loads the requested showfile name.
+ * Builds the showfile command that loads the requested showfile name.
  */
 export function showfileLoadCommandForName(name: string): {
-  command: types.DeskCommand;
+  command: types.ShowfileCommand;
   showfileName: string;
 } {
   const showfileName = normalizedShowfileName(name);

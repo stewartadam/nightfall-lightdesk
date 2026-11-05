@@ -6,27 +6,6 @@
   "configurations": [
     {
       "type": "lldb",
-      "request": "attach",
-      "name": "Attach (nightfall-desk)",
-      "program": "${workspaceFolder}/target/debug/nightfall-desk"
-    },
-    {
-      "type": "lldb",
-      "request": "launch",
-      "name": "Debug executable 'nightfall-desk'",
-      "cargo": {
-        "args": ["build", "--bin=nightfall-desk", "--package=nightfall-desk"],
-        "filter": {
-          "name": "nightfall-desk",
-          "kind": "bin"
-        }
-      },
-      "args": [],
-      "envFile": "${workspaceFolder}/.env",
-      "cwd": "${workspaceFolder}"
-    },
-    {
-      "type": "lldb",
       "request": "launch",
       "name": "Debug executable 'nightfall-headless'",
       "cargo": {
@@ -67,20 +46,6 @@
         "args": ["test", "--no-run", "--lib", "--package=nightfall"],
         "filter": {
           "name": "nightfall",
-          "kind": "lib"
-        }
-      },
-      "args": [],
-      "cwd": "${workspaceFolder}"
-    },
-    {
-      "type": "lldb",
-      "request": "launch",
-      "name": "Debug unit tests in library 'nightfall-desk'",
-      "cargo": {
-        "args": ["test", "--no-run", "--lib", "--package=nightfall-desk"],
-        "filter": {
-          "name": "nightfall-desk",
           "kind": "lib"
         }
       },

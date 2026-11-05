@@ -31,11 +31,13 @@ smart-default.workspace = true
 tracing.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
+web-time.workspace = true
 
 [dev-dependencies]
+async-channel.workspace = true
 criterion.workspace = true
+minicbor-serde.workspace = true
 moonshine-kind.workspace = true
-nightfall-desk = { path = "../desk" }
 nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
 nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-io = { path = "../io" }

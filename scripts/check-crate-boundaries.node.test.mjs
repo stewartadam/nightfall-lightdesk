@@ -49,12 +49,12 @@ test("forbiddenEdges rejects plugin coupling and upward dependencies", () => {
     packages: [
       pkg("nightfall-cues", [
         dependency("nightfall-compositor"),
-        dependency("nightfall-desk"),
+        dependency("nightfall-boards"),
         dependency("nightfall-fx"),
         dependency("nightfall-fx", "dev"),
       ]),
       pkg("nightfall-compositor"),
-      pkg("nightfall-desk"),
+      pkg("nightfall-boards"),
       pkg("nightfall-fx"),
     ],
   };
@@ -68,7 +68,7 @@ test("forbiddenEdges rejects plugin coupling and upward dependencies", () => {
     [
       {
         from: "nightfall-cues",
-        to: "nightfall-desk",
+        to: "nightfall-boards",
         rule: "plugin-crate-must-not-depend-on-cross-plugin-or-host",
       },
       {
@@ -174,7 +174,7 @@ test("configuredExceptionEdges requires a stable exception ID", () => {
           id: "clip-desk-integration",
           reason: "Clip contracts still live in desk.",
           edges: [
-            { from: "nightfall-cues", to: "nightfall-desk", rule: "rule" },
+            { from: "nightfall-cues", to: "nightfall-boards", rule: "rule" },
           ],
         },
       ],
@@ -182,7 +182,7 @@ test("configuredExceptionEdges requires a stable exception ID", () => {
     [
       {
         from: "nightfall-cues",
-        to: "nightfall-desk",
+        to: "nightfall-boards",
         rule: "rule",
         exceptionId: "clip-desk-integration",
         exceptionReason: "Clip contracts still live in desk.",
@@ -193,7 +193,7 @@ test("configuredExceptionEdges requires a stable exception ID", () => {
 
 /** Verifies duplicate exception identities and edges are rejected. */
 test("configuredExceptionEdges rejects duplicate configuration", () => {
-  const edge = { from: "nightfall-cues", to: "nightfall-desk", rule: "rule" };
+  const edge = { from: "nightfall-cues", to: "nightfall-boards", rule: "rule" };
   assert.throws(
     () =>
       configuredExceptionEdges({

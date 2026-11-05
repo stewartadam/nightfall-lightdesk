@@ -23,15 +23,16 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use async_channel::{Receiver, Sender};
 use bevy_app::{App, PluginGroup};
-use bevy_diagnostic::{FrameCountPlugin, FrameTimeDiagnosticsPlugin};
+use bevy_diagnostic::{EntityCountDiagnosticsPlugin, FrameCountPlugin, FrameTimeDiagnosticsPlugin};
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::NextState;
 use bevy_time::{TimePlugin, TimeUpdateStrategy};
 use nightfall_composition::ShowPlugins;
-use nightfall_desk::resources::log_config::LogConfig;
+use nightfall_engine::logging::LogConfig;
 use nightfall_engine::prelude::{
-    AppState, ClientBridgeHost, ClientId, CommandJsonEnvelope, CommandSender, OutboundFrame,
-    ReplyTarget, RuntimeCapabilities, UpdateJsonEnvelope,
+    AppState, ClientBridgeHost, ClientId, CommandEnvelope, CommandError, CommandJsonEnvelope,
+    CommandResponder, CommandSender, EngineCommand, OutboundFrame, ReplyTarget,
+    RuntimeCapabilities, UpdateJsonEnvelope,
 };
 use nightfall_fixtures::prelude::FixturePlugin;
 use nightfall_framepace::prelude::{FramepaceSettings, Limiter};
@@ -203,7 +204,11 @@ impl BrowserEngine {
             std::time::Duration::ZERO,
         ));
         // Real time advances by the host tick delta, so these report the worker's engine rate.
-        app.add_plugins((FrameCountPlugin, FrameTimeDiagnosticsPlugin::default()));
+        app.add_plugins((
+            FrameCountPlugin,
+            FrameTimeDiagnosticsPlugin::default(),
+            EntityCountDiagnosticsPlugin::default(),
+        ));
         // The worker paces ticks itself, so only the `fps` command handling is shared with the
         // native frame limiter, whose sleeping limiter cannot run in a browser.
         app.insert_resource(
@@ -212,7 +217,8 @@ impl BrowserEngine {
         );
         app.add_systems(
             bevy_app::Update,
-            nightfall_framepace::handle_events.in_set(nightfall_engine::prelude::EventHandling),
+            (nightfall_framepace::handle_events, reject_quit_commands)
+                .in_set(nightfall_engine::prelude::EventHandling),
         );
         set_construction_stage(1);
         app.add_plugins(
@@ -331,6 +337,28 @@ fn settle_loaded_runtime(app: &mut App) {
         .set(AppState::Ready);
     set_construction_stage(7);
     app.update();
+}
+
+/// Fails `quit` commands, since the page hosting the demo, not the engine, decides when it
+/// closes; without this the command would never finish.
+fn reject_quit_commands(
+    mut events: MessageReader<CommandEnvelope<EngineCommand>>,
+    mut responder: CommandResponder,
+) {
+    for event in events
+        .read()
+        .filter(|event| matches!(event.command, EngineCommand::Quit))
+    {
+        if let Err(error) = responder.fail(
+            event.command_id,
+            CommandError::new(
+                "browser.quit_unavailable",
+                "The browser demo cannot quit; close its tab instead.",
+            ),
+        ) {
+            tracing::error!(command_id = %event.command_id, %error, "quit_command_failure_failed");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -619,26 +647,40 @@ mod tests {
         }
     }
 
-    /// Verify the demo answers showfile save and load commands with a disk storage failure
-    /// on the next tick instead of leaving them pending forever.
+    /// Verify the demo answers showfile save and load commands, which need disk storage, and
+    /// quit, which the hosting page owns, with a failure on the next tick instead of leaving
+    /// them pending forever.
     #[test]
-    fn showfile_storage_commands_fail_fast() {
+    fn unsupported_commands_fail_fast() {
         let mut engine = sample_engine();
 
-        for command in [
-            json!({ "type": "SaveShowfile" }),
-            json!({ "type": "LoadNamedShowfile", "data": "tour" }),
+        for (module, command, code) in [
+            (
+                "ShowfileCommand",
+                json!({ "type": "SaveShowfile" }),
+                "showfile.disk_storage_unavailable",
+            ),
+            (
+                "ShowfileCommand",
+                json!({ "type": "LoadNamedShowfile", "data": "tour" }),
+                "showfile.disk_storage_unavailable",
+            ),
+            (
+                "EngineCommand",
+                json!({ "type": "Quit" }),
+                "browser.quit_unavailable",
+            ),
         ] {
             let command_id = Uuid::new_v4();
             let envelope = serde_json::from_value(json!({
                 "command_id": command_id,
-                "module": "DeskCommand",
+                "module": module,
                 "command": command,
             }))
-            .expect("desk command should deserialize");
+            .expect("command should deserialize");
             engine
                 .enqueue_command_core(envelope)
-                .expect("desk command should enqueue");
+                .expect("command should enqueue");
             engine.tick_core(16.0);
 
             let command_id_text = command_id.simple().to_string();
@@ -654,7 +696,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{command} should complete within one tick"));
             assert_eq!(result["data"]["outcome"]["type"], "Failed", "{result:#?}");
             assert_eq!(
-                result["data"]["outcome"]["data"]["code"], "desk.disk_storage_unavailable",
+                result["data"]["outcome"]["data"]["code"], code,
                 "{result:#?}"
             );
         }

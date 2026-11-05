@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use bevy::prelude::{App, AppExit};
 use nightfall_config::RuntimeConfig;
-use nightfall_desk::resources::log_config::LogConfig;
+use nightfall_engine::logging::LogConfig;
 use nightfall_engine::prelude::{
     ClientEventSink, CommandError, CommandId, CommandOutcome, CommandResult,
     DISCRIMINATOR_NON_DROPPABLE, EngineClientMessage, UiNotification, UiNotificationState,

@@ -9,6 +9,7 @@
 import {
   engineMetrics,
   frameStats,
+  METRIC_PATHS,
   metricsHistory,
   wsLatency,
 } from "../state/appStores";
@@ -62,8 +63,9 @@ class MetricsHistoryCollector {
     this.intervalId = setInterval(() => {
       // Collect engine FPS from backend metrics
       const metrics = engineMetrics.get();
-      if (metrics?.fps !== undefined) {
-        this.fpsBuffer.push(metrics.fps);
+      const fps = metrics?.[METRIC_PATHS.fps];
+      if (fps !== undefined) {
+        this.fpsBuffer.push(fps);
       }
 
       // Collect WebSocket latency
@@ -73,8 +75,9 @@ class MetricsHistoryCollector {
       }
 
       // Collect engine frame time from backend metrics
-      if (metrics?.frame_time_ms !== undefined) {
-        this.frameTimeBuffer.push(metrics.frame_time_ms);
+      const frameTimeMs = metrics?.[METRIC_PATHS.frameTimeMs];
+      if (frameTimeMs !== undefined) {
+        this.frameTimeBuffer.push(frameTimeMs);
       }
 
       // Collect UI FPS from frame monitor

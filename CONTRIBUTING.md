@@ -748,15 +748,15 @@ components to catch performance regressions:
 | Component | Command | Size overrides |
 | --- | --- | --- |
 | Compositor | `cargo bench -p nightfall-fixtures --bench compositor` | `NIGHTFALL_COMPOSITOR_BENCH_LAYERS`, `NIGHTFALL_COMPOSITOR_BENCH_TRANSITIONS` (`none`, `all`) |
-| Clip lookup | `cargo bench -p nightfall-desk --bench clip_lookup` | `NIGHTFALL_CLIP_BENCH_DEFINED_COUNTS`, `NIGHTFALL_CLIP_BENCH_LOOKUP_COUNTS`, `NIGHTFALL_CLIP_BENCH_ACTIVE_COUNTS` |
+| Clip lookup | `cargo bench -p nightfall-clips --bench clip_lookup` | `NIGHTFALL_CLIP_BENCH_DEFINED_COUNTS`, `NIGHTFALL_CLIP_BENCH_LOOKUP_COUNTS`, `NIGHTFALL_CLIP_BENCH_ACTIVE_COUNTS` |
 | Timeline planning and plan evaluation | `cargo bench -p nightfall-timeline --bench planner` | `NIGHTFALL_TIMELINE_BENCH_ACTION_COUNTS` |
 | Sequence lookahead projection and duration summary | `cargo bench -p nightfall-lookahead-projection --bench projection` | `NIGHTFALL_LOOKAHEAD_BENCH_CUE_COUNTS`, `NIGHTFALL_LOOKAHEAD_BENCH_FIXTURE_COUNTS` |
 | Runtime timeline lookahead (full backend frames) | `cargo bench -p app-runtime --bench timeline_lookahead` | `NIGHTFALL_TIMELINE_LOOKAHEAD_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_TIMELINE_LOOKAHEAD_BENCH_START_COUNTS` |
 | Selection resolution (linear and spatial) | `cargo bench -p nightfall-selection --bench resolve` | `NIGHTFALL_SELECTION_BENCH_FIXTURE_COUNTS` |
 | Step FX sampling and full evaluation | `cargo bench -p nightfall-fx --bench step_fx` | `NIGHTFALL_STEP_FX_BENCH_SELECTION_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_LANE_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_FX_COUNTS` |
 | DMX universe packing, parameter-state broadcast and fixture parameter lookup | `cargo bench -p nightfall-fixtures --bench frame_output` | `NIGHTFALL_FRAME_OUTPUT_BENCH_FIXTURE_COUNTS` |
-| Layer-stack snapshot | `cargo bench -p nightfall-desk --bench layer_stack` | `NIGHTFALL_LAYER_STACK_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_LAYER_STACK_BENCH_LAYER_COUNTS` |
-| Virtual dimmer | `cargo bench -p nightfall-desk --bench vdim` | `NIGHTFALL_VDIM_BENCH_FIXTURE_COUNTS` |
+| Layer-stack snapshot | `cargo bench -p nightfall-fixtures --bench layer_stack` | `NIGHTFALL_LAYER_STACK_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_LAYER_STACK_BENCH_LAYER_COUNTS` |
+| Virtual dimmer | `cargo bench -p nightfall-fixtures --bench vdim` | `NIGHTFALL_VDIM_BENCH_FIXTURE_COUNTS` |
 | Standalone cue and sequence painting | `cargo bench -p nightfall-cues --bench painting` | `NIGHTFALL_PAINT_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_PAINT_BENCH_PLAYBACK_COUNTS` |
 
 The runtime timeline lookahead suite times whole frames of the live backend
@@ -781,7 +781,7 @@ short; drop both for a full run before merging:
 
 ```sh
 NIGHTFALL_CLIP_BENCH_DEFINED_COUNTS=1000,5000 \
-cargo bench -p nightfall-desk --bench clip_lookup -- --quick clip_lookup_strategy
+cargo bench -p nightfall-clips --bench clip_lookup -- --quick clip_lookup_strategy
 ```
 
 Criterion compares each run with the previous one on the same machine. To

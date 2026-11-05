@@ -21,8 +21,8 @@ import {
   updateStepFxPreview,
 } from "../../../lib/fx-service";
 import {
-  activeInstances as activeInstancesStore,
   pushToast,
+  stepFxPreviews as stepFxPreviewsStore,
   stepFx as stepFxStore,
 } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -49,7 +49,7 @@ export function createStepFxEditorController(
   options: StepFxEditorControllerOptions,
 ) {
   const $stepFx = useStore(stepFxStore);
-  const $activeInstances = useStore(activeInstancesStore);
+  const $stepFxPreviews = useStore(stepFxPreviewsStore);
   const initialUid = options.initialUid;
   const initialDraft = options.initialDraft
     ? cloneStepFx(options.initialDraft)
@@ -91,7 +91,7 @@ export function createStepFxEditorController(
 
   /** Selects only this editor session's backend-authored preview clock anchor. */
   const previewStatus = createMemo(() =>
-    findStepFxPreviewStatus($activeInstances(), previewSessionId),
+    findStepFxPreviewStatus($stepFxPreviews(), previewSessionId),
   );
 
   /** Loads stored state, acknowledges saves, and detects concurrent replacement. */

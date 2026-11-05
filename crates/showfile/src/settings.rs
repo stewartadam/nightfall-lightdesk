@@ -60,14 +60,3 @@ pub fn apply_showfile_settings_command(
     }
     Ok(())
 }
-
-/// Registers the [`ShowfileSettings`] section and its command, in every host.
-pub struct ShowfileSettingsPlugin;
-
-impl bevy_app::Plugin for ShowfileSettingsPlugin {
-    /// Adds the section and the handler for [`ShowfileSettingsCommand`].
-    fn build(&self, app: &mut bevy_app::App) {
-        app.register_settings_section(ShowfileSettings::SECTION);
-        app.add_settings_command(apply_showfile_settings_command);
-    }
-}

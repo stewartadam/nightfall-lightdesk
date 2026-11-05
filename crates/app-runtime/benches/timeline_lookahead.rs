@@ -23,8 +23,8 @@ use nightfall::prelude::{FixtureRef, Identifiers, SelectionExpr, SpatialSelectio
 use nightfall_clips::{Clip, Source};
 use nightfall_config::{RuntimeConfig, TransportConfig};
 use nightfall_cues::prelude::{Cue, Sequence};
-use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
+use nightfall_engine::logging::{LogConfig, TracingTarget};
 use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_engine::prelude::{DataProvider, EngineOperationEnvelope};
 use nightfall_fixture_model::prelude::*;

@@ -26,7 +26,6 @@ use std::{
 };
 
 pub(crate) use client_errors::register_routes;
-use nightfall_desk::prelude::TelemetryState;
 use scrub::Scrubber;
 use sentry::{
     ClientOptions, Envelope, Transport,
@@ -37,6 +36,7 @@ use sentry::{
 use tracing::{Level, Metadata, Subscriber, callsite::Identifier};
 use tracing_subscriber::{Layer, layer::Context, registry::LookupSpan};
 
+use crate::telemetry::TelemetryState;
 use crate::telemetry_outbox::{Endpoint, Outbox, OutboxLimits, OutboxStore};
 
 /// Client name sent with reports.

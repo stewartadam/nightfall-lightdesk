@@ -86,7 +86,7 @@ async function installFakeWebsocketWorker(
                   __nightfallDisconnectWorldSwapCommands?: boolean;
                 }
               ).__nightfallDisconnectWorldSwapCommands === true) &&
-            envelope.data?.module === "DeskCommand" &&
+            envelope.data?.module === "ShowfileCommand" &&
             worldSwapCommands.has(envelope.data.command?.type ?? "")
           ) {
             const command = envelope.data.command;

@@ -11,8 +11,6 @@ use std::net::SocketAddr;
 use bevy::app::PluginGroupBuilder;
 #[cfg(feature = "audio")]
 use nightfall_audio::prelude::*;
-#[cfg(feature = "audio")]
-use nightfall_desk_audio::prelude::*;
 #[cfg(feature = "fixture-library")]
 use nightfall_fixture_library::prelude::*;
 #[cfg(feature = "artnet")]
@@ -37,8 +35,6 @@ use nightfall_output_usb::prelude::*;
 pub trait FeatureIntegrationExt {
     /// Inserts the audio engine right after `EnginePlugin` when the `audio` feature is on.
     fn maybe_core_audio(self) -> Self;
-    /// Inserts desk audio integration right after `DeskPlugin` when the `audio` feature is on.
-    fn maybe_desk_audio(self) -> Self;
     /// Inserts the fixture library right after `MacrosPlugin` when its feature is on.
     fn maybe_fixture_library(self) -> Self;
     /// Inserts the object library after the fixture library (or after `MacrosPlugin` without
@@ -62,16 +58,6 @@ impl FeatureIntegrationExt for PluginGroupBuilder {
 
     #[cfg(not(feature = "audio"))]
     fn maybe_core_audio(self) -> Self {
-        self
-    }
-
-    #[cfg(feature = "audio")]
-    fn maybe_desk_audio(self) -> Self {
-        self.add_after::<nightfall_desk::DeskPlugin>(DeskAudioPlugin)
-    }
-
-    #[cfg(not(feature = "audio"))]
-    fn maybe_desk_audio(self) -> Self {
         self
     }
 

@@ -26,7 +26,6 @@ anyhow = { version = "1.0.104" }
 arrayvec = { version = "0.7.8" }
 axum = { version = "0.8.9", features = ["multipart", "ws"] }
 bevy_ecs = { version = "0.20.1", features = ["debug"] }
-bevy_platform = { version = "0.20.1", features = ["futures-lite", "serialize"] }
 bevy_reflect = { version = "0.20.1", features = ["glam"] }
 bevy_time = { version = "0.20.1" }
 bevy_utils = { version = "0.20.1", features = ["debug", "std"] }
@@ -35,6 +34,7 @@ bumpalo = { version = "3.20.3", features = ["allocator-api2"] }
 bytemuck = { version = "1.25.2", default-features = false, features = ["aarch64_simd", "derive", "wasm_simd"] }
 byteorder = { version = "1.5.0" }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde", "wasmbind"] }
+concurrent-queue = { version = "2.5.0" }
 cranelift-bitset = { version = "0.137.1", default-features = false, features = ["enable-serde"] }
 crc32fast = { version = "1.5.3" }
 crossbeam-channel = { version = "0.5.17" }

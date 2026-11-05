@@ -80,59 +80,6 @@ impl Default for TransportRuntimePolicy {
     }
 }
 
-/// Host-owned external control preferences, deliberately excluded from showfiles.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-#[serde(default)]
-pub struct ExternalControlSettings {
-    /// Whether other computers may connect to the backend.
-    pub enabled: bool,
-    /// Selected interface name, or `None` to listen on all IPv4 interfaces.
-    pub interface: Option<String>,
-}
-
-/// Host control preferences and the native listener's actual runtime state.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
-#[typeshare::typeshare]
-pub struct ExternalControlState {
-    /// Whether this runtime hosts a native network listener.
-    pub available: bool,
-    /// Preferences persisted independently from the active showfile.
-    pub settings: ExternalControlSettings,
-    /// Addresses on which the backend is currently listening.
-    pub listening_addresses: Vec<String>,
-    /// Binding or persistence failure requiring operator attention.
-    pub error: Option<String>,
-}
-
-/// Whether the requesting device must pair before it may control the backend.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-pub struct RemotePairingStatus {
-    /// Whether the device connects from another computer and so needs the pairing PIN.
-    pub required: bool,
-    /// Whether the device may control the backend now, either because it is local or
-    /// because it already paired during this app session.
-    pub paired: bool,
-}
-
-/// Pairing PIN entered by a device on the network.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-pub struct RemotePairingAttempt {
-    /// Digits the user typed or scanned.
-    pub pin: String,
-}
-
-/// Pairing PIN shown to the operator on the computer running Nightfall.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-pub struct RemotePairingPin {
-    /// Six-digit PIN other devices enter to pair for this app session.
-    pub pin: String,
-}
-
 /// Showfile-scoped runtime settings for network and USB transports.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
@@ -261,11 +208,6 @@ pub enum InputSignalLossPolicy {
     ClearAfterTimeout {},
 }
 
-/// Snapshot of compatible USB DMX devices currently surfaced to clients.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
-pub struct AvailableUsbDmxDevices(pub Vec<UsbDmxDeviceInfo>);
-
 /// Compatible USB DMX device currently visible to the host OS.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[typeshare::typeshare]
@@ -322,6 +264,24 @@ impl NetworkInterfaceState {
         Self {
             available_interfaces: get_available_interfaces(),
             default_interface: get_default_interface(),
+        }
+    }
+
+    /// Looks up an available interface by its system name.
+    pub fn find(&self, name: &str) -> Option<&NetworkInterfaceInfo> {
+        self.available_interfaces
+            .iter()
+            .find(|interface| interface.name == name)
+    }
+}
+
+impl NetworkInterfaceInfo {
+    /// Formats the interface as its friendly name with the system name in parentheses, or just
+    /// the system name when the platform reports no friendly name.
+    pub fn display_label(&self) -> String {
+        match self.friendly_name.as_deref() {
+            Some(friendly) if friendly != self.name => format!("{friendly} ({})", self.name),
+            _ => self.name.clone(),
         }
     }
 }

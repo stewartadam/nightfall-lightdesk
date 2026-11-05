@@ -14,11 +14,11 @@ use std::{
 use nightfall::prelude::*;
 use nightfall_controls::prelude::*;
 use nightfall_cues::prelude::*;
-use nightfall_desk::prelude::*;
 use nightfall_engine::prelude::BoundAssertionSet;
 use nightfall_fixtures::prelude::*;
 use nightfall_flow::prelude::*;
 use nightfall_fx::prelude::*;
+use nightfall_showfile::{ShowfileImportOptions, ShowfileImportPolicy};
 use serde::Serialize;
 use uuid::Uuid;
 

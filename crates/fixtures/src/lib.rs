@@ -24,7 +24,10 @@ pub mod fixture;
 pub mod fixture_events;
 pub mod geometry;
 pub mod input_apply;
+mod input_universe_settings;
+pub mod layer_stack;
 pub mod library;
+pub mod lookahead_assertions;
 pub mod output_frames;
 pub mod parameter;
 pub mod parameter_index;
@@ -41,6 +44,7 @@ mod selection_source;
 pub mod stale_inputs;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
+pub mod trace;
 pub mod transport_holds;
 pub mod undo;
 pub mod universe;
@@ -50,6 +54,7 @@ pub mod websocket;
 pub mod wire_layout;
 
 use bevy_app::prelude::*;
+use bevy_diagnostic::{Diagnostic, RegisterDiagnostic};
 use bevy_ecs::prelude::*;
 use nightfall::command_types::{DmxChannelExpr, DmxChannelRef};
 use nightfall::prelude::{ColorPathId, FixtureRef};
@@ -143,7 +148,7 @@ pub mod prelude {
     pub use crate::physical::{BeamOptics, BeamType, DEFAULT_LUMENS, FixturePhysical};
     pub use crate::placement::FixturePlacement;
     pub use crate::route_validation::{
-        RouteValidationIssue, RouteValidationMode, RouteValidationSettings,
+        RouteValidationCommand, RouteValidationIssue, RouteValidationMode, RouteValidationSettings,
     };
     pub use crate::routes::{
         ConsoleDmxAddress, ConsoleDmxAddresses, ConsoleParameterAddress, DisabledRoute,
@@ -173,15 +178,15 @@ pub mod prelude {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VirtualIntensity;
 
-/// Section the showfile's input and output transport settings are saved and sent under.
-pub const IO_SETTINGS_SECTION: SettingsSection<nightfall_io::IoRuntimeSettings> =
-    SettingsSection::new("io");
-
 /// Plugin for fixtures
 pub struct FixturePlugin;
 impl Plugin for FixturePlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering FixturePlugin");
+        assert!(
+            app.is_plugin_added::<nightfall_io::IoPlugin>(),
+            "FixturePlugin requires IoPlugin (provides the IO settings and output targets)"
+        );
         app.add_plugins(input_apply::TransportInputPlugin);
         register_client_command::<FixtureCommand>(app, Undo::Captured);
         register_engine_operation::<DmxOperation>(app);
@@ -207,7 +212,6 @@ impl Plugin for FixturePlugin {
         app.init_resource::<route_validation::RouteValidationSettings>();
         app.init_resource::<parameter_state::ParameterStateProjection>();
         app.register_settings_section(parameter_stream_settings::ParameterStreamSettings::SECTION);
-        app.register_settings_section(IO_SETTINGS_SECTION);
         app.add_settings_command(parameter_stream_settings::apply);
         app.add_systems(
             Update,
@@ -222,11 +226,27 @@ impl Plugin for FixturePlugin {
         app.init_resource::<universe_stream::DmxUniverseStream>();
         app.init_resource::<output_frames::OutputRouting>();
         app.init_resource::<output_frames::OutputDmxFrames>();
-        app.init_resource::<nightfall_io::NetworkDmxOutputTargets>();
-        app.init_resource::<nightfall_io::UsbDmxOutputTargets>();
-        app.init_resource::<nightfall_io::InputUniverseVisibilityMode>();
         app.add_message::<websocket::SuppressFixtureChangedSnapshot>();
         websocket::register_fixture_websocket_diagnostics(app);
+        layer_stack::register_diagnostics(app);
+        // A count reports its latest value rather than an average that lags behind it.
+        app.register_diagnostic(
+            Diagnostic::new(output_frames::OUTPUT_UNIVERSES)
+                .with_smoothing_factor(f64::MIN_POSITIVE),
+        );
+        app.init_resource::<layer_stack::LayerStackPublication>();
+        register_client_command::<trace::FixtureTraceCommand>(app, Undo::Skipped);
+        app.add_systems(Update, trace::handle_trace_fixture.in_set(EventHandling));
+        register_client_command::<route_validation::RouteValidationCommand>(app, Undo::Skipped);
+        app.add_systems(
+            Update,
+            (
+                route_validation::handle_route_validation_commands,
+                input_universe_settings::sync_input_universes_from_io_settings
+                    .after(nightfall_io::IoStateSync),
+            )
+                .in_set(EventHandling),
+        );
 
         // Register undoable commands
         {
@@ -308,6 +328,7 @@ impl Plugin for FixturePlugin {
                 universe::dmx_universes,
                 transport_holds::resolve_transport_holds,
                 output_frames::compose_output_frames,
+                output_frames::record_output_universes,
                 universe::dmx_universes_debug,
             )
                 .chain()
@@ -333,13 +354,19 @@ impl Plugin for FixturePlugin {
                 websocket::send_color_path_defaults_on_change,
                 websocket::send_route_validation_settings_on_change,
                 websocket::send_parameter_state.after(DmxOutput),
+                // Layer stack slots refer to the parameter layout published before it.
+                layer_stack::send_layer_stack_at_interval.after(websocket::send_parameter_state),
             )
                 .in_set(ClientOutput),
         );
 
         app.add_systems(
             Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
+            (
+                websocket::handle_resync_state,
+                layer_stack::handle_resync_state,
+            )
+                .in_set(ResyncHandling),
         );
         app.add_systems(
             Update,

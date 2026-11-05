@@ -47,7 +47,7 @@ async function seedDeliveryAndFrameStats(page: Page) {
     (window as any).appStores.wsLatency.set(100);
     (window as any).appStores.engineMetrics.set({
       fps: 44.4,
-      active_layers: 0,
+      "compositor/layers": 0,
     });
     (window as any).appStores.frameStats.set({
       fps: 49.6,

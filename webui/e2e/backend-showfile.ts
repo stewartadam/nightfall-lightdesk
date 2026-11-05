@@ -242,7 +242,7 @@ export async function prepareFreshBackendShowfile(
       socket.send(
         JSON.stringify({
           command_id: commandId,
-          module: "DeskCommand",
+          module: "ShowfileCommand",
           command: {
             type: "NewNamedShowfile",
             data: { name: showfileName, includeSampleData: false },

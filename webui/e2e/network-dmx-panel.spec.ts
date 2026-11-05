@@ -1183,24 +1183,15 @@ test.describe("owned blank showfile", () => {
       const { engineRuntime } = window.__nightfallTest.runtime;
       engineRuntime.stop();
       const stores = (window as any).appStores;
-      stores.engineMetrics.set({
-        fps: 60,
-        active_layers: 0,
-        active_universes: 1,
-        artnet_send_time_ms: 1,
-        artnet_universe_count: 1,
-        sacn_send_time_ms: null,
-        sacn_universe_count: 0,
-        network_output_send_failures: [
-          {
-            protocol: "ArtNet",
-            universe: 0,
-            error_kind: "HostUnreachable",
-            message: "No route to host",
-            count: 2,
-          },
-        ],
-      });
+      stores.networkOutputSendFailures.set([
+        {
+          protocol: "ArtNet",
+          universe: 0,
+          error_kind: "HostUnreachable",
+          message: "No route to host",
+          count: 2,
+        },
+      ]);
     });
     await expect(warning).toHaveCount(1);
     await expect(warning).toBeVisible();

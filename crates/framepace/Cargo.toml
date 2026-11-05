@@ -6,6 +6,7 @@ edition.workspace = true
 
 [dependencies]
 bevy_app.workspace = true
+bevy_diagnostic.workspace = true
 bevy_ecs.workspace = true
 bevy_reflect.workspace = true
 nightfall-engine = { path = "../engine" }

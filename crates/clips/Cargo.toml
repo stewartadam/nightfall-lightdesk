@@ -10,6 +10,7 @@ bevy_ecs.workspace = true
 moonshine-kind.workspace = true
 nightfall-actions = { path = "../actions" }
 nightfall = { path = "../common" }
+nightfall-cmd-parse = { path = "../cmd-parse" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-engine = { path = "../engine" }
 nightfall-fixtures = { path = "../fixtures" }
@@ -27,10 +28,17 @@ uuid.workspace = true
 web-time.workspace = true
 
 [dev-dependencies]
+async-channel.workspace = true
+criterion.workspace = true
 nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
+nightfall-io = { path = "../io" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "clip_lookup"
+harness = false

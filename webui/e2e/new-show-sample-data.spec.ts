@@ -225,7 +225,7 @@ test("new show optionally includes standalone sample data", async ({
 
   const saveResult = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
-      module: "DeskCommand",
+      module: "ShowfileCommand",
       command: { type: "SaveShowfile" },
     }),
   );
@@ -270,7 +270,7 @@ test("new show optionally includes standalone sample data", async ({
   });
   const duplicateResult = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
-      module: "DeskCommand",
+      module: "ShowfileCommand",
       command: {
         type: "NewNamedShowfile",
         data: { name: "Sample Tour", includeSampleData: false },

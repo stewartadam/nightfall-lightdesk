@@ -8,59 +8,44 @@
 
 //! What held fader Flash and Swop buttons do to running playbacks.
 //!
-//! The effects are resolved once per frame into [`HeldButtonEffects`], which rendering applies
-//! and every client view reports, so a playback a Swop takes out never looks normal anywhere.
+//! The effects are resolved once per frame into a [`HeldButtonEffect`] on each playback they
+//! concern, which rendering applies and every client view reports, so a playback a Swop takes
+//! out never looks normal anywhere.
 
 use std::collections::HashMap;
 
 use bevy_ecs::prelude::*;
 use nightfall_clips::MaterializedClip;
-use nightfall_instances::{EditorPreviewInstance, InstanceId, InstanceKind, InstanceMetadata};
-use serde::{Deserialize, Serialize};
+use nightfall_instances::{
+    EditorPreviewInstance, HeldButtonEffect, InstanceId, InstanceKind, InstanceMetadata,
+};
 
 use super::Faders;
 
-/// How a held fader button changes one playback.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[typeshare::typeshare]
-#[serde(tag = "type", content = "data")]
-pub enum HeldButtonEffect {
-    /// A Flash held on the fader plays the playback at full intensity.
-    Flashed { fader_index: u32 },
-    /// A Swop held on the fader plays the playback at full intensity on its own.
-    Swopping { fader_index: u32 },
-    /// A Swop held on the fader takes the playback out entirely.
-    SwoppedOut { fader_index: u32 },
-}
-
-/// Held-button effect on each running playback, resolved every frame by
-/// [`resolve_held_button_effects`].
-#[derive(Resource, Debug, Default, PartialEq)]
-pub struct HeldButtonEffects {
-    by_instance: HashMap<InstanceId, HeldButtonEffect>,
-}
-
-impl HeldButtonEffects {
-    /// Returns how held buttons change the playback, or `None` when none concerns it.
-    pub fn get(&self, instance_id: &InstanceId) -> Option<HeldButtonEffect> {
-        self.by_instance.get(instance_id).copied()
-    }
-}
+/// Playback components the held-button resolution reads and updates.
+type HeldButtonPlayback = (
+    Entity,
+    &'static InstanceId,
+    Option<&'static InstanceMetadata>,
+    Has<EditorPreviewInstance>,
+    Option<&'static HeldButtonEffect>,
+);
 
 /// Resolves which playbacks held Flash and Swop buttons play at full and which a Swop takes
-/// out.
+/// out, and puts the [`HeldButtonEffect`] on each of them.
 ///
 /// A Swop only takes other playbacks out while its own clip is running, so the stage never goes
 /// dark while the swopped clip is still starting, has ended, or failed to start.
 ///
 /// The Programmer stays live during a swop so the operator can keep working, and editor
-/// previews are not show playbacks, so neither is ever taken out. The resource only changes
-/// when an effect does, so views listening for changes resend only then.
+/// previews are not show playbacks, so neither is ever taken out. A playback's component is
+/// only inserted or removed when its effect changes, so views listening for changes resend only
+/// then.
 pub fn resolve_held_button_effects(
     faders: Res<Faders>,
     materialized_clips: Query<&MaterializedClip>,
-    playbacks: Query<(&InstanceId, &InstanceMetadata, Has<EditorPreviewInstance>)>,
-    mut effects: ResMut<HeldButtonEffects>,
+    playbacks: Query<HeldButtonPlayback>,
+    mut commands: Commands,
 ) {
     let mut by_instance = HashMap::new();
     let mut swop_slot = None;
@@ -84,17 +69,23 @@ pub fn resolve_held_button_effects(
             swop_slot.get_or_insert(fader_index);
         }
     }
-    if let Some(fader_index) = swop_slot {
-        for (instance_id, metadata, is_preview) in &playbacks {
-            if is_preview || metadata.kind == InstanceKind::Programmer {
-                continue;
-            }
-            by_instance
-                .entry(*instance_id)
-                .or_insert(HeldButtonEffect::SwoppedOut { fader_index });
+    for (entity, instance_id, metadata, is_preview, current) in &playbacks {
+        let swopped_out = swop_slot
+            .filter(|_| {
+                !is_preview
+                    && metadata.is_none_or(|metadata| metadata.kind != InstanceKind::Programmer)
+            })
+            .map(|fader_index| HeldButtonEffect::SwoppedOut { fader_index });
+        let effect = by_instance.get(instance_id).copied().or(swopped_out);
+        if current.copied() == effect {
+            continue;
         }
+        // A playback despawned before the commands apply simply has nothing left to change.
+        match effect {
+            Some(effect) => commands.entity(entity).try_insert(effect),
+            None => commands.entity(entity).try_remove::<HeldButtonEffect>(),
+        };
     }
-    effects.set_if_neq(HeldButtonEffects { by_instance });
 }
 
 #[cfg(test)]
@@ -108,7 +99,6 @@ mod tests {
     /// Builds an app whose faders 1 and 2 swop clip 5 and flash clip 6 respectively.
     fn held_app(fader_1: FaderButtonMode) -> App {
         let mut app = App::new();
-        app.init_resource::<HeldButtonEffects>();
         app.insert_resource(Faders::from_configs(&[
             FaderConfig {
                 assignment: Some(FaderAssignment::Clip(5)),
@@ -136,6 +126,15 @@ mod tests {
             });
         }
         instance_id
+    }
+
+    /// Returns the held-button effect on the playback `instance_id`, if any.
+    fn effect(app: &mut App, instance_id: InstanceId) -> Option<HeldButtonEffect> {
+        app.world_mut()
+            .query::<(&InstanceId, Option<&HeldButtonEffect>)>()
+            .iter(app.world())
+            .find_map(|(id, effect)| (*id == instance_id).then_some(effect.copied()))
+            .flatten()
     }
 
     /// Marks fader `fader_index` as held by a web client.
@@ -169,21 +168,20 @@ mod tests {
         hold(&mut app, 1);
         hold(&mut app, 2);
         app.update();
-        let effects = app.world().resource::<HeldButtonEffects>();
         assert_eq!(
-            effects.get(&swopped),
+            effect(&mut app, swopped),
             Some(HeldButtonEffect::Swopping { fader_index: 1 })
         );
         assert_eq!(
-            effects.get(&flashed),
+            effect(&mut app, flashed),
             Some(HeldButtonEffect::Flashed { fader_index: 2 })
         );
         assert_eq!(
-            effects.get(&other),
+            effect(&mut app, other),
             Some(HeldButtonEffect::SwoppedOut { fader_index: 1 })
         );
-        assert_eq!(effects.get(&programmer), None);
-        assert_eq!(effects.get(&preview), None);
+        assert_eq!(effect(&mut app, programmer), None);
+        assert_eq!(effect(&mut app, preview), None);
     }
 
     /// Verifies a held Swop whose clip is not running, such as one still starting or one that
@@ -195,14 +193,11 @@ mod tests {
 
         hold(&mut app, 1);
         app.update();
-        assert_eq!(
-            app.world().resource::<HeldButtonEffects>().get(&other),
-            None
-        );
+        assert_eq!(effect(&mut app, other), None);
     }
 
-    /// Verifies a plain Flash takes nothing out and nothing is reported once nobody holds a
-    /// button.
+    /// Verifies a plain Flash takes nothing out, nothing is reported while nobody holds a
+    /// button, and releasing the button takes the effect off again.
     #[test]
     fn flash_takes_nothing_out() {
         let mut app = held_app(FaderButtonMode::Flash);
@@ -210,18 +205,23 @@ mod tests {
         let other = spawn_playback(&mut app, InstanceKind::Sequence, Some(7));
 
         app.update();
-        assert_eq!(
-            *app.world().resource::<HeldButtonEffects>(),
-            HeldButtonEffects::default()
-        );
+        assert_eq!(effect(&mut app, flashed), None);
+        assert_eq!(effect(&mut app, other), None);
 
         hold(&mut app, 1);
         app.update();
-        let effects = app.world().resource::<HeldButtonEffects>();
         assert_eq!(
-            effects.get(&flashed),
+            effect(&mut app, flashed),
             Some(HeldButtonEffect::Flashed { fader_index: 1 })
         );
-        assert_eq!(effects.get(&other), None);
+        assert_eq!(effect(&mut app, other), None);
+
+        app.world_mut()
+            .resource_mut::<Faders>()
+            .fader_mut(1)
+            .expect("fader exists")
+            .flash = None;
+        app.update();
+        assert_eq!(effect(&mut app, flashed), None);
     }
 }

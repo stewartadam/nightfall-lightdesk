@@ -84,7 +84,7 @@ The host ignores binary frames from the client and logs text it can't parse.
 
 ## Messages the engine sends
 
-Every frame the engine sends has the same layout: one discriminator byte, then a CBOR map with a `type` field naming the message and a `data` field holding its payload. Each domain defines its messages as one Rust enum, such as `EngineClientMessage`, `DeskWsMessage`, or `FixtureWsMessage`, and the TypeScript types come from those enums (see [Shared message types come from Rust](#shared-message-types-come-from-rust)).
+Every frame the engine sends has the same layout: one discriminator byte, then a CBOR map with a `type` field naming the message and a `data` field holding its payload. Each domain defines its messages as one Rust enum, such as `EngineClientMessage`, `PlaybackWsMessage`, or `FixtureWsMessage`, and the TypeScript types come from those enums (see [Shared message types come from Rust](#shared-message-types-come-from-rust)).
 
 The discriminator puts each frame in one of three delivery classes:
 
@@ -346,7 +346,10 @@ The UI is served over plain HTTP, so anyone watching the network can read the PI
 | PIN pairing | `crates/websocket/src/pairing.rs` |
 | Parameter layout, keyframes, and deltas | `crates/fixtures/src/parameter_state.rs`, `crates/fixtures/src/websocket.rs` |
 | Watched DMX universe channels | `crates/fixtures/src/universe_stream.rs` |
-| `ActiveInstances`, `Controls`, and `LayerStack` | `crates/desk/src/websocket/` |
+| `ActiveInstances` | `crates/clips/src/websocket/playbacks.rs` |
+| `Faders` and `MasterDefinitions` | `crates/controls/src/websocket.rs` |
+| `LayerStack` | `crates/fixtures/src/layer_stack.rs` |
+| `Metrics` | `crates/engine/src/metrics.rs` |
 | Browser demo adapter | `crates/browser-runtime/src/lib.rs` |
 | Transport worker | `webui/lib/engine-runtime-worker-core.ts` |
 | Parameter stream rebuild and drift checks | `webui/lib/parameter-stream.ts` |

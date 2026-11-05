@@ -7,7 +7,6 @@
  */
 
 use bevy::prelude::*;
-use nightfall_desk::prelude::*;
 use nightfall_engine::prelude::*;
 
 /// Handle quit commands by requesting shutdown and emitting `AppExit`.
@@ -15,13 +14,13 @@ pub fn handle_events(
     mut showfile_save_state: super::showfile_events::ShowfileSaveState,
     current_showfile: Res<super::showfile_events::CurrentShowfile>,
     mut clean_snapshot_hash: ResMut<super::showfile_events::ShowfileCleanSnapshotHash>,
-    mut events: MessageReader<CommandEnvelope<DeskCommand>>,
+    mut events: MessageReader<CommandEnvelope<EngineCommand>>,
     mut quit_event: MessageWriter<AppExit>,
     mut responder: CommandResponder,
 ) {
     // Check if engine was instructed to quit
     for event in events.read() {
-        if let DeskCommand::Quit = &event.command {
+        if let EngineCommand::Quit = &event.command {
             tracing::info!("Requesting application shutdown");
             if let Err(error) = super::showfile_events::save_draft_showfile_if_dirty(
                 &mut showfile_save_state,

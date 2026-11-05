@@ -265,8 +265,6 @@ dependencies = [
  "nightfall-config",
  "nightfall-controls",
  "nightfall-cues",
- "nightfall-desk",
- "nightfall-desk-audio",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-library",
@@ -314,6 +312,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "typeshare",
  "uuid",
  "zip",
 ]
@@ -327,7 +326,6 @@ dependencies = [
  "jiff",
  "nightfall",
  "nightfall-config",
- "nightfall-desk",
  "nightfall-engine",
  "nightfall-websocket",
  "nightfall-workspace-hack",
@@ -5348,7 +5346,6 @@ dependencies = [
  "nightfall-clips",
  "nightfall-composition",
  "nightfall-compositor",
- "nightfall-desk",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixtures",
@@ -5360,6 +5357,7 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
+ "tracing",
  "uuid",
  "wasm-bindgen",
  "web-sys",
@@ -5389,15 +5387,19 @@ dependencies = [
 name = "nightfall-clips"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "async-channel",
  "bevy_app",
  "bevy_ecs",
+ "criterion",
  "moonshine-kind",
  "nightfall",
  "nightfall-actions",
+ "nightfall-cmd-parse",
  "nightfall-compositor",
  "nightfall-engine",
  "nightfall-fixtures",
  "nightfall-instances",
+ "nightfall-io",
  "nightfall-playback-planner",
  "nightfall-selection-runtime",
  "nightfall-tempo",
@@ -5432,16 +5434,17 @@ name = "nightfall-composition"
 version = "0.1.0-alpha.5"
 dependencies = [
  "bevy_app",
+ "bevy_ecs",
  "nightfall-actions",
  "nightfall-boards",
  "nightfall-clips",
  "nightfall-controls",
  "nightfall-cues",
- "nightfall-desk",
  "nightfall-engine",
  "nightfall-fixtures",
  "nightfall-flow",
  "nightfall-fx",
+ "nightfall-io",
  "nightfall-macros",
  "nightfall-programming",
  "nightfall-references",
@@ -5459,6 +5462,7 @@ name = "nightfall-compositor"
 version = "0.1.0"
 dependencies = [
  "bevy_app",
+ "bevy_diagnostic",
  "bevy_ecs",
  "moonshine-kind",
  "nightfall",
@@ -5536,7 +5540,6 @@ dependencies = [
  "nightfall-clips",
  "nightfall-cmd-parse",
  "nightfall-compositor",
- "nightfall-desk",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-model",
@@ -5559,58 +5562,6 @@ dependencies = [
  "typeshare",
  "uuid",
  "web-time",
-]
-
-[[package]]
-name = "nightfall-desk"
-version = "0.1.0-alpha.5"
-dependencies = [
- "async-channel",
- "bevy_app",
- "bevy_diagnostic",
- "bevy_ecs",
- "bevy_platform",
- "criterion",
- "minicbor-serde",
- "moonshine-kind",
- "netwatcher",
- "nightfall",
- "nightfall-clips",
- "nightfall-cmd-parse",
- "nightfall-compositor",
- "nightfall-controls",
- "nightfall-dmx",
- "nightfall-engine",
- "nightfall-fixture-model",
- "nightfall-fixtures",
- "nightfall-framepace",
- "nightfall-fx",
- "nightfall-instances",
- "nightfall-io",
- "nightfall-lookahead",
- "nightfall-programming",
- "nightfall-undo",
- "nightfall-workspace-hack",
- "serde",
- "serde_json",
- "tracing",
- "tracing-subscriber",
- "typeshare",
- "uuid",
- "web-time",
-]
-
-[[package]]
-name = "nightfall-desk-audio"
-version = "0.1.0-alpha.5"
-dependencies = [
- "bevy_app",
- "bevy_ecs",
- "nightfall-audio",
- "nightfall-desk",
- "nightfall-engine",
- "nightfall-workspace-hack",
- "tracing",
 ]
 
 [[package]]
@@ -5651,6 +5602,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "typeshare",
  "uuid",
  "web-time",
@@ -5756,7 +5708,6 @@ dependencies = [
  "nightfall-clips",
  "nightfall-cmd-parse",
  "nightfall-compositor",
- "nightfall-desk",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-model",
@@ -5785,6 +5736,7 @@ name = "nightfall-framepace"
 version = "0.1.0-alpha.5"
 dependencies = [
  "bevy_app",
+ "bevy_diagnostic",
  "bevy_ecs",
  "bevy_reflect",
  "nightfall-engine",
@@ -5798,17 +5750,18 @@ dependencies = [
 name = "nightfall-fx"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "async-channel",
  "bevy_app",
  "bevy_ecs",
  "bevy_state",
  "criterion",
  "enum_dispatch",
+ "minicbor-serde",
  "moonshine-kind",
  "nightfall",
  "nightfall-clips",
  "nightfall-cmd-parse",
  "nightfall-compositor",
- "nightfall-desk",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-model",
@@ -5830,6 +5783,7 @@ dependencies = [
  "tracing",
  "typeshare",
  "uuid",
+ "web-time",
 ]
 
 [[package]]
@@ -5844,7 +5798,6 @@ dependencies = [
  "nightfall-clips",
  "nightfall-cmd-parse",
  "nightfall-compositor",
- "nightfall-desk",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-model",
@@ -6013,9 +5966,14 @@ dependencies = [
 name = "nightfall-io"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "async-channel",
+ "bevy_app",
  "bevy_ecs",
+ "minicbor-serde",
  "netdev",
+ "netwatcher",
  "nightfall-dmx",
+ "nightfall-engine",
  "nightfall-workspace-hack",
  "serde",
  "serde_json",
@@ -6101,6 +6059,7 @@ version = "0.1.0-alpha.5"
 dependencies = [
  "artnet_protocol",
  "bevy_app",
+ "bevy_diagnostic",
  "bevy_ecs",
  "nightfall-dmx",
  "nightfall-engine",
@@ -6116,6 +6075,7 @@ name = "nightfall-output-sacn"
 version = "0.1.0-alpha.5"
 dependencies = [
  "bevy_app",
+ "bevy_diagnostic",
  "bevy_ecs",
  "nightfall-dmx",
  "nightfall-engine",
@@ -6141,8 +6101,10 @@ dependencies = [
  "nightfall-service-host",
  "nightfall-workspace-hack",
  "nusb",
+ "serde",
  "tokio",
  "tracing",
+ "typeshare",
 ]
 
 [[package]]
@@ -6355,7 +6317,6 @@ dependencies = [
  "nightfall-cmd-parse",
  "nightfall-compositor",
  "nightfall-cues",
- "nightfall-desk",
  "nightfall-dmx",
  "nightfall-engine",
  "nightfall-fixture-model",
@@ -6384,10 +6345,13 @@ dependencies = [
 name = "nightfall-undo"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "async-channel",
  "bevy_app",
  "bevy_ecs",
  "dyn-clone",
+ "minicbor-serde",
  "nightfall",
+ "nightfall-cmd-parse",
  "nightfall-engine",
  "nightfall-workspace-hack",
  "serde",
@@ -6449,6 +6413,7 @@ dependencies = [
  "tower-http 0.7.1",
  "tower-service",
  "tracing",
+ "typeshare",
  "uuid",
 ]
 
@@ -6462,7 +6427,6 @@ dependencies = [
  "arrayvec",
  "axum",
  "bevy_ecs",
- "bevy_platform",
  "bevy_reflect",
  "bevy_reflect_derive",
  "bevy_time",
@@ -6474,6 +6438,7 @@ dependencies = [
  "byteorder",
  "cc",
  "chrono",
+ "concurrent-queue",
  "cranelift-bitset",
  "crc32fast",
  "crossbeam-channel",

@@ -11,14 +11,14 @@ use nightfall::prelude::*;
 use nightfall_clips::{Clip, ClipCommand, ClipOperation, MaterializedClip};
 use nightfall_clips::{InstanceIndex, Source, clip_live_state};
 use nightfall_engine::prelude::*;
-use nightfall_instances::{InstanceControlUpdate, InstanceControls, InstanceId};
+use nightfall_instances::{HeldButtonEffect, InstanceControlUpdate, InstanceControls, InstanceId};
 use serde::{Deserialize, Serialize};
 
 use crate::masters::{Master, MasterCommand, MasterMode, MasterUpdate};
 
 mod held_buttons;
 
-pub use held_buttons::{HeldButtonEffect, HeldButtonEffects, resolve_held_button_effects};
+pub use held_buttons::resolve_held_button_effects;
 
 const FADER_EPSILON: f32 = 0.0001;
 pub const DEFAULT_FADER_COUNT: usize = 10;
@@ -760,7 +760,7 @@ impl Faders {
         materialized_clips: &Query<&MaterializedClip>,
         instance_index: &InstanceIndex,
         controls_query: &Query<&InstanceControls>,
-        held_buttons: &HeldButtonEffects,
+        held_buttons: &Query<&HeldButtonEffect>,
     ) -> Vec<FaderSnapshot> {
         self.faders
             .iter()
@@ -801,7 +801,8 @@ impl Faders {
                     is_flashing: fader.flash.is_some(),
                     held_button: runtime
                         .attached_instance_id
-                        .and_then(|instance_id| held_buttons.get(&instance_id)),
+                        .and_then(|instance_id| instance_index.get(&instance_id))
+                        .and_then(|entity| held_buttons.get(entity).ok().copied()),
                 }
             })
             .collect()
@@ -2616,7 +2617,6 @@ mod tests {
 
         let mut app = flash_app(FaderAssignment::Clip(5), FaderButtonMode::Swop);
         spawn_clip(&mut app, 5, Some(Source::Fx(uuid::Uuid::nil())), false);
-        app.init_resource::<HeldButtonEffects>();
         app.add_systems(
             Update,
             (

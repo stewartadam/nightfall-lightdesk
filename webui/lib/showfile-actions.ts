@@ -22,33 +22,33 @@ export type OpenShowfileSelection =
   | { type: "draft"; showfileName: string }
   | { type: "revision"; showfileName: string; revisionName: string };
 
-/** Sends a DeskCommand through the websocket showfile action service. */
-function sendDeskCommand(command: types.DeskCommand): void {
-  commandClient.emit("DeskCommand", command);
+/** Sends a ShowfileCommand through the websocket showfile action service. */
+function sendShowfileCommand(command: types.ShowfileCommand): void {
+  commandClient.emit("ShowfileCommand", command);
 }
 
-/** Sends a DeskCommand and waits for the backend command result. */
-async function sendDeskCommandAndAwait(
-  command: types.DeskCommand,
+/** Sends a ShowfileCommand and waits for the backend command result. */
+async function sendShowfileCommandAndAwait(
+  command: types.ShowfileCommand,
 ): Promise<void> {
-  const result = await commandClient.invoke("DeskCommand", command);
+  const result = await commandClient.invoke("ShowfileCommand", command);
   requireCommandSuccess(result);
 }
 
 /** Builds a plain showfile save command. */
-export function saveShowfileCommand(): types.DeskCommand {
+export function saveShowfileCommand(): types.ShowfileCommand {
   return { type: "SaveShowfile" };
 }
 
 /** Builds a save command targeting a named showfile folder. */
-export function saveNamedShowfileCommand(name: string): types.DeskCommand {
+export function saveNamedShowfileCommand(name: string): types.ShowfileCommand {
   return { type: "SaveNamedShowfile", data: name };
 }
 
 /** Returns the command payload for starting a new showfile. */
 function newShowfileCommand(
   options?: types.NewShowfileOptions,
-): types.DeskCommand {
+): types.ShowfileCommand {
   return options
     ? { type: "NewNamedShowfile", data: options }
     : { type: "NewShowfile" };
@@ -56,42 +56,42 @@ function newShowfileCommand(
 
 /** Starts a new showfile through the backend. */
 export function newShowfile(options?: types.NewShowfileOptions): void {
-  sendDeskCommand(newShowfileCommand(options));
+  sendShowfileCommand(newShowfileCommand(options));
 }
 
 /** Starts a new showfile and resolves after the backend confirms it completed. */
 export async function newShowfileAndAwait(
   options?: types.NewShowfileOptions,
 ): Promise<void> {
-  await sendDeskCommandAndAwait(newShowfileCommand(options));
+  await sendShowfileCommandAndAwait(newShowfileCommand(options));
 }
 
 /** Saves the current showfile through the backend. */
 export function saveShowfile(): void {
-  sendDeskCommand(saveShowfileCommand());
+  sendShowfileCommand(saveShowfileCommand());
 }
 
 /** Imports selected showfile domains through the backend. */
 export function importShowfile(options: types.ShowfileImportOptions): void {
-  sendDeskCommand({ type: "ImportShowfile", data: options });
+  sendShowfileCommand({ type: "ImportShowfile", data: options });
 }
 
 /** Sends a showfile load command for the selected showfile name. */
 export function loadShowfileName(name: string): void {
   const { command } = showfileLoadCommandForName(name);
-  sendDeskCommand(command);
+  sendShowfileCommand(command);
 }
 
 /** Loads a showfile and resolves after the backend confirms the load completed. */
 export async function loadShowfileNameAndAwait(name: string): Promise<void> {
   const { command, showfileName } = showfileLoadCommandForName(name);
-  await sendDeskCommandAndAwait(command);
+  await sendShowfileCommandAndAwait(command);
   persistCurrentShowfileName(showfileName);
 }
 
 /** Loads a recoverable draft showfile through the backend. */
 export function loadDraftShowfile(showfileName: string): void {
-  sendDeskCommand({
+  sendShowfileCommand({
     type: "LoadDraftShowfile",
     data: showfileName,
   });
@@ -101,7 +101,7 @@ export function loadDraftShowfile(showfileName: string): void {
 export async function loadDraftShowfileAndAwait(
   showfileName: string,
 ): Promise<void> {
-  await sendDeskCommandAndAwait({
+  await sendShowfileCommandAndAwait({
     type: "LoadDraftShowfile",
     data: showfileName,
   });
@@ -110,7 +110,7 @@ export async function loadDraftShowfileAndAwait(
 
 /** Discards a recoverable draft showfile through the backend. */
 export function discardDraftShowfile(showfileName: string): void {
-  sendDeskCommand({
+  sendShowfileCommand({
     type: "DiscardDraftShowfile",
     data: showfileName,
   });
@@ -120,7 +120,7 @@ export function discardDraftShowfile(showfileName: string): void {
 export async function discardDraftShowfileAndAwait(
   showfileName: string,
 ): Promise<void> {
-  await sendDeskCommandAndAwait({
+  await sendShowfileCommandAndAwait({
     type: "DiscardDraftShowfile",
     data: showfileName,
   });
@@ -130,7 +130,7 @@ export async function discardDraftShowfileAndAwait(
 export async function deleteShowfileAndAwait(
   showfileName: string,
 ): Promise<void> {
-  await sendDeskCommandAndAwait({
+  await sendShowfileCommandAndAwait({
     type: "DeleteShowfile",
     data: showfileName,
   });
@@ -140,7 +140,7 @@ export async function deleteShowfileAndAwait(
 export async function restoreDeletedShowfileAndAwait(
   trashEntryId: string,
 ): Promise<void> {
-  await sendDeskCommandAndAwait({
+  await sendShowfileCommandAndAwait({
     type: "RestoreDeletedShowfile",
     data: trashEntryId,
   });
@@ -148,7 +148,7 @@ export async function restoreDeletedShowfileAndAwait(
 
 /** Permanently removes every deleted show held in the backend trash. */
 export async function emptyShowfileTrashAndAwait(): Promise<void> {
-  await sendDeskCommandAndAwait({ type: "EmptyShowfileTrash" });
+  await sendShowfileCommandAndAwait({ type: "EmptyShowfileTrash" });
 }
 
 /** Load a backup revision into working state without replacing its saved showfile. */
@@ -156,7 +156,7 @@ export async function loadShowfileRevisionAndAwait(
   showfileName: string,
   revisionName: string,
 ): Promise<void> {
-  await sendDeskCommandAndAwait({
+  await sendShowfileCommandAndAwait({
     type: "LoadShowfileRevision",
     data: { showfileName, revisionName },
   });

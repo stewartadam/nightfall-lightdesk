@@ -48,6 +48,10 @@ name = "frame_output"
 harness = false
 
 [[bench]]
+name = "layer_stack"
+harness = false
+
+[[bench]]
 name = "vdim"
 harness = false
 

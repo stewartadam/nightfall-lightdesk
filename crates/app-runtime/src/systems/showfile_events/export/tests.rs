@@ -361,7 +361,7 @@ fn all_references_reload_without_the_original_libraries() {
     let previous_show = nightfall::active_show_data_dir();
     let isolated = tempfile::tempdir().unwrap();
     nightfall::set_nightfall_data_dir(Some(isolated.path().to_owned()));
-    use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
+    use nightfall_engine::logging::{LogConfig, TracingTarget};
     let config = LogConfig::new(
         |_| Ok(()),
         std::sync::Arc::new(std::sync::RwLock::new(TracingTarget::default())),

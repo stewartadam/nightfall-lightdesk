@@ -66,7 +66,7 @@ The following items are deliberately left out:
 | Mode, target beat, and grace window | `crates/tempo/src/lib.rs` |
 | Armed launches and which origins wait | `crates/clips/src/launch_quantize.rs` |
 | Arming, firing, and **Launch armed clips now** | `crates/clips/src/playback/clip_events.rs` |
-| Messages to clients | `crates/desk/src/websocket/desk_state.rs` |
+| Messages to clients | `crates/clips/src/websocket.rs` |
 | Dropping armed launches on show load | `crates/app-runtime/src/systems/showfile_events/load.rs` |
 | Macro statement origin | `crates/macros/src/runner.rs` |
 

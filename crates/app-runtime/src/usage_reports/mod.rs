@@ -29,12 +29,12 @@ use std::{
 
 use bevy::{ecs::system::RunSystemOnce, prelude::*};
 use events::Hardware;
-use nightfall_desk::prelude::{GraphicsReport, ReportedGraphics, TelemetryState};
 use nightfall_fixtures::prelude::{ConsoleDmxAddresses, OutputRouting};
 use rustc_hash::FxHasher;
 use schedule::Schedule;
 use show::{FixtureOrigin, PatchedOutputs, ShowSummary, UsageEvent};
 
+use crate::telemetry::{GraphicsReport, ReportedGraphics, TelemetryState};
 use crate::{
     HostShell,
     systems::showfile_events::{CurrentShowfile, ShowfileSaveState},
@@ -418,7 +418,7 @@ mod tests {
     fn summarizes_a_running_show() {
         use std::sync::{Arc, RwLock};
 
-        use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
+        use nightfall_engine::logging::{LogConfig, TracingTarget};
 
         let log_config =
             LogConfig::new(|_| Ok(()), Arc::new(RwLock::new(TracingTarget::default())));

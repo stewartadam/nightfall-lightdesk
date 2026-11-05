@@ -18,6 +18,7 @@
 #![warn(missing_docs)]
 
 mod actions;
+pub mod ast_conv;
 mod command;
 mod instance_index;
 pub mod launch_quantize;
@@ -27,6 +28,7 @@ pub mod playback;
 mod source_reference;
 mod source_routing;
 mod undo;
+pub mod websocket;
 
 pub use actions::{
     CLIP_BACK_ACTION_ID, CLIP_GO_ACTION_ID, CLIP_GOTO_ACTION_ID, CLIP_LAUNCH_ARMED_ACTION_ID,

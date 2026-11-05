@@ -1892,7 +1892,6 @@ fn process_actions_directly_unlinks_changed_elapsed_start_clip() {
 fn changed_elapsed_start_clip_flushes_stale_sequence_before_replay() {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
-    app.add_message::<CommandEnvelope<DeskCommand>>();
     app.add_message::<CommandEnvelope<CueCommand>>();
     app.add_message::<EngineOperationEnvelope<EvalOperation>>();
     app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
@@ -2959,7 +2958,7 @@ fn process_actions_replays_desk_eval_actions_after_dispatch_desk_eval_delete() {
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<TimelineCommandOrigins>();
     nightfall_engine::protocol::dispatch_ast::register_converter::<
-        nightfall_desk::ast_conv::DeskAstConverter,
+        nightfall_clips::ast_conv::ClipAstConverter,
     >();
     app.add_systems(
         Update,
@@ -3060,7 +3059,7 @@ fn process_actions_replays_start_after_dispatch_desk_eval_stop_delete() {
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<TimelineCommandOrigins>();
     nightfall_engine::protocol::dispatch_ast::register_converter::<
-        nightfall_desk::ast_conv::DeskAstConverter,
+        nightfall_clips::ast_conv::ClipAstConverter,
     >();
     app.add_systems(
         Update,
@@ -3715,7 +3714,7 @@ fn process_actions_tracks_desk_eval_clip_actions() {
     app.insert_resource(FixtureDataProviderExt::default());
     app.init_resource::<TimelineCommandOrigins>();
     nightfall_engine::protocol::dispatch_ast::register_converter::<
-        nightfall_desk::ast_conv::DeskAstConverter,
+        nightfall_clips::ast_conv::ClipAstConverter,
     >();
     app.add_systems(
         Update,

@@ -9,12 +9,6 @@
 import type * as types from "../../types";
 import type * as flowTypes from "../../types/index";
 
-/** Desk command echo message emitted using the websocket envelope shape. */
-export type DeskCommandWsMessage = {
-  type: "DeskCommand";
-  data: types.DeskCommand;
-};
-
 /** Step FX definitions are emitted by the backend but are not yet typeshared. */
 export type StepFxDefinitionsWsMessage = {
   type: "StepFxDefinitions";
@@ -103,24 +97,28 @@ export type AnyCommand =
   | types.BlueprintCommand
   | types.BoardCommand
   | types.CueCommand
-  | types.DeskCommand
+  | types.LogCommand
+  | types.ShowfileCommand
   | types.EngineCommand
+  | types.ExternalControlCommand
   | types.ClipCommand
   | flowTypes.FlowCommand
   | types.FixtureCommand
   | types.FxCommand
   | types.FxModuleCommand
   | types.GroupCommand
+  | types.IoSettingsCommand
   | types.MacroCommand
   | types.PanelLayoutCommand
   | types.ParameterStreamSettingsCommand
   | types.ProgrammerCommand
   | types.ProgrammingSettingsCommand
+  | types.RouteValidationCommand
   | types.SceneObjectCommand
-  | types.SettingsCommand
   | types.ShowfileSettingsCommand
   | types.FaderCommand
   | types.StepFxCommand
+  | types.TelemetryCommand
   | types.TempoCommand
   | types.TimecodeCommand
   | types.TimelineCommand
@@ -129,24 +127,33 @@ export type AnyCommand =
 
 /** Union of websocket payloads handled on the main thread. */
 export type AnyWsMessage =
+  | types.AudioWsMessage
   | types.BoardWsMessage
+  | types.ClipWsMessage
   | types.ControlsWsMessage
   | types.CueWsMessage
+  | types.DefinitionWsMessage
+  | types.ExternalControlWsMessage
+  | types.IoWsMessage
   | types.MacroWsMessage
   | Exclude<types.FixtureWsMessage, { type: "ParameterState" }>
   | ParameterStateWsMessage
   | types.FixtureLibraryWsMessage
   | types.ObjectLibraryWsMessage
   | flowTypes.FlowWsMessage
-  | Exclude<types.DeskWsMessage, { type: "LayerStack" }>
+  | types.PlaybackWsMessage
+  | types.MetricsWsMessage
+  | types.NetworkOutputWsMessage
   | LayerStackWsMessage
   | types.TimelineWsMessage
   | TimelineAudioDirectiveWsMessage
   | types.ProgrammerWsMessage
   | StepFxDefinitionsWsMessage
+  | types.StepFxPreviewWsMessage
   | types.FxWsMessage
   | types.FxModuleWsMessage
   | types.TempoWsMessage
+  | types.UndoWsMessage
   | types.TimecodeWsMessage
   | types.TimelineWsMessage
   | types.MidiWsMessage
@@ -154,7 +161,9 @@ export type AnyWsMessage =
   | types.OscWsMessage
   | types.ActionsWsMessage
   | types.EngineClientMessage
-  | DeskCommandWsMessage
+  | types.LogWsMessage
   | types.SceneObjectWsMessage
   | types.ReferenceWsMessage
+  | types.TelemetryWsMessage
+  | types.UsbDmxWsMessage
   | AnyCommand;
