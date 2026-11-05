@@ -18,6 +18,7 @@ import { loadEnvFile } from "node:process";
 import { parseEnv } from "node:util";
 import { expand } from "dotenv-expand";
 import { SERVICE_SELECTORS } from "./dashboard-client.mjs";
+import { createRequestGuard, parseAllowedOrigins } from "./request-guard.mjs";
 import { createStateStream } from "./state-stream.mjs";
 import { createWorktree } from "./worktree-create.mjs";
 import { removeWorktree } from "./worktree-remove.mjs";
@@ -38,6 +39,12 @@ const DASHBOARD_PORT = Number.parseInt(
 const DASHBOARD_HOST =
   process.env.NIGHTFALL_WORKTREE_DASHBOARD_HOST ?? "127.0.0.1";
 const DASHBOARD_ROOT = resolve(process.cwd());
+const checkRequest = createRequestGuard({
+  dashboardHost: DASHBOARD_HOST,
+  allowedOrigins: parseAllowedOrigins(
+    process.env.NIGHTFALL_WORKTREE_DASHBOARD_ALLOWED_ORIGINS,
+  ),
+});
 const LOG_DIR = join(tmpdir(), "nightfall-worktree-dashboard");
 const DEFAULT_BACKEND_STARTUP_CMDS = "fps 5";
 const FALLBACK_PRIMARY_BRANCHES = ["develop", "main"];
@@ -1476,10 +1483,15 @@ watchWorktreeMetadata().catch((error) => {
 const server = http.createServer(async (req, res) => {
   try {
     const method = req.method ?? "GET";
-    const url = new URL(
-      req.url ?? "/",
-      `http://${req.headers.host ?? "localhost"}`,
-    );
+    const access = checkRequest({
+      host: req.headers.host,
+      origin: req.headers.origin,
+    });
+    if (!access.allowed) {
+      textResponse(res, 403, access.reason ?? "Forbidden");
+      return;
+    }
+    const url = new URL(req.url ?? "/", "http://localhost");
 
     if (method === "GET" && url.pathname === "/") {
       textResponse(res, 200, dashboardApiInfo());
@@ -1717,7 +1729,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(DASHBOARD_PORT, DASHBOARD_HOST, () => {
-  const url = `http://${DASHBOARD_HOST}:${DASHBOARD_PORT}`;
+  const url = `http://${DASHBOARD_HOST}:${server.address().port}`;
   console.log(`nightfall worktree dashboard listening on ${url}`);
   console.log(`API endpoint: ${url}/api/worktrees`);
   console.log(
