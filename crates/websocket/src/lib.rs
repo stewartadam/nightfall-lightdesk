@@ -161,16 +161,7 @@ impl Plugin for WebsocketPlugin {
                 .in_set(EventHandling)
                 .after(nightfall_io::IoStateSync),
         );
-        app.add_systems(
-            Render,
-            external_control::commands::send_external_control_state_on_change.in_set(ClientOutput),
-        );
-        app.add_systems(
-            Update,
-            external_control::commands::handle_resync_state
-                .in_set(ResyncHandling)
-                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
-        );
+        app.add_resource_feed::<ExternalControlState>();
         app.add_systems(Update, notify_axum_shutdown_on_exit.in_set(EventHandling));
     }
 }

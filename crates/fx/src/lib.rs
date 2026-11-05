@@ -148,28 +148,13 @@ impl Plugin for FxPlugin {
         // WebSocket forwarding and sends owned by fx plugin
         app.add_systems(
             PostUpdate,
-            (
-                websocket::forward_fx_commands,
-                websocket::send_fx_on_change,
-                websocket::send_step_fx_on_change,
-                // Reads preview removals, which only last two updates.
-                preview_status::send_step_fx_previews_on_change,
-            )
-                .in_set(ClientFeedback),
+            websocket::forward_fx_commands.in_set(ClientFeedback),
         );
-        app.add_systems(
-            Render,
-            preview_status::reanchor_step_fx_previews.in_set(ClientOutput),
-        );
-
-        app.add_systems(
-            Update,
-            (
-                websocket::handle_resync_state,
-                preview_status::handle_resync_state,
-            )
-                .in_set(ResyncHandling),
-        );
+        app.add_client_feed::<websocket::FxFeed>()
+            .on_change(resource_changed::<DataProvider<fx::Fx>>);
+        app.add_client_feed::<websocket::StepFxFeed>()
+            .on_change(websocket::step_fx_changed);
+        preview_status::register(app);
     }
 }
 

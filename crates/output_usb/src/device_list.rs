@@ -26,32 +26,12 @@ enum UsbDmxWsMessage<'a> {
     AvailableUsbDmxDevices(&'a [UsbDmxDeviceInfo]),
 }
 
-/// Publishes the compatible USB DMX devices to clients.
-fn send_available_usb_dmx_devices(devices: &[UsbDmxDeviceInfo], broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &UsbDmxWsMessage::AvailableUsbDmxDevices(devices),
-    );
-    tracing::trace!(
-        count = devices.len(),
-        "Sending available USB DMX devices to websocket clients"
-    );
-}
-
-/// Publishes the device list whenever a hotplug refresh changes it.
-pub(crate) fn send_available_usb_dmx_devices_on_change(
-    devices: Res<AvailableUsbDmxDevices>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if devices.is_changed() {
-        send_available_usb_dmx_devices(&devices.0, &broadcaster);
+impl ResourceFeed for AvailableUsbDmxDevices {
+    /// Publishes the compatible USB DMX devices, refreshed on hotplug.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &UsbDmxWsMessage::AvailableUsbDmxDevices(&self.0),
+        );
     }
-}
-
-/// Sends the device list to a client that asked for a full resync.
-pub(crate) fn handle_resync_state(mut resync: ResyncReplies, devices: Res<AvailableUsbDmxDevices>) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_available_usb_dmx_devices(&devices.0, &broadcaster);
 }

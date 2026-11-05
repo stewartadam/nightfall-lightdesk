@@ -12,6 +12,7 @@
 use std::collections::HashSet;
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -22,8 +23,7 @@ mod playbacks;
 
 pub use playbacks::InstanceInfo;
 pub(crate) use playbacks::{
-    handle_resync_state as handle_playbacks_resync, refresh_playbacks_at_interval,
-    send_playbacks_on_change,
+    PlaybacksFeed, REFRESH_INTERVAL as PLAYBACKS_REFRESH_INTERVAL, playbacks_changed,
 };
 
 /// A clip definition as sent to clients, with whether it is running.
@@ -49,68 +49,54 @@ enum ClipWsMessage<'a> {
     ArmedLaunches(&'a [ArmedLaunch]),
 }
 
-/// Sends every clip definition, marking the clips that are running.
-fn send_clips(
-    clips: &Query<&Clip>,
-    materialized_clips: &Query<&MaterializedClip>,
-    broadcaster: &ClientEventSink,
-) {
-    let active_clip_ids: HashSet<u32> = materialized_clips
-        .iter()
-        .map(|materialized| materialized.clip_id)
-        .collect();
-    let clips: Vec<OutboundClipLocal> = clips
-        .iter()
-        .map(|clip| OutboundClipLocal {
-            clip: clip.clone(),
-            is_active: active_clip_ids.contains(&clip.identifiers.id),
-        })
-        .collect();
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &ClipWsMessage::ClipDefinitions(&clips),
-    );
-    tracing::trace!("Sending clip definitions to websocket clients");
+/// The clip definitions feed, marking the clips that are running.
+#[derive(SystemParam)]
+pub(crate) struct ClipsFeed<'w, 's> {
+    clips: Query<'w, 's, &'static Clip>,
+    materialized_clips: Query<'w, 's, &'static MaterializedClip>,
 }
 
-/// Publishes clip definitions when a playback starts or stops.
+impl ClientFeed for ClipsFeed<'static, 'static> {
+    /// Publishes every clip definition with whether it has an active playback.
+    fn publish(feed: &ClipsFeed<'_, '_>, sink: &ClientEventSink) {
+        let active_clip_ids: HashSet<u32> = feed
+            .materialized_clips
+            .iter()
+            .map(|materialized| materialized.clip_id)
+            .collect();
+        let clips: Vec<OutboundClipLocal> = feed
+            .clips
+            .iter()
+            .map(|clip| OutboundClipLocal {
+                clip: clip.clone(),
+                is_active: active_clip_ids.contains(&clip.identifiers.id),
+            })
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &ClipWsMessage::ClipDefinitions(&clips),
+        );
+    }
+}
+
+/// Run condition that passes when a clip is added or edited, for example renamed, or a playback
+/// starts or stops.
 ///
 /// Runs where removals are still visible, and consumes every removal so one removal does not
-/// trigger a send in the next update too.
-pub fn send_clips_on_change(
-    clips: Query<&Clip>,
-    materialized_clips: Query<&MaterializedClip>,
+/// pass in the next update too.
+pub(crate) fn clips_changed(
+    changed_clips: Query<(), Changed<Clip>>,
     added_materialized: Query<(), Added<MaterializedClip>>,
     mut removed_materialized: RemovedComponents<MaterializedClip>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let materialized_removed = !removed_materialized.is_empty();
-    removed_materialized.clear();
-    if added_materialized.is_empty() && !materialized_removed {
-        return;
-    }
-    tracing::trace!("Sending clips due to MaterializedClip change");
-    send_clips(&clips, &materialized_clips, &broadcaster);
-}
-
-/// Publishes clip definitions when any clip is added or edited, for example renamed.
-pub fn send_clips_on_clip_change(
-    clips: Query<&Clip>,
-    materialized_clips: Query<&MaterializedClip>,
-    changed_clips: Query<(), Changed<Clip>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if changed_clips.is_empty() {
-        return;
-    }
-    tracing::trace!("Sending clips due to Clip component change");
-    send_clips(&clips, &materialized_clips, &broadcaster);
+) -> bool {
+    let materialized_removed = removed_materialized.read().count() > 0;
+    materialized_removed || !added_materialized.is_empty() || !changed_clips.is_empty()
 }
 
 /// Echoes clip deletions to clients.
 ///
 /// Renames are not echoed, because the echo would arrive before the rename is known to have
-/// succeeded; [`send_clips_on_clip_change`] sends the full definitions after it instead.
+/// succeeded; [`ClipsFeed`] sends the full definitions after it instead.
 pub fn forward_clip_commands(
     mut events: MessageReader<CommandEnvelope<ClipCommand>>,
     broadcaster: Res<ClientEventSink>,
@@ -126,33 +112,14 @@ pub fn forward_clip_commands(
     }
 }
 
-/// Sends the live clip launches waiting for the next beat or bar.
-fn send_armed_launches(armed: &ArmedLaunches, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &ClipWsMessage::ArmedLaunches(&armed.status()),
-    );
-}
-
-/// Publishes armed launches when a launch is armed, fires, or is cancelled.
-pub fn send_armed_launches_on_change(armed: Res<ArmedLaunches>, broadcaster: Res<ClientEventSink>) {
-    if armed.is_changed() {
-        send_armed_launches(&armed, &broadcaster);
+impl ResourceFeed for ArmedLaunches {
+    /// Publishes the live clip launches waiting for the next beat or bar.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &ClipWsMessage::ArmedLaunches(&self.status()),
+        );
     }
-}
-
-/// Sends clip definitions and armed launches to clients that asked for a full resync.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    clips: Query<&Clip>,
-    materialized_clips: Query<&MaterializedClip>,
-    armed: Res<ArmedLaunches>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_clips(&clips, &materialized_clips, &broadcaster);
-    send_armed_launches(&armed, &broadcaster);
 }
 
 #[cfg(test)]
@@ -170,7 +137,13 @@ mod tests {
         app.add_message::<ResyncRequested>();
         app.insert_resource(ClientEventSink::new(tx));
         app.init_resource::<ArmedLaunches>();
-        app.add_systems(Update, handle_resync_state);
+        app.add_systems(
+            Update,
+            (
+                resync_client_feed::<ClipsFeed>,
+                resync_client_feed::<ResourceFeedParam<ArmedLaunches>>,
+            ),
+        );
 
         let requester = Audience::Client(ClientId(7));
         app.world_mut().write_message(ResyncRequested {

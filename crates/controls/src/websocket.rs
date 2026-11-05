@@ -30,29 +30,30 @@ enum ControlsWsMessage<'a> {
     Faders(&'a [FaderSnapshot]),
 }
 
-/// Sends every master definition to clients.
-fn send_masters(masters: &DataProvider<Master>, broadcaster: &ClientEventSink) {
-    let masters: Vec<Master> = masters.iter().map(|entry| entry.value().clone()).collect();
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &ControlsWsMessage::MasterDefinitions(&masters),
-    );
-    tracing::trace!("Sending master definitions to websocket clients");
+/// The master definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct MastersFeed<'w> {
+    masters: Res<'w, DataProvider<Master>>,
 }
 
-/// Publishes master definitions when they change.
-pub fn send_masters_on_change(
-    masters: Res<DataProvider<Master>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if masters.is_changed() {
-        send_masters(&masters, &broadcaster);
+impl ClientFeed for MastersFeed<'static> {
+    /// Publishes every master definition.
+    fn publish(feed: &MastersFeed<'_>, sink: &ClientEventSink) {
+        let masters: Vec<Master> = feed
+            .masters
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &ControlsWsMessage::MasterDefinitions(&masters),
+        );
     }
 }
 
-/// State a fader snapshot is built from.
+/// The faders feed: every fader's backend-owned state, including the playback state it shows.
 #[derive(SystemParam)]
-pub struct FaderSnapshotParams<'w, 's> {
+pub struct FadersFeed<'w, 's> {
     faders: Res<'w, Faders>,
     masters: Res<'w, DataProvider<Master>>,
     clips: Query<'w, 's, &'static Clip>,
@@ -62,66 +63,46 @@ pub struct FaderSnapshotParams<'w, 's> {
     held_buttons: Query<'w, 's, &'static HeldButtonEffect>,
 }
 
-impl FaderSnapshotParams<'_, '_> {
-    /// Sends every fader's backend-owned state to clients.
-    fn send(&self, broadcaster: &ClientEventSink) {
-        let snapshots = self.faders.snapshots(
-            &self.clips,
-            &self.masters,
-            &self.materialized_clips,
-            &self.instance_index,
-            &self.controls,
-            &self.held_buttons,
+impl ClientFeed for FadersFeed<'static, 'static> {
+    /// Publishes every fader's backend-owned state.
+    fn publish(feed: &FadersFeed<'_, '_>, sink: &ClientEventSink) {
+        let snapshots = feed.faders.snapshots(
+            &feed.clips,
+            &feed.masters,
+            &feed.materialized_clips,
+            &feed.instance_index,
+            &feed.controls,
+            &feed.held_buttons,
         );
-        broadcaster.publish(
+        sink.publish(
             DISCRIMINATOR_NON_DROPPABLE,
             &ControlsWsMessage::Faders(&snapshots),
         );
-        tracing::trace!("Sending {} faders to websocket clients", snapshots.len());
     }
 }
 
-/// Publishes faders when their own state or the playback state they show changes.
+/// Run condition that passes when the faders' own state or the playback state they show changes.
 ///
-/// Runs where clip removals are still visible, so a fader whose clip stopped is resent.
-pub fn send_faders_on_change(
-    faders: FaderSnapshotParams,
+/// Every input is read on each run, so removals are consumed and none is reported twice. Runs
+/// where clip removals are still visible, so a fader whose clip stopped is resent.
+pub(crate) fn faders_changed(
+    faders: Res<Faders>,
+    masters: Res<DataProvider<Master>>,
     added_materialized_clips: Query<(), Added<MaterializedClip>>,
     mut removed_materialized_clips: RemovedComponents<MaterializedClip>,
     changed_instance_controls: Query<(), Changed<InstanceControls>>,
     changed_held_buttons: Query<(), Changed<HeldButtonEffect>>,
     mut removed_held_buttons: RemovedComponents<HeldButtonEffect>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let materialized_removed = !removed_materialized_clips.is_empty();
-    removed_materialized_clips.clear();
-    let held_buttons_removed = !removed_held_buttons.is_empty();
-    removed_held_buttons.clear();
-    let materialized_changed = !added_materialized_clips.is_empty() || materialized_removed;
-
-    if !faders.faders.is_changed()
-        && !faders.masters.is_changed()
-        && changed_instance_controls.is_empty()
-        && !materialized_changed
-        && changed_held_buttons.is_empty()
-        && !held_buttons_removed
-    {
-        return;
-    }
-    faders.send(&broadcaster);
-}
-
-/// Sends masters and faders to a client that asked for a full resync.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    masters: Res<DataProvider<Master>>,
-    faders: FaderSnapshotParams,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_masters(&masters, &broadcaster);
-    faders.send(&broadcaster);
+) -> bool {
+    let materialized_removed = removed_materialized_clips.read().count() > 0;
+    let held_buttons_removed = removed_held_buttons.read().count() > 0;
+    faders.is_changed()
+        || masters.is_changed()
+        || materialized_removed
+        || held_buttons_removed
+        || !added_materialized_clips.is_empty()
+        || !changed_instance_controls.is_empty()
+        || !changed_held_buttons.is_empty()
 }
 
 /// Deserializes and dispatches an untracked master level update from JSON.

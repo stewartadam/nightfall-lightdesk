@@ -8,7 +8,6 @@
 
 //! Websocket publication of the undo and redo stacks.
 
-use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -89,6 +88,13 @@ fn undo_stack_entry_message(order: usize, group: &UndoGroup) -> UndoStackEntryMe
     }
 }
 
+impl ResourceFeed for UndoManager {
+    /// Publishes the undo and redo stacks with their developer-visible group metadata.
+    fn publish(&self, sink: &ClientEventSink) {
+        send_undo_state(self, sink);
+    }
+}
+
 /// Sends the current undo and redo stacks to clients.
 fn send_undo_state(undo_manager: &UndoManager, broadcaster: &ClientEventSink) {
     let state = UndoStateMessage {
@@ -118,26 +124,10 @@ fn send_undo_state(undo_manager: &UndoManager, broadcaster: &ClientEventSink) {
     tracing::trace!("Sending undo state to websocket clients");
 }
 
-/// Publishes the undo state when the undo manager changes.
-pub fn send_undo_state_on_change(
-    undo_manager: Res<UndoManager>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if undo_manager.is_changed() {
-        send_undo_state(&undo_manager, &broadcaster);
-    }
-}
-
-/// Sends the undo state to clients that asked for a full resync.
-pub fn handle_resync_state(mut resync: ResyncReplies, undo_manager: Res<UndoManager>) {
-    if let Some(broadcaster) = resync.sink() {
-        send_undo_state(&undo_manager, &broadcaster);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use bevy_app::{App, Last, Update};
+    use bevy_ecs::prelude::*;
     use nightfall_engine::prelude::EnginePayload;
 
     use super::*;
@@ -183,7 +173,11 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(ClientEventSink::new(tx));
         app.init_resource::<UndoManager>();
-        app.add_systems(Update, send_undo_state_on_change);
+        app.add_systems(
+            Update,
+            publish_client_feed::<ResourceFeedParam<UndoManager>>
+                .run_if(resource_changed::<UndoManager>),
+        );
         app.add_systems(Last, crate::systems::finalize_detached_undo_groups);
 
         // Allow any startup frame noise, then assert no repeated UndoState traffic.
@@ -206,7 +200,11 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(ClientEventSink::new(tx));
         app.init_resource::<UndoManager>();
-        app.add_systems(Update, send_undo_state_on_change);
+        app.add_systems(
+            Update,
+            publish_client_feed::<ResourceFeedParam<UndoManager>>
+                .run_if(resource_changed::<UndoManager>),
+        );
 
         app.update();
         drain_channel(&rx);

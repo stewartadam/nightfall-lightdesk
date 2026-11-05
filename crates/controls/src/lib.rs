@@ -137,21 +137,11 @@ impl Plugin for ControlsPlugin {
                 .before(nightfall_fixtures::VirtualIntensity),
         );
 
-        app.add_systems(
-            PostUpdate,
-            // Reads clip removals, which only last two updates.
-            websocket::send_faders_on_change.in_set(ClientFeedback),
-        );
-        app.add_systems(
-            Render,
-            websocket::send_masters_on_change.in_set(ClientOutput),
-        );
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state
-                .in_set(ResyncHandling)
-                // The showfile identity follows the masters and faders it describes.
-                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
-        );
+        app.add_client_feed::<websocket::MastersFeed>()
+            .on_change(resource_changed::<DataProvider<masters::Master>>);
+        app.add_client_feed::<websocket::FadersFeed>()
+            // Faders refer to the masters sent before them.
+            .resync_after(resync_client_feed::<websocket::MastersFeed>)
+            .on_change(websocket::faders_changed);
     }
 }

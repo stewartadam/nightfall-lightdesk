@@ -9,6 +9,7 @@
 //! Websocket ingress for macro commands and publication of macros and their live runs.
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
@@ -33,53 +34,45 @@ fn sorted_macros(macros: &DataProvider<Macro>) -> Vec<Macro> {
     macros
 }
 
-/// Sends every macro definition to all clients.
-fn send_macros(macros: &DataProvider<Macro>, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &MacroWsMessage::MacroDefinitions(&sorted_macros(macros)),
-    );
+/// The macro definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct MacrosFeed<'w> {
+    macros: Res<'w, DataProvider<Macro>>,
 }
 
-/// Publishes macro definitions when they change.
-pub fn send_macros_on_change(macros: Res<DataProvider<Macro>>, broadcaster: Res<ClientEventSink>) {
-    if macros.is_changed() {
-        send_macros(&macros, &broadcaster);
+impl ClientFeed for MacrosFeed<'static> {
+    /// Publishes every macro definition in ID order.
+    fn publish(feed: &MacrosFeed<'_>, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &MacroWsMessage::MacroDefinitions(&sorted_macros(&feed.macros)),
+        );
     }
 }
 
-/// Publishes live runs when a run starts, moves to another statement or ends.
-pub fn send_macro_runs_on_change(
+impl ResourceFeed for MacroRuns {
+    /// Publishes every running macro body and the statement it is on.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &MacroWsMessage::MacroRunStates(&self.statuses()),
+        );
+    }
+}
+
+/// Run condition that passes when a run starts, moves to another statement or ends, and not
+/// when the runs change without changing what clients are shown.
+pub(crate) fn macro_runs_changed(
     runs: Res<MacroRuns>,
-    mut last_sent: Local<Option<Vec<MacroRunStatus>>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if !runs.is_changed() && last_sent.is_some() {
-        return;
+    mut last_passed: Local<Option<Vec<MacroRunStatus>>>,
+) -> bool {
+    if !runs.is_changed() && last_passed.is_some() {
+        return false;
     }
     let statuses = runs.statuses();
-    if last_sent.as_ref() == Some(&statuses) {
-        return;
+    if last_passed.as_ref() == Some(&statuses) {
+        return false;
     }
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &MacroWsMessage::MacroRunStates(&statuses),
-    );
-    *last_sent = Some(statuses);
-}
-
-/// Sends macros and live runs to clients that asked for a full resync.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    macros: Res<DataProvider<Macro>>,
-    runs: Res<MacroRuns>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_macros(&macros, &broadcaster);
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &MacroWsMessage::MacroRunStates(&runs.statuses()),
-    );
+    *last_passed = Some(statuses);
+    true
 }

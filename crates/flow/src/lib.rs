@@ -115,14 +115,10 @@ impl Plugin for FlowPlugin {
                 .chain()
                 .in_set(EventHandling),
         );
-        app.add_systems(
-            Render,
-            (
-                runtime::publish_runtime_deltas,
-                websocket::send_flows_on_change,
-            )
-                .in_set(ClientOutput),
-        );
+        app.add_systems(Render, runtime::publish_runtime_deltas.in_set(ClientOutput));
+        app.add_client_feed::<websocket::FlowsFeed>()
+            .on_change(resource_changed::<DataProvider<definition::FlowDefinition>>);
+        app.add_resource_feed::<nodes::FlowNodeRegistry>();
         app.add_systems(
             PostUpdate,
             websocket::forward_flow_commands.in_set(ClientFeedback),
@@ -139,10 +135,6 @@ impl Plugin for FlowPlugin {
         app.add_systems(
             Render,
             events::cleanup_released_flow_instances.in_set(VdimProcessing),
-        );
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
         );
 
         {

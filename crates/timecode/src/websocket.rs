@@ -10,10 +10,12 @@
 //!
 //! This module handles self-registration with the websocket infrastructure and
 //! owns all timecode-related websocket forwarding logic.
+
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
+use std::time::Duration;
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -37,9 +39,8 @@ struct OutboundTimecodeLocal {
     state: TimecodeState,
 }
 
-/// Last time droppable websocket data was sent (ms since epoch)
-static LAST_DROPPABLE_SEND_MS: AtomicU64 = AtomicU64::new(0);
-const DROPPABLE_INTERVAL_MS: u64 = (1000.0 / 10.0) as u64;
+/// How often the timecodes are sent.
+pub(crate) const SEND_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Returns the state published for a timecode that has no generator yet.
 fn default_timecode_state(timecode: &Timecode) -> TimecodeState {
@@ -66,72 +67,29 @@ fn collect_timecode_definitions(
     timecodes
 }
 
-/// Broadcasts timecode definitions and state to websocket clients at most once per
-/// [`DROPPABLE_INTERVAL_MS`].
-pub fn send_timecodes(
-    timecode_data_provider: Res<DataProvider<Timecode>>,
-    tc_generators: Query<&TimecodeGenerator>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    // Apply rate limit
-    let now_ms = web_time::SystemTime::now()
-        .duration_since(web_time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    let last_send = LAST_DROPPABLE_SEND_MS.load(std::sync::atomic::Ordering::Relaxed);
-    let within_rate_limit = now_ms.saturating_sub(last_send) < DROPPABLE_INTERVAL_MS;
-
-    if within_rate_limit {
-        return;
-    }
-    LAST_DROPPABLE_SEND_MS.store(now_ms, std::sync::atomic::Ordering::Relaxed);
-
-    publish_timecodes(&timecode_data_provider, &tc_generators, &broadcaster);
+/// The timecode definitions and generator state feed, sent every [`SEND_INTERVAL`] so running
+/// generators stay current in client views.
+#[derive(SystemParam)]
+pub(crate) struct TimecodesFeed<'w, 's> {
+    timecodes: Res<'w, DataProvider<Timecode>>,
+    generators: Query<'w, 's, &'static TimecodeGenerator>,
 }
 
-/// Publishes every timecode definition with its generator state to the sink's clients.
-fn publish_timecodes(
-    timecode_data_provider: &DataProvider<Timecode>,
-    tc_generators: &Query<&TimecodeGenerator>,
-    broadcaster: &ClientEventSink,
-) {
-    let generator_states: HashMap<uuid::Uuid, TimecodeState> = tc_generators
-        .iter()
-        .map(|generator| (generator.timecode.identifiers.uid, generator.state.clone()))
-        .collect();
-    let timecodes = collect_timecode_definitions(timecode_data_provider, &generator_states);
-
-    for entry in &timecodes {
-        tracing::trace!(
-            timecode_id = entry.timecode.identifiers.id,
-            timecode_uid = %entry.timecode.identifiers.uid,
-            state_timecode_id = entry.state.timecode_id,
-            is_active = entry.state.is_active,
-            current_time = ?entry.state.current_time,
-            "Broadcasting timecode state"
+impl ClientFeed for TimecodesFeed<'static, 'static> {
+    /// Publishes every timecode definition with its generator state as a snapshot, so a newer
+    /// one replaces one still queued.
+    fn publish(feed: &TimecodesFeed<'_, '_>, sink: &ClientEventSink) {
+        let generator_states: HashMap<uuid::Uuid, TimecodeState> = feed
+            .generators
+            .iter()
+            .map(|generator| (generator.timecode.identifiers.uid, generator.state.clone()))
+            .collect();
+        let timecodes = collect_timecode_definitions(&feed.timecodes, &generator_states);
+        sink.publish(
+            DISCRIMINATOR_DROPPABLE,
+            &TimecodeWsMessage::TimecodeDefinitions(&timecodes),
         );
     }
-    broadcaster.publish(
-        DISCRIMINATOR_DROPPABLE,
-        &TimecodeWsMessage::TimecodeDefinitions(&timecodes),
-    );
-    tracing::trace!(
-        count = timecodes.len(),
-        "Sending timecode definitions to websocket clients"
-    );
-}
-
-/// Handle ResyncState by sending all timecode generator state immediately
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    timecode_data_provider: Res<DataProvider<Timecode>>,
-    tc_generators: Query<&TimecodeGenerator>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    publish_timecodes(&timecode_data_provider, &tc_generators, &broadcaster);
 }
 
 #[cfg(test)]

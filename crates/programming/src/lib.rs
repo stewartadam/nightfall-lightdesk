@@ -95,31 +95,14 @@ impl Plugin for ProgrammingPlugin {
         app.init_resource::<GroupReferenceIndex>();
         app.publish_object_changes::<Blueprint>();
 
-        app.add_systems(
-            PostUpdate,
-            websocket::forward_programmer_commands.in_set(ClientFeedback),
-        );
-
-        app.add_systems(
-            Update,
-            (
-                websocket::handle_resync_state,
-                // The showfile identity follows the groups and Blueprints it describes.
-                definition_feeds::handle_resync_state.before(
-                    nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync,
-                ),
-            )
-                .in_set(ResyncHandling),
-        );
-        app.add_systems(
-            Render,
-            (
-                definition_feeds::send_groups_on_change,
-                definition_feeds::send_blueprints_on_change,
-                definition_feeds::send_blueprint_dependencies_on_change,
-            )
-                .in_set(ClientOutput),
-        );
+        app.add_client_feed::<websocket::ProgrammerFeed>()
+            .on_change(websocket::programmer_feed_changed);
+        app.add_client_feed::<definition_feeds::GroupsFeed>()
+            .on_change(resource_changed::<DataProvider<Group>>);
+        app.add_client_feed::<definition_feeds::BlueprintsFeed>()
+            .on_change(resource_changed::<DataProvider<Blueprint>>);
+        app.add_client_feed::<definition_feeds::BlueprintDependenciesFeed>()
+            .on_change(resource_changed::<BlueprintReferenceIndex>);
 
         app.init_resource::<Programmer>();
         app.init_resource::<events::StoreCueWorkflows>();

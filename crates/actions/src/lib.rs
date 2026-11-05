@@ -57,8 +57,8 @@ pub use mapping_mode::{
     ControllerMappingMode, ControllerMappingModeState, MAPPING_MODE_LEASE, MappingLeaseExpired,
 };
 use nightfall_engine::prelude::{
-    ClientDisconnected, ClientFeedback, CommandDeserializerRegistry, CommandIngressRouter,
-    EventHandling, InputHandling, PendingCommandExpansion, ResyncHandling, ResyncRequested,
+    ClientDisconnected, ClientFeedAppExt, ClientFeedback, CommandDeserializerRegistry,
+    CommandIngressRouter, EventHandling, InputHandling, PendingCommandExpansion, ResyncRequested,
     register_command_deserializer, register_ingress_command,
 };
 pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
@@ -104,7 +104,6 @@ impl Plugin for ActionsPlugin {
         app.add_systems(
             Update,
             (
-                websocket::handle_resync_state.in_set(ResyncHandling),
                 mapping_mode::release_disconnected_mapping_clients.in_set(EventHandling),
                 mapping_mode::expire_mapping_mode_leases
                     .in_set(EventHandling)
@@ -115,13 +114,13 @@ impl Plugin for ActionsPlugin {
         app.add_systems(
             PostUpdate,
             (
-                websocket::send_action_catalog_on_change,
                 websocket::send_client_action_invocations,
                 websocket::send_action_invocation_failures,
-                websocket::send_mapping_mode_on_change,
             )
                 .in_set(ClientFeedback),
         );
+        app.add_resource_feed::<ActionRegistry>();
+        app.add_resource_feed::<mapping_mode::ControllerMappingMode>();
         // Client invoke commands need the engine's command routing, which focused test apps
         // without the engine and client bridge plugins do not have.
         if app.world().contains_resource::<CommandIngressRouter>()

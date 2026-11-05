@@ -52,11 +52,7 @@ impl Plugin for TempoPlugin {
         app.configure_sets(Render, TempoUpdate.in_set(ClockUpdate));
         app.add_systems(Render, advance_show_tempo.in_set(TempoUpdate));
         app.add_systems(Update, handle_tempo_commands.in_set(EventHandling));
-        app.add_systems(Render, websocket::send_tempo_state.in_set(ClientOutput));
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
-        );
+        app.add_resource_feed_when::<ShowTempo, _>(websocket::tempo_send_is_due);
     }
 }
 

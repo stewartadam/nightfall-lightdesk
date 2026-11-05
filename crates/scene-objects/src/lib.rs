@@ -59,15 +59,8 @@ impl Plugin for SceneObjectPlugin {
         app.add_systems(Update, events::crud_events.in_set(EventHandling));
 
         // WebSocket forwarding and sends
-        app.add_systems(
-            Render,
-            websocket::send_scene_objects_on_change.in_set(ClientOutput),
-        );
-
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
-        );
+        app.add_client_feed::<websocket::SceneObjectsFeed>()
+            .on_change(resource_changed::<websocket::SceneObjectDataProvider>);
     }
 }
 

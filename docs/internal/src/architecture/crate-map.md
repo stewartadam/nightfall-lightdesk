@@ -174,6 +174,12 @@ To add a setting, add a field to its owner's section. Register a new section wit
 
 Each crate sends the client feed for the state it owns, so no crate gathers feeds from several plugins. For example, `clips` sends the running playbacks, `fixtures` sends the layer stack that the **Layers** panel shows, and `fx` sends the clock of each Step FX editor preview. A held fader Flash or Swop reaches every feed as a `HeldButtonEffect` component that `controls` puts on the playback it changes.
 
+A feed is declared once and registered with one call, which wires both directions: replaying the snapshot to clients that resync, and publishing it to every client when it changes.
+
+- A resource whose whole value is the snapshot implements `ResourceFeed` and is registered with `add_resource_feed`, which publishes when the resource changes. `add_resource_feed_when` takes a run condition instead, for a resource that changes every frame and needs deduplicating or throttling.
+- A snapshot built from several resources or queries is a `SystemParam` that implements `ClientFeed`, registered with `add_client_feed`. Its builder adds `on_change` with a run condition, `on_interval` for values that drift, and `resync_after` when a client must receive another feed's snapshot first, such as faders after masters.
+- Deltas, such as committed cue edits, stay hand-written systems in `ClientFeedback` beside the feed whose snapshot they amend.
+
 Metrics work the same way. Each crate registers and records its own Bevy diagnostics, such as the compositor's layer count or a timeline system's run time, and `engine` sends the smoothed value of every diagnostic, keyed by its path. A new measurement reaches the **All Diagnostics** list in the **Instrumentation** panel without any change to the feed.
 
 Running a line of the command language (`EngineCommand::Eval`), quitting, log filters, delayed commands, and user notifications live in `engine`, so any crate can use them. Each crate converts the command-language words it owns: `engine` converts `sleep`, `fps`, `quit`, and `log`, `showfile` converts `save`, `load`, and `new show`, and `clips` and `undo` convert theirs.

@@ -55,13 +55,6 @@ impl Plugin for InputLtcPlugin {
                 devices::refresh_audio_input_devices,
             ),
         );
-        app.add_systems(
-            Render,
-            websocket::send_audio_input_devices.in_set(ClientOutput),
-        );
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
-        );
+        app.add_resource_feed::<devices::AudioInputDevices>();
     }
 }

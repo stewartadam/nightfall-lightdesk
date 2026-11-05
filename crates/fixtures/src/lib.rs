@@ -338,21 +338,13 @@ impl Plugin for FixturePlugin {
         // WebSocket forwarding and sends owned by fixtures plugin
         app.add_systems(
             PostUpdate,
-            (
-                websocket::forward_fixture_commands,
-                // Reads the snapshot suppression messages written by fixture commands.
-                websocket::send_fixtures_on_change,
-            )
-                .in_set(ClientFeedback),
+            websocket::forward_fixture_commands.in_set(ClientFeedback),
         );
         app.add_systems(
             Render,
             (
                 universe_stream::send_dmx_universes.after(DmxOutput),
                 websocket::send_input_contribution_trace,
-                websocket::send_routes_on_change,
-                websocket::send_color_path_defaults_on_change,
-                websocket::send_route_validation_settings_on_change,
                 websocket::send_parameter_state.after(DmxOutput),
                 // Layer stack slots refer to the parameter layout published before it.
                 layer_stack::send_layer_stack_at_interval.after(websocket::send_parameter_state),
@@ -363,11 +355,21 @@ impl Plugin for FixturePlugin {
         app.add_systems(
             Update,
             (
-                websocket::handle_resync_state,
+                websocket::request_streams_on_resync,
                 layer_stack::handle_resync_state,
             )
                 .in_set(ResyncHandling),
         );
+        app.add_client_feed::<websocket::FixturesFeed>()
+            .on_change(websocket::fixtures_changed);
+        app.add_client_feed::<websocket::RoutesFeed>()
+            .resync_after(resync_client_feed::<websocket::FixturesFeed>)
+            .on_change(websocket::routes_changed);
+        app.add_client_feed::<websocket::ColorPathDefaultsFeed>()
+            .resync_after(resync_client_feed::<websocket::RoutesFeed>)
+            .on_change(resource_changed::<prelude::FixtureDataProviderExt>);
+        app.add_resource_feed::<prelude::RouteValidationSettings>()
+            .resync_after(resync_client_feed::<websocket::ColorPathDefaultsFeed>);
         app.add_systems(
             Update,
             // After update ingress, so a watch sent just before a disconnect cannot outlive it.

@@ -9,6 +9,7 @@
 //! WebSocket integration for flow commands and definitions.
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
 
@@ -44,7 +45,7 @@ pub enum FlowWsMessage<'a> {
 ///
 /// Note: CRUD commands (StoreFlow, RenameFlow, DeleteFlow) are intentionally NOT
 /// forwarded here because the command echo would be sent before we know if
-/// the operation succeeded. Instead, we rely on send_flows_on_change to send
+/// the operation succeeded. Instead, we rely on [`FlowsFeed`] to send
 /// full definitions after changes.
 pub fn forward_flow_commands(
     mut events: MessageReader<CommandEnvelope<FlowCommand>>,
@@ -52,62 +53,37 @@ pub fn forward_flow_commands(
 ) {
     // Drain the events to avoid them accumulating
     for _event in events.read() {
-        // CRUD commands are not forwarded - rely on send_flows_on_change instead
+        // CRUD commands are not forwarded; FlowsFeed sends the definitions instead
     }
 }
 
-/// Send flow definitions when DataProvider<FlowDefinition> changes.
-pub fn send_flows_on_change(
-    flow_provider: Res<DataProvider<FlowDefinition>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if flow_provider.is_changed() {
-        send_flows(flow_provider, broadcaster);
+/// The flow definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct FlowsFeed<'w> {
+    flows: Res<'w, DataProvider<FlowDefinition>>,
+}
+
+impl ClientFeed for FlowsFeed<'static> {
+    /// Publishes every flow definition.
+    fn publish(feed: &FlowsFeed<'_>, sink: &ClientEventSink) {
+        let flow_list: Vec<FlowDefinition> = feed
+            .flows
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FlowWsMessage::FlowDefinitions(&flow_list),
+        );
     }
 }
 
-/// Send flow definitions on resync.
-pub fn send_flows(
-    flow_provider: Res<DataProvider<FlowDefinition>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let flow_list: Vec<FlowDefinition> = flow_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FlowWsMessage::FlowDefinitions(&flow_list),
-    );
-}
-
-/// Handle ResyncState by sending flow definitions and node templates immediately.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    flow_provider: Res<DataProvider<FlowDefinition>>,
-    registry: Res<FlowNodeRegistry>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    // Send flow definitions
-    let flow_list: Vec<FlowDefinition> = flow_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FlowWsMessage::FlowDefinitions(&flow_list),
-    );
-
-    // Send node templates
-    let templates = registry.list();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FlowWsMessage::FlowNodeTemplates(&templates),
-    );
+impl ResourceFeed for FlowNodeRegistry {
+    /// Publishes every registered node template.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FlowWsMessage::FlowNodeTemplates(&self.list()),
+        );
+    }
 }

@@ -13,7 +13,8 @@
 //! `macro <id> start` command share one runner. See [`runner`] for how runs advance and how
 //! they group into undo steps.
 
-use bevy_app::{App, Plugin, PostUpdate, Update};
+use bevy_app::{App, Plugin, Update};
+use bevy_ecs::prelude::resource_changed;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
@@ -61,16 +62,10 @@ impl Plugin for MacrosPlugin {
                     .after(EventHandling)
                     .before(ResyncHandling),
                 command::handle_macro_commands.in_set(EventHandling),
-                websocket::handle_resync_state.in_set(ResyncHandling),
             ),
         );
-        app.add_systems(
-            PostUpdate,
-            (
-                websocket::send_macros_on_change,
-                websocket::send_macro_runs_on_change,
-            )
-                .in_set(ClientFeedback),
-        );
+        app.add_client_feed::<websocket::MacrosFeed>()
+            .on_change(resource_changed::<DataProvider<Macro>>);
+        app.add_resource_feed_when::<runner::MacroRuns, _>(websocket::macro_runs_changed);
     }
 }

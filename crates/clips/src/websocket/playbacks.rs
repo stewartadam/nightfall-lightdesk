@@ -21,13 +21,12 @@ use nightfall_instances::{
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use web_time::Instant;
 
 use crate::{Clip, MaterializedClip};
 
 /// How often the playbacks are sent again while nothing structural changes, so positions and
 /// transition progress stay current in client views.
-const REFRESH_INTERVAL: Duration = Duration::from_millis(100);
+pub(crate) const REFRESH_INTERVAL: Duration = Duration::from_millis(100);
 
 /// One running playback as shown to clients.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -103,16 +102,16 @@ type InstanceSnapshotData = (
 
 /// State the playbacks feed is built from.
 #[derive(SystemParam)]
-pub(crate) struct PlaybackSnapshotParams<'w, 's> {
+pub(crate) struct PlaybacksFeed<'w, 's> {
     playbacks: Query<'w, 's, InstanceSnapshotData>,
     materialized_clips: Query<'w, 's, &'static MaterializedClip>,
     clips: Query<'w, 's, &'static Clip>,
 }
 
-impl PlaybackSnapshotParams<'_, '_> {
+impl ClientFeed for PlaybacksFeed<'static, 'static> {
     /// Sends every running playback, with the priority and id of the clip each one plays.
-    fn send(&self, broadcaster: &ClientEventSink) {
-        let instances: Vec<InstanceInfo> = self
+    fn publish(feed: &PlaybacksFeed<'_, '_>, sink: &ClientEventSink) {
+        let instances: Vec<InstanceInfo> = feed
             .playbacks
             .iter()
             .map(
@@ -129,12 +128,12 @@ impl PlaybackSnapshotParams<'_, '_> {
                     release_marker,
                     held_button,
                 )| {
-                    let bound_clip = self
+                    let bound_clip = feed
                         .materialized_clips
                         .iter()
                         .find(|materialized| materialized.attached_instance == *instance_id)
                         .and_then(|materialized| {
-                            self.clips
+                            feed.clips
                                 .iter()
                                 .find(|clip| clip.identifiers.id == materialized.clip_id)
                                 .map(|clip| (materialized.clip_id, clip.priority))
@@ -176,13 +175,9 @@ impl PlaybackSnapshotParams<'_, '_> {
                 },
             )
             .collect();
-        broadcaster.publish(
+        sink.publish(
             DISCRIMINATOR_DROPPABLE,
             &PlaybackWsMessage::ActiveInstances(&instances),
-        );
-        tracing::trace!(
-            "Sending {} active instances to websocket clients",
-            instances.len()
         );
     }
 }
@@ -199,56 +194,19 @@ pub(crate) struct PlaybackChanges<'w, 's> {
     held_buttons_removed: RemovedComponents<'w, 's, HeldButtonEffect>,
 }
 
-impl PlaybackChanges<'_, '_> {
-    /// Reports whether a playback started, stopped, began releasing, or changed its level,
-    /// speed, metadata or held-button effect, consuming the removals so one stop does not
-    /// trigger a send next frame too.
-    fn any(&mut self) -> bool {
-        let removed = !self.removed.is_empty();
-        self.removed.clear();
-        let held_buttons_removed = !self.held_buttons_removed.is_empty();
-        self.held_buttons_removed.clear();
-        removed
-            || held_buttons_removed
-            || !self.added.is_empty()
-            || !self.released.is_empty()
-            || !self.controls.is_empty()
-            || !self.metadata.is_empty()
-            || !self.held_buttons.is_empty()
-    }
-}
-
-/// Sends the playbacks when one starts, stops, releases or changes.
+/// Run condition that passes when a playback starts, stops, begins releasing, or changes its
+/// level, speed, metadata or held-button effect.
 ///
-/// Runs where removals are still visible, so a stopped playback is never missed.
-pub(crate) fn send_playbacks_on_change(
-    playbacks: PlaybackSnapshotParams,
-    mut changes: PlaybackChanges,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if changes.any() {
-        playbacks.send(&broadcaster);
-    }
-}
-
-/// Sends the playbacks every [`REFRESH_INTERVAL`], after this frame's playback state was
-/// rendered, so positions and transition progress stay current in client views.
-pub(crate) fn refresh_playbacks_at_interval(
-    playbacks: PlaybackSnapshotParams,
-    mut last_sent: Local<Option<Instant>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if last_sent.is_some_and(|sent_at| sent_at.elapsed() < REFRESH_INTERVAL) {
-        return;
-    }
-    playbacks.send(&broadcaster);
-    *last_sent = Some(Instant::now());
-}
-
-/// Sends the playbacks to a client that asked for a full resync.
-pub(crate) fn handle_resync_state(mut resync: ResyncReplies, playbacks: PlaybackSnapshotParams) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    playbacks.send(&broadcaster);
+/// Runs where removals are still visible, so a stopped playback is never missed, and consumes
+/// the removals so one stop does not pass next update too.
+pub(crate) fn playbacks_changed(mut changes: PlaybackChanges) -> bool {
+    let removed = changes.removed.read().count() > 0;
+    let held_buttons_removed = changes.held_buttons_removed.read().count() > 0;
+    removed
+        || held_buttons_removed
+        || !changes.added.is_empty()
+        || !changes.released.is_empty()
+        || !changes.controls.is_empty()
+        || !changes.metadata.is_empty()
+        || !changes.held_buttons.is_empty()
 }

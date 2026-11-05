@@ -131,35 +131,17 @@ impl Plugin for ClipsPlugin {
 
         app.add_systems(
             PostUpdate,
-            (
-                crate::websocket::forward_clip_commands,
-                // Reads playback stops (MaterializedClip removals), which only last two updates.
-                crate::websocket::send_clips_on_change,
-                crate::websocket::send_armed_launches_on_change,
-                // Reads playback despawns, which only last two updates.
-                crate::websocket::send_playbacks_on_change,
-            )
-                .in_set(ClientFeedback),
+            crate::websocket::forward_clip_commands.in_set(ClientFeedback),
         );
-        app.add_systems(
-            Render,
-            (
-                crate::websocket::send_clips_on_clip_change,
-                crate::websocket::refresh_playbacks_at_interval,
-            )
-                .in_set(ClientOutput),
-        );
-        app.add_systems(
-            Update,
-            (
-                crate::websocket::handle_resync_state,
-                // Playbacks refer to the clips sent before them.
-                crate::websocket::handle_playbacks_resync,
-            )
-                .chain()
-                .in_set(ResyncHandling)
-                // The showfile identity follows the clips it describes.
-                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
-        );
+        // Both change conditions read removals, which only last two updates, so they run in
+        // ClientFeedback.
+        app.add_client_feed::<crate::websocket::ClipsFeed>()
+            .on_change(crate::websocket::clips_changed);
+        app.add_resource_feed::<ArmedLaunches>();
+        app.add_client_feed::<crate::websocket::PlaybacksFeed>()
+            // Playbacks refer to the clips sent before them.
+            .resync_after(resync_client_feed::<crate::websocket::ClipsFeed>)
+            .on_change(crate::websocket::playbacks_changed)
+            .on_interval(crate::websocket::PLAYBACKS_REFRESH_INTERVAL);
     }
 }

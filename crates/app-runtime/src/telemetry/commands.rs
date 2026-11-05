@@ -114,13 +114,7 @@ impl Plugin for TelemetryCommandsPlugin {
         app.init_resource::<ReportedGraphics>();
         register_client_command::<TelemetryCommand>(app, Undo::Skipped);
         app.add_systems(Update, handle_telemetry_commands.in_set(EventHandling));
-        app.add_systems(Render, send_telemetry_state_on_change.in_set(ClientOutput));
-        app.add_systems(
-            Update,
-            handle_resync_state
-                .in_set(ResyncHandling)
-                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
-        );
+        app.add_resource_feed::<TelemetryState>();
     }
 }
 
@@ -154,30 +148,14 @@ fn handle_telemetry_commands(
     }
 }
 
-/// Publishes host telemetry consent so every connected client shows the same choices.
-fn send_telemetry_state(state: &TelemetryState, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &TelemetryWsMessage::TelemetryState(state),
-    );
-}
-
-/// Publishes the telemetry state whenever a command, load, or save changes it.
-fn send_telemetry_state_on_change(
-    telemetry: Res<TelemetryState>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if telemetry.is_changed() {
-        send_telemetry_state(&telemetry, &broadcaster);
+impl ResourceFeed for TelemetryState {
+    /// Publishes host telemetry consent so every connected client shows the same choices.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &TelemetryWsMessage::TelemetryState(self),
+        );
     }
-}
-
-/// Sends the telemetry state to a client that asked for a full resync.
-fn handle_resync_state(mut resync: ResyncReplies, telemetry: Res<TelemetryState>) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_telemetry_state(&telemetry, &broadcaster);
 }
 
 #[cfg(test)]

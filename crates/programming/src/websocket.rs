@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_engine::prelude::AssertionSet;
@@ -173,27 +174,44 @@ fn resolved_programmer_instruction_values(
         })
 }
 
-/// Forward programmer commands to the UI for reactive handling.
-///
-/// This system reads programmer command events and broadcasts relevant ones
-/// to connected clients for immediate UI updates.
-pub fn forward_programmer_commands(
+/// The programmer state and selection feed.
+#[derive(SystemParam)]
+pub(crate) struct ProgrammerFeed<'w> {
+    programmer: Res<'w, Programmer>,
+    fixture_data_provider: Res<'w, FixtureDataProviderExt>,
+    blueprint_data_provider: Option<Res<'w, DataProvider<Blueprint>>>,
+    spatial_selection_resolver: SpatialSelectionResolver<'w>,
+}
+
+impl ClientFeed for ProgrammerFeed<'static> {
+    /// Publishes the programmer's resolved values, then its selection.
+    fn publish(feed: &ProgrammerFeed<'_>, sink: &ClientEventSink) {
+        send_programmer(
+            &feed.programmer,
+            &feed.spatial_selection_resolver,
+            &feed.fixture_data_provider,
+            feed.blueprint_data_provider.as_deref(),
+            sink,
+        );
+        send_programmer_selection(&feed.programmer, &feed.spatial_selection_resolver, sink);
+    }
+}
+
+/// Run condition that passes when the programmer changed, a programmer command or operation
+/// that alters what clients show ran, or a Blueprint the programmer references changed.
+pub(crate) fn programmer_feed_changed(
     mut events: MessageReader<CommandEnvelope<ProgrammerCommand>>,
     mut restore_events: MessageReader<EngineOperationEnvelope<RestoreProgrammerState>>,
     mut action_events: MessageReader<EngineOperationEnvelope<ProgrammerOperation>>,
     mut blueprint_changes: MessageReader<ObjectChanged<Blueprint>>,
     programmer: Res<Programmer>,
-    blueprint_data_provider: Option<Res<DataProvider<Blueprint>>>,
-    spatial_selection_resolver: SpatialSelectionResolver,
-    fixture_data_provider: Res<FixtureDataProviderExt>,
-    broadcaster: Res<ClientEventSink>,
-) {
+) -> bool {
     let mut should_update = programmer.is_changed();
 
     for event in events.read() {
         // Any programmer command that modifies state should trigger an update
         if should_broadcast_programmer_update(&event.command) {
-            tracing::debug!("forward_programmer_commands: observed ProgrammerCommand");
+            tracing::debug!("programmer_feed_changed: observed ProgrammerCommand");
             should_update = true;
         }
     }
@@ -205,36 +223,25 @@ pub fn forward_programmer_commands(
                 | ProgrammerOperation::ClearValues { .. }
                 | ProgrammerOperation::ReleaseValues { .. }
         ) {
-            tracing::debug!("forward_programmer_commands: observed ProgrammerOperation");
+            tracing::debug!("programmer_feed_changed: observed ProgrammerOperation");
             should_update = true;
         }
     }
 
     // RestoreProgrammerState (from undo) also triggers update
     for _event in restore_events.read() {
-        tracing::debug!("forward_programmer_commands: observed RestoreProgrammerState");
+        tracing::debug!("programmer_feed_changed: observed RestoreProgrammerState");
         should_update = true;
     }
 
     for change in blueprint_changes.read() {
         if programmer_references_blueprint(&programmer, change.uid) {
-            tracing::debug!(blueprint_uid=%change.uid, "forward_programmer_commands: observed dependent Blueprint change");
+            tracing::debug!(blueprint_uid=%change.uid, "programmer_feed_changed: observed dependent Blueprint change");
             should_update = true;
         }
     }
 
-    // Send update notification once after processing all events
-    if should_update {
-        tracing::debug!("Sending programmer state due to programmer command");
-        send_programmer(
-            &programmer,
-            &spatial_selection_resolver,
-            &fixture_data_provider,
-            blueprint_data_provider.as_deref(),
-            &broadcaster,
-        );
-        send_programmer_selection(&programmer, &spatial_selection_resolver, &broadcaster);
-    }
+    should_update
 }
 
 /// Send the current programmer state to websocket clients
@@ -353,28 +360,6 @@ fn programmer_selection_uids(resolved: &ResolvedSelection) -> Vec<String> {
     resolved_uids
         .filter(|uid| seen.insert(uid.clone()))
         .collect()
-}
-
-/// Handle ResyncState by sending full programmer state and selection
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    programmer: Res<crate::resources::Programmer>,
-    fixture_data_provider: Res<FixtureDataProviderExt>,
-    blueprint_data_provider: Option<Res<DataProvider<Blueprint>>>,
-    spatial_selection_resolver: SpatialSelectionResolver,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    send_programmer(
-        &programmer,
-        &spatial_selection_resolver,
-        &fixture_data_provider,
-        blueprint_data_provider.as_deref(),
-        &broadcaster,
-    );
-    send_programmer_selection(&programmer, &spatial_selection_resolver, &broadcaster);
 }
 
 #[cfg(test)]

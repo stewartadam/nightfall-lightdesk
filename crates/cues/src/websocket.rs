@@ -12,6 +12,7 @@
 //! owns all cue-related websocket forwarding logic.
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use moonshine_kind::InstanceRef;
 use nightfall::prelude::ColorPath;
 use nightfall_engine::prelude::*;
@@ -249,49 +250,92 @@ pub fn sequence_lookahead_state_messages(
         .collect()
 }
 
-/// Send cues to UI on DataProvider changes.
-///
-/// This system monitors the cue DataProvider for changes and broadcasts
-/// the full cue list to connected WebSocket clients.
-pub fn send_cues(
-    cue_data_provider: &DataProvider<Cue>,
-    fixture_data_provider: &FixtureDataProviderExt,
-    selection_resolver: &SpatialSelectionResolver,
-    broadcaster: &ClientEventSink,
-) {
-    let cues: Vec<Cue> = cue_data_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-    let profiles =
-        cue_duration_profile_messages(cue_data_provider, fixture_data_provider, selection_resolver);
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &CueWsMessage::CueDefinitions(&cues),
-    );
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &CueWsMessage::CueDurationProfiles(&profiles),
-    );
-    tracing::trace!("Sending cue definitions to websocket clients");
+/// The cue definitions feed, replayed to clients that resync; edits go out as definition deltas.
+#[derive(SystemParam)]
+pub(crate) struct CuesFeed<'w> {
+    cues: Res<'w, DataProvider<Cue>>,
 }
 
-/// Send resolved cue duration profiles to UI without sending cue definitions.
-pub fn send_cue_duration_profiles(
-    cue_data_provider: &DataProvider<Cue>,
-    fixture_data_provider: &FixtureDataProviderExt,
-    selection_resolver: &SpatialSelectionResolver,
-    broadcaster: &ClientEventSink,
-) {
-    let profiles =
-        cue_duration_profile_messages(cue_data_provider, fixture_data_provider, selection_resolver);
+impl ClientFeed for CuesFeed<'static> {
+    /// Publishes every cue definition.
+    fn publish(feed: &CuesFeed<'_>, sink: &ClientEventSink) {
+        let cues: Vec<Cue> = feed
+            .cues
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &CueWsMessage::CueDefinitions(&cues),
+        );
+    }
+}
 
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &CueWsMessage::CueDurationProfiles(&profiles),
-    );
-    tracing::trace!("Sending cue duration profiles to websocket clients");
+/// The resolved cue duration profiles feed, resent when fixture data changes how cue timing
+/// resolves.
+#[derive(SystemParam)]
+pub(crate) struct CueDurationProfilesFeed<'w> {
+    cues: Res<'w, DataProvider<Cue>>,
+    fixture_data_provider: Res<'w, FixtureDataProviderExt>,
+    selection_resolver: SpatialSelectionResolver<'w>,
+}
+
+impl ClientFeed for CueDurationProfilesFeed<'static> {
+    /// Publishes the resolved duration profile of every cue.
+    fn publish(feed: &CueDurationProfilesFeed<'_>, sink: &ClientEventSink) {
+        let profiles = cue_duration_profile_messages(
+            &feed.cues,
+            &feed.fixture_data_provider,
+            &feed.selection_resolver,
+        );
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &CueWsMessage::CueDurationProfiles(&profiles),
+        );
+    }
+}
+
+/// The sequence definitions feed, replayed to clients that resync; edits go out as definition
+/// deltas.
+#[derive(SystemParam)]
+pub(crate) struct SequencesFeed<'w> {
+    sequences: Res<'w, DataProvider<Sequence>>,
+}
+
+impl ClientFeed for SequencesFeed<'static> {
+    /// Publishes every sequence definition.
+    fn publish(feed: &SequencesFeed<'_>, sink: &ClientEventSink) {
+        let sequences: Vec<Sequence> = feed
+            .sequences
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &CueWsMessage::SequenceDefinitions(&sequences),
+        );
+    }
+}
+
+/// The color path definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct ColorPathsFeed<'w> {
+    color_paths: Res<'w, DataProvider<ColorPath>>,
+}
+
+impl ClientFeed for ColorPathsFeed<'static> {
+    /// Publishes every color path definition.
+    fn publish(feed: &ColorPathsFeed<'_>, sink: &ClientEventSink) {
+        let color_paths: Vec<ColorPath> = feed
+            .color_paths
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &CueWsMessage::ColorPathDefinitions(&color_paths),
+        );
+    }
 }
 
 /// Send one committed cue definition update and its resolved duration profile.
@@ -335,23 +379,6 @@ pub fn send_cue_definition_removal(uid: Uuid, broadcaster: &ClientEventSink) {
     );
 }
 
-/// Send sequences to UI on DataProvider changes.
-///
-/// This system monitors the sequence DataProvider for changes and broadcasts
-/// the full sequence list to connected WebSocket clients.
-pub fn send_sequences(seq_data_provider: &DataProvider<Sequence>, broadcaster: &ClientEventSink) {
-    let sequences: Vec<Sequence> = seq_data_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &CueWsMessage::SequenceDefinitions(&sequences),
-    );
-    tracing::trace!("Sending sequence definitions to websocket clients");
-}
-
 /// Send one committed sequence definition update.
 pub fn send_sequence_definition_update(sequence: &Sequence, broadcaster: &ClientEventSink) {
     broadcaster.publish(
@@ -376,23 +403,6 @@ pub fn send_sequence_definition_removal(uid: Uuid, broadcaster: &ClientEventSink
         sequence_uid = %uid,
         "Sending sequence definition removal to websocket clients"
     );
-}
-
-/// Send color paths to UI on DataProvider changes.
-pub fn send_color_paths(
-    color_path_data_provider: Res<DataProvider<ColorPath>>,
-    broadcaster: ClientEventSink,
-) {
-    let color_paths: Vec<ColorPath> = color_path_data_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &CueWsMessage::ColorPathDefinitions(&color_paths),
-    );
-    tracing::trace!("Sending color path definitions to websocket clients");
 }
 
 /// Send backend-authored sequence lookahead state to UI.
@@ -439,23 +449,6 @@ pub fn forward_commands(
     }
 }
 
-/// Send duration profiles when fixture data changes cue timing resolution.
-pub fn send_cues_on_change(
-    cue_data_provider: Res<DataProvider<Cue>>,
-    fixture_data_provider: Res<FixtureDataProviderExt>,
-    selection_resolver: SpatialSelectionResolver,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if fixture_data_provider.is_changed() {
-        send_cue_duration_profiles(
-            &cue_data_provider,
-            &fixture_data_provider,
-            &selection_resolver,
-            &broadcaster,
-        );
-    }
-}
-
 /// Send committed cue definition changes.
 pub fn send_cue_definition_changes(
     mut events: MessageReader<CueDefinitionChange>,
@@ -495,16 +488,6 @@ pub fn send_sequence_definition_changes(
     }
 }
 
-/// Send color path definitions when DataProvider<ColorPath> changes.
-pub fn send_color_paths_on_change(
-    color_path_data_provider: Res<DataProvider<ColorPath>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if color_path_data_provider.is_changed() {
-        send_color_paths(color_path_data_provider, broadcaster.clone());
-    }
-}
-
 /// Sends sequence lookahead state once per frame when a resync, a cue command, or a change to
 /// its backend inputs has made the UI projection stale.
 ///
@@ -535,29 +518,15 @@ pub fn send_stale_sequence_lookahead_states(
     );
 }
 
-/// Handle ResyncState by sending cues and sequences immediately and queueing their lookahead projection
-pub fn handle_resync_state(
+/// Marks the sequence lookahead projection stale when a client resyncs, so client output sends
+/// it after `ResyncComplete` rather than on the resync's readiness boundary.
+pub(crate) fn mark_sequence_lookahead_stale_on_resync(
     mut resync: ResyncReplies,
-    cue_data_provider: Res<DataProvider<Cue>>,
-    fixture_data_provider: Res<FixtureDataProviderExt>,
-    selection_resolver: SpatialSelectionResolver,
-    seq_data_provider: Res<DataProvider<Sequence>>,
-    mut sequence_lookahead_dirty: ResMut<SequenceLookaheadStateDirty>,
-    color_path_data_provider: Res<DataProvider<ColorPath>>,
+    mut dirty: ResMut<SequenceLookaheadStateDirty>,
 ) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    send_cues(
-        &cue_data_provider,
-        &fixture_data_provider,
-        &selection_resolver,
-        &broadcaster,
-    );
-    send_sequences(&seq_data_provider, &broadcaster);
-    sequence_lookahead_dirty.mark();
-    send_color_paths(color_path_data_provider, broadcaster.clone());
+    if resync.sink().is_some() {
+        dirty.mark();
+    }
 }
 
 #[cfg(test)]

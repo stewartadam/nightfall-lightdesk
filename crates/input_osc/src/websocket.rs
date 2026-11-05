@@ -50,35 +50,9 @@ pub enum OscWsMessage<'a> {
     OscControlTouched(&'a [OscLastEvent]),
 }
 
-/// Send OSC state on resync.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    sources: Res<OscSources>,
-    mappings: Res<OscMappings>,
-    diagnostics: Res<OscMappingDiagnostics>,
-    last_event: Res<LastOscEvent>,
-    status: Res<OscRuntimeStatus>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    send_sources(&sources, &broadcaster);
-    send_mappings(&mappings, &broadcaster);
-    send_diagnostics(&diagnostics, &broadcaster);
-    send_listener_status(&status, &broadcaster);
-    if let Some(ref event) = last_event.0 {
-        send_last_event(event, &broadcaster);
-    }
-}
-
-/// Send OSC state updates when resources change.
-pub fn send_osc_state(
-    sources: Res<OscSources>,
-    mappings: Res<OscMappings>,
-    diagnostics: Res<OscMappingDiagnostics>,
-    last_event: Res<LastOscEvent>,
-    status: Res<OscRuntimeStatus>,
+/// Sends the messages received while controller mapping mode is active, in order, draining
+/// them.
+pub fn send_control_touches(
     mut touches: ResMut<OscControlTouches>,
     broadcaster: Res<ClientEventSink>,
 ) {
@@ -88,23 +62,6 @@ pub fn send_osc_state(
             &OscWsMessage::OscControlTouched(&touches.0),
         );
         touches.0.clear();
-    }
-    if sources.is_changed() {
-        send_sources(&sources, &broadcaster);
-    }
-    if mappings.is_changed() {
-        send_mappings(&mappings, &broadcaster);
-    }
-    if diagnostics.is_changed() {
-        send_diagnostics(&diagnostics, &broadcaster);
-    }
-    if status.is_changed() {
-        send_listener_status(&status, &broadcaster);
-    }
-    if last_event.is_changed()
-        && let Some(ref event) = last_event.0
-    {
-        send_last_event(event, &broadcaster);
     }
 }
 
@@ -121,35 +78,51 @@ pub fn send_external_evals(
     }
 }
 
-fn send_sources(sources: &OscSources, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &OscWsMessage::OscSources(&sources.0),
-    );
+impl ResourceFeed for OscSources {
+    /// Publishes the known OSC sources.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &OscWsMessage::OscSources(&self.0),
+        );
+    }
 }
 
-fn send_mappings(mappings: &OscMappings, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &OscWsMessage::OscMappings(mappings.mappings()),
-    );
+impl ResourceFeed for OscMappings {
+    /// Publishes the configured OSC mappings.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &OscWsMessage::OscMappings(self.mappings()),
+        );
+    }
 }
 
-/// Sends the current OSC mapping diagnostics to websocket clients.
-fn send_diagnostics(diagnostics: &OscMappingDiagnostics, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &OscWsMessage::OscMappingDiagnostics(&diagnostics.0),
-    );
+impl ResourceFeed for OscMappingDiagnostics {
+    /// Publishes the OSC mappings that cannot currently invoke their action.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &OscWsMessage::OscMappingDiagnostics(&self.0),
+        );
+    }
 }
 
-fn send_last_event(event: &OscLastEvent, broadcaster: &ClientEventSink) {
-    broadcaster.publish(DISCRIMINATOR_DROPPABLE, &OscWsMessage::OscLastEvent(event));
+impl ResourceFeed for OscRuntimeStatus {
+    /// Publishes the listener bind status.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &OscWsMessage::OscListenerStatus(&self.0),
+        );
+    }
 }
 
-fn send_listener_status(status: &OscRuntimeStatus, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &OscWsMessage::OscListenerStatus(&status.0),
-    );
+impl ResourceFeed for LastOscEvent {
+    /// Publishes the last observed OSC event, if any, as a snapshot a newer event replaces.
+    fn publish(&self, sink: &ClientEventSink) {
+        if let Some(event) = &self.0 {
+            sink.publish(DISCRIMINATOR_DROPPABLE, &OscWsMessage::OscLastEvent(event));
+        }
+    }
 }
