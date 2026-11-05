@@ -21,7 +21,7 @@ A timing stores durations, but the sequence's `timebase` decides what unit they 
 
 The unit changes how the playback's clock advances, not how the engine resolves timing. Each render pass, a seconds-timed playback's clock advances by the wall-clock time since the previous pass. A beat-timed playback's clock advances by the number of beats the show tempo moved in that time, so its fades follow tempo changes, taps, and nudges. When a timeline plays a beat-timed sequence, the sequence follows that timeline's BPM instead, and timeline lookahead, seeking, and Stop Clip convert between timeline seconds and sequence beats. In both units, the clip's speed and any speed masters that target it multiply the clock's advance.
 
-Launch quantize can also delay when a cue starts. When the Tempo panel sets it to **Beat** or **Bar**, a live clip start, Go, or stop waits as an armed launch in the desk until the show tempo reaches the next beat or bar. Held Flash and Swop buttons, fader moves that start or stop a clip, timelines, and flows never wait. The cue's own delays and fades start counting when the launch fires.
+Launch quantize can also delay when a cue starts. When the Tempo panel sets it to **Beat** or **Bar**, a live clip start, Go, or stop waits as an armed launch in the `clips` crate until the show tempo reaches the next beat or bar. Held Flash and Swop buttons, fader moves that start or stop a clip, timelines, flows, and the statements a macro runs never wait. The cue's own delays and fades start counting when the launch fires.
 
 ## The override chain
 
@@ -34,8 +34,8 @@ flowchart TB
   seq["Sequence default_timing"] --> cue["Cue transitions"]
   cue --> part["CuePart transitions"]
   part --> attr["Cue, then part, transitions_by_attribute"]
-  attr --> instr["CueInstruction transitions"]
-  instr --> iattr["CueInstruction transitions_by_attribute"]
+  attr --> instr["AssertionSet transitions"]
+  instr --> iattr["AssertionSet transitions_by_attribute"]
   iattr --> fixture["transitions_by_fixture_attribute"]
   fixture --> resolved(["MaterializedTransition for one parameter"])
 ```
@@ -46,9 +46,9 @@ From the bottom of the stack to the top, the layers are:
 1. **Cue timing.** `Cue.transitions` applies to every value in the cue.
 1. **Cue part timing.** For values in a cue part, `CuePart.transitions` overrides the cue timing.
 1. **Attribute timing on the cue and the part.** `Cue.transitions_by_attribute` applies, and for a part, the part's `transitions_by_attribute` overrides it field by field.
-1. **Instruction timing.** `CueInstruction.transitions` applies to every value in the instruction.
-1. **Attribute timing on the instruction.** `CueInstruction.transitions_by_attribute` overrides it for one attribute.
-1. **Fixture attribute timing.** `CueInstruction.transitions_by_fixture_attribute` overrides it for one attribute on one fixture. Entries for the whole fixture apply first, then entries for the exact element.
+1. **Instruction timing.** `AssertionSet.transitions` applies to every value in the instruction.
+1. **Attribute timing on the instruction.** `AssertionSet.transitions_by_attribute` overrides it for one attribute.
+1. **Fixture attribute timing.** `AssertionSet.transitions_by_fixture_attribute` overrides it for one attribute on one fixture. Entries for the whole fixture apply first, then entries for the exact element.
 
 The cue's attribute timing sits below the instruction's own timing. When an instruction sets a fade, that fade beats an attribute fade on the cue.
 
@@ -110,18 +110,19 @@ Red reaches 0% 3 seconds after Go. Blue starts moving half a second after Go and
 | Concept | Where to look |
 |---------|---------------|
 | `Transition`, `PartialTransition`, `TransitionMode`, `FadeCurve`, and `MaterializedTransition` | `crates/common/src/transitions.rs` |
-| Timing fields on cues, parts, and instructions | `crates/cues/src/cue.rs` |
+| Timing fields on cues, parts, and instructions | `crates/cues/src/cue.rs`, `AssertionSet` in `crates/engine/src/assertions.rs` |
 | Sequence default timing beneath cue timing | `crates/cues/src/materialized_sequence/materialize.rs` |
-| The override chain and fanned values | `resolve_partial_transition_definition` and `resolve_fanned_value` in `crates/cues/src/materialized_cue/materialization.rs` |
+| The override chain | `resolve_partial_transition_definition` in `crates/cues/src/materialized_cue/materialization.rs` |
+| Fanned values and fanned timing | `resolve_fan` in `crates/common/src/fan.rs` |
 | Selection slots and spatial clauses | `ResolvedSelection` in `crates/common/src/command_types.rs`, `crates/common/src/spatial_projection.rs` |
 | Logical attribute to fixture parameter | `try_parameter_for_logical_attribute` in `crates/fixtures/src/data_provider_ext.rs` |
 | In or out timing by direction | `crates/cues/src/materialized_sequence/tracking.rs`, `crates/compositor/src/stages/transition.rs` |
 | Release timing | `crates/cues/src/materialized_sequence/release.rs` |
 | `Timebase` and the sequence's `timebase` field | `crates/instances/src/lib.rs`, `crates/cues/src/cue.rs` |
-| Seconds-timed and beat-timed clock advance, with speed applied | `advance_realtime_instance_clocks` in `crates/desk/src/instances.rs` |
-| Speed masters | `apply_playback_speed_masters` in `crates/desk/src/masters.rs` |
+| Seconds-timed and beat-timed clock advance, with speed applied | `advance_realtime_instance_clocks` in `crates/clips/src/playback/clocks.rs` |
+| Speed masters | `apply_playback_speed_masters` in `crates/controls/src/masters.rs` |
 | Timeline seconds to sequence beats | `crates/timeline/src/systems/planned_cues.rs` |
-| Launch quantize and armed launches | `LaunchQuantize` in `crates/tempo/src/lib.rs`, `crates/desk/src/launch_quantize.rs` |
+| Launch quantize and armed launches | `LaunchQuantize` in `crates/tempo/src/lib.rs`, `crates/clips/src/launch_quantize.rs` |
 
 ## Related topics
 

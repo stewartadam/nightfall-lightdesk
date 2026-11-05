@@ -18,18 +18,18 @@ A showfile stores what you programmed and how the desk is set up. Its JSON snaps
 | Rig | Fixtures with their profiles embedded, DMX routes, scene objects, and color paths. |
 | Programming | Cues, sequences, groups, masters, blueprints, FX, flows, timecodes, timelines, and macros. |
 | Controls | Clips, faders, boards, MIDI and OSC mappings, and variables. |
-| Settings | Desk settings, IO settings, show tempo (BPM, beats per bar, and launch quantize mode), and version metadata. |
+| Settings | Settings sections, each owned by one crate, such as IO, programming, audio, UI, and showfile backups. Also show tempo (BPM, beats per bar, and launch quantize mode) and version metadata. |
 
 The files beside the snapshot hold what doesn't fit in JSON. The manifest records file hashes and sizes so the show list loads without reading every snapshot. Timeline audio and 3D object bundles are copied into the folder, and a show can also package the fixture profiles and FX modules it uses. [The show folder on disk](#the-show-folder-on-disk) lists the exact paths.
 
 A showfile stores definitions, never live state. These things are not saved:
 
-- Running playbacks, their positions, and fades in progress. After a load, no clip is running, even if `First playback` was in `Red` when you saved.
+- Running playbacks, their positions, fades in progress, and clip launches armed for the next beat or bar. After a load, no clip is running, even if `First playback` was in `Red` when you saved.
 - The programmer. The 50% intensity you held on `Par 1` is gone after a load.
 - Undo history.
 - Fader levels and pickup state. A fader saves its assignment and button mode only.
 
-The snapshot is flat JSON: one top-level key per kind of object, such as `fixtures`, `routes`, `cues`, `sequences`, `clips`, `faders`, and `ioSettings`, and a `metadata` object. The metadata records the Nightfall version that wrote the file, the schema version (`showfileVersion`), and the save time.
+The snapshot is flat JSON: one top-level key per kind of object, such as `fixtures`, `routes`, `cues`, `sequences`, `clips`, `faders`, and `settings`, and a `metadata` object. The `settings` object holds one entry per settings section, keyed by the section name, such as `io` or `showfile`. The metadata records the Nightfall version that wrote the file, the schema version (`showfileVersion`), and the save time.
 
 ### The show folder on disk
 
@@ -152,7 +152,7 @@ flowchart TB
 
 Save As works the same way with a new name. The engine first copies the current draft into the new name's draft folder and points the active show folder at it, so the show's files follow it to the new name.
 
-Each save keeps the previous saved folder as a timestamped backup. The number of backups to keep is a setting in the show's desk settings, 20 by default, and 0 keeps every backup. You can load a backup as a revision: the engine loads it into the show's working draft and leaves the saved folder alone until you save.
+Each save keeps the previous saved folder as a timestamped backup. The number of backups to keep is the `backup_retention` field of the show's `showfile` settings section, 20 by default, and 0 keeps every backup. You can load a backup as a revision: the engine loads it into the show's working draft and leaves the saved folder alone until you save.
 
 The final replace step removes the old saved folder and then renames the temporary folder into its place. These are two file system operations, not one atomic rename. If the process stops between them, the saved folder is missing, but the new backup and the working draft still hold the show.
 
@@ -238,13 +238,15 @@ Importing parts of another showfile is different: the engine merges the selected
 
 When a domain gains state that should survive a restart, add it to the snapshot and to that domain's contributors. Two recent changes show both cases: boards were added as a new field and a new load domain without a schema change, and moving the `controlSlots` key to `faders` needed schema 23 and a migration, which also rewrites stored `control.level`, `control.go`, and `control.button` action references to their `fader.*` actions.
 
+A setting doesn't need a snapshot field. Register a settings section in the crate that owns the setting with `register_settings_section`, and the showfile saves and restores it inside `settings`.
+
 Follow these steps to add a stored field:
 
-1. Add the field to `ShowfileSnapshot` in `crates/showfile/src/snapshot.rs`. Give it `#[serde(default)]` so files written before the field existed still load, and an explicit camelCase `rename`, as `ioSettings` and `midiMappings` have. Older fields such as `color_paths` predate this convention.
+1. Add the field to `ShowfileSnapshot` in `crates/showfile/src/snapshot.rs`. Give it `#[serde(default)]` so files written before the field existed still load, and an explicit camelCase `rename`, as `midiMappings` and `oscMappings` have. Older fields such as `color_paths` predate this convention.
 1. Add the field to the domain's slice in `crates/showfile/src/contributors/<domain>.rs`. Fill it in the save contributor, and apply it in the load contributor in the right phase: import plain data in the import phase, and create entities only in the materialize phase.
 1. Copy the field between the slice and the snapshot in `apply_save_contribution` and `load_contribution_for_domain` in `crates/showfile/src/contributors/mod.rs`.
-1. If the domain reads a resource the showfile code doesn't have yet, add it to `ShowfileSaveState` in `crates/showfile/src/world.rs`, and to `ShowfileApplyState`, `apply_showfile_snapshot`, and `initialize_showfile_resources` in `crates/showfile/src/apply.rs`.
-1. In `app-runtime`, add the resource to `ShowfileLoadState` and `load_showfile_in_place` in `systems/showfile_events/load.rs`, and clear it in `load/reset.rs`, so an import starts from an empty store.
+1. If the domain reads a resource the showfile code doesn't have yet, add it to `ShowfileSaveState` in `crates/showfile/src/world.rs`, and to `ShowfileApplyState`, `apply_showfile_snapshot`, and `initialize_showfile_resources` in `crates/showfile/src/apply.rs`. The native load path in `app-runtime` nests `ShowfileApplyState` inside its `ShowfileLoadState`, so it picks up the new resource without changes.
+1. Clear the resource in `reset_showfile_state` in `crates/app-runtime/src/systems/showfile_events/load/reset.rs`, so an import starts from an empty store. That function lists every `ShowfileApplyState` field, so the build fails until you decide how reset handles the new one.
 1. Decide how an import merges the field in `systems/showfile_events/import.rs`. The boards change added a `boards` import option and merged boards by identity.
 1. For a new load domain, add it to `ShowfileLoadDomain`, its `ALL` list, and its `dependencies` in `apply.rs`, and list it with the other contributors in `apply_showfile_snapshot`.
 1. Add a round-trip test that saves a world, serializes it, parses it, and loads it into a fresh world.
@@ -269,6 +271,7 @@ When a change renames, removes, or restructures existing JSON, also add a migrat
 | Load domains, phases, and order | `crates/showfile/src/apply.rs` |
 | Save and load contributors for each domain | `crates/showfile/src/contributors/` |
 | Snapshot of a world | `crates/showfile/src/world.rs` |
+| Settings sections and how the showfile saves them | `crates/engine/src/settings.rs`, `crates/showfile/src/contributors/desk_state.rs` |
 | Showfile commands, such as save, load, delete, and import | `crates/app-runtime/src/systems/showfile_events/commands.rs` |
 | Folder names and paths | `crates/app-runtime/src/systems/showfile_events/paths.rs` |
 | Reading and writing snapshots and manifests | `crates/app-runtime/src/systems/showfile_events/storage.rs`, `crates/app-runtime/src/systems/showfile_events/manifest.rs` |
