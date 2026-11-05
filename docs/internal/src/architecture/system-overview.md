@@ -166,14 +166,14 @@ The engine reports what it supports to the UI as runtime capabilities, so the UI
 
 ### Both hosts share one show plugin list
 
-A Bevy app is assembled from plugins, and each Nightfall domain, such as cues or fixtures, adds itself to the engine as one or more plugins. The `nightfall-composition` crate groups the shared plugins by domain: `CorePlugins` (engine, undo, client bridge, actions, fixtures, scene objects, and the fixture compositor), `DeskPlugins` (masters and faders, programmer, cues, showfile, boards, and macros), `FxPlugins` (tempo, FX, flow, and references), and `TimecodePlugins` (timecode and timeline). `ShowPlugins` nests the four groups in build order, and every host builds it.
+A Bevy app is assembled from plugins, and each Nightfall domain, such as cues or fixtures, adds itself to the engine as one or more plugins. The `nightfall-composition` crate groups the shared plugins by domain: `CorePlugins` (engine, logging, undo, client bridge, IO, actions, fixtures, scene objects, the fixture compositor, and clips), `DeskPlugins` (controls for masters and faders, programming, cues, showfile, boards, and macros), `FxPlugins` (tempo, FX, flow, and references), and `TimecodePlugins` (timecode and timeline). `ShowPlugins` nests the four groups in build order, and every host builds it.
 
 Nesting a group flattens its plugins into the parent's list, so a host can insert its own plugins next to any shared plugin they depend on, or disable one, wherever that plugin's group sits.
 
 - The native hosts build `NativePlugins`. It adds audio after the engine, the websocket server after the fixture compositor, telemetry commands after the websocket server, the fixture and object libraries after macros, and FX modules after FX, then appends the output and input groups. The systems that load, save, and swap showfiles are added separately.
 - The browser demo builds `ShowPlugins` with a timeline plugin variant that asks the browser to play bundled audio, and adds a built-in fixture library after the fixture plugin. It has no sockets, threads, file system, or WASM runtime of its own, so it leaves out the native plugins above and the showfile handling systems, such as draft autosave and showfile loading.
 
-When you add a show domain plugin, add it to its domain group and both hosts pick it up. A plugin that needs a native-only service belongs in `NativePlugins`, inserted after the plugin it depends on; report the missing feature through the runtime capabilities so the demo UI can hide it. The `check:browser-demo-dependencies` script confirms that the browser build pulls in no native-only packages, such as Tokio or Wasmtime.
+When you add a show domain plugin, add it to its domain group and both hosts pick it up. A plugin that needs a native-only service belongs in `NativePlugins`, inserted after the plugin it depends on. Report the missing feature through the runtime capabilities so the demo UI can hide it. The `check:browser-demo-dependencies` script confirms that the browser build pulls in no native-only packages, such as Tokio or Wasmtime.
 
 ## Inputs and outputs
 
@@ -204,9 +204,9 @@ The IO services live as long as the process. They start once and keep running wh
 
 ### DMX output
 
-In every frame, the engine composes one DMX frame for each output universe. Patch bindings decide what goes into it: console universes routed to that output, fixtures patched straight to it, and DMX input passed through. Output workers for Art-Net and sACN each run on their own thread and transmit on a fixed schedule. These workers and the engine's frame limiter share one schedule of send times, a fixed interval apart. The engine starts each frame shortly before a send time, so each transmission carries the most recently finished frame. USB DMX output doesn't follow this schedule. It writes each frame to the interface as soon as the engine finishes it. The default DMX output rate is 44 frames a second.
+In every frame, the engine composes one DMX frame for each output universe. DMX routes decide what goes into it: console universes routed to that output, fixtures patched straight to it, and DMX input passed through. Output workers for Art-Net and sACN each run on their own thread and transmit on a fixed schedule. These workers and the engine's frame limiter share one schedule of send times, a fixed interval apart. The engine starts each frame shortly before a send time, so each transmission carries the most recently finished frame. USB DMX output doesn't follow this schedule. It writes each frame to the interface as soon as the engine finishes it. The default DMX output rate is 44 frames a second.
 
-Output transports are off until something routes to them. A console universe reaches the wire only when a patch binding routes it to a transport, as [how a show becomes light](../concepts/show-to-light.md) describes.
+Output transports are off until something routes to them. A console universe reaches the wire only when a DMX route sends it to a transport, as [how a show becomes light](../concepts/show-to-light.md) describes.
 
 ### Control and DMX input
 
@@ -224,7 +224,7 @@ Each external source's input service decodes frames on its own thread and stores
 
 The showfile is the saved show: the rig, the programming, the controls, and the settings. On the native hosts, the engine reads and writes showfiles in its data directory. The showfile format is versioned JSON, and older showfiles go through migrations when they load.
 
-Loading a showfile doesn't edit the running show in place. The host builds a fresh engine world from the showfile and swaps it in once it is complete, so a failed load leaves the current show running. The client connections and the IO services belong to the process rather than to the world, so they carry over. After the swap, the engine tells every client that the world was replaced, and each client asks for fresh state, as it does when it first connects.
+Loading a showfile doesn't edit the running show in place. The host builds a fresh engine world from the showfile and swaps it in once it is complete. When the new world fails to build, the engine keeps the current world running and reports the failure. [Showfiles and loading a show](showfiles.md) describes what a failed load can still change. The client connections and the IO services belong to the process rather than to the world, so they carry over. After the swap, the engine tells every client that the world was replaced, and each client asks for fresh state, as it does when it first connects.
 
 The engine also keeps a draft of unsaved work. It saves a changed draft every 60 seconds and when the last client disconnects, so closing the last browser tab doesn't lose work.
 
