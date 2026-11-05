@@ -338,6 +338,64 @@ async function serveRemovableWorktree(
   return { target, removeRequests };
 }
 
+/** Returns the delete confirmation dialog, which `[data-modal-kind]` tags like every other delete prompt. */
+function deleteConfirmation(page: import("@playwright/test").Page) {
+  return page.locator('[data-modal-kind="delete-confirm"]');
+}
+
+/** Confirms the open delete dialog with its confirm button, named `label`, and waits for it to close. */
+async function confirmDelete(
+  page: import("@playwright/test").Page,
+  label: "Delete" | "Force delete",
+) {
+  const dialog = deleteConfirmation(page);
+  await dialog.getByRole("button", { name: label, exact: true }).click();
+  await expect(dialog).toBeHidden();
+}
+
+/**
+ * Verifies Delete asks first: the dialog names the worktree and its path, Cancel
+ * has focus so Enter keeps the worktree, and Cancel, Escape and Enter all close it
+ * without sending a request.
+ */
+test("worktree dashboard asks before deleting a worktree", async ({ page }) => {
+  const { target, removeRequests } = await serveRemovableWorktree(page, () => ({
+    status: 200,
+    body: { ok: true, message: "Removed", details: [], total: 0 },
+  }));
+  const dialog = deleteConfirmation(page);
+
+  await page.goto("/worktree-dashboard.html");
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("button", { name: /^Delete/ }).click();
+  await expect(
+    dialog.getByRole("heading", { name: "Delete feature/cleanup?" }),
+  ).toBeVisible();
+  await expect(dialog).toContainText(target.path);
+  await expect(dialog).toContainText("is kept");
+  const cancel = dialog.getByRole("button", { name: "Cancel" });
+  await expect(cancel).toBeFocused();
+  await page.screenshot({
+    path: test.info().outputPath("delete-confirmation.png"),
+  });
+  await cancel.click();
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("button", { name: /^Delete/ }).click();
+  await expect(cancel).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("button", { name: /^Delete/ }).click();
+  await expect(cancel).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeHidden();
+
+  expect(removeRequests).toEqual([]);
+});
+
 /** Verifies the overflow menu groups the secondary actions and a refused delete explains why. */
 test("worktree dashboard explains why a worktree with local changes was kept", async ({
   page,
@@ -378,6 +436,7 @@ test("worktree dashboard explains why a worktree with local changes was kept", a
   await page.keyboard.up("Shift");
 
   await menu.getByRole("button", { name: /^Delete/ }).click();
+  await confirmDelete(page, "Delete");
   await expect(
     page.getByText(
       "feature/cleanup has 2 uncommitted changes (webui/app.tsx, notes.md). Hold Shift and choose Force delete to remove it anyway.",
@@ -413,6 +472,7 @@ test("worktree dashboard explains why an unmerged worktree was kept", async ({
   await page.goto("/worktree-dashboard.html");
   await page.getByRole("button", { name: "More actions" }).click();
   await page.getByRole("button", { name: /^Delete/ }).click();
+  await confirmDelete(page, "Delete");
 
   await expect(
     page.getByText(
@@ -425,7 +485,10 @@ test("worktree dashboard explains why an unmerged worktree was kept", async ({
   });
 });
 
-/** Verifies Shift+clicking Delete asks the dashboard to force the removal. */
+/**
+ * Verifies Shift+clicking Delete asks to confirm a force delete, keeps it a force
+ * delete after Shift is released, and then asks the dashboard to force the removal.
+ */
 test("worktree dashboard force deletes with Shift held", async ({ page }) => {
   const { removeRequests } = await serveRemovableWorktree(page, () => ({
     status: 200,
@@ -436,12 +499,24 @@ test("worktree dashboard force deletes with Shift held", async ({ page }) => {
       total: 0,
     },
   }));
+  const dialog = deleteConfirmation(page);
 
   await page.goto("/worktree-dashboard.html");
   await page.getByRole("button", { name: "More actions" }).click();
   await page.keyboard.down("Shift");
   await page.getByRole("button", { name: /^Force delete/ }).click();
   await page.keyboard.up("Shift");
+
+  await expect(
+    dialog.getByRole("heading", { name: "Force delete feature/cleanup?" }),
+  ).toBeVisible();
+  await expect(dialog).toContainText("permanently discards");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  expect(removeRequests).toEqual([]);
+  await page.screenshot({
+    path: test.info().outputPath("force-delete-confirmation.png"),
+  });
+  await confirmDelete(page, "Force delete");
 
   await expect(page.getByText("Deleted feature/cleanup")).toBeVisible();
   expect(removeRequests[0]?.searchParams.get("force")).toBe("1");
