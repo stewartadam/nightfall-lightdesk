@@ -312,7 +312,7 @@ Each path behaves differently:
 - **Input to a console universe.** The engine writes the raw channels into console space with the input transport origin. Fixtures that are console-patched in that universe, at or after the route address, also receive their values through the input layer. Later in the same render pass, `dmx_universes` overwrites the channels those fixtures occupy with their merged output, so on fixture channels the input arrives only through the layer. Channels without a fixture keep the input value.
 - **Pass-through.** A route from an input transport to an output target copies a window of the latest input frame into the output frame, as step 3 of the composition order.
 
-When a source stops sending, the IO setting for input signal loss decides what happens. The default policy, `Hold`, keeps the last values. With `ClearAfterTimeout`, the engine clears channels and input layer values owned by a source whose last frame is older than the timeout (2000 ms by default), and stops passing its frame through until a new one arrives. The desk command `ReleaseStaleInputs` applies the same clear on demand.
+When a source stops sending, the IO setting for input signal loss decides what happens. The default policy, `Hold`, keeps the last values. With `ClearAfterTimeout`, the engine clears channels and input layer values owned by a source whose last frame is older than the timeout (2000 ms by default), and stops passing its frame through until a new one arrives. The fixture command `ReleaseStaleInputs` applies the same clear on demand.
 
 ## Virtual dimmers and relations at render time
 
@@ -368,17 +368,17 @@ An intensity master at 50% on `Par 1` would halve the intensity to 63.75, which 
 | Route resolution and fixture placement | `crates/fixtures/src/route_resolution.rs` |
 | Byte placement in a footprint | `crates/fixtures/src/wire_layout.rs` |
 | Validation rules | `crates/fixtures/src/route_validation.rs` |
-| Staged patch commands | `crates/desk/src/systems/event_handlers/fixture_events/patch.rs` |
+| Staged patch commands | `crates/fixtures/src/fixture_events/patch.rs` |
 | Console universes, direct output buffers, encoding | `crates/fixtures/src/universe.rs` |
 | Output frame composition order | `crates/fixtures/src/output_frames.rs` |
 | Input and manual channel layers | `crates/fixtures/src/compositor.rs` |
 | Applying input frames | `crates/fixtures/src/input_apply.rs` |
-| Stale input handling | `crates/desk/src/systems/stale_inputs.rs` |
+| Stale input handling | `crates/fixtures/src/stale_inputs.rs` |
 | Output transports and target IDs | `crates/io/src/lib.rs` |
 | Input signal loss settings | `crates/io/src/settings.rs` |
-| Intensity masters | `crates/desk/src/masters.rs` |
-| Virtual dimmers | `crates/desk/src/systems/vdim.rs` |
-| Console-side relations | `crates/desk/src/systems/relations.rs` |
+| Intensity masters | `crates/controls/src/masters.rs` |
+| Virtual dimmers | `crates/fixtures/src/vdim.rs` |
+| Console-side relations | `crates/fixtures/src/relations.rs` |
 
 ## Related topics
 

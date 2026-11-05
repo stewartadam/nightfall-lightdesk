@@ -56,7 +56,7 @@ Each set has one job:
 |------------|-----------------|
 | `InputHandling` | Drains the channels that hosts write to: command and update envelopes from the web UI, client disconnects, and MIDI and OSC events. Command JSON goes through the deserializer that its domain registered and lands in the pending command buffer. Updates, such as a fader drag, apply directly. |
 | `ActionInvocationHandling` | Dispatches actions that MIDI and OSC mappings, keyboard shortcuts, the command palette, board buttons, web clients, or timeline events invoked. Actions that lower to commands queue them in the pending command buffer. |
-| `PendingCommandExpansion` | Replaces wrapper commands with the concrete commands they stand for. For example, desk eval text such as `clip 1 go` becomes a typed clip command here, and scheduled commands that are now due move into the buffer. |
+| `PendingCommandExpansion` | Replaces wrapper commands with the concrete commands they stand for. For example, command-language eval text such as `clip 1 go` becomes a typed clip command here, and scheduled commands that are now due move into the buffer. |
 | `PendingCommandProcessing` | Drains the pending command and operation buffers, captures undo inverses for registered command types, and writes each command as a typed message. |
 | `EventHandling` | Domain handlers read those messages and change world state: they spawn playbacks, store cues, change masters, and so on. |
 | `ResyncHandling` | Plugins resend their full state to clients that requested a resync. |
@@ -98,7 +98,7 @@ The stages map onto the journey from [how a show becomes light](../concepts/show
 
 | Stage | What runs there | What happens to `Par 1` |
 |-------|-----------------|----------------------------------|
-| `ClockUpdate` | The show tempo advances first, and the timecode generators also advance here. After the tempo, the desk adds a clock to new playbacks, applies speed masters, and advances each free-running clock. A seconds-timed clock advances by the wall-clock time since the previous render pass, and a beat-timed clock by the beats the show tempo moved in that time. | `First playback` gets its clock and moves up to one frame period into the `Red` cue's fade. |
+| `ClockUpdate` | The show tempo advances first, and the timecode generators also advance here. After the tempo, `clips` adds a clock to new playbacks, `controls` applies speed masters, and `clips` advances each free-running clock. A seconds-timed clock advances by the wall-clock time since the previous render pass, and a beat-timed clock by the beats the show tempo moved in that time. | `First playback` gets its clock and moves up to one frame period into the `Red` cue's fade. |
 | `LayerGeneration` | Each playback type paints its layer: sequences, cues, FX, Step FX, FX modules, flows, timelines, and the programmer. Incoming DMX also lands in its input layer here. | `First playback` paints a priority 0 layer with intensity and red partway up the fade. The programmer paints a priority 127 layer with intensity at 50%. |
 | Between layers and compositing | `controls` resolves held Flash and Swop buttons and scales each playback's intensity values by its level. These systems belong to no set. They order themselves after `LayerGeneration` and before `Compositing`. | If `First playback`'s fader sits at 50%, its intensity contribution halves. The programmer layer is unaffected. |
 | `Compositing` | The compositor sorts layers by priority and activation time, merges them, and writes the final value into each fixture parameter. | Intensity comes out at 50% from the programmer, and red follows `First playback`'s fade. |
@@ -189,7 +189,7 @@ Untracked updates, such as a fader drag in the web UI, don't wake the limiter. T
 
 ## The cost of one thread
 
-The engine runs every schedule on Bevy's single-threaded executor. The workspace builds Bevy without its `multi_threaded` feature, so systems run one after another on the engine thread, even when they touch disjoint data. The compute task pool that the app configures doesn't change this.
+The engine runs every schedule on Bevy's single-threaded executor. The workspace builds Bevy without its `multi_threaded` feature, so systems run one after another on the engine thread, even when they touch disjoint data. The compute task pool that the app configures doesn't change this. [ADR 2](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/adr/0002-single-threaded-ecs-executor.md) records why: Bevy's multi-threaded executor measured slower, used more CPU, and would run thousands of pairs of conflicting systems in no defined order.
 
 Every system therefore adds directly to frame time. A profiling run in October 2026 on the sample show, with 101 fixtures, measured the following:
 
@@ -198,9 +198,11 @@ Every system therefore adds directly to frame time. A profiling run in October 2
 | Idle | 44, the frame limit | 0.42 of a core |
 | Every sample clip running | 10.5 | 1.0 core, saturated |
 
-The other cores stayed idle. When the render pass overruns the frame period, the frame rate drops, and the output workers resend stale frames until a new render publishes.
+When the render pass overruns the frame period, the frame rate drops, and the output workers resend stale frames until a new render publishes.
 
-Keep render systems cheap, and keep expensive work out of the per-frame path. A system that runs every render pass but only needs to react to changes should check change detection first and return early.
+A few heavy systems spread their own work across cores with `orx-parallel` on native hosts. The compositor splits a large pass into up to eight parameter shards and composites them in parallel, the FX painter renders attributes in parallel, and Step FX samples large selections in parallel runs of fixtures. Small workloads, and the browser demo on WASM, stay on one thread. The engine thread still waits for this work to finish, so it adds to frame time like any other system.
+
+Keep render systems cheap, and keep expensive work out of the per-frame path. A system that runs every render pass but only needs to react to changes should check change detection first and return early. When a system needs more than one core, parallelize its work inside the system, as ADR 2 describes, rather than changing executors.
 
 ## Rules for system authors
 

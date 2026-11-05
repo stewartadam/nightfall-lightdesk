@@ -33,7 +33,7 @@ An integration test lives under `tests/it/` and sees only the crate's public API
 
 ### How a plugin test builds a Bevy app
 
-Most engine and domain tests don't start the full engine. They build a bare Bevy `App` with `App::new()`, register only the messages, resources, and systems the test needs, call `app.update()` to run one frame, and then read the world. The cue tests that check clip lifecycle commands, for example, register the command and operation messages, the cue, sequence, and group data providers, and the two systems under test, and nothing else. A bare app keeps each test fast and makes it obvious which systems a behavior depends on.
+Most engine and domain tests don't start the full engine. They build a bare Bevy `App` with `App::new()`, register only the messages, resources, and systems the test needs, call `app.update()` to run one frame, and then read the world. The cue tests that check cue and sequence storage commands, for example, register the command and change messages, the command lifecycle resources, the data providers the handler reads, the handler under test, and a small system that registers each test command with the tracker. It adds nothing else. A bare app keeps each test fast and makes it obvious which systems a behavior depends on.
 
 Tests that only need to call one system against a prepared world skip the `App` and use a bare `World` with `run_system_once`. The showfile tests do this: a `setup_world` helper inserts every data provider and resource the save and load systems read.
 
@@ -48,7 +48,7 @@ Because every `app.update()` in a test renders, tests don't exercise input-only 
 
 A few crates export helpers for other crates' tests behind a `test-support` Cargo feature. Enable the feature on the dependency in your crate's `[dev-dependencies]`, never in normal dependencies. The following helpers exist today:
 
-- `nightfall_fixtures::testing` patches many synthetic fixtures into a world, with parameter lists modeled on a moving-head spot and an LED fixture with a virtual dimmer. Benchmarks and the desk's websocket tests use it.
+- `nightfall_fixtures::testing` patches many synthetic fixtures into a world, with parameter lists modeled on a moving-head spot and an LED fixture with a virtual dimmer. Benchmarks and the fixtures crate's own unit tests use it.
 - `nightfall_fixture_library::testing` builds GDTF archives in memory, checks structural invariants, and decodes DMX with an independent reference decoder.
 
 Helpers that only one crate needs stay private to that crate. The compositor's `test_support` module, for example, defines a minimal `TestParameter` component, and the FX crate keeps step FX definitions for its event tests in `events/test_support.rs`.
@@ -67,7 +67,7 @@ Saving and loading a show must not change it. The showfile event tests in `app-r
 
 - A save, load, save cycle produces identical snapshot JSON.
 - Loading into a fresh world twice in a row gives the same result, so a restart doesn't drift.
-- One `roundtrip_preserves_*` test per domain, such as DMX routes, boards, desk settings, and MIDI and OSC mappings, checks that domain survives a round trip.
+- One `roundtrip_preserves_*` test per domain, such as DMX routes, boards, settings, and MIDI and OSC mappings, checks that domain survives a round trip.
 
 When you add a persisted domain or field, seed it in the test world and add a round-trip test for it. If the save or load system reads a new resource, add it to `setup_world` too.
 

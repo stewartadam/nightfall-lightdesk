@@ -13,21 +13,21 @@ A showfile stores sequences and cues as separate objects. A sequence refers to i
 ```mermaid
 flowchart TB
   accTitle: Authored cue and sequence types
-  accDescr: A Sequence lists Cue UIDs as its steps and embeds a setup cue and a release cue. A Cue has body instructions and optional CueParts, which have their own instructions. Each BoundCueInstruction pairs a SpatialSelection with a CueInstruction, which maps attributes to ValueSources.
+  accDescr: A Sequence lists Cue UIDs as its steps and embeds a setup cue and a release cue. A Cue has body instructions and optional CueParts, which have their own instructions. Each BoundAssertionSet pairs a SpatialSelection with an AssertionSet, which maps attributes to ValueSources.
   sequence[Sequence] -- "steps (cue UIDs)" --> cue[Cue]
   sequence -- embeds --> builtin["setup_cue and release_cue"]
-  cue -- body --> bound[BoundCueInstruction]
+  cue -- body --> bound[BoundAssertionSet]
   cue -- parts --> part[CuePart]
   part -- instructions --> bound
   bound -- selection --> selection([SpatialSelection])
-  bound -- cue_instruction --> instruction[CueInstruction]
+  bound -- assertions --> instruction[AssertionSet]
   instruction -- "values per Attribute" --> source{{ValueSource}}
 ```
 
 A `Sequence` carries the following fields:
 
 - `steps`, the cue UIDs in playback order. Cue IDs are scoped to their sequence, so two sequences can each have a cue 1. When the engine materializes a sequence, it skips a step whose cue is missing and logs a warning.
-- `setup_cue` and `release_cue`, two embedded `Cue` values that are not part of `steps`. The setup cue's values sit underneath every step. The release cue only supplies timing when the sequence stops.
+- `setup_cue` and `release_cue`, two embedded `Cue` values that are not part of `steps`. The setup cue's values sit underneath every step. The release cue only supplies timing when the sequence stops. After cue and sequence edits and show loads, `sync_release_cue_rows` gives the release cue one row per value-bearing step instruction, with the step's selection and values but none of its timing, so you can set release timing per fixture attribute.
 - `default_timing`, a complete `Transition` that fills any timing a step cue leaves unset. [Timing and the override chain](timing.md) explains how timing resolves.
 - `tracking_mode`, the tracking behavior that cues inherit.
 - `wrap`, which makes Go on the last cue return to the first.
@@ -36,7 +36,7 @@ A `Sequence` carries the following fields:
 
 A `Cue` holds its `trigger`, its timing (`transitions` and `transitions_by_attribute`), its body `instructions`, optional `parts`, and its tracking settings. A `CuePart` is a subset of a cue's instructions with its own timing and lookahead flag. Parts fire at the same moment as their cue and render after the cue body, in part order. When the programmer stores into part 0, it writes the cue body.
 
-A `CueInstruction` maps attributes to value sources. It can instead hold a `blueprint_application`, a live reference to a blueprint that the engine resolves each time it materializes the cue, so a blueprint edit reaches every cue that uses it. The instruction also carries timing overrides and an optional color path.
+An `AssertionSet` maps attributes to value sources. It can instead hold a `blueprint_application`, a live reference to a blueprint that the engine resolves each time it materializes the cue, so a blueprint edit reaches every cue that uses it. The assertion set also carries timing overrides and an optional color path.
 
 ### Triggers decide when a cue starts
 
@@ -115,7 +115,7 @@ The runtime fields that drive playback are:
 
 All of these positions are source-local: they come from the playback's `InstanceClock`, which runs at the playback's own speed and can be repositioned by a timeline. The `activation_time` fields hold host wall-clock time and only feed the status that the UI shows.
 
-A beat-timed sequence's positions count beats instead of seconds. `sync_sequence_instance_timebase` copies the sequence's `timebase` onto the playback entity, and the desk's clock system then switches a live playback's clock to the `InstanceClockSource::Tempo` source, which advances one source second per beat of the show tempo. Taps, nudges, and tempo changes therefore move every beat-timed playback together. Because the copy follows rematerialization, switching a running sequence between Seconds and Beats takes effect while it plays.
+A beat-timed sequence's positions count beats instead of seconds. `sync_sequence_instance_timebase` copies the sequence's `timebase` onto the playback entity, and the clip playback clock system in the `clips` crate then switches a live playback's clock to the `InstanceClockSource::Tempo` source, which advances one source second per beat of the show tempo. Taps, nudges, and tempo changes therefore move every beat-timed playback together. Because the copy follows rematerialization, switching a running sequence between Seconds and Beats takes effect while it plays.
 
 > [!NOTE]
 > The **Cue Editor** shows a cue's own times in seconds even when the cue belongs to a beat-timed sequence, where playback reads them as beats.
@@ -145,7 +145,7 @@ Three things move a sequence between cues:
 
 - **Go and Back.** A clip command such as `clip 1 go` reaches the clip handlers, which pass a `SequencePlaybackOperation::Go` or `Back` to the running playback. The handler runs in `EventHandling`, extends the materialized prefix, and moves the position, anchoring the new cue at the clock's current position. Go on the last cue does nothing unless `wrap` is on, and Back on the first cue does the same. [From command to state change](../engine/command-path.md) follows a command along this path.
 
-  While the show's launch quantize mode is on, a live Go, start, or stop doesn't reach the playback at once. `forward_clip_ingress_actions` in the desk holds it in `ArmedLaunches` and releases it once the show tempo reaches the next beat or bar, or when a **Launch armed clips now** action fires everything waiting. Clip commands from the web UI, fader buttons, boards, MIDI, OSC, and the command line wait this way. A press that lands within 0.05 beat after a beat or bar fires at once. Timelines, flows, held Flash and Swop buttons, and fader moves that start or stop a clip never wait, and desk command actions a timeline runs carry the `InternalDeskAction` origin so they skip quantize too.
+  While the show's launch quantize mode is on, a live Go, start, or stop doesn't reach the playback at once. `forward_clip_ingress_actions` in the `clips` crate holds it in `ArmedLaunches` and releases it once the show tempo reaches the next beat or bar, or when a **Launch armed clips now** action fires everything waiting. Clip commands from the web UI, fader buttons, boards, MIDI, OSC, and the command line wait this way. A press that lands within 0.05 beat after a beat or bar fires at once. Timelines, flows, macros, held Flash and Swop buttons, and fader moves that start or stop a clip never wait. Command actions a timeline runs carry the `InternalDeskAction` origin, and the command tracker marks each statement a macro runs, so both skip quantize. Loading a show drops every armed launch and reports each one as failed with `clip.launch_dropped`.
 - **Goto.** `SequencePlaybackOperation::Goto` jumps to a position. It can carry a `PlaybackReconstructionTiming`, which also resets the playback clock. A timeline uses this to place a cue at an exact point in its own time.
 - **Automatic triggers.** In each render pass, `advance_sequences` checks whether the next cue's trigger is due. It advances as many cues as are due, up to 10,000 in one tick, and anchors each cue at the exact position where it became due rather than at the frame's time. Follow chains therefore keep exact timing at any frame rate.
 
@@ -226,7 +226,8 @@ When every release transition has finished, plus a 10-millisecond grace period, 
 
 | Concept | Where to look |
 |---------|---------------|
-| `Sequence`, `Cue`, `CuePart`, `CueInstruction`, `TrackingMode`, and `TrackingFlags` | `crates/cues/src/cue.rs` |
+| `Sequence`, `Cue`, `CuePart`, `TrackingMode`, and `TrackingFlags` | `crates/cues/src/cue.rs` |
+| `AssertionSet` and `BoundAssertionSet` | `crates/engine/src/assertions.rs` |
 | `ValueSource` | `crates/common/src/value_source.rs` |
 | `CueTriggerType` and trigger timing helpers | `crates/common/src/transitions.rs` |
 | `MaterializedCue` and cue materialization | `crates/cues/src/materialized_cue.rs`, `crates/cues/src/materialized_cue/materialization.rs` |
@@ -238,12 +239,13 @@ When every release transition has finished, plus a 10-millisecond grace period, 
 | Tracking policy and `Release` markers | `crates/cues/src/materialized_sequence/tracking.rs` |
 | Retained-prefix cache | `crates/cues/src/materialized_sequence/rendering/cache.rs` |
 | Sequence release | `crates/cues/src/materialized_sequence/release.rs` |
+| Release cue rows and `sync_release_cue_rows` | `crates/cues/src/release_cue_rows.rs`, `crates/cues/src/events/sequence_crud.rs` |
 | Rematerialization after definition changes | `crates/cues/src/materialized_sequence/rematerialize.rs` |
 | Seek replay for timelines | `crates/cues/src/sequence_planning.rs` |
 | Planning contracts and `PlaybackReconstructionTiming` | `crates/playback-planner/src/lib.rs` |
 | `InstanceClock`, `InstanceClockSource`, and `Timebase` | `crates/instances/src/lib.rs` |
-| Tempo clock for beat-timed playbacks | `crates/desk/src/instances.rs` |
-| Launch quantize and `ArmedLaunches` | `crates/desk/src/launch_quantize.rs`, `forward_clip_ingress_actions` in `crates/desk/src/systems/event_handlers/clip_events.rs` |
+| Tempo clock for beat-timed playbacks | `crates/clips/src/playback/clocks.rs` |
+| Launch quantize and `ArmedLaunches` | `crates/clips/src/launch_quantize.rs`, `forward_clip_ingress_actions` in `crates/clips/src/playback/clip_events.rs` |
 | Beat conversion for timeline sequences | `crates/timeline/src/systems/planner_adapter.rs`, `crates/timeline/src/systems/planned_cues.rs`, `crates/timeline/src/systems/seek/sequence.rs` |
 
 ## Related topics

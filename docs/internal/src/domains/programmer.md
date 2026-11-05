@@ -10,17 +10,17 @@ The examples use the [running example](../README.md#a-running-example). The prog
 
 ## What the programmer holds
 
-The programmer is one Bevy resource, `Programmer`, in the `programmer` crate. The following diagram shows the parts that matter at runtime:
+The programmer is one Bevy resource, `Programmer`, in the `programming` crate. The following diagram shows the parts that matter at runtime:
 
 ```mermaid
 flowchart TB
   accTitle: Contents of the programmer
-  accDescr: The programmer resource holds an ordered list of rows, an active selection, and the timing defaults of the last recalled cue. Each row pairs a selection with a cue instruction, which carries attribute values and timing.
+  accDescr: The programmer resource holds an ordered list of rows, an active selection, and the timing defaults of the last recalled cue. Each row pairs a selection with an assertion set, which carries attribute values and timing.
   programmer[(Programmer resource)]
   rows[Ordered rows, each with a UUID]
   selection[Active selection]
   recalled[Timing defaults of the last recalled cue]
-  row["Row: selection + cue instruction"]
+  row["Row: selection + assertion set"]
   values[Attribute values]
   timing[Row, attribute, and per-fixture timing]
   programmer --> rows
@@ -31,7 +31,7 @@ flowchart TB
   row --> timing
 ```
 
-Each row is a `BoundCueInstruction`, the same type a cue uses for its instructions. A row pairs a spatial selection, such as `fixture 1` or `group 2`, with a fan or mirror clause, with a `CueInstruction`. The instruction carries:
+Each row is a `ProgrammerInstruction` that wraps a `BoundAssertionSet`, the same type a cue uses for its instructions. A row pairs a spatial selection, such as `fixture 1` or `group 2`, with a fan or mirror clause, with an `AssertionSet`. The assertion set carries:
 
 - A map from attribute to value source. A value source is an inline value, a fanned list of values spread across the selection, `Release`, or `HoldPosition`.
 - An optional blueprint application, for rows that apply a blueprint by reference instead of holding values.
@@ -42,7 +42,7 @@ Because programmer rows and cue instructions share one type, storing and recalli
 
 The rows live in a list with a UUID index. Merged rows move to the end, and removing a row moves the last row into its place. Order matters because the later row wins when rows coalesce. The UUID identifies the row for its whole life, and the painter uses it to find the row's layer from one frame to the next.
 
-In the running example, `fixture 1 @ 50` produces one row: selection `fixture 1`, intensity at 50%. With the `programmer_auto_select` desk setting on, the command also makes `fixture 1` the active selection. The setting is off by default, so the active selection changes only through selection commands.
+In the running example, `fixture 1 @ 50` produces one row: selection `fixture 1`, intensity at 50%. With the `auto_select` setting of the `programming` settings section on, the command also makes `fixture 1` the active selection. The setting is off by default, so the active selection changes only through selection commands.
 
 The programmer isn't part of the showfile. Loading a show clears it.
 
@@ -117,7 +117,7 @@ Clearing removes rows or parts of rows from the programmer. Releasing does the s
 
 The two-step `clear` follows console convention: the first press drops the selection you were working with, and the second drops the values. The **Programmer** panel's clear button and <kbd>Shift</kbd>+<kbd>Escape</kbd> send the same two-step clear as a `ProgrammerCommand::ClearProgrammer`.
 
-Partial clears and releases resolve the row's selection to concrete fixtures before removing anything. When a row uses a selection that isn't a plain fixture list, such as a group, removing part of it turns the rest into a resolved fixture list. The `selection_flatten_policy` desk setting decides whether this flattening needs confirmation. With the `Prompt` policy, the command fails and returns a retry command that carries a one-use approval, so the client can confirm with the operator and send the retry.
+Partial clears and releases resolve the row's selection to concrete fixtures before removing anything. When a row uses a selection that isn't a plain fixture list, such as a group, removing part of it turns the rest into a resolved fixture list. The `selection_flatten_policy` setting of the `programming` section decides whether this flattening needs confirmation. With the `Prompt` policy, the command fails and returns a retry command that carries a one-use approval, so the client can confirm with the operator and send the retry.
 
 Once the programmer holds no rows, it also forgets the timing defaults of the last recalled cue.
 
@@ -252,23 +252,24 @@ Programmer edits undo differently. Adding a row, clearing values, and releasing 
 
 | Concept | Where to look |
 |---------|---------------|
-| `Programmer`, row list, mode, and `add_instruction` | `crates/programmer/src/resources.rs` |
-| `BoundCueInstruction`, `CueInstruction`, `CuePart`, `Cue`, tracking flags and modes | `crates/cues/src/cue.rs` |
+| `Programmer`, row list, mode, and `add_instruction` | `crates/programming/src/resources.rs` |
+| `BoundAssertionSet` and `AssertionSet` | `crates/engine/src/assertions.rs` |
+| `CuePart`, `Cue`, tracking flags and modes | `crates/cues/src/cue.rs` |
 | `ValueSource` | `crates/common/src/value_source.rs` |
-| `ProgrammerCommand`, `StoreMode`, store targets | `crates/programmer/src/events/contracts.rs` |
-| Command handler and selection commands | `crates/programmer/src/events/programmer.rs`, `crates/programmer/src/events/programmer/` |
-| Carving overlapping rows and the store normalization and modes | `crates/programmer/src/events/store_mode.rs` |
-| Clear and release planning | `crates/programmer/src/action_model.rs`, `crates/programmer/src/command_planner.rs`, `crates/programmer/src/events/planning.rs` |
-| Applying clears and releases | `crates/programmer/src/events/programmer/operations.rs`, `crates/programmer/src/events/programmer/instruction_release.rs` |
-| Programmer painter | `crates/programmer/src/painter.rs` |
-| Store and recall handler | `crates/programmer/src/events/cues.rs` |
+| `ProgrammerCommand`, `StoreMode`, store targets | `crates/programming/src/events/contracts.rs` |
+| Command handler and selection commands | `crates/programming/src/events/programmer.rs`, `crates/programming/src/events/programmer/` |
+| Carving overlapping rows and the store normalization and modes | `crates/programming/src/events/store_mode.rs` |
+| Clear and release planning | `crates/programming/src/action_model.rs`, `crates/programming/src/command_planner.rs`, `crates/programming/src/events/planning.rs` |
+| Applying clears and releases | `crates/programming/src/events/programmer/operations.rs`, `crates/programming/src/events/programmer/instruction_release.rs` |
+| Programmer painter | `crates/programming/src/painter.rs` |
+| Store and recall handler | `crates/programming/src/events/cues.rs` |
 | Committing a store and its undo entry | `execute_cue_store_operation` in `crates/cues/src/events/actions.rs`, `CueStoreOperation` in `crates/cues/src/lib.rs` |
-| Programmer undo snapshots and restore | `crates/programmer/src/undo.rs`, `crates/programmer/src/events/undo.rs` |
-| Programmer state sent to clients | `crates/programmer/src/websocket.rs` |
+| Programmer undo snapshots and restore | `crates/programming/src/undo.rs`, `crates/programming/src/events/undo.rs` |
+| Programmer state sent to clients | `crates/programming/src/websocket.rs` |
 | Store command grammar | `parse_store_cue_mode_token` in `crates/cmd-parse/src/parser/strict.rs` |
 | Store cue dialog | `webui/features/programmer/model/programmer-store-model.ts` |
-| `programmer_auto_select` and `selection_flatten_policy` | `crates/desk/src/settings.rs` |
-| Store tests, one per behavior | `crates/programmer/tests/it/store_cue_events.rs` |
+| `ProgrammingSettings` with `auto_select` and `selection_flatten_policy` | `crates/programming/src/settings.rs` |
+| Store tests, one per behavior | `crates/programming/tests/it/store_cue_events.rs` |
 
 ## Related topics
 
