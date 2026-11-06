@@ -9,6 +9,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wit-bindgen = "0.63.0"
-wit-component = "0.262"
+wit-component = "0.263"
 
 [workspace]

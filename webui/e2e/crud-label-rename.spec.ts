@@ -245,7 +245,10 @@ async function exerciseRenameSurfaces(
     const api = (window as any).appStores.dockApi.get();
     api.getPanel("panel-SequenceList-crud-rename")?.api.setActive();
     api.getPanel("panel-SequenceList-crud-rename")?.focus();
-    api.getPanel("panel-PropertiesInspector")?.focus();
+    const properties = api.getPanel("panel-PropertiesInspector");
+    properties?.focus();
+    if (properties?.group.api.location.type === "edge")
+      properties.group.api.expand();
   });
   const propertiesInput = page.getByLabel("Sequence label");
   await expect(propertiesInput).toHaveValue(context.listLabel);

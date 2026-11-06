@@ -365,6 +365,7 @@ async function activatePanel(page: Page, id: string): Promise<void> {
     const panel = (window as any).appStores.dockApi.get().getPanel(panelId);
     panel?.api.setActive();
     panel?.focus();
+    if (panel?.group.api.location.type === "edge") panel.group.api.expand();
   }, id);
 }
 
