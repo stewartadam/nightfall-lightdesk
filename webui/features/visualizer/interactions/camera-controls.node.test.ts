@@ -12,6 +12,8 @@ import { PerspectiveCamera, Vector3 } from "three/webgpu";
 import {
   calculateWheelDollyMoveAmount,
   cancelControlsInteraction,
+  createControls,
+  disposeControlsBehavior,
   updateControlsTargetFromFloorIntersection,
 } from "./camera-controls";
 
@@ -72,42 +74,98 @@ test("calculateWheelDollyMoveAmount clamps large wheel bursts", () => {
   assert.equal(calculateWheelDollyMoveAmount(-100000, 2), 0.6);
 });
 
+/** A canvas stand-in that dispatches events and records pointer capture like a browser element. */
+class FakeCanvas extends EventTarget {
+  readonly ownerDocument = new EventTarget();
+  readonly style: Record<string, string> = {};
+  readonly clientWidth = 100;
+  readonly clientHeight = 100;
+  readonly captured = new Set<number>();
+  readonly released: number[] = [];
+
+  /** Records that the element captured a pointer. */
+  setPointerCapture(pointerId: number): void {
+    this.captured.add(pointerId);
+  }
+
+  /** Reports whether the element still owns a pointer capture. */
+  hasPointerCapture(pointerId: number): boolean {
+    return this.captured.has(pointerId);
+  }
+
+  /** Releases a captured pointer and records the release. */
+  releasePointerCapture(pointerId: number): void {
+    this.captured.delete(pointerId);
+    this.released.push(pointerId);
+  }
+
+  /** OrbitControls listens for modifier keys on the element's root node. */
+  getRootNode(): EventTarget {
+    return this.ownerDocument;
+  }
+
+  /** Reports the element's on-screen bounds for pointer math. */
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: 100, height: 100 };
+  }
+}
+
+/** Builds a mouse pointer event carrying the fields OrbitControls reads. */
+function pointerEvent(
+  type: string,
+  pointerId: number,
+  clientX: number,
+  clientY: number,
+): Event {
+  return Object.assign(new Event(type), {
+    pointerId,
+    pointerType: "mouse",
+    button: 0,
+    clientX,
+    clientY,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    altKey: false,
+  });
+}
+
 /**
- * Verifies stuck OrbitControls pointer state can be cleared without moving the camera.
+ * Verifies an abandoned OrbitControls drag releases its capture, reports its end once,
+ * ignores the stale pointer afterwards, and leaves the controls usable for a new drag.
  */
-test("cancelControlsInteraction clears active OrbitControls pointer state", () => {
-  const releasedPointerIds: number[] = [];
-  const removedListeners: string[] = [];
-  const dispatchedEvents: string[] = [];
-  const ownerDocument = {
-    removeEventListener: (type: string) => {
-      removedListeners.push(type);
-    },
-  };
-  const controls = {
-    state: 2,
-    _pointers: [7],
-    _pointerPositions: { 7: { x: 10, y: 20 } },
-    _onPointerMove: () => undefined,
-    _onPointerUp: () => undefined,
-    domElement: {
-      ownerDocument,
-      hasPointerCapture: (pointerId: number) => pointerId === 7,
-      releasePointerCapture: (pointerId: number) => {
-        releasedPointerIds.push(pointerId);
-      },
-    },
-    dispatchEvent: (event: { type: string }) => {
-      dispatchedEvents.push(event.type);
-    },
-  };
+test("cancelControlsInteraction abandons an active OrbitControls drag", () => {
+  const camera = new PerspectiveCamera(55, 1, 0.1, 500);
+  camera.position.set(0, 8, 12);
+  const canvas = new FakeCanvas();
+  const controls = createControls(
+    camera,
+    canvas as unknown as HTMLElement,
+    { x: 0, y: 2, z: 0 },
+    "camera-locked",
+  );
+  const events: string[] = [];
+  controls.addEventListener("start", () => events.push("start"));
+  controls.addEventListener("end", () => events.push("end"));
 
-  cancelControlsInteraction(controls as never);
+  canvas.dispatchEvent(pointerEvent("pointerdown", 7, 10, 10));
+  assert.deepEqual(events, ["start"]);
+  assert.ok(canvas.captured.has(7));
 
-  assert.deepEqual(releasedPointerIds, [7]);
-  assert.deepEqual(removedListeners, ["pointermove", "pointerup"]);
-  assert.deepEqual(dispatchedEvents, ["end"]);
-  assert.equal(controls.state, -1);
-  assert.deepEqual(controls._pointers, []);
-  assert.deepEqual(controls._pointerPositions, {});
+  cancelControlsInteraction(controls);
+  assert.deepEqual(canvas.released, [7]);
+  assert.deepEqual(events, ["start", "end"]);
+
+  const position = camera.position.clone();
+  canvas.ownerDocument.dispatchEvent(pointerEvent("pointermove", 7, 60, 60));
+  controls.update();
+  assert.ok(camera.position.equals(position), "stale drag moved the camera");
+
+  canvas.dispatchEvent(pointerEvent("pointerdown", 8, 10, 10));
+  assert.deepEqual(events, ["start", "end", "start"]);
+  // OrbitControls finishes drags from document-level pointerup listeners.
+  canvas.ownerDocument.dispatchEvent(pointerEvent("pointerup", 8, 10, 10));
+  assert.deepEqual(events, ["start", "end", "start", "end"]);
+  disposeControlsBehavior(controls);
+  controls.dispose();
 });

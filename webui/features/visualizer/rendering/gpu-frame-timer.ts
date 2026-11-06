@@ -48,9 +48,10 @@ class GpuPassLabels extends InspectorBase {
 
 /**
  * Minimal renderer interface keeps GPU timing testable without creating a device.
- * `timestampQueryPool`, `trackTimestamp` and the inspector are three.js
- * internals; scripts/three-timestamp-query.node.test.mjs fails when a three
- * upgrade drops any of them.
+ * `timestampQueryPool`, `trackTimestamp` and the inspector are documented
+ * three.js members that @types/three does not declare;
+ * scripts/three-timestamp-query.node.test.mjs fails when a three upgrade drops
+ * any of them.
  */
 export interface TimestampRenderer {
   backend: {
