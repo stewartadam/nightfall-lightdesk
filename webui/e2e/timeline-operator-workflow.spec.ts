@@ -204,6 +204,54 @@ test("clip speed lane control points persist after backend publication", async (
   });
 });
 
+/**
+ * Verifies a plain click on an automation point does not leave it following the cursor: moving
+ * the mouse and clicking elsewhere afterwards must not move or re-store the point.
+ */
+test("a single click on an automation point does not start a drag", async ({
+  page,
+}, testInfo) => {
+  await openFirstTimeline(page);
+  /** Reads the base track's lane points as delivered by the backend. */
+  const readPoints = () =>
+    page.evaluate(
+      (uid) =>
+        (window as any).appStores.timelines
+          .get()
+          [uid].tracks[0].automation_lanes.find(
+            (lane: any) => lane.name === "Owned Operator Curve",
+          ).points,
+      TIMELINE_UID,
+    );
+  const lane = page.locator('[data-timeline-automation-lane="true"]').first();
+  const initialCount = (await readPoints()).length;
+  await lane.click({ position: { x: 120, y: 30 } });
+  await expect
+    .poll(async () => (await readPoints()).length)
+    .toBe(initialCount + 1);
+  const pointsBefore = await readPoints();
+  const point = lane.locator(".automation-point").last();
+  await expect(point).toBeVisible();
+  // Points are editable only on the record target track; the first click makes it the target.
+  await point.click();
+  await page.waitForTimeout(400);
+  expect(await readPoints()).toEqual(pointsBefore);
+
+  await point.click();
+  // Wait out the double-click window, then move away and click elsewhere on the page.
+  await page.waitForTimeout(400);
+  const laneBox = (await lane.boundingBox())!;
+  await page.mouse.move(laneBox.x + 300, laneBox.y + 50);
+  await expect(point).not.toHaveAttribute("style", /transform: translate/);
+  await page.mouse.click(laneBox.x + 300, laneBox.y + laneBox.height + 200);
+  await page.waitForTimeout(300);
+
+  expect(await readPoints()).toEqual(pointsBefore);
+  await page.screenshot({
+    path: testInfo.outputPath("automation-point-after-click.png"),
+  });
+});
+
 /** Verifies a clip speed lane changes rendered Step FX output through the shared speed property. */
 test("clip speed automation controls Step FX playback and output", async ({
   page,
