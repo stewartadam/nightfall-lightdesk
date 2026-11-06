@@ -311,24 +311,29 @@ fn element_selector_from_ast(selector: &ast::ElementSelectorAst) -> ElementSelec
     }
 }
 
-/// Convert Duration AST (ValueAst) -> seconds as f32
+/// Converts a duration AST (a number with an optional `s`, `ms`, `hz` or `bpm` unit) to seconds.
+///
+/// Rejects values that are not a finite, non-negative duration that [`std::time::Duration`] can
+/// hold, such as `-2`, `0hz` or `0bpm`, so callers can build a `Duration` from the result without
+/// panicking.
 pub fn duration_from_ast(d: &ast::DurationValueAst) -> Result<f32, AstConvError> {
-    // Parse the numeric value
-    let s = d.value.0;
-    let val: f32 = s.parse().map_err(|_| AstConvError::Invalid("duration"))?;
+    let val: f32 = d
+        .value
+        .0
+        .parse()
+        .map_err(|_| AstConvError::Invalid("duration"))?;
 
-    if let Some(unit) = &d.unit {
-        let u = unit.0.to_ascii_lowercase();
-        match u.as_str() {
-            "bpm" => Ok(60.0 / val),
-            "hz" => Ok(1.0 / val),
-            "ms" => Ok(val / 1000.0),
-            "s" => Ok(val),
-            _ => Ok(val),
-        }
-    } else {
-        Ok(val)
+    let unit = d.unit.as_ref().map(|unit| unit.0.to_ascii_lowercase());
+    let secs = match unit.as_deref() {
+        Some("bpm") => 60.0 / val,
+        Some("hz") => 1.0 / val,
+        Some("ms") => val / 1000.0,
+        _ => val,
+    };
+    if std::time::Duration::try_from_secs_f32(secs).is_err() {
+        return Err(AstConvError::Invalid("duration"));
     }
+    Ok(secs)
 }
 
 /// Convert ValueAst -> absolute percent parameter value.
@@ -585,6 +590,56 @@ fn max_dmx_address() -> Result<u16, AstConvError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Builds a duration AST for `value` with an optional unit suffix.
+    fn duration_ast<'i>(value: &'i str, unit: Option<&'i str>) -> ast::DurationValueAst<'i> {
+        ast::DurationValueAst {
+            value: ast::ValueAst(value),
+            unit: unit.map(ast::DurationUnitAst),
+        }
+    }
+
+    /// Verifies unit conversion for durations that a `Duration` can hold.
+    #[test]
+    fn duration_from_ast_converts_units() {
+        assert_eq!(duration_from_ast(&duration_ast("2", None)).unwrap(), 2.0);
+        assert_eq!(
+            duration_from_ast(&duration_ast("500", Some("ms"))).unwrap(),
+            0.5
+        );
+        assert_eq!(
+            duration_from_ast(&duration_ast("4", Some("hz"))).unwrap(),
+            0.25
+        );
+        assert_eq!(
+            duration_from_ast(&duration_ast("120", Some("bpm"))).unwrap(),
+            0.5
+        );
+        assert_eq!(duration_from_ast(&duration_ast("0", None)).unwrap(), 0.0);
+    }
+
+    /// Verifies negative, infinite and oversized durations are rejected rather than returned,
+    /// since building a `Duration` from them panics.
+    #[test]
+    fn duration_from_ast_rejects_values_a_duration_cannot_hold() {
+        for (value, unit) in [
+            ("-2", None),
+            ("0", Some("hz")),
+            ("0", Some("bpm")),
+            ("-5", Some("ms")),
+            ("1e30", None),
+            ("inf", None),
+            ("NaN", None),
+        ] {
+            assert!(
+                matches!(
+                    duration_from_ast(&duration_ast(value, unit)),
+                    Err(AstConvError::Invalid("duration"))
+                ),
+                "{value} {unit:?} should be rejected"
+            );
+        }
+    }
 
     /// Verifies the configured store expansion boundary remains inclusive.
     #[test]
