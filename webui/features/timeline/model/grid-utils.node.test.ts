@@ -10,12 +10,46 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { msToDuration } from "../../../lib/utils";
 import {
+  getBeatInfo,
   msPerBars,
+  msPerBeat,
   quantizeSeekPositionMs,
   seekPositionByBars,
   seekPositionFromTimelineX,
   snapToGrid,
 } from "./grid-utils";
+
+/**
+ * Verifies beat length keeps its fractional milliseconds, so bar 100 at 128 BPM starts where
+ * the engine puts it rather than ~300 ms early.
+ */
+test("msPerBeat keeps fractional beat lengths", () => {
+  assert.equal(msPerBeat(128), 468.75);
+  const bar100StartMs = 99 * 4 * msPerBeat(128);
+  assert.equal(bar100StartMs, 185_625);
+  assert.deepEqual(getBeatInfo(bar100StartMs, 128), {
+    beat: 396,
+    bar: 100,
+    beatInBar: 0,
+  });
+});
+
+/**
+ * Verifies a fractional beat's start counts as that beat both exactly and when rounded to the
+ * whole millisecond a timeline position stores.
+ */
+test("getBeatInfo counts exact and rounded fractional beat starts as the new beat", () => {
+  const beatMs = msPerBeat(130);
+  for (let beat = 1; beat < 2000; beat++) {
+    assert.equal(getBeatInfo(beat * beatMs, 130).beat, beat);
+    assert.equal(getBeatInfo(Math.round(beat * beatMs), 130).beat, beat);
+  }
+});
+
+/** Verifies bar jumps use the exact bar length rather than one rounded to whole milliseconds. */
+test("msPerBars keeps fractional bar lengths", () => {
+  assert.equal(msPerBars(130, 4, 99), 99 * 4 * msPerBeat(130));
+});
 
 /** Verifies bar jump duration scales by BPM, meter, and jump count. */
 test("msPerBars calculates whole-bar jump durations", () => {

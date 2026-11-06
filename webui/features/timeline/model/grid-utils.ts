@@ -11,10 +11,29 @@ import { durationToMs, msToPixels, pixelsToMs } from "../../../lib/utils";
 import type * as types from "../../../types";
 
 /**
- * Calculate the duration in milliseconds for one beat at a given BPM
+ * Returns the exact duration in milliseconds of one beat at `bpm`.
+ *
+ * The value is not rounded: rounding to whole milliseconds accumulates across beats, so the
+ * ruler, snapping and bar seeks would drift away from the engine's beat positions further into
+ * a show.
  */
 export function msPerBeat(bpm: number): number {
-  return Math.floor(60000 / bpm); // milliseconds per beat = (60 seconds * 1000) / BPM
+  return 60000 / bpm;
+}
+
+/**
+ * How far before a beat boundary, in milliseconds, a time still counts as that beat. Timeline
+ * positions are whole milliseconds while beats are fractional, so a beat's start rounded to a
+ * position can land up to half a millisecond before the exact boundary.
+ */
+const BEAT_BOUNDARY_TOLERANCE_MS = 0.5;
+
+/**
+ * Returns how many whole beats of `beatMs` fit in `elapsedMs`, counting a time within
+ * {@link BEAT_BOUNDARY_TOLERANCE_MS} before a boundary as the new beat.
+ */
+export function beatsElapsed(elapsedMs: number, beatMs: number): number {
+  return Math.floor((elapsedMs + BEAT_BOUNDARY_TOLERANCE_MS) / beatMs);
 }
 
 /** Calculates the timeline duration for a whole-bar jump. */
@@ -26,7 +45,7 @@ export function msPerBars(
   const beatDuration = msPerBeat(Math.max(1, bpm));
   const barBeats = Math.max(1, beatsPerBar);
   const barCount = Math.max(1, bars);
-  return Math.round(beatDuration * barBeats * barCount);
+  return beatDuration * barBeats * barCount;
 }
 
 /**
@@ -34,7 +53,7 @@ export function msPerBars(
  */
 function getBeatAtTime(ms: number, bpm: number): number {
   const beatDuration = msPerBeat(bpm);
-  return Math.floor(ms / beatDuration);
+  return beatsElapsed(ms, beatDuration);
 }
 
 /**

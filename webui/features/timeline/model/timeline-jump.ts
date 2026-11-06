@@ -8,7 +8,7 @@
 
 import { durationToMs } from "../../../lib/utils";
 import type * as types from "../../../types";
-import { msPerBeat } from "./grid-utils";
+import { beatsElapsed, msPerBeat } from "./grid-utils";
 
 export type TimelineJumpConfig = {
   bpm: number;
@@ -76,7 +76,7 @@ export function beatPositionAtMs(
   const beatsPerBar = Math.max(1, config.beatsPerBar);
   const beatDuration = msPerBeat(Math.max(1, config.bpm));
   const sortedMarkers = sortedBeatMarkers(config.markers);
-  let totalBeat = Math.floor(Math.max(0, positionMs) / beatDuration);
+  let totalBeat = beatsElapsed(Math.max(0, positionMs), beatDuration);
 
   if (sortedMarkers.length > 0) {
     let anchorBeat = sortedMarkers[0].beat_index;
@@ -91,7 +91,7 @@ export function beatPositionAtMs(
 
     totalBeat = Math.max(
       0,
-      anchorBeat + Math.floor((positionMs - anchorMs) / beatDuration),
+      anchorBeat + beatsElapsed(positionMs - anchorMs, beatDuration),
     );
   }
 
