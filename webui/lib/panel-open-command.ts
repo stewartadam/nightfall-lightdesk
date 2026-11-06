@@ -361,6 +361,24 @@ function expandPanelEdgeGroup(
 }
 
 /**
+ * Focuses an open panel, first expanding its edge group, because focusing alone leaves a panel in
+ * a collapsed edge hidden. Returns false when the panel is closed, so callers can open it with
+ * their own placement and renderer options.
+ */
+export function focusExistingPanel(
+  api: PanelOpenDockApi,
+  panelId: string,
+): boolean {
+  const panel = api.getPanel(panelId);
+  if (!panel) {
+    return false;
+  }
+  expandPanelEdgeGroup(api, panel);
+  panel.focus();
+  return true;
+}
+
+/**
  * Opens a panel, focuses an existing singleton, or skips when Dockview is unavailable. A board
  * filling the workspace is put away first so the panel is never hidden behind it. A beside target
  * opens the panel in that panel's group, or uses the default placement when it is closed.
@@ -378,10 +396,7 @@ export function openOrFocusPanel(
   }
   activeBoardWorkspace.set(null);
 
-  const existingPanel = api.getPanel(panelId);
-  if (existingPanel) {
-    expandPanelEdgeGroup(api, existingPanel);
-    existingPanel.focus();
+  if (focusExistingPanel(api, panelId)) {
     return "focused";
   }
 

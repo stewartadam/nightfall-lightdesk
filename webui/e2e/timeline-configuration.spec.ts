@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { revealPanel } from "./dock-panels";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -175,7 +176,8 @@ test("timeline properties expose and persist timeline configuration", async ({
     const timelinePanel = api.getPanel(timelinePanelId);
     timelinePanel?.api.setActive();
     timelinePanel?.focus();
-    api.getEdgeGroup("bottom")?.expand();
+    if (timelinePanel?.group.api.location.type === "edge")
+      timelinePanel.group.api.expand();
     api.getPanel("panel-PropertiesInspector")?.api.setActive();
     api.setEdgeGroupVisible("right", true);
     api.getEdgeGroup("right")?.expand();
@@ -333,18 +335,13 @@ test("timeline properties expose and persist timeline configuration", async ({
     )
     .toBe("Manual");
 
-  await page.evaluate(
-    async ({ panelId, timecodeId }) => {
-      const stores = (window as any).appStores;
-      await stores.send({
-        module: "TimecodeCommand",
-        command: { type: "StopTimecode", data: timecodeId },
-      });
-      stores.dockApi.get().getPanel(panelId)?.focus();
-      stores.dockApi.get().getEdgeGroup("bottom")?.expand();
-    },
-    { panelId: context.timelinePanelId, timecodeId: context.initialTimecodeId },
-  );
+  await page.evaluate(async (timecodeId) => {
+    await (window as any).appStores.send({
+      module: "TimecodeCommand",
+      command: { type: "StopTimecode", data: timecodeId },
+    });
+  }, context.initialTimecodeId);
+  await revealPanel(page, context.timelinePanelId);
 
   const playhead = page
     .locator(

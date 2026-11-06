@@ -23,6 +23,7 @@ import type {
 import { CompactSelection } from "../../../lib/data-grid-types";
 import { emptyGridSelection } from "../../../lib/datagrid";
 import { EMPTY_TABLE_FILTERS } from "../../../lib/datagrid-filtering";
+import { focusExistingPanel } from "../../../lib/panel-open-command";
 import type { LayerState } from "../../../lib/ws/types";
 import { dockApi, requestLayerNavigation } from "../../../state/appStores";
 import type {
@@ -111,11 +112,7 @@ export function createFixturesGridController(
     const api = $dockApi();
     if (!api) return;
 
-    const panel = api.getPanel("panel-LayerStack");
-    if (panel) {
-      panel.focus();
-      return;
-    }
+    if (focusExistingPanel(api, "panel-LayerStack")) return;
 
     api.addPanel({
       id: "panel-LayerStack",

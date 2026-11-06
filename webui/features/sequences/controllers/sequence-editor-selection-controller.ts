@@ -17,6 +17,7 @@ import {
 import type { GridColumn, GridSelection } from "../../../lib/data-grid-types";
 import { CompactSelection } from "../../../lib/data-grid-types";
 import { getSelectedRowIndices } from "../../../lib/datagrid";
+import { focusExistingPanel } from "../../../lib/panel-open-command";
 import { dockApi } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { formatCueEditorTitle } from "../../cues";
@@ -242,11 +243,7 @@ export function createSequenceEditorSelectionController(
       : row.isReleaseCue
         ? `release-cue-editor-${ctx.sequenceUid}-p${partId}`
         : `cue-editor-${cue.identifiers.uid}-p${partId}`;
-    const panel = api.getPanel(panelId);
-    if (panel) {
-      panel.focus();
-      return;
-    }
+    if (focusExistingPanel(api, panelId)) return;
 
     api.addPanel({
       id: panelId,
