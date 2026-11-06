@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, onCleanup } from "solid-js";
+import { createEffect, createSignal, type JSX, onCleanup } from "solid-js";
 import {
   Dialog,
   DialogBody,
@@ -18,8 +18,13 @@ import { Button } from "../ui/visual-language/button";
 interface DeleteConfirmModalProps {
   isOpen: boolean;
   title: string;
-  message: string;
+  message: JSX.Element;
   confirmLabel?: string;
+  /**
+   * Focuses Cancel instead of the confirm button, so a stray Enter keeps what
+   * would be lost. Use it where the deletion cannot be undone.
+   */
+  focusCancel?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -31,11 +36,15 @@ const backdropAttributes = {
   "data-hs-overlay-keyboard": "false",
 };
 
-/** Asks the user to confirm a destructive action, focusing the confirm button once the dialog fades in. */
+/**
+ * Asks the user to confirm a destructive action, focusing the confirm button (or
+ * Cancel with `focusCancel`) once the dialog fades in.
+ */
 export default function DeleteConfirmModal(props: DeleteConfirmModalProps) {
   const [isEntered, setIsEntered] = createSignal(false);
   let enterAnimationFrame: number | null = null;
   let confirmButtonRef: HTMLButtonElement | undefined;
+  let cancelButtonRef: HTMLButtonElement | undefined;
 
   createEffect(() => {
     if (!props.isOpen) {
@@ -50,7 +59,7 @@ export default function DeleteConfirmModal(props: DeleteConfirmModalProps) {
     setIsEntered(false);
     enterAnimationFrame = requestAnimationFrame(() => {
       setIsEntered(true);
-      confirmButtonRef?.focus();
+      (props.focusCancel ? cancelButtonRef : confirmButtonRef)?.focus();
       enterAnimationFrame = null;
     });
   });
@@ -78,10 +87,10 @@ export default function DeleteConfirmModal(props: DeleteConfirmModalProps) {
         }}
       >
         <DialogBody class="overflow-y-auto">
-          <p class="text-neutral-200">{props.message}</p>
+          <div class="text-neutral-200">{props.message}</div>
         </DialogBody>
         <DialogFooter>
-          <DialogCancelButton />
+          <DialogCancelButton ref={cancelButtonRef} />
           <Button variant="danger" ref={confirmButtonRef} type="submit">
             {props.confirmLabel ?? "Delete"}
           </Button>

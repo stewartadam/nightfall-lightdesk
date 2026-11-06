@@ -42,6 +42,7 @@ import { SearchField } from "./components/ui/search-field";
 import { matchesSearchTerms, searchTerms } from "./components/ui/search-match";
 import { Table, TableScroll } from "./components/ui/table";
 import { Button } from "./components/ui/visual-language/button";
+import DeleteConfirmModal from "./components/widgets/delete-confirm-dialog";
 import { writeClipboardText } from "./lib/clipboard";
 import { TOAST_DURATION_MS } from "./lib/constants";
 import { getLogger } from "./lib/logger";
@@ -64,6 +65,14 @@ type DashboardAction =
   | "open-log"
   | "reseed-data-dir"
   | "remove";
+/** A delete waiting for the user to confirm it in the dialog. */
+interface DeleteRequest {
+  worktreeId: string;
+  label: string;
+  path: string;
+  force: boolean;
+}
+
 interface RunActionOptions {
   sampleData?: boolean;
 }
@@ -531,6 +540,9 @@ function WorktreeDashboardApp() {
   );
   const [copiedPathFor, setCopiedPathFor] = createSignal<string | null>(null);
   const [shiftHeld, setShiftHeld] = createSignal(false);
+  const [deleteRequest, setDeleteRequest] = createSignal<DeleteRequest | null>(
+    null,
+  );
   const [openActionMenu, setOpenActionMenu] = createSignal<string | null>(null);
   const [actionMenuPlacement, setActionMenuPlacement] =
     createSignal<ActionMenuPlacement>("down");
@@ -1048,12 +1060,61 @@ function WorktreeDashboardApp() {
           }
           disabled={!props.worktree.canRemove || pending("remove")}
           onClick={(event) =>
-            void deleteWorktree(props.worktree.id, event.shiftKey)
+            setDeleteRequest({
+              worktreeId: props.worktree.id,
+              label: props.worktree.branch ?? props.worktree.name,
+              path: props.worktree.path,
+              force: event.shiftKey,
+            })
           }
         >
           {shiftHeld() ? "Force delete" : "Delete"}
         </DropdownMenuItem>
       </DropdownMenu>
+    );
+  }
+
+  /**
+   * Asks before deleting the worktree chosen in an overflow menu. Force is fixed
+   * when the menu item is chosen, so releasing Shift can't change what the dialog
+   * says, and Cancel takes focus so pressing Enter by accident keeps the worktree.
+   * The last request is kept while the dialog closes so its text doesn't blank
+   * out during the fade.
+   */
+  function ConfirmDeleteDialog() {
+    /** The open request, or the last one while the dialog closes, so its text stays put. */
+    const shown = createMemo<DeleteRequest | null>(
+      (previous) => deleteRequest() ?? previous,
+      null,
+    );
+    /** Starts the confirmed deletion with the force choice made in the menu. */
+    const confirm = () => {
+      const request = deleteRequest();
+      if (!request) return;
+      setDeleteRequest(null);
+      void deleteWorktree(request.worktreeId, request.force);
+    };
+    return (
+      <DeleteConfirmModal
+        isOpen={deleteRequest() !== null}
+        title={`${shown()?.force ? "Force delete" : "Delete"} ${shown()?.label ?? ""}?`}
+        confirmLabel={shown()?.force ? "Force delete" : "Delete"}
+        focusCancel
+        message={
+          <>
+            <p class="m-0">
+              {shown()?.force
+                ? "This permanently discards uncommitted changes and unmerged commits, and deletes the worktree and its branch."
+                : "This removes the worktree and, once merged, its branch. A worktree with uncommitted changes or unmerged commits is kept."}
+            </p>
+            <p class="m-0 mt-2 break-all font-mono text-xs text-neutral-400">
+              {shown()?.path}
+            </p>
+          </>
+        }
+        onCancel={() => setDeleteRequest(null)}
+        onConfirm={confirm}
+      />
     );
   }
 
@@ -1747,6 +1808,8 @@ function WorktreeDashboardApp() {
       <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
         Only processes started by this API instance are marked as managed.
       </p>
+
+      <ConfirmDeleteDialog />
     </div>
   );
 }

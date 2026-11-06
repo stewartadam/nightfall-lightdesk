@@ -387,6 +387,14 @@ pnpm run dashboard:ui
 ```
 
 The dashboard page is served at `/worktree-dashboard.html` and calls the API via Vite proxy (`/worktree-api`).
+The API refuses requests whose `Host` isn't this machine or whose `Origin` isn't a
+loopback address, so other web pages can't drive it. To open the dashboard page from
+another address, such as another device on your LAN, list that origin in the
+dashboard's `.env`:
+
+```sh
+NIGHTFALL_WORKTREE_DASHBOARD_ALLOWED_ORIGINS=http://192.168.1.20:3031
+```
 The API discovers all worktrees from `git worktree list`, reads each `.env` (`NIGHTFALL_PORT`), and provides launch/recycle controls plus direct links to each Web UI.
 The `docs-user` service runs `mdbook serve docs` on `NIGHTFALL_PORT + 2` and the `docs-dev` service runs `mdbook serve docs/internal` on `NIGHTFALL_PORT + 3`, so each worktree previews its own copy of the user manual and the Developer Guide; both need `mdbook` on the dashboard's `PATH` (see [Building the documentation](#building-the-documentation)).
 

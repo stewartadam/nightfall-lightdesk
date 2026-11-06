@@ -98,6 +98,8 @@ The API answers an action as soon as it spawns the process. The client then poll
 
 The API listens on `127.0.0.1:4780` by default. `NIGHTFALL_WORKTREE_DASHBOARD_HOST` and `NIGHTFALL_WORKTREE_DASHBOARD_PORT` change it, for both the API and its clients. A worktree's ID is its absolute path, encoded as base64url. Every route that takes an ID returns 404 when `git worktree list` no longer lists that path.
 
+Because the API creates and deletes worktrees and starts and kills local processes, `worktree-dashboard/request-guard.mjs` checks every request before it is routed, so a web page open in the same browser cannot drive it. It answers 403 when the `Host` header doesn't name this machine (a loopback name or the listen address), which stops DNS rebinding, or when the `Origin` header isn't a loopback origin. Browsers send `Origin` on cross-origin POSTs even when the page can't read the response, so this is what stops a page from creating or deleting worktrees. Clients that send no `Origin`, such as the MCP server and the `wt service` alias, pass on the `Host` check alone. The web UI reaches the API through the Vite dev server's `/worktree-api` proxy, which forwards the page's origin. To open the dashboard through a dev server on another address, such as from another device on your LAN, list that origin in `NIGHTFALL_WORKTREE_DASHBOARD_ALLOWED_ORIGINS` (comma-separated, for example `http://192.168.1.20:3031`). The hostnames of listed origins are accepted as `Host` too.
+
 | Method and path | Query | Description |
 |---|---|---|
 | `GET /health` | None | Returns `{"ok": true}`. |
