@@ -34,12 +34,21 @@ test("msPerBeat keeps fractional beat lengths", () => {
   });
 });
 
-/** Verifies times on a beat whose length is not exactly representable still count as that beat. */
-test("getBeatInfo counts an exact fractional beat boundary as the new beat", () => {
+/**
+ * Verifies a fractional beat's start counts as that beat both exactly and when rounded to the
+ * whole millisecond a timeline position stores.
+ */
+test("getBeatInfo counts exact and rounded fractional beat starts as the new beat", () => {
   const beatMs = msPerBeat(130);
   for (let beat = 1; beat < 2000; beat++) {
     assert.equal(getBeatInfo(beat * beatMs, 130).beat, beat);
+    assert.equal(getBeatInfo(Math.round(beat * beatMs), 130).beat, beat);
   }
+});
+
+/** Verifies bar jumps use the exact bar length rather than one rounded to whole milliseconds. */
+test("msPerBars keeps fractional bar lengths", () => {
+  assert.equal(msPerBars(130, 4, 99), 99 * 4 * msPerBeat(130));
 });
 
 /** Verifies bar jump duration scales by BPM, meter, and jump count. */

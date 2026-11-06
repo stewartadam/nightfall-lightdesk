@@ -21,8 +21,20 @@ export function msPerBeat(bpm: number): number {
   return 60000 / bpm;
 }
 
-/** Tolerance for floating-point error when a time lands exactly on a fractional beat boundary. */
-const BEAT_BOUNDARY_EPSILON = 1e-9;
+/**
+ * How far before a beat boundary, in milliseconds, a time still counts as that beat. Timeline
+ * positions are whole milliseconds while beats are fractional, so a beat's start rounded to a
+ * position can land up to half a millisecond before the exact boundary.
+ */
+const BEAT_BOUNDARY_TOLERANCE_MS = 0.5;
+
+/**
+ * Returns how many whole beats of `beatMs` fit in `elapsedMs`, counting a time within
+ * {@link BEAT_BOUNDARY_TOLERANCE_MS} before a boundary as the new beat.
+ */
+export function beatsElapsed(elapsedMs: number, beatMs: number): number {
+  return Math.floor((elapsedMs + BEAT_BOUNDARY_TOLERANCE_MS) / beatMs);
+}
 
 /** Calculates the timeline duration for a whole-bar jump. */
 export function msPerBars(
@@ -33,7 +45,7 @@ export function msPerBars(
   const beatDuration = msPerBeat(Math.max(1, bpm));
   const barBeats = Math.max(1, beatsPerBar);
   const barCount = Math.max(1, bars);
-  return Math.round(beatDuration * barBeats * barCount);
+  return beatDuration * barBeats * barCount;
 }
 
 /**
@@ -41,7 +53,7 @@ export function msPerBars(
  */
 function getBeatAtTime(ms: number, bpm: number): number {
   const beatDuration = msPerBeat(bpm);
-  return Math.floor(ms / beatDuration + BEAT_BOUNDARY_EPSILON);
+  return beatsElapsed(ms, beatDuration);
 }
 
 /**
