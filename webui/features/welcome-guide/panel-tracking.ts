@@ -34,8 +34,12 @@ const EDGE_POSITIONS: readonly EdgeGroupPosition[] = [
   "top",
   "bottom",
 ];
-/** Fraction of sampled points that must hit the panel for it to count as on screen. */
-const ON_SCREEN_SHARE = 0.5;
+/**
+ * Fraction of sampled points that must hit the panel for it to count as on screen. Low enough that
+ * a panel the dock clips because declared minimum widths exceed the window still counts: one of
+ * the three sampled columns stays visible on a 1440px window with the Clips edge open.
+ */
+const ON_SCREEN_SHARE = 0.3;
 /** Sample grid size along each axis of a panel's content. */
 const SAMPLES_PER_AXIS = 3;
 /** Delays for follow-up measurements while edge-group and dialog transitions settle. */
@@ -50,7 +54,7 @@ const TRANSIENT_OVERLAYS =
 const POLL_MS = 750;
 
 /**
- * Reports whether most of an element is unobstructed in the viewport.
+ * Reports whether at least ON_SCREEN_SHARE of an element is unobstructed in the viewport.
  * Samples a grid of points and ignores transient overlays, so the card or a dialog cannot hide a prerequisite.
  */
 export function isElementOnScreen(element: Element): boolean {

@@ -35,6 +35,7 @@ async function openSelectionInspector(page: Page): Promise<void> {
     }
     const panel = api.getPanel(panelId);
     panel?.api.setActive();
+    if (panel?.group.api.location.type === "edge") panel.group.api.expand();
     panel?.focus();
   });
 }

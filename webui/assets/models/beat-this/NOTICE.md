@@ -1,5 +1,4 @@
-Beat This
-=========
+# Beat This
 
 Nightfall offers `beat_this.onnx` as an optional download for beatgrid detection.
 The model is a
@@ -17,8 +16,7 @@ Optional model file:
 - Download: https://raw.githubusercontent.com/mosynthkey/beat_this_cpp/e9e609472980e3bd7d3d1b06b629464269b9a907/onnx/beat_this.onnx
 - SHA-256: `c5c1466e08abdb03fdeb50668a06f244b787d564c212490482231a9cfbe9ccbd`
 
-Beat This License
------------------
+## Beat This License
 
 MIT License
 
@@ -42,8 +40,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-ONNX Conversion Reference License
----------------------------------
+## ONNX Conversion Reference License
 
 MIT License
 

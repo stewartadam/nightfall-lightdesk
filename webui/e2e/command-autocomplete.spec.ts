@@ -1197,7 +1197,10 @@ test("keeps panel command input focused after storing a cue", async ({
       inactive: true,
       position: { referencePanel: "panel-Groups", direction: "within" },
     });
-    api.getPanel("panel-CommandLine")?.focus();
+    const commandLine = api.getPanel("panel-CommandLine");
+    commandLine?.focus();
+    if (commandLine?.group.api.location.type === "edge")
+      commandLine.group.api.expand();
   });
   await expect(input).toBeVisible();
   await input.fill("fix 311 red @ 100");
@@ -1224,7 +1227,6 @@ test("keeps panel command input focused after storing a cue", async ({
     )
     .toBe("panel-CueList");
   await expect(input).toBeFocused();
-  await page.getByRole("tab", { name: "Console", exact: true }).click();
   await page.getByRole("button", { name: "Search command history" }).click();
   const historySearch = page.getByRole("searchbox", {
     name: "Command history search",
@@ -1262,7 +1264,10 @@ test("keeps panel command input active after storing a cue with sequence editor 
   await clickSequenceEditorCueLabel(page, sequenceEditor);
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
-    api.getPanel("panel-CommandLine")?.focus();
+    const commandLine = api.getPanel("panel-CommandLine");
+    commandLine?.focus();
+    if (commandLine?.group.api.location.type === "edge")
+      commandLine.group.api.expand();
   });
   await expect(input).toBeVisible();
   await input.fill("fix 311 red @ 100");

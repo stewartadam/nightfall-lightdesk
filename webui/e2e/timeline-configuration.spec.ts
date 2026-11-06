@@ -175,6 +175,7 @@ test("timeline properties expose and persist timeline configuration", async ({
     const timelinePanel = api.getPanel(timelinePanelId);
     timelinePanel?.api.setActive();
     timelinePanel?.focus();
+    api.getEdgeGroup("bottom")?.expand();
     api.getPanel("panel-PropertiesInspector")?.api.setActive();
     api.setEdgeGroupVisible("right", true);
     api.getEdgeGroup("right")?.expand();
@@ -340,6 +341,7 @@ test("timeline properties expose and persist timeline configuration", async ({
         command: { type: "StopTimecode", data: timecodeId },
       });
       stores.dockApi.get().getPanel(panelId)?.focus();
+      stores.dockApi.get().getEdgeGroup("bottom")?.expand();
     },
     { panelId: context.timelinePanelId, timecodeId: context.initialTimecodeId },
   );

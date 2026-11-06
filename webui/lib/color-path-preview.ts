@@ -265,7 +265,7 @@ export function ciePreviewPointToE154Rgb(
       E154_RGB_TO_XYZ_MATRIX[1][0] * adjustedX) /
     determinant;
   const maxChannel = Math.max(red, green, blue);
-  const scale = maxChannel > 1 ? maxChannel : 1;
+  const scale = Math.max(maxChannel, 1);
   return {
     red: clamp(red / scale, 0, 1),
     green: clamp(green / scale, 0, 1),
