@@ -25,6 +25,8 @@ use sacn::source::SacnSource;
 
 const EPHEMERAL_SACN_OUTPUT_PORT: u16 = 0;
 const SACN_PORT: u16 = sacn::packet::ACN_SDT_MULTICAST_PORT;
+/// Start code of null-start-code (level) DMX data.
+const DMX_START_CODE: u8 = 0;
 
 /// sACN output send failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,8 +258,34 @@ fn transmit_tick(
         }
     }
 
+    if flow.is_continue() {
+        terminate_unpublished_universes(source, registered_universes, &frames);
+    }
     client.record_tick(outcomes, start.elapsed(), sent_count);
     flow
+}
+
+/// Ends the stream of every registered universe that is no longer published.
+///
+/// E1.31 asks a source that stops sending a universe to say so with three Stream_Terminated
+/// packets, so receivers release it at once instead of holding the last look until their
+/// 2.5 s data-loss timeout. Terminating also deregisters the universe, which drops it from the
+/// source's universe discovery adverts.
+fn terminate_unpublished_universes(
+    source: &mut SacnSource,
+    registered_universes: &mut HashSet<u16>,
+    frames: &[SacnFrame],
+) {
+    let published: HashSet<u16> = frames.iter().map(|frame| frame.universe).collect();
+    registered_universes.retain(|&universe| {
+        if published.contains(&universe) {
+            return true;
+        }
+        if let Err(error) = source.terminate_stream(universe, DMX_START_CODE) {
+            tracing::debug!(?error, universe, "Could not terminate sACN universe stream");
+        }
+        false
+    });
 }
 
 /// Sends one universe, registering it with the source first and once more if the source
@@ -303,7 +331,7 @@ fn send_universe(
 /// Prefix DMX payload bytes with the required sACN start code byte.
 fn with_start_code(data: &[u8]) -> Vec<u8> {
     let mut result = Vec::with_capacity(data.len() + 1);
-    result.push(0);
+    result.push(DMX_START_CODE);
     result.extend_from_slice(data);
     result
 }
@@ -485,4 +513,36 @@ impl Drop for SacnOutputService {
 pub fn process_sacn_output_service() -> &'static SacnOutputService {
     static PROCESS_SERVICE: OnceLock<SacnOutputService> = OnceLock::new();
     process_singleton(&PROCESS_SERVICE, SacnOutputService::new)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Builds a frame for `universe` multicast with all channels at zero.
+    fn frame(universe: u16) -> SacnFrame {
+        SacnFrame {
+            universe,
+            unicast_ip: None,
+            data: [0; MAX_CHANNELS_PER_UNIVERSE],
+        }
+    }
+
+    /// A universe that stops being published is terminated and dropped from the source, while
+    /// universes still published stay registered.
+    #[test]
+    fn unpublished_universes_are_terminated() {
+        let mut source = SacnSource::with_ip("test", sacn_output_bind_addr(Ipv4Addr::LOCALHOST))
+            .expect("open sACN source");
+        let mut registered = HashSet::new();
+        for universe in [1, 2] {
+            source.register_universe(universe).expect("register");
+            registered.insert(universe);
+        }
+
+        terminate_unpublished_universes(&mut source, &mut registered, &[frame(1)]);
+
+        assert_eq!(registered, HashSet::from([1]));
+        assert_eq!(source.universes().expect("universes"), vec![1]);
+    }
 }
