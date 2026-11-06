@@ -105,7 +105,19 @@ impl ResourceFeed for ShowTempo {
 
 /// Run condition that passes when the tempo state changed, while it is easing, and on a
 /// heartbeat, recording what the feed then sends.
-pub(crate) fn tempo_send_is_due(tempo: Res<ShowTempo>, mut last: Local<LastTempoSend>) -> bool {
+///
+/// It only passes in updates that render: the beat counter advances in the render pass, so in an
+/// input-only update it is stale and would look like a jump against the clients' estimate,
+/// sending a counter behind the clients' playhead. A change made in an input-only update goes out
+/// with the next render pass.
+pub(crate) fn tempo_send_is_due(
+    tempo: Res<ShowTempo>,
+    render_pass: Option<Res<RenderPass>>,
+    mut last: Local<LastTempoSend>,
+) -> bool {
+    if render_pass.is_some_and(|pass| !pass.renders()) {
+        return false;
+    }
     let state = TempoState::of(&tempo);
     let now = Instant::now();
     let mode_changed = last.launch_quantize != Some(state.launch_quantize);
@@ -199,5 +211,52 @@ mod tests {
         let last = sent(start, snapshot_at(1.0));
         let shortly = start + Duration::from_millis(10);
         assert!(tempo_send_due(&last, &snapshot_at(4.0), false, shortly));
+    }
+
+    /// Verifies the send condition holds back in input-only updates, where the beat counter has
+    /// not advanced, and sends a pending change with the next render pass.
+    #[test]
+    fn input_only_updates_do_not_send() {
+        /// Counts how often the gated system ran.
+        #[derive(Resource, Default)]
+        struct Sends(usize);
+
+        let mut app = bevy_app::App::new();
+        nightfall_engine::prelude::add_render_schedule(&mut app);
+        app.init_resource::<ShowTempo>();
+        app.init_resource::<Sends>();
+        app.add_systems(
+            bevy_app::PostUpdate,
+            (|mut sends: ResMut<Sends>| sends.0 += 1).run_if(tempo_send_is_due),
+        );
+        let sends = |app: &bevy_app::App| app.world().resource::<Sends>().0;
+
+        app.world_mut()
+            .resource_mut::<RenderPass>()
+            .set_renders(false);
+        app.update();
+        assert_eq!(sends(&app), 0, "the first state waits for a render pass");
+
+        app.world_mut()
+            .resource_mut::<RenderPass>()
+            .set_renders(true);
+        app.update();
+        assert_eq!(sends(&app), 1);
+
+        app.world_mut().resource_mut::<ShowTempo>().apply(
+            &crate::TempoCommand::SetLaunchQuantize(LaunchQuantize::Bar),
+            None,
+        );
+        app.world_mut()
+            .resource_mut::<RenderPass>()
+            .set_renders(false);
+        app.update();
+        assert_eq!(sends(&app), 1, "a change in an input-only update is held");
+
+        app.world_mut()
+            .resource_mut::<RenderPass>()
+            .set_renders(true);
+        app.update();
+        assert_eq!(sends(&app), 2, "and sent with the next render pass");
     }
 }
