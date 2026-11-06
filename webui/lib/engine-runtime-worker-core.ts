@@ -62,6 +62,29 @@ export type EmbeddedRuntimeFactory = (callbacks: {
   isCurrent(generation: number): boolean;
 }) => EmbeddedRuntime;
 
+/**
+ * Returns the `command_id` of a submitted envelope, or `null` for untracked updates, so a dropped
+ * submit can be matched to the command waiting on its result.
+ */
+function commandIdOf(data: string | object): string | null {
+  const envelope: unknown =
+    typeof data === "string" ? safeJsonParse(data) : data;
+  if (envelope && typeof envelope === "object" && "command_id" in envelope) {
+    const commandId = envelope.command_id;
+    return typeof commandId === "string" ? commandId : null;
+  }
+  return null;
+}
+
+/** Parses JSON text, returning `null` instead of throwing on malformed input. */
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 /** Install worker message handling and telemetry, optionally enabling the demo engine. */
 export function startEngineRuntimeWorker(
   createEmbeddedRuntime?: EmbeddedRuntimeFactory,
@@ -675,6 +698,13 @@ export function startEngineRuntimeWorker(
           socket.send(JSON.stringify(msg.data));
         } else if (socket?.readyState === WebSocket.CONNECTING) {
           submitsAwaitingOpen.push(JSON.stringify(msg.data));
+        } else {
+          // Between a close and the next reconnect there is no socket to send on or queue
+          // behind. Report the drop so the sender stops waiting for a result.
+          self.postMessage({
+            type: "submitDropped",
+            commandId: commandIdOf(msg.data),
+          });
         }
         break;
 
