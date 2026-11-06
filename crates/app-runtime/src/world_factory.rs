@@ -84,6 +84,8 @@ impl WorldFactory {
     ///
     /// Tests and offline tools use this constructor, so timeline audio output stays
     /// muted: driving a sample-data timeline must never play through the host speakers.
+    /// Saved accounts stay in memory for the same reason, so a test never reads the
+    /// developer's keychain or raises its access prompt.
     pub fn new(
         log_config: LogConfig,
         network_output_enabled: bool,
@@ -92,6 +94,7 @@ impl WorldFactory {
     ) -> Self {
         let runtime_config = RuntimeConfig {
             timeline_audio_enabled: false,
+            system_keychain_enabled: false,
             ..RuntimeConfig::default()
         };
         Self {

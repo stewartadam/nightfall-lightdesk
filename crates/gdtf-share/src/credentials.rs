@@ -84,6 +84,13 @@ impl CredentialVault {
         Self { store }
     }
 
+    /// A vault kept in memory for this run only, leaving the system keychain untouched.
+    pub fn in_memory() -> Self {
+        Self::with_store(
+            keyring_core::mock::Store::new().expect("the in-memory credential store always opens"),
+        )
+    }
+
     /// Uses `store`, which tests set to an in-memory mock.
     pub fn with_store(store: Arc<CredentialStore>) -> Self {
         Self { store: Ok(store) }
@@ -195,6 +202,17 @@ mod tests {
         vault.clear().unwrap();
         assert_eq!(vault.load().unwrap(), None);
         vault.clear().unwrap();
+    }
+
+    /// The in-memory vault remembers an account for its own lifetime only, so test backends
+    /// keep sign-ins working without reaching the system keychain.
+    #[test]
+    fn in_memory_vault_remembers_within_the_run() {
+        let vault = CredentialVault::in_memory();
+        assert!(vault.is_available());
+        vault.save(&sample()).unwrap();
+        assert_eq!(vault.load().unwrap(), Some(sample()));
+        assert_eq!(CredentialVault::in_memory().load().unwrap(), None);
     }
 
     /// A vault without a store loads nothing, clears quietly and reports saving as failed.

@@ -182,6 +182,7 @@ pub(super) fn init_bevy_with_transport_policy(
         &mut app
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
+        runtime_config.system_keychain_enabled,
     );
     crate::diagnostic_http::register_routes(
         &mut app
@@ -294,9 +295,13 @@ fn engine_frame_interval(settings: &IoRuntimeSettings) -> Duration {
 /// Registers the GDTF Share routes, installing fixtures into the fixture library folder and
 /// saving the GDTF Share fixture list next to it.
 ///
-/// Without a library folder GDTF Share stays off and the UI reports it unavailable.
+/// Without a library folder GDTF Share stays off and the UI reports it unavailable. The sign-in
+/// is kept in the system keychain only when `system_keychain` is set.
 #[cfg(feature = "gdtf-share")]
-fn register_gdtf_share_routes(registry: &mut nightfall_websocket::prelude::HttpRouteRegistry) {
+fn register_gdtf_share_routes(
+    registry: &mut nightfall_websocket::prelude::HttpRouteRegistry,
+    system_keychain: bool,
+) {
     let library_dir = match nightfall_fixture_library::FixtureLibraryManager::get_library_path() {
         Ok(library_dir) => library_dir,
         Err(error) => {
@@ -311,6 +316,7 @@ fn register_gdtf_share_routes(registry: &mut nightfall_websocket::prelude::HttpR
                 .with_file_name(nightfall_gdtf_share::catalog::CATALOG_FILE_NAME),
             library_dir,
         },
+        system_keychain,
     );
 }
 
