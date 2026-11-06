@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::net::{SocketAddrV4, UdpSocket};
 use std::ops::ControlFlow;
@@ -232,11 +232,23 @@ fn transmit_tick(
     flow
 }
 
+/// Advances an ArtDmx sequence number through 1..=255, skipping 0 because a zero
+/// sequence tells receivers to disable re-ordering.
+fn next_sequence(previous: u8) -> u8 {
+    previous.wrapping_add(1).max(1)
+}
+
 /// UDP socket and broadcast target used by the Art-Net output worker.
 struct ArtNetSocket {
     socket: UdpSocket,
     broadcast_dest: SocketAddrV4,
-    sequence: u8,
+    /// Last sequence number sent for each universe. Receivers re-order packets per sender and
+    /// Port-Address, so every universe counts on its own: one counter shared by all universes
+    /// would make each universe skip ahead by the number of universes sent per tick, and
+    /// receivers read a skip of 128 or more as a late packet and drop it. Broadcast and unicast
+    /// deliveries of one universe share its counter, because a unicast target also hears the
+    /// broadcast and must see one rising sequence from this sender.
+    sequences: HashMap<u16, u8>,
 }
 
 impl ArtNetSocket {
@@ -244,7 +256,7 @@ impl ArtNetSocket {
         Self {
             socket,
             broadcast_dest: SocketAddrV4::new(Ipv4Addr::BROADCAST, ARTNET_PORT),
-            sequence: 0,
+            sequences: HashMap::new(),
         }
     }
 
@@ -257,12 +269,18 @@ impl ArtNetSocket {
         unicast_ip: Option<Ipv4Addr>,
         recent_frames: &ArtNetRecentFramesByUniverse,
     ) -> Result<(), std::io::Error> {
-        let port_address = artnet_protocol::PortAddress::try_from(universe)
-            .unwrap_or_else(|_| artnet_protocol::PortAddress::try_from(0u16).unwrap());
+        let port_address = artnet_protocol::PortAddress::try_from(universe).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Art-Net universe {universe} is outside the Port-Address range 0-32767"),
+            )
+        })?;
 
-        self.sequence = self.sequence.wrapping_add(1).max(1);
+        let sequence = self.sequences.entry(universe).or_insert(0);
+        *sequence = next_sequence(*sequence);
+        let sequence = *sequence;
         let output = artnet_protocol::Output {
-            sequence: self.sequence,
+            sequence,
             port_address,
             data: data.to_vec().into(),
             ..artnet_protocol::Output::default()
@@ -280,7 +298,7 @@ impl ArtNetSocket {
 
         recent_frames.record_recent_frame(
             universe,
-            self.sequence,
+            sequence,
             data,
             self.socket.local_addr().ok(),
             Instant::now(),
@@ -484,4 +502,58 @@ impl Drop for ArtNetOutputService {
 pub fn process_artnet_output_service() -> &'static ArtNetOutputService {
     static PROCESS_SERVICE: OnceLock<ArtNetOutputService> = OnceLock::new();
     process_singleton(&PROCESS_SERVICE, ArtNetOutputService::new)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Opens an output socket on loopback so frames can be sent without a configured interface.
+    fn loopback_socket() -> ArtNetSocket {
+        ArtNetSocket::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind loopback"))
+    }
+
+    /// Sends one all-zero frame for `universe` to the loopback address.
+    fn send(socket: &mut ArtNetSocket, universe: u16) -> std::io::Result<()> {
+        socket.send_frame(
+            universe,
+            &[0; MAX_CHANNELS_PER_UNIVERSE],
+            Some(Ipv4Addr::LOCALHOST),
+            &ArtNetRecentFramesByUniverse::new(),
+        )
+    }
+
+    /// Sequence numbers count 1 to 255 and wrap back to 1, never sending 0.
+    #[test]
+    fn sequence_wraps_without_zero() {
+        assert_eq!(next_sequence(0), 1);
+        assert_eq!(next_sequence(1), 2);
+        assert_eq!(next_sequence(255), 1);
+    }
+
+    /// Each universe advances its own sequence by one per frame, however many other universes
+    /// are sent in between.
+    #[test]
+    fn each_universe_counts_its_own_sequence() {
+        let mut socket = loopback_socket();
+        for _ in 0..3 {
+            for universe in 1..=200 {
+                send(&mut socket, universe).expect("send frame");
+            }
+        }
+
+        assert_eq!(socket.sequences.get(&1), Some(&3));
+        assert_eq!(socket.sequences.get(&200), Some(&3));
+    }
+
+    /// A universe beyond the 15-bit Port-Address range is refused instead of being sent to
+    /// universe 0.
+    #[test]
+    fn out_of_range_universe_is_refused() {
+        let mut socket = loopback_socket();
+        let error = send(&mut socket, 32_768).expect_err("universe 32768 must be refused");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(socket.sequences.is_empty());
+    }
 }

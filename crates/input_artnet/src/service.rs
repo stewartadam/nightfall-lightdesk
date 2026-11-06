@@ -218,15 +218,10 @@ impl ArtNetInputWorker {
                         _ => continue,
                     };
 
-                    let mut data = [0u8; MAX_CHANNELS_PER_UNIVERSE];
-                    let payload = output.data.as_ref();
-                    let copy_len = payload.len().min(MAX_CHANNELS_PER_UNIVERSE);
-                    data[..copy_len].copy_from_slice(&payload[..copy_len]);
-
                     let _ = frame_tx_for_thread.send(ArtNetInputFrame {
                         universe_id: output.port_address.into(),
                         sequence: output.sequence,
-                        data,
+                        data: dmx_channels(&output),
                         source_addr,
                         received_at: Instant::now(),
                     });
@@ -254,6 +249,22 @@ impl ArtNetInputWorker {
             .as_ref()
             .is_some_and(|join_handle| !join_handle.is_finished())
     }
+}
+
+/// Copies an ArtDmx packet's channel values into a full universe, zero-filling the rest.
+///
+/// The parser keeps every byte after the header as data, so anything past the packet's
+/// `Length` field (trailing padding some senders add) is dropped here rather than read as
+/// channel values.
+fn dmx_channels(output: &artnet_protocol::Output) -> [u8; MAX_CHANNELS_PER_UNIVERSE] {
+    let payload = output.data.as_ref();
+    let length = payload
+        .len()
+        .min(usize::from(*output.length))
+        .min(MAX_CHANNELS_PER_UNIVERSE);
+    let mut data = [0u8; MAX_CHANNELS_PER_UNIVERSE];
+    data[..length].copy_from_slice(&payload[..length]);
+    data
 }
 
 fn init_artnet_input_socket(bind_addr: SocketAddr) -> std::io::Result<UdpSocket> {
@@ -448,6 +459,28 @@ mod tests {
             error.kind(),
             io::ErrorKind::HostUnreachable | io::ErrorKind::NetworkUnreachable
         )
+    }
+
+    /// Bytes after the ArtDmx `Length` field are padding and never become channel values.
+    #[test]
+    fn dmx_channels_stop_at_packet_length() {
+        let mut packet = artnet_protocol::ArtCommand::Output(artnet_protocol::Output {
+            data: vec![10, 20, 30, 40].into(),
+            ..artnet_protocol::Output::default()
+        })
+        .write_to_buffer()
+        .expect("serialize ArtDmx");
+        packet.extend_from_slice(&[99, 99]);
+
+        let artnet_protocol::ArtCommand::Output(output) =
+            artnet_protocol::ArtCommand::from_buffer(&packet).expect("parse ArtDmx")
+        else {
+            panic!("expected ArtDmx");
+        };
+        let channels = dmx_channels(&output);
+
+        assert_eq!(channels[..4], [10, 20, 30, 40]);
+        assert_eq!(channels[4..6], [0, 0]);
     }
 
     #[test]
