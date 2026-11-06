@@ -50,6 +50,13 @@ const DraggablePoint: Component<{
 
   let clickTimeout: number | null = null;
   const CLICK_DELAY = 200; // ms
+  /** Whether the button was released while waiting to tell a click from a double-click. */
+  let releasedBeforeDrag = false;
+
+  /** Records a release that lands before the drag starts, so a plain click never drags. */
+  const handleEarlyMouseUp = () => {
+    releasedBeforeDrag = true;
+  };
 
   const handleMouseDown = (e: MouseEvent) => {
     e.stopPropagation();
@@ -69,11 +76,17 @@ const DraggablePoint: Component<{
       return;
     }
 
+    releasedBeforeDrag = false;
+    document.addEventListener("mouseup", handleEarlyMouseUp, { once: true });
+
     // Set a timeout to detect single click
     clickTimeout = window.setTimeout(() => {
       // Clear the timeout reference
       clickTimeout = null;
-      // This is a single click, start dragging
+      document.removeEventListener("mouseup", handleEarlyMouseUp);
+      // A click released before the delay is not a drag.
+      if (releasedBeforeDrag) return;
+      // The button is still held, so start dragging
       dragState.isDragging = true;
       dragState.startX = e.clientX;
       dragState.startY = e.clientY;
@@ -156,6 +169,7 @@ const DraggablePoint: Component<{
   onCleanup(() => {
     document.removeEventListener("mousemove", handleMouseMove);
     document.removeEventListener("mouseup", handleMouseUp);
+    document.removeEventListener("mouseup", handleEarlyMouseUp);
     if (clickTimeout) {
       clearTimeout(clickTimeout);
     }

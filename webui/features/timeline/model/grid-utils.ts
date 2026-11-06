@@ -11,11 +11,18 @@ import { durationToMs, msToPixels, pixelsToMs } from "../../../lib/utils";
 import type * as types from "../../../types";
 
 /**
- * Calculate the duration in milliseconds for one beat at a given BPM
+ * Returns the exact duration in milliseconds of one beat at `bpm`.
+ *
+ * The value is not rounded: rounding to whole milliseconds accumulates across beats, so the
+ * ruler, snapping and bar seeks would drift away from the engine's beat positions further into
+ * a show.
  */
 export function msPerBeat(bpm: number): number {
-  return Math.floor(60000 / bpm); // milliseconds per beat = (60 seconds * 1000) / BPM
+  return 60000 / bpm;
 }
+
+/** Tolerance for floating-point error when a time lands exactly on a fractional beat boundary. */
+const BEAT_BOUNDARY_EPSILON = 1e-9;
 
 /** Calculates the timeline duration for a whole-bar jump. */
 export function msPerBars(
@@ -34,7 +41,7 @@ export function msPerBars(
  */
 function getBeatAtTime(ms: number, bpm: number): number {
   const beatDuration = msPerBeat(bpm);
-  return Math.floor(ms / beatDuration);
+  return Math.floor(ms / beatDuration + BEAT_BOUNDARY_EPSILON);
 }
 
 /**
