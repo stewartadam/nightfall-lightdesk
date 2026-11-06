@@ -145,19 +145,11 @@ impl OscType {
     /// Floats and doubles within `0..=1` are treated as normalized; every other number is
     /// treated as a percent. Booleans read as fully off or on.
     pub fn as_hardware_fader_percent(&self) -> Option<f32> {
-        let (value, normalize_unit_interval) = match self {
-            Self::Int(value) => (*value as f64, false),
-            Self::Float(value) => (f64::from(*value), true),
-            Self::Double(value) => (*value, true),
-            Self::Long(value) => (value.parse::<f64>().ok()?, false),
-            Self::Bool(value) => {
-                return Some(if *value { 100.0 } else { 0.0 });
-            }
-            _ => return None,
-        };
-        if !value.is_finite() {
-            return None;
+        if let Self::Bool(value) = self {
+            return Some(if *value { 100.0 } else { 0.0 });
         }
+        let value = self.as_number()?;
+        let normalize_unit_interval = matches!(self, Self::Float(_) | Self::Double(_));
 
         let normalized = if normalize_unit_interval && (0.0..=1.0).contains(&value) {
             value * 100.0
