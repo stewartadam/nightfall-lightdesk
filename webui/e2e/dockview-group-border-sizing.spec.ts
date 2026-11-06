@@ -10,9 +10,8 @@ import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 
 /**
- * Guards the dockview-core patch across upgrades: every visible top-header
- * group must size its active panel to the space inside the themed 1px border,
- * leaving a 2px gap on each axis once the header is excluded.
+ * Guards the dockview-core patch across upgrades: every group, with its header on any side, must
+ * size its active panel to the space inside its themed border and beside its header.
  */
 test("active panels are sized inside the group border", async ({
   page,
@@ -21,6 +20,11 @@ test("active panels are sized inside the group border", async ({
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
   await resetToDefaultLayout(page);
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    api.getEdgeGroup("left")?.expand();
+    api.getEdgeGroup("right")?.expand();
+  });
 
   await expect
     .poll(() =>
@@ -31,33 +35,57 @@ test("active panels are sized inside the group border", async ({
             (group) =>
               group.activePanel &&
               group.api.isVisible &&
-              group.model.headerPosition === "top",
+              !group.api.isCollapsed?.(),
           )
           .map((group) => {
+            const style = getComputedStyle(group.element);
             const header = group.element.querySelector(
               ":scope > .dv-tabs-and-actions-container",
             ) as HTMLElement;
+            const position = group.model.headerPosition as string;
+            const vertical = position === "left" || position === "right";
+            const borderX =
+              Number.parseFloat(style.borderLeftWidth) +
+              Number.parseFloat(style.borderRightWidth);
+            const borderY =
+              Number.parseFloat(style.borderTopWidth) +
+              Number.parseFloat(style.borderBottomWidth);
             return {
-              widthGap: group.api.width - group.activePanel.api.width,
-              heightGap:
+              vertical,
+              hasBorder: borderX > 0 && borderY > 0,
+              widthError:
+                group.api.width -
+                borderX -
+                (vertical ? header.offsetWidth : 0) -
+                group.activePanel.api.width,
+              heightError:
                 group.api.height -
-                header.offsetHeight -
+                borderY -
+                (vertical ? 0 : header.offsetHeight) -
                 group.activePanel.api.height,
             };
           });
         return {
-          hasGroups: measured.length > 0,
-          allInsideBorder: measured.every(
-            ({ widthGap, heightGap }) => widthGap === 2 && heightGap === 2,
+          horizontalHeaders: measured.some((group) => !group.vertical),
+          verticalHeaders: measured.some((group) => group.vertical),
+          bordered: measured.every((group) => group.hasBorder),
+          insideBorder: measured.every(
+            (group) =>
+              Math.abs(group.widthError) < 1 && Math.abs(group.heightError) < 1,
           ),
           measured,
         };
       }),
     )
-    .toMatchObject({ hasGroups: true, allInsideBorder: true });
+    .toMatchObject({
+      horizontalHeaders: true,
+      verticalHeaders: true,
+      bordered: true,
+      insideBorder: true,
+    });
 
   await page.screenshot({
-    path: testInfo.outputPath("default-layout.png"),
+    path: testInfo.outputPath("expanded-layout.png"),
     fullPage: true,
   });
 });
