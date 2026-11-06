@@ -597,7 +597,7 @@ async function sampleWebsocketLag(
           visibleLaggingTextCount: visibleTextCount("Lagging"),
           visibleDegradedTextCount: visibleTextCount("Degraded"),
           backendFps: engineMetrics?.fps,
-          backendFrameTimeMs: engineMetrics?.["frame_time"],
+          backendFrameTimeMs: engineMetrics?.frame_time,
           framepaceTimeMs: engineMetrics?.["framepace/frame_time_ms"],
           framepaceOversleepMs: engineMetrics?.["framepace/oversleep_ms"],
           parameterStateBuildMs:
