@@ -213,10 +213,23 @@ export function startEngineRuntimeWorker(
   let socket: WebSocket | null = null;
   /**
    * Submits that arrive while `socket` is still opening. They are sent in order
-   * once it opens and discarded if it closes first, when the main thread
-   * rejects their result waiters on the disconnected status.
+   * once it opens, and reported dropped if it closes or is replaced first.
    */
   let submitsAwaitingOpen: string[] = [];
+
+  /**
+   * Tells the main thread a submit was never sent, with its command ID, so the command's result
+   * waiter and console entry fail instead of waiting forever.
+   */
+  function reportDroppedSubmit(data: string | object) {
+    self.postMessage({ type: "submitDropped", commandId: commandIdOf(data) });
+  }
+
+  /** Reports every submit still waiting for the socket to open as dropped, then forgets them. */
+  function dropSubmitsAwaitingOpen() {
+    for (const submit of submitsAwaitingOpen) reportDroppedSubmit(submit);
+    submitsAwaitingOpen = [];
+  }
   let url = "";
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   // When the backend last dropped this client for lagging, for reconnect backoff.
@@ -590,7 +603,7 @@ export function startEngineRuntimeWorker(
       socket.close();
       socket = null;
     }
-    submitsAwaitingOpen = [];
+    dropSubmitsAwaitingOpen();
 
     postStatus(Status.Connecting);
     // A new connection may reach a different backend world, whose layouts and frames restart.
@@ -611,7 +624,7 @@ export function startEngineRuntimeWorker(
 
     socket.onclose = (event: CloseEvent) => {
       stopHeartbeatTimer();
-      submitsAwaitingOpen = [];
+      dropSubmitsAwaitingOpen();
       postStatus(Status.Disconnected);
       socket = null;
       scheduleReconnect(reconnectDelayAfterClose(event.code));
@@ -701,10 +714,7 @@ export function startEngineRuntimeWorker(
         } else {
           // Between a close and the next reconnect there is no socket to send on or queue
           // behind. Report the drop so the sender stops waiting for a result.
-          self.postMessage({
-            type: "submitDropped",
-            commandId: commandIdOf(msg.data),
-          });
+          reportDroppedSubmit(msg.data);
         }
         break;
 

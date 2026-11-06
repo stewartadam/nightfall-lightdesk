@@ -585,6 +585,13 @@ test("submits waiting on a socket that closes are not sent on reconnect", (t) =>
   reconnected.open();
 
   assert.deepEqual(reconnected.sent, []);
+  assert.deepEqual(
+    worker.publications.filter(
+      (publication) => publication.type === "submitDropped",
+    ),
+    [{ type: "submitDropped", commandId: "lost" }],
+    "the dropped submit is reported so its sender stops waiting",
+  );
   worker.send({ type: "stop" });
 });
 
