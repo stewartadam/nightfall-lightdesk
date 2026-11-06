@@ -146,7 +146,14 @@ pub fn handle_events(
                 context,
             } => {
                 let context = *context;
-                let fx = fx_data_provider.get(*fx_uid).expect("failed to obtain fx");
+                let Ok(fx) = fx_data_provider.get(*fx_uid) else {
+                    tracing::warn!(
+                        clip_id = %context.clip_id,
+                        fx_uid = %fx_uid,
+                        "Fx clip target not found"
+                    );
+                    continue;
+                };
 
                 tracing::debug!(
                     uid = %fx.identifiers().uid,

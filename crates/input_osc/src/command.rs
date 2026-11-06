@@ -126,7 +126,9 @@ impl OscType {
         }
     }
 
-    /// Returns this OSC argument's numeric value, for arguments that carry a number.
+    /// Returns this OSC argument's numeric value, for arguments that carry a finite number.
+    ///
+    /// NaN and infinities read as no number, since no level or percent can be derived from them.
     pub fn as_number(&self) -> Option<f64> {
         match self {
             Self::Int(value) => Some(f64::from(*value)),
@@ -135,6 +137,7 @@ impl OscType {
             Self::Long(value) => value.parse::<f64>().ok(),
             _ => None,
         }
+        .filter(|value| value.is_finite())
     }
 
     /// Converts this OSC argument into a hardware fader percentage by inferring its units.
@@ -142,16 +145,11 @@ impl OscType {
     /// Floats and doubles within `0..=1` are treated as normalized; every other number is
     /// treated as a percent. Booleans read as fully off or on.
     pub fn as_hardware_fader_percent(&self) -> Option<f32> {
-        let (value, normalize_unit_interval) = match self {
-            Self::Int(value) => (*value as f64, false),
-            Self::Float(value) => (f64::from(*value), true),
-            Self::Double(value) => (*value, true),
-            Self::Long(value) => (value.parse::<f64>().ok()?, false),
-            Self::Bool(value) => {
-                return Some(if *value { 100.0 } else { 0.0 });
-            }
-            _ => return None,
-        };
+        if let Self::Bool(value) = self {
+            return Some(if *value { 100.0 } else { 0.0 });
+        }
+        let value = self.as_number()?;
+        let normalize_unit_interval = matches!(self, Self::Float(_) | Self::Double(_));
 
         let normalized = if normalize_unit_interval && (0.0..=1.0).contains(&value) {
             value * 100.0
@@ -306,6 +304,20 @@ mod tests {
     /// Builds a value range from its two ends.
     fn range(min: f32, max: f32) -> OscValueRange {
         OscValueRange { min, max }
+    }
+
+    /// Verifies NaN and infinite arguments produce no level, so they cannot reach a master or
+    /// fader, where clamping would let NaN through.
+    #[test]
+    fn non_finite_arguments_produce_no_level() {
+        for arg in [
+            OscType::Float(f32::NAN),
+            OscType::Double(f64::INFINITY),
+            OscType::Long("NaN".to_string()),
+        ] {
+            assert_eq!(arg.as_number(), None, "{arg:?}");
+            assert_eq!(arg.as_hardware_fader_percent(), None, "{arg:?}");
+        }
     }
 
     /// Verifies integer faders spanning 0..127 map linearly onto the full level range.
