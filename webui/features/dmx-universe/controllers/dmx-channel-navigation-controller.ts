@@ -18,7 +18,7 @@ import {
   networkDmxOutputsFromSettings,
   usbDmxOutputsFromSettings,
 } from "../../../lib/network-dmx-output-targets";
-import { focusExistingPanel } from "../../../lib/panel-open-command";
+import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import type { LayerElementParameterValues } from "../../../lib/ws/types";
@@ -65,8 +65,7 @@ export function createDmxChannelNavigationController(
     const api = dock();
     if (!api) return;
     const panelId = "panel-PatchEditor";
-    if (focusExistingPanel(api, panelId)) return;
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: panelId,
       component: "PatchEditor",
       title: "Patch",
@@ -79,8 +78,7 @@ export function createDmxChannelNavigationController(
     const api = dock();
     if (!api) return;
     const panelId = "panel-LayerStack";
-    if (focusExistingPanel(api, panelId)) return;
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: panelId,
       component: "LayerStack",
       title: "Layers",

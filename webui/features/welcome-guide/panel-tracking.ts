@@ -78,15 +78,22 @@ export function isElementOnScreen(element: Element, clip?: Element): boolean {
   return hits >= SAMPLES_PER_AXIS * SAMPLES_PER_AXIS * ON_SCREEN_SHARE;
 }
 
+/**
+ * Measures one shown panel, limiting grid panels to the dock because grid groups overflow it when
+ * declared minimum widths exceed the window.
+ */
+function isPanelOnScreen(entry: DockviewApi["panels"][number]): boolean {
+  const clip =
+    entry.group.api.location.type === "grid"
+      ? (entry.group.element.closest(".dv-dockview") ?? undefined)
+      : undefined;
+  return isElementOnScreen(entry.view.content.element, clip);
+}
+
 /** Reads every panel's identity, Dockview visibility, and on-screen state. */
 function readPanels(api: DockviewApi): GuidePanel[] {
   return api.panels.map((entry) => {
     const visible = entry.api.isVisible && !entry.group.api.isCollapsed();
-    // Grid groups overflow the dock when declared minimum widths exceed the window.
-    const clip =
-      entry.group.api.location.type === "grid"
-        ? (entry.group.element.closest(".dv-dockview") ?? undefined)
-        : undefined;
     return {
       id: entry.id,
       component: entry.api.component,
@@ -94,7 +101,7 @@ function readPanels(api: DockviewApi): GuidePanel[] {
       sequenceUid: entry.params?.initialSequenceUid,
       stepFxUid: entry.params?.initialStepFxUid,
       visible,
-      onScreen: visible && isElementOnScreen(entry.view.content.element, clip),
+      onScreen: visible && isPanelOnScreen(entry),
     };
   });
 }

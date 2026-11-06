@@ -9,14 +9,21 @@
 import type { Page } from "@playwright/test";
 
 /**
- * Activates and focuses a docked panel the way the app's open commands do, expanding its edge
- * group first because Dockview hides panels inside a collapsed edge.
+ * Activates and focuses a docked panel the way the app's open commands do: a hidden edge group is
+ * shown and a collapsed one expanded first, because Dockview hides panels inside a collapsed edge.
  */
 export async function revealPanel(page: Page, panelId: string): Promise<void> {
   await page.evaluate((id) => {
-    const panel = (window as any).appStores.dockApi.get().getPanel(id);
+    const api = (window as any).appStores.dockApi.get();
+    const panel = api.getPanel(id);
+    const location = panel?.group.api.location;
+    if (location?.type === "edge") {
+      if (!api.isEdgeGroupVisible(location.position)) {
+        api.setEdgeGroupVisible(location.position, true);
+      }
+      panel.group.api.expand();
+    }
     panel?.api.setActive();
-    if (panel?.group.api.location.type === "edge") panel.group.api.expand();
     panel?.focus();
   }, panelId);
 }

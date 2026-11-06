@@ -33,7 +33,7 @@ import {
   sendSequenceUpdate,
 } from "../../../lib/cue-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
-import { focusExistingPanel } from "../../../lib/panel-open-command";
+import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import { duplicateSequencePayload } from "../../../lib/sequence-duplication";
 import {
   createDefaultSequence,
@@ -210,9 +210,7 @@ export function createSequenceListController(
     if (!api) return;
 
     const panelId = `sequence-editor-panel-${sequence.identifiers.uid}`;
-    if (focusExistingPanel(api, panelId)) return;
-
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: panelId,
       component: "SequenceEditor",
       title: sequence.identifiers.label.trim()

@@ -40,7 +40,7 @@ import {
 } from "../../../lib/palette-navigation";
 import { REVEAL_OBJECT_CAPABILITY } from "../../../lib/panel-capabilities";
 import {
-  focusExistingPanel,
+  focusOrAddPanel,
   openOrFocusPanel,
 } from "../../../lib/panel-open-command";
 import {
@@ -325,12 +325,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
       candidate.steps.includes(entry.uid),
     );
     const panelId = `cue-list-panel-${entry.uid}`;
-    if (focusExistingPanel(api, panelId)) {
-      props.onClose();
-      return;
-    }
-
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: panelId,
       component: "CueEditor",
       title: formatCueEditorTitle({
@@ -357,12 +352,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
     if (!sequence) return;
 
     const panelId = `sequence-editor-panel-${entry.uid}`;
-    if (focusExistingPanel(api, panelId)) {
-      props.onClose();
-      return;
-    }
-
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: panelId,
       component: "SequenceEditor",
       title: sequence.identifiers.label.trim()
@@ -382,12 +372,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
     if (!fxEntry) return;
 
     const panelId = `fx-editor-${entry.uid}`;
-    if (focusExistingPanel(api, panelId)) {
-      props.onClose();
-      return;
-    }
-
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: panelId,
       component: "FxEditor",
       title: `FX ${fxEntry.identifiers.id}: ${fxEntry.identifiers.label}`,
@@ -405,12 +390,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
     if (!flow) return;
 
     const panelId = `flow-editor-${entry.uid}`;
-    if (focusExistingPanel(api, panelId)) {
-      props.onClose();
-      return;
-    }
-
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: panelId,
       component: "FlowEditor",
       title: `Flow ${flow.identifiers.id}: ${flow.identifiers.label}`,

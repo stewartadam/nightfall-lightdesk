@@ -11,7 +11,7 @@ import test from "node:test";
 import { COMMAND_LINE_PANEL_SHORTCUT } from "../features/command-line/panels/command-line.definition";
 import { panelDefinitionByName } from "./panel-definitions";
 import {
-  focusExistingPanel,
+  focusOrAddPanel,
   getPanelOpenShortcut,
   openOrFocusPanel,
   openOrFocusPanelDefinition,
@@ -144,28 +144,60 @@ test("openOrFocusPanel focuses existing panel when present", () => {
   assert.equal(addCalls, 0);
 });
 
-/** Verifies edge-docked singleton panels are revealed before focus returns. */
-/** Verifies an open edge panel is expanded before focus, and a closed one is left for the caller. */
-test("focusExistingPanel expands the edge of an open panel and reports closed panels", () => {
+/** Verifies an open edge panel is expanded before focus, without adding a second copy. */
+test("focusOrAddPanel expands the edge of an open panel before focusing it", () => {
   const calls: string[] = [];
   const api = createDockApi({
-    getPanel: (id) =>
-      id === "panel-PatchEditor"
-        ? {
-            id,
-            api: { location: { position: "bottom", type: "edge" } },
-            focus: () => calls.push("focus"),
-          }
-        : undefined,
+    getPanel: (id) => ({
+      id,
+      api: { location: { position: "bottom", type: "edge" } },
+      focus: () => calls.push("focus"),
+    }),
     getEdgeGroup: () => ({ expand: () => calls.push("expand") }),
+    addPanel: () => calls.push("add"),
   });
 
-  assert.equal(focusExistingPanel(api, "panel-PatchEditor"), true);
-  assert.deepEqual(calls, ["expand", "focus"]);
-  assert.equal(focusExistingPanel(api, "panel-Missing"), false);
+  focusOrAddPanel(api, {
+    id: "panel-PatchEditor",
+    component: "PatchEditor",
+    title: "Patch",
+    params: {},
+  });
+
   assert.deepEqual(calls, ["expand", "focus"]);
 });
 
+/** Verifies a new panel joining a collapsed edge is revealed and keeps the caller's options. */
+test("focusOrAddPanel adds a closed panel and expands the edge it lands in", () => {
+  const calls: string[] = [];
+  const added: unknown[] = [];
+  const params = {
+    id: "panel-New",
+    component: "New",
+    title: "New",
+    params: {},
+    renderer: "onlyWhenVisible" as const,
+  };
+  const api = createDockApi({
+    getPanel: () => undefined,
+    getEdgeGroup: () => ({ expand: () => calls.push("expand") }),
+    addPanel: (options) => {
+      added.push(options);
+      return {
+        id: options.id,
+        api: { location: { position: "right", type: "edge" } },
+        focus: () => {},
+      };
+    },
+  });
+
+  focusOrAddPanel(api, params);
+
+  assert.deepEqual(added, [params]);
+  assert.deepEqual(calls, ["expand"]);
+});
+
+/** Verifies edge-docked singleton panels are revealed before focus returns. */
 test("openOrFocusPanel expands edge group for existing edge panel", () => {
   let focusCalls = 0;
   let expandCalls = 0;
