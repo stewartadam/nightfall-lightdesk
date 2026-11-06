@@ -7,6 +7,7 @@
  */
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { revealPanel as activatePanel } from "./dock-panels";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { dockFixturesInMainGrid, waitForDockviewApp } from "./showfile-startup";
 
@@ -357,16 +358,6 @@ async function storeOwnedClipPropertiesData(
     });
 
   return context;
-}
-
-/** Activates and focuses one Dockview panel by its stable identifier. */
-async function activatePanel(page: Page, id: string): Promise<void> {
-  await page.evaluate((panelId) => {
-    const panel = (window as any).appStores.dockApi.get().getPanel(panelId);
-    panel?.api.setActive();
-    panel?.focus();
-    if (panel?.group.api.location.type === "edge") panel.group.api.expand();
-  }, id);
 }
 
 /** Locates the Properties Inspector heading for one clip. */

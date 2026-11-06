@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { revealPanel } from "./dock-panels";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -245,11 +246,8 @@ async function exerciseRenameSurfaces(
     const api = (window as any).appStores.dockApi.get();
     api.getPanel("panel-SequenceList-crud-rename")?.api.setActive();
     api.getPanel("panel-SequenceList-crud-rename")?.focus();
-    const properties = api.getPanel("panel-PropertiesInspector");
-    properties?.focus();
-    if (properties?.group.api.location.type === "edge")
-      properties.group.api.expand();
   });
+  await revealPanel(page, "panel-PropertiesInspector");
   const propertiesInput = page.getByLabel("Sequence label");
   await expect(propertiesInput).toHaveValue(context.listLabel);
   await propertiesInput.fill("");

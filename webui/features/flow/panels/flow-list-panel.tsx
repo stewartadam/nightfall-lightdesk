@@ -41,6 +41,7 @@ import {
   storeFlow,
 } from "../../../lib/flow-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
+import { focusExistingPanel } from "../../../lib/panel-open-command";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { dockApi, flows } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -115,10 +116,7 @@ export default function FlowListPanel(props: FlowListPanelProps) {
     if (!flowEntry) return;
 
     const panelId = `flow-editor-${flowUid}`;
-    const panel = api.getPanel(panelId);
-    if (panel) {
-      return panel.focus();
-    }
+    if (focusExistingPanel(api, panelId)) return;
 
     api.addPanel({
       id: panelId,

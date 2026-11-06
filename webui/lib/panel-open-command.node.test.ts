@@ -11,6 +11,7 @@ import test from "node:test";
 import { COMMAND_LINE_PANEL_SHORTCUT } from "../features/command-line/panels/command-line.definition";
 import { panelDefinitionByName } from "./panel-definitions";
 import {
+  focusExistingPanel,
   getPanelOpenShortcut,
   openOrFocusPanel,
   openOrFocusPanelDefinition,
@@ -144,6 +145,27 @@ test("openOrFocusPanel focuses existing panel when present", () => {
 });
 
 /** Verifies edge-docked singleton panels are revealed before focus returns. */
+/** Verifies an open edge panel is expanded before focus, and a closed one is left for the caller. */
+test("focusExistingPanel expands the edge of an open panel and reports closed panels", () => {
+  const calls: string[] = [];
+  const api = createDockApi({
+    getPanel: (id) =>
+      id === "panel-PatchEditor"
+        ? {
+            id,
+            api: { location: { position: "bottom", type: "edge" } },
+            focus: () => calls.push("focus"),
+          }
+        : undefined,
+    getEdgeGroup: () => ({ expand: () => calls.push("expand") }),
+  });
+
+  assert.equal(focusExistingPanel(api, "panel-PatchEditor"), true);
+  assert.deepEqual(calls, ["expand", "focus"]);
+  assert.equal(focusExistingPanel(api, "panel-Missing"), false);
+  assert.deepEqual(calls, ["expand", "focus"]);
+});
+
 test("openOrFocusPanel expands edge group for existing edge panel", () => {
   let focusCalls = 0;
   let expandCalls = 0;

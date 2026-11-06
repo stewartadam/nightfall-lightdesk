@@ -39,7 +39,10 @@ import {
   visiblePaletteRowCount,
 } from "../../../lib/palette-navigation";
 import { REVEAL_OBJECT_CAPABILITY } from "../../../lib/panel-capabilities";
-import { openOrFocusPanel } from "../../../lib/panel-open-command";
+import {
+  focusExistingPanel,
+  openOrFocusPanel,
+} from "../../../lib/panel-open-command";
 import {
   buildShowfileObjectSearchEntries,
   filterShowfileObjectSearchEntries,
@@ -322,9 +325,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
       candidate.steps.includes(entry.uid),
     );
     const panelId = `cue-list-panel-${entry.uid}`;
-    const panel = api.getPanel(panelId);
-    if (panel) {
-      panel.focus();
+    if (focusExistingPanel(api, panelId)) {
       props.onClose();
       return;
     }
@@ -356,9 +357,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
     if (!sequence) return;
 
     const panelId = `sequence-editor-panel-${entry.uid}`;
-    const panel = api.getPanel(panelId);
-    if (panel) {
-      panel.focus();
+    if (focusExistingPanel(api, panelId)) {
       props.onClose();
       return;
     }
@@ -383,9 +382,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
     if (!fxEntry) return;
 
     const panelId = `fx-editor-${entry.uid}`;
-    const panel = api.getPanel(panelId);
-    if (panel) {
-      panel.focus();
+    if (focusExistingPanel(api, panelId)) {
       props.onClose();
       return;
     }
@@ -408,9 +405,7 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
     if (!flow) return;
 
     const panelId = `flow-editor-${entry.uid}`;
-    const panel = api.getPanel(panelId);
-    if (panel) {
-      panel.focus();
+    if (focusExistingPanel(api, panelId)) {
       props.onClose();
       return;
     }

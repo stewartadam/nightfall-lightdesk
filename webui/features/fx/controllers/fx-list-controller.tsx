@@ -40,6 +40,7 @@ import {
   storeStepFx,
 } from "../../../lib/fx-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
+import { focusExistingPanel } from "../../../lib/panel-open-command";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   availableFxModules,
@@ -346,10 +347,7 @@ export function createFxListController(props: FxListControllerProps) {
     const panelId = `fx-editor-${fxUid}`;
 
     // Focus existing panel or open new one
-    const panel = api.getPanel(panelId);
-    if (panel) {
-      return panel.focus();
-    }
+    if (focusExistingPanel(api, panelId)) return;
     api.addPanel({
       id: panelId,
       component: "FxEditor",
@@ -366,8 +364,7 @@ export function createFxListController(props: FxListControllerProps) {
     const api = $dockApi();
     if (!api) return;
     const panelId = `step-fx-editor-${step.identifiers.uid}`;
-    const panel = api.getPanel(panelId);
-    if (panel) return panel.focus();
+    if (focusExistingPanel(api, panelId)) return;
     api.addPanel({
       id: panelId,
       component: "StepFxEditor",

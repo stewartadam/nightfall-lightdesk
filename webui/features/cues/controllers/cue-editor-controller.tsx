@@ -28,6 +28,7 @@ import {
   useKeyboardShortcut,
 } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
+import { focusExistingPanel } from "../../../lib/panel-open-command";
 import { timeDisplayUnitFromPreference } from "../../../lib/time-display-units";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { dockApi } from "../../../state/appStores";
@@ -437,11 +438,7 @@ export function CueEditorController(props: {
     const panelId = source.setupSequenceUid
       ? `setup-cue-editor-${source.setupSequenceUid}-p${source.partId}`
       : `cue-editor-${source.cueUid}-p${source.partId}`;
-    const panel = api.getPanel(panelId);
-    if (panel) {
-      panel.focus();
-      return;
-    }
+    if (focusExistingPanel(api, panelId)) return;
 
     api.addPanel({
       id: panelId,
