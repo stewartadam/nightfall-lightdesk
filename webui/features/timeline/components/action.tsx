@@ -24,7 +24,7 @@ import { focusTrackedComponent } from "../../../lib/componentFocusContext";
 import { getLogger } from "../../../lib/logger";
 import { REVEAL_OBJECT_CAPABILITY } from "../../../lib/panel-capabilities";
 import {
-  focusExistingPanel,
+  focusOrAddPanel,
   openOrFocusPanel,
 } from "../../../lib/panel-open-command";
 import { durationToMs, pixelsToMs } from "../../../lib/utils";
@@ -524,8 +524,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     const api = $dockApi();
     const target = resolveEditorTarget();
     if (!api || !target) return;
-    if (focusExistingPanel(api, target.panelId)) return;
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: target.panelId,
       component: target.component,
       title: target.title,

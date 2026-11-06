@@ -85,8 +85,8 @@ function isEditableFocusTarget(target: Element | null): boolean {
   );
 }
 
-/** Frames to keep retrying command input focus, covering a closing dialog's exit animation. */
-const COMMAND_LINE_FOCUS_FRAMES = 60;
+/** Frames to retry command input focus: enough for a dialog to close and an edge to reveal it. */
+const COMMAND_LINE_FOCUS_FRAMES = 3;
 
 /**
  * Focuses the docked command input only when activation would otherwise have no editor target.

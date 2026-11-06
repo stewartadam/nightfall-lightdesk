@@ -6,7 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { DockviewGroupLocation, EdgeGroupPosition } from "dockview";
+import type {
+  DockviewGroupLocation,
+  DockviewPanelRenderer,
+  EdgeGroupPosition,
+} from "dockview";
 import { activeBoardWorkspace } from "../state/layout-switcher";
 import {
   findPanelDefinitionByName,
@@ -82,6 +86,7 @@ interface AddPanelParams {
   initialHeight?: number;
   initialWidth?: number;
   position?: PanelPosition;
+  renderer?: DockviewPanelRenderer;
 }
 
 export interface PanelOpenDockApi {
@@ -361,21 +366,21 @@ function expandPanelEdgeGroup(
 }
 
 /**
- * Focuses an open panel, first expanding its edge group, because focusing alone leaves a panel in
- * a collapsed edge hidden. Returns false when the panel is closed, so callers can open it with
- * their own placement and renderer options.
+ * Focuses a panel, or adds it with the caller's placement and renderer options when it is closed.
+ * Either way its edge group is expanded, because Dockview hides panels inside a collapsed edge and
+ * a panel added without a position joins the active group, which may be one.
  */
-export function focusExistingPanel(
+export function focusOrAddPanel(
   api: PanelOpenDockApi,
-  panelId: string,
-): boolean {
-  const panel = api.getPanel(panelId);
-  if (!panel) {
-    return false;
+  params: AddPanelParams,
+): void {
+  const panel = api.getPanel(params.id);
+  if (panel) {
+    expandPanelEdgeGroup(api, panel);
+    panel.focus();
+    return;
   }
-  expandPanelEdgeGroup(api, panel);
-  panel.focus();
-  return true;
+  expandPanelEdgeGroup(api, api.addPanel(params) as FocusablePanel | undefined);
 }
 
 /**
@@ -396,7 +401,10 @@ export function openOrFocusPanel(
   }
   activeBoardWorkspace.set(null);
 
-  if (focusExistingPanel(api, panelId)) {
+  const existingPanel = api.getPanel(panelId);
+  if (existingPanel) {
+    expandPanelEdgeGroup(api, existingPanel);
+    existingPanel.focus();
     return "focused";
   }
 

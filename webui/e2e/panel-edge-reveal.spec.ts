@@ -78,6 +78,42 @@ test("opening a timeline already docked in a collapsed edge reveals it", async (
   await page.screenshot({ path: testInfo.outputPath("revealed-timeline.png") });
 });
 
+/**
+ * A panel added without a position joins the active group, so opening a new editor while a
+ * collapsed edge is active must expand that edge rather than leave the editor hidden.
+ */
+test("opening a new editor while a collapsed edge is active reveals it", async ({
+  page,
+}, testInfo) => {
+  await openDemoWorkspace(page);
+  await page.evaluate(() => {
+    const api = (window as any).appStores.dockApi.get();
+    const consolePanel = api.getPanel("panel-CommandLine");
+    consolePanel.group.api.expand();
+    consolePanel.api.setActive();
+    consolePanel.group.api.collapse();
+  });
+  await page.keyboard.press("ControlOrMeta+P");
+  const objects = page.getByRole("region", { name: "Showfile objects" });
+  await expect(objects).toBeVisible();
+  await page.keyboard.type("Sequence");
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const panel = (window as any).appStores.dockApi.get().activePanel;
+        return {
+          isEditor: /editor/.test(panel?.id ?? ""),
+          collapsed: panel?.group.api.isCollapsed?.() ?? false,
+          visibility: getComputedStyle(panel.view.content.element).visibility,
+        };
+      }),
+    )
+    .toEqual({ isEditor: true, collapsed: false, visibility: "visible" });
+  await page.screenshot({ path: testInfo.outputPath("revealed-editor.png") });
+});
+
 /** Opening Console from the palette expands its collapsed edge and lets the user type at once. */
 test("opening Console from the command palette focuses the command line", async ({
   page,
