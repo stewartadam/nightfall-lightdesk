@@ -157,6 +157,19 @@ impl<F: ClientFeed> ClientFeedBuilder<'_, F> {
         self
     }
 
+    /// Publishes the feed in [`ClientOutput`] whenever `changed` passes, for state the render pass
+    /// advances, such as a beat counter. Input-only updates skip the render pass, so the feed
+    /// never publishes a value that has not advanced since the last render.
+    pub fn on_render_change<M>(self, changed: impl SystemCondition<M>) -> Self {
+        self.app.add_systems(
+            Render,
+            publish_client_feed::<F>
+                .run_if(changed)
+                .in_set(ClientOutput),
+        );
+        self
+    }
+
     /// Publishes the feed in [`ClientOutput`] at most once per `interval`, for values that drift
     /// with every rendered frame.
     pub fn on_interval(self, interval: Duration) -> Self {
@@ -255,6 +268,37 @@ mod tests {
         });
         app.update();
         assert_eq!(drained(&rx), vec![Audience::Client(client)]);
+    }
+
+    /// Verifies a render-change feed publishes only in updates that render, holding a change made
+    /// in an input-only update until the next render pass.
+    #[test]
+    fn render_change_feed_skips_input_only_updates() {
+        let mut app = App::new();
+        crate::render_pass::add_render_schedule(&mut app);
+        let (tx, rx) = async_channel::unbounded();
+        app.insert_resource(ClientEventSink::new(tx));
+        app.init_resource::<Counter>();
+        app.add_message::<ResyncRequested>();
+        app.add_client_feed::<CounterFeed>()
+            .on_render_change(resource_changed::<Counter>);
+        let set_renders = |app: &mut App, renders: bool| {
+            app.world_mut()
+                .resource_mut::<crate::render_pass::RenderPass>()
+                .set_renders(renders);
+        };
+
+        app.update();
+        assert_eq!(drained(&rx), vec![Audience::All]);
+
+        app.world_mut().resource_mut::<Counter>().0 = 1;
+        set_renders(&mut app, false);
+        app.update();
+        assert!(drained(&rx).is_empty(), "input-only updates do not publish");
+
+        set_renders(&mut app, true);
+        app.update();
+        assert_eq!(drained(&rx), vec![Audience::All]);
     }
 
     /// Verifies the interval condition passes first, then waits out the interval.
