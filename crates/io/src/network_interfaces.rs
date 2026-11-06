@@ -13,6 +13,7 @@
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
 
@@ -34,49 +35,40 @@ enum IoWsMessage<'a> {
     NetworkInterfaceStatus(&'a NetworkInterfaceStatus),
 }
 
-/// Sends the available interfaces and the resolved interface status from one snapshot.
-fn send_network_interfaces(
-    settings: &IoRuntimeSettings,
-    interfaces: &NetworkInterfaceState,
-    broadcaster: &ClientEventSink,
-) {
-    let status = resolve_network_interface_status(settings, interfaces);
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &IoWsMessage::AvailableNetworkInterfaces(&interfaces.available_interfaces),
-    );
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &IoWsMessage::NetworkInterfaceStatus(&status),
-    );
-    tracing::trace!("Sending network interfaces to websocket clients");
+/// The available network interfaces and resolved interface status feed.
+#[derive(SystemParam)]
+pub(crate) struct NetworkInterfacesFeed<'w> {
+    settings: Res<'w, IoRuntimeSettings>,
+    interfaces: Res<'w, NetworkInterfaceState>,
 }
 
-/// Sends the interfaces again when the host's interfaces or the selected interface change, and
-/// not for unrelated IO settings edits.
-pub(crate) fn send_network_interfaces_on_change(
-    settings: Res<IoRuntimeSettings>,
-    interfaces: Res<NetworkInterfaceState>,
-    broadcaster: Res<ClientEventSink>,
-    mut sent_selection: Local<Option<Option<String>>>,
-) {
-    let selection_changed = sent_selection.as_ref() != Some(&settings.network_interface);
-    if selection_changed || interfaces.is_changed() {
-        send_network_interfaces(&settings, &interfaces, &broadcaster);
-        *sent_selection = Some(settings.network_interface.clone());
+impl ClientFeed for NetworkInterfacesFeed<'static> {
+    /// Publishes the available interfaces and the resolved interface status from one snapshot.
+    fn publish(feed: &NetworkInterfacesFeed<'_>, sink: &ClientEventSink) {
+        let status = resolve_network_interface_status(&feed.settings, &feed.interfaces);
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &IoWsMessage::AvailableNetworkInterfaces(&feed.interfaces.available_interfaces),
+        );
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &IoWsMessage::NetworkInterfaceStatus(&status),
+        );
     }
 }
 
-/// Sends the interfaces to a client that asked for a full resync.
-pub(crate) fn handle_resync_state(
-    mut resync: ResyncReplies,
+/// Run condition that passes when the host's interfaces or the selected interface change, and
+/// not for unrelated IO settings edits.
+pub(crate) fn network_interfaces_changed(
     settings: Res<IoRuntimeSettings>,
     interfaces: Res<NetworkInterfaceState>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_network_interfaces(&settings, &interfaces, &broadcaster);
+    mut sent_selection: Local<Option<Option<String>>>,
+) -> bool {
+    let selection_changed = sent_selection.as_ref() != Some(&settings.network_interface);
+    if selection_changed {
+        *sent_selection = Some(settings.network_interface.clone());
+    }
+    selection_changed || interfaces.is_changed()
 }
 
 /// Keeps the host's network interface watcher alive and receives its change callbacks.

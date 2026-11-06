@@ -60,30 +60,14 @@ pub(crate) fn handle_external_control_commands(
     }
 }
 
-/// Publishes the external control preferences and listener status to clients.
-fn send_external_control_state(state: &ExternalControlState, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &ExternalControlWsMessage::ExternalControlState(state),
-    );
-}
-
-/// Publishes the external control state whenever the preferences or listener status change.
-pub(crate) fn send_external_control_state_on_change(
-    state: Res<ExternalControlState>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if state.is_changed() {
-        send_external_control_state(&state, &broadcaster);
+impl ResourceFeed for ExternalControlState {
+    /// Publishes the external control preferences and listener status.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &ExternalControlWsMessage::ExternalControlState(self),
+        );
     }
-}
-
-/// Sends the external control state to a client that asked for a full resync.
-pub(crate) fn handle_resync_state(mut resync: ResyncReplies, state: Res<ExternalControlState>) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_external_control_state(&state, &broadcaster);
 }
 
 #[cfg(test)]

@@ -7,6 +7,7 @@
  */
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
 use serde_json::Value;
@@ -41,30 +42,25 @@ pub fn forward_fx_module_commands(
     for _event in events.read() {}
 }
 
-/// Send fx module definitions when the provider changes.
-pub fn send_fx_module_on_change(
-    fx_module_provider: Res<DataProvider<StoredFxModule>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if fx_module_provider.is_changed() {
-        send_fx_module(fx_module_provider, &broadcaster);
-    }
+/// The fx module definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct FxModulesFeed<'w> {
+    fx_modules: Res<'w, DataProvider<StoredFxModule>>,
 }
 
-/// Send the current fx module definitions to the sink's websocket clients.
-pub fn send_fx_module(
-    fx_module_provider: Res<DataProvider<StoredFxModule>>,
-    broadcaster: &ClientEventSink,
-) {
-    let fx_module_list: Vec<StoredFxModule> = fx_module_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FxModuleWsMessage::FxModuleDefinitions(&fx_module_list),
-    );
+impl ClientFeed for FxModulesFeed<'static> {
+    /// Publishes every stored fx module definition.
+    fn publish(feed: &FxModulesFeed<'_>, sink: &ClientEventSink) {
+        let fx_module_list: Vec<StoredFxModule> = feed
+            .fx_modules
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FxModuleWsMessage::FxModuleDefinitions(&fx_module_list),
+        );
+    }
 }
 
 /// Send the current available fx module catalog to websocket clients.
@@ -76,16 +72,6 @@ pub fn send_available_fx_modules(
         DISCRIMINATOR_NON_DROPPABLE,
         &FxModuleWsMessage::ListAvailableFxModulesResponse(response),
     );
-}
-
-/// Resend fx module state on engine resync.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    fx_module_provider: Res<DataProvider<StoredFxModule>>,
-) {
-    if let Some(broadcaster) = resync.sink() {
-        send_fx_module(fx_module_provider, &broadcaster);
-    }
 }
 
 #[cfg(test)]

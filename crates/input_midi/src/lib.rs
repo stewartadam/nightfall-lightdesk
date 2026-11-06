@@ -121,17 +121,21 @@ impl Plugin for InputMidiPlugin {
             Render,
             (
                 refresh_midi_mapping_diagnostics.run_if(bindings_need_diagnosis::<MidiMappings>),
-                websocket::send_midi_state,
+                websocket::send_midi_announcements,
                 send_midi_feedback,
             )
                 .chain()
                 .in_set(ClientOutput),
         );
-
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
-        );
+        app.add_client_feed::<websocket::MidiDevicesFeed>()
+            .on_change(
+                resource_changed::<MidiDevices>.or_eager(resource_changed::<mapping::MidiMappings>),
+            );
+        app.add_client_feed::<websocket::MidiDeviceProfilesFeed>()
+            .on_change(websocket::profiled_devices_changed);
+        app.add_resource_feed::<mapping::MidiMappings>();
+        app.add_resource_feed::<MidiMappingDiagnostics>();
+        app.add_resource_feed::<LastMidiEvent>();
     }
 }
 

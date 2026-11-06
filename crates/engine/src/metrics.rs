@@ -17,13 +17,14 @@ use std::time::Duration;
 
 use bevy_diagnostic::DiagnosticsStore;
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use serde::Serialize;
-use web_time::Instant;
 
 use crate::client_bridge::{ClientEventSink, DISCRIMINATOR_DROPPABLE};
+use crate::client_feed::ClientFeed;
 
 /// How often the metrics are sent.
-const SEND_INTERVAL: Duration = Duration::from_millis(100);
+pub(crate) const SEND_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Metrics messages sent to clients.
 #[derive(Serialize)]
@@ -34,28 +35,28 @@ enum MetricsWsMessage<'a> {
     Metrics(#[typeshare(serialized_as = "Record<string, number>")] &'a BTreeMap<&'a str, f64>),
 }
 
-/// Sends every enabled diagnostic's smoothed value every [`SEND_INTERVAL`]; diagnostics without
-/// measurements yet are left out.
-pub(crate) fn send_metrics_at_interval(
-    diagnostics: Option<Res<DiagnosticsStore>>,
-    mut last_sent: Local<Option<Instant>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let Some(diagnostics) = diagnostics else {
-        return;
-    };
-    if last_sent.is_some_and(|sent_at| sent_at.elapsed() < SEND_INTERVAL) {
-        return;
+/// The metrics feed, sent every [`SEND_INTERVAL`].
+#[derive(SystemParam)]
+pub(crate) struct MetricsFeed<'w> {
+    diagnostics: Option<Res<'w, DiagnosticsStore>>,
+}
+
+impl ClientFeed for MetricsFeed<'static> {
+    /// Publishes every enabled diagnostic's smoothed value; diagnostics without measurements yet
+    /// are left out, and nothing is sent when no diagnostics are recorded.
+    fn publish(feed: &MetricsFeed<'_>, sink: &ClientEventSink) {
+        let Some(diagnostics) = feed.diagnostics.as_deref() else {
+            return;
+        };
+        let values: BTreeMap<&str, f64> = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.is_enabled)
+            .filter_map(|diagnostic| {
+                diagnostic
+                    .smoothed()
+                    .map(|value| (diagnostic.path().as_str(), value))
+            })
+            .collect();
+        sink.publish(DISCRIMINATOR_DROPPABLE, &MetricsWsMessage::Metrics(&values));
     }
-    *last_sent = Some(Instant::now());
-    let values: BTreeMap<&str, f64> = diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.is_enabled)
-        .filter_map(|diagnostic| {
-            diagnostic
-                .smoothed()
-                .map(|value| (diagnostic.path().as_str(), value))
-        })
-        .collect();
-    broadcaster.publish(DISCRIMINATOR_DROPPABLE, &MetricsWsMessage::Metrics(&values));
 }

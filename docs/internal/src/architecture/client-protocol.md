@@ -223,10 +223,10 @@ Other events start a resync too:
 - A reconnect, after the connection dropped or the host closed a lagging client.
 - An overflow in the worker. If more than 10,000 non-droppable messages wait for the main thread, the worker discards everything it staged, stops staging, and asks the main thread to resync.
 
-Resync output goes only to the clients that asked for it. Resync handlers take the `ResyncReplies` system parameter, whose sink addresses the clients that requested a resync this frame, so a phone reconnecting doesn't push the whole show down every other connection. When several clients resync in the same frame, they share one sink, and each snapshot is still encoded once. `ResyncComplete` goes to the same clients. A `ParameterKeyframeRequest` is answered the same way: the client that asked gets a layout and keyframe copied from the last published frame and numbered like it, and the shared delta stream carries on unchanged for everyone else.
+Resync output goes only to the clients that asked for it. Most state reaches clients as a client feed, which publishes it to every client when it changes and replays it to just the resyncing clients; see [Where client feeds and metrics live](crate-map.md#where-client-feeds-and-metrics-live). Other resync handlers take the `ResyncReplies` system parameter, whose sink addresses the clients that requested a resync this frame, so a phone reconnecting doesn't push the whole show down every other connection. When several clients resync in the same frame, they share one sink, and each snapshot is still encoded once. `ResyncComplete` goes to the same clients. A `ParameterKeyframeRequest` is answered the same way: the client that asked gets a layout and keyframe copied from the last published frame and numbered like it, and the shared delta stream carries on unchanged for everyone else.
 
 > [!WARNING]
-> Two messages still go to every client after a resync: the layer stack snapshot and the sequence lookahead projection. Keep the UI's handling of those cheap for clients that didn't ask. A new resync handler must publish through the `ResyncReplies` sink, not the shared client sink, or its snapshot reaches every client again.
+> Two messages still go to every client after a resync: the layer stack snapshot and the sequence lookahead projection. Keep the UI's handling of those cheap for clients that didn't ask. A new feed should be a client feed. A hand-written resync handler must publish through the `ResyncReplies` sink, not the shared client sink, or its snapshot reaches every client again.
 
 ## The browser transport worker
 
@@ -338,6 +338,7 @@ The UI is served over plain HTTP, so anyone watching the network can read the PI
 | Discriminators, `Audience`, `ClientEventSink`, command and update envelopes | `crates/engine/src/client_bridge.rs` |
 | Engine-level messages such as `ServerVersion`, `ResyncComplete`, and `WorldReplaced` | `crates/engine/src/protocol/client.rs` |
 | Resync request and completion | `crates/engine/src/lib.rs` |
+| Client feeds: `ClientFeed`, `ResourceFeed`, and `add_client_feed` | `crates/engine/src/client_feed.rs` |
 | Command and update ingress dispatch | `crates/engine/src/client_ingress.rs` |
 | Socket lifecycle, sender tagging, heartbeats, fan-out, router | `crates/websocket/src/websocket.rs` |
 | Per-client outbox and lagging disconnects | `crates/websocket/src/outbox.rs` |

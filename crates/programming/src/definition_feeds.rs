@@ -9,6 +9,7 @@
 //! Websocket publication of group and Blueprint definitions and Blueprint dependencies.
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
@@ -38,86 +39,70 @@ enum DefinitionWsMessage<'a> {
     BlueprintDependencies(&'a [OutboundBlueprintDependency]),
 }
 
-/// Sends every group definition to clients.
-fn send_groups(groups: &DataProvider<Group>, broadcaster: &ClientEventSink) {
-    let groups: Vec<Group> = groups.iter().map(|entry| entry.value().clone()).collect();
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &DefinitionWsMessage::GroupDefinitions(&groups),
-    );
-    tracing::trace!("Sending groups definitions to websocket clients");
+/// The group definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct GroupsFeed<'w> {
+    groups: Res<'w, DataProvider<Group>>,
 }
 
-/// Sends every Blueprint definition to clients.
-fn send_blueprints(blueprints: &DataProvider<Blueprint>, broadcaster: &ClientEventSink) {
-    let blueprints: Vec<Blueprint> = blueprints
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &DefinitionWsMessage::BlueprintDefinitions(&blueprints),
-    );
-    tracing::trace!("Sending blueprint definitions to websocket clients");
-}
-
-/// Sends the reverse dependency index used by Blueprint panels and navigation.
-fn send_blueprint_dependencies(
-    reference_index: &BlueprintReferenceIndex,
-    broadcaster: &ClientEventSink,
-) {
-    let dependencies = reference_index
-        .snapshot()
-        .into_iter()
-        .map(|(blueprint_uid, dependents)| OutboundBlueprintDependency {
-            blueprint_uid,
-            dependents,
-        })
-        .collect::<Vec<_>>();
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &DefinitionWsMessage::BlueprintDependencies(&dependencies),
-    );
-}
-
-/// Publishes group definitions when they change.
-pub fn send_groups_on_change(groups: Res<DataProvider<Group>>, broadcaster: Res<ClientEventSink>) {
-    if groups.is_changed() {
-        send_groups(&groups, &broadcaster);
+impl ClientFeed for GroupsFeed<'static> {
+    /// Publishes every group definition.
+    fn publish(feed: &GroupsFeed<'_>, sink: &ClientEventSink) {
+        let groups: Vec<Group> = feed
+            .groups
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &DefinitionWsMessage::GroupDefinitions(&groups),
+        );
     }
 }
 
-/// Publishes Blueprint definitions when they change.
-pub fn send_blueprints_on_change(
-    blueprints: Res<DataProvider<Blueprint>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if blueprints.is_changed() {
-        send_blueprints(&blueprints, &broadcaster);
+/// The Blueprint definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct BlueprintsFeed<'w> {
+    blueprints: Res<'w, DataProvider<Blueprint>>,
+}
+
+impl ClientFeed for BlueprintsFeed<'static> {
+    /// Publishes every Blueprint definition.
+    fn publish(feed: &BlueprintsFeed<'_>, sink: &ClientEventSink) {
+        let blueprints: Vec<Blueprint> = feed
+            .blueprints
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &DefinitionWsMessage::BlueprintDefinitions(&blueprints),
+        );
     }
 }
 
-/// Publishes Blueprint reverse dependencies after an indexing subsystem changes them.
-pub fn send_blueprint_dependencies_on_change(
-    reference_index: Res<BlueprintReferenceIndex>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if reference_index.is_changed() {
-        send_blueprint_dependencies(&reference_index, &broadcaster);
-    }
+/// The Blueprint reverse dependency feed used by Blueprint panels and navigation, sent after an
+/// indexing subsystem changes the index.
+#[derive(SystemParam)]
+pub(crate) struct BlueprintDependenciesFeed<'w> {
+    reference_index: Res<'w, BlueprintReferenceIndex>,
 }
 
-/// Sends groups, Blueprints, and Blueprint dependencies to clients that asked for a full resync.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    groups: Res<DataProvider<Group>>,
-    blueprints: Res<DataProvider<Blueprint>>,
-    reference_index: Res<BlueprintReferenceIndex>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_groups(&groups, &broadcaster);
-    send_blueprints(&blueprints, &broadcaster);
-    send_blueprint_dependencies(&reference_index, &broadcaster);
+impl ClientFeed for BlueprintDependenciesFeed<'static> {
+    /// Publishes every Blueprint with a live authored reference and what references it.
+    fn publish(feed: &BlueprintDependenciesFeed<'_>, sink: &ClientEventSink) {
+        let dependencies = feed
+            .reference_index
+            .snapshot()
+            .into_iter()
+            .map(|(blueprint_uid, dependents)| OutboundBlueprintDependency {
+                blueprint_uid,
+                dependents,
+            })
+            .collect::<Vec<_>>();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &DefinitionWsMessage::BlueprintDependencies(&dependencies),
+        );
+    }
 }

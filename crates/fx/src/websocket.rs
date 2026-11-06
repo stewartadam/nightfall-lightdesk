@@ -12,6 +12,7 @@
 //! owns all fx-related websocket forwarding logic.
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
 use serde_json::Value;
@@ -55,7 +56,7 @@ pub fn deserialize_step_fx_preview_update(world: &mut World, json: Value) -> Res
 ///
 /// Note: CRUD commands (StoreFx, RenameFx, DeleteFx) are intentionally NOT
 /// forwarded here because the command echo would be sent before we know if
-/// the operation succeeded. Instead, we rely on send_fx_on_change to send
+/// the operation succeeded. Instead, we rely on [`FxFeed`] to send
 /// full definitions after changes.
 pub fn forward_fx_commands(
     mut events: MessageReader<CommandEnvelope<FxCommand>>,
@@ -63,67 +64,50 @@ pub fn forward_fx_commands(
 ) {
     // Drain the events to avoid them accumulating
     for _event in events.read() {
-        // CRUD commands are not forwarded - rely on send_fx_on_change instead
+        // CRUD commands are not forwarded; FxFeed sends the definitions instead
     }
 }
 
-/// Send FX definitions when DataProvider<Fx> changes.
-pub fn send_fx_on_change(fx_provider: Res<DataProvider<Fx>>, broadcaster: Res<ClientEventSink>) {
-    if fx_provider.is_changed() {
-        send_fx(&fx_provider, &broadcaster);
+/// The FX definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct FxFeed<'w> {
+    fx: Res<'w, DataProvider<Fx>>,
+}
+
+impl ClientFeed for FxFeed<'static> {
+    /// Publishes every FX definition.
+    fn publish(feed: &FxFeed<'_>, sink: &ClientEventSink) {
+        let fx_list: Vec<Fx> = feed.fx.iter().map(|entry| entry.value().clone()).collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FxWsMessage::FxDefinitions(&fx_list),
+        );
     }
 }
 
-/// Send step FX definitions when step FX entities change.
-pub fn send_step_fx_on_change(
-    step_fx_query: Query<&StepFx>,
-    changed_step_fx_query: Query<(), Changed<StepFx>>,
+/// The step FX definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct StepFxFeed<'w, 's> {
+    step_fx: Query<'w, 's, &'static StepFx>,
+}
+
+impl ClientFeed for StepFxFeed<'static, 'static> {
+    /// Publishes every step FX definition.
+    fn publish(feed: &StepFxFeed<'_, '_>, sink: &ClientEventSink) {
+        let step_fx_list: Vec<StepFx> = feed.step_fx.iter().cloned().collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FxWsMessage::StepFxDefinitions(&step_fx_list),
+        );
+    }
+}
+
+/// Run condition that passes when a step FX entity is added, edited or removed, consuming the
+/// removals so one removal does not pass next update too.
+pub(crate) fn step_fx_changed(
+    changed_step_fx: Query<(), Changed<StepFx>>,
     mut removed_step_fx: RemovedComponents<StepFx>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let step_fx_removed = !removed_step_fx.is_empty();
-    removed_step_fx.clear();
-    let has_step_fx_changes = !changed_step_fx_query.is_empty() || step_fx_removed;
-    if has_step_fx_changes {
-        send_step_fx(&step_fx_query, &broadcaster);
-    }
-}
-
-/// Send FX list to UI on DataProvider changes.
-pub fn send_fx(fx_provider: &DataProvider<Fx>, broadcaster: &ClientEventSink) {
-    let fx_list: Vec<Fx> = fx_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FxWsMessage::FxDefinitions(&fx_list),
-    );
-    tracing::trace!("Sending fx definitions to websocket clients");
-}
-
-/// Send step FX list to UI on entity changes.
-pub fn send_step_fx(step_fx_query: &Query<&StepFx>, broadcaster: &ClientEventSink) {
-    let step_fx_list: Vec<StepFx> = step_fx_query.iter().cloned().collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FxWsMessage::StepFxDefinitions(&step_fx_list),
-    );
-    tracing::trace!("Sending step fx definitions to websocket clients");
-}
-
-/// Handle ResyncState by sending FX list immediately
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    fx_provider: Res<DataProvider<Fx>>,
-    step_fx_query: Query<&StepFx>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    send_fx(&fx_provider, &broadcaster);
-    send_step_fx(&step_fx_query, &broadcaster);
+) -> bool {
+    let removed = removed_step_fx.read().count() > 0;
+    removed || !changed_step_fx.is_empty()
 }

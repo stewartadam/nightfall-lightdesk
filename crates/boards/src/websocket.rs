@@ -9,6 +9,7 @@
 //! Websocket ingress for board commands and publication of boards and button states.
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall::prelude::*;
 use nightfall_clips::{Clip, MaterializedClip};
 use nightfall_engine::prelude::*;
@@ -34,12 +35,38 @@ fn sorted_boards(boards: &DataProvider<Board>) -> Vec<Board> {
     boards
 }
 
-/// Sends every board definition to all clients.
-fn send_boards(boards: &DataProvider<Board>, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &BoardWsMessage::BoardDefinitions(&sorted_boards(boards)),
-    );
+/// The board definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct BoardsFeed<'w> {
+    boards: Res<'w, DataProvider<Board>>,
+}
+
+impl ClientFeed for BoardsFeed<'static> {
+    /// Publishes every board definition in ID order.
+    fn publish(feed: &BoardsFeed<'_>, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &BoardWsMessage::BoardDefinitions(&sorted_boards(&feed.boards)),
+        );
+    }
+}
+
+/// The board button states feed. Resync replays it; [`send_board_states_on_change`] sends it to
+/// every client only when the resolved states differ from the last ones sent.
+#[derive(SystemParam)]
+pub(crate) struct BoardStatesFeed<'w, 's> {
+    boards: Res<'w, DataProvider<Board>>,
+    objects: BoardObjects<'w, 's>,
+}
+
+impl ClientFeed for BoardStatesFeed<'static, 'static> {
+    /// Publishes every board's resolved buttons and live states.
+    fn publish(feed: &BoardStatesFeed<'_, '_>, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &BoardWsMessage::BoardStates(&board_statuses(&feed.boards, &feed.objects)),
+        );
+    }
 }
 
 /// Resolves every board's buttons and their live states.
@@ -49,13 +76,6 @@ fn board_statuses(boards: &DataProvider<Board>, objects: &BoardObjects) -> Vec<B
         .iter()
         .map(|board| objects.board_status(&context, board))
         .collect()
-}
-
-/// Publishes board definitions when they change.
-pub fn send_boards_on_change(boards: Res<DataProvider<Board>>, broadcaster: Res<ClientEventSink>) {
-    if boards.is_changed() {
-        send_boards(&boards, &broadcaster);
-    }
 }
 
 /// Publishes button states when any input that decides them changes and the result differs.
@@ -89,20 +109,4 @@ pub fn send_board_states_on_change(
         &BoardWsMessage::BoardStates(&statuses),
     );
     *last_sent = Some(statuses);
-}
-
-/// Sends boards and button states to clients that asked for a full resync.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    boards: Res<DataProvider<Board>>,
-    objects: BoardObjects,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_boards(&boards, &broadcaster);
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &BoardWsMessage::BoardStates(&board_statuses(&boards, &objects)),
-    );
 }

@@ -61,7 +61,7 @@ impl TempoState {
 
 /// What was last sent to clients, used to decide when to send again.
 #[derive(Default)]
-pub struct LastTempoSend {
+pub(crate) struct LastTempoSend {
     /// When the last message went out.
     sent_at: Option<Instant>,
     /// The snapshot that was sent.
@@ -92,33 +92,30 @@ fn tempo_send_due(
         || since >= HEARTBEAT_INTERVAL
 }
 
-/// Publishes the tempo state when it changed, while it is easing, and on a heartbeat.
-pub fn send_tempo_state(
-    tempo: Res<ShowTempo>,
-    broadcaster: Res<ClientEventSink>,
-    mut last: Local<LastTempoSend>,
-) {
+impl ResourceFeed for ShowTempo {
+    /// Publishes the current tempo, beat counter and launch quantize mode as a snapshot, so a
+    /// newer one replaces one still queued.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_DROPPABLE,
+            &TempoWsMessage::TempoState(TempoState::of(self)),
+        );
+    }
+}
+
+/// Run condition that passes when the tempo state changed, while it is easing, and on a
+/// heartbeat, recording what the feed then sends.
+pub(crate) fn tempo_send_is_due(tempo: Res<ShowTempo>, mut last: Local<LastTempoSend>) -> bool {
     let state = TempoState::of(&tempo);
     let now = Instant::now();
     let mode_changed = last.launch_quantize != Some(state.launch_quantize);
     if !mode_changed && !tempo_send_due(&last, &state.snapshot, tempo.is_settling(), now) {
-        return;
+        return false;
     }
-    broadcaster.publish(DISCRIMINATOR_DROPPABLE, &TempoWsMessage::TempoState(state));
     last.sent_at = Some(now);
     last.snapshot = Some(state.snapshot);
     last.launch_quantize = Some(state.launch_quantize);
-}
-
-/// Sends the tempo state immediately when a client asks for a full resync.
-pub fn handle_resync_state(mut resync: ResyncReplies, tempo: Res<ShowTempo>) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &TempoWsMessage::TempoState(TempoState::of(&tempo)),
-    );
+    true
 }
 
 #[cfg(test)]

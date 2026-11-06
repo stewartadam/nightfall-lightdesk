@@ -227,16 +227,7 @@ impl Plugin for OutputUdmxUsbPlugin {
             Update,
             refresh_available_usb_dmx_devices.in_set(EventHandling),
         );
-        app.add_systems(
-            Render,
-            device_list::send_available_usb_dmx_devices_on_change.in_set(ClientOutput),
-        );
-        app.add_systems(
-            Update,
-            device_list::handle_resync_state
-                .in_set(ResyncHandling)
-                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
-        );
+        app.add_resource_feed::<AvailableUsbDmxDevices>();
         app.add_systems(
             Render,
             udmx::output

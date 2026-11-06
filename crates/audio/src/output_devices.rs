@@ -35,35 +35,17 @@ enum AudioWsMessage<'a> {
     ),
 }
 
-/// Publishes the audio output devices to clients.
-fn send_available_audio_devices(devices: &AvailableAudioDevices, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &AudioWsMessage::AvailableAudioDevices(&devices.0),
-    );
-    tracing::trace!("Sending available audio devices to websocket clients");
-}
-
-/// Publishes the device list whenever discovery changes it.
-fn send_available_audio_devices_on_change(
-    devices: Res<AvailableAudioDevices>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if devices.is_changed() {
-        send_available_audio_devices(&devices, &broadcaster);
+impl ResourceFeed for AvailableAudioDevices {
+    /// Publishes the audio output devices as a map of stable id to display name.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &AudioWsMessage::AvailableAudioDevices(&self.0),
+        );
     }
 }
 
-/// Sends the device list to a client that asked for a full resync.
-fn handle_resync_state(mut resync: ResyncReplies, devices: Res<AvailableAudioDevices>) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_available_audio_devices(&devices, &broadcaster);
-}
-
-/// Registers the device list, its discovery and rerouting monitor, the client feed, and the
-/// resync reply.
+/// Registers the device list, its discovery and rerouting monitor, and the client feed.
 pub(crate) fn register(app: &mut bevy_app::App) {
     use bevy_app::Update;
     app.init_resource::<AvailableAudioDevices>();
@@ -74,16 +56,7 @@ pub(crate) fn register(app: &mut bevy_app::App) {
             .in_set(EventHandling)
             .after(SettingsCommandHandling),
     );
-    app.add_systems(
-        Render,
-        send_available_audio_devices_on_change.in_set(ClientOutput),
-    );
-    app.add_systems(
-        Update,
-        handle_resync_state
-            .in_set(ResyncHandling)
-            .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
-    );
+    app.add_resource_feed::<AvailableAudioDevices>();
 }
 
 const AUDIO_DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(1);

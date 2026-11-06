@@ -9,7 +9,7 @@
 //! Publishes the action catalog to attached clients.
 
 use bevy_ecs::prelude::*;
-use nightfall_engine::prelude::{ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, ResyncReplies};
+use nightfall_engine::prelude::{ClientEventSink, DISCRIMINATOR_NON_DROPPABLE, ResourceFeed};
 use serde::Serialize;
 
 use crate::descriptor::ActionCatalogEntry;
@@ -32,58 +32,25 @@ pub enum ActionsWsMessage<'a> {
     ControllerMappingMode(&'a ControllerMappingModeState),
 }
 
-/// Broadcasts the catalog whenever registrations change.
-pub fn send_action_catalog_on_change(
-    registry: Res<ActionRegistry>,
-    sink: Option<Res<ClientEventSink>>,
-) {
-    if registry.is_changed()
-        && let Some(sink) = sink
-    {
-        send_catalog(&registry, &sink);
+impl ResourceFeed for ActionRegistry {
+    /// Publishes every registered action with its descriptor and capability names.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &ActionsWsMessage::ActionCatalog(&self.catalog()),
+        );
     }
 }
 
-/// Re-sends the catalog and mapping mode state when a client requests a full state resync.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    registry: Res<ActionRegistry>,
-    mode: Res<ControllerMappingMode>,
-) {
-    if let Some(sink) = resync.sink() {
-        send_catalog(&registry, &sink);
-        send_mapping_mode(&mode, &sink);
+impl ResourceFeed for ControllerMappingMode {
+    /// Publishes how many clients are mapping controllers, in order, so every client reliably
+    /// shows that controller actions are paused.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &ActionsWsMessage::ControllerMappingMode(&self.state()),
+        );
     }
-}
-
-/// Broadcasts controller mapping mode whenever a client enters, leaves, or disconnects.
-///
-/// Non-droppable so every client reliably shows that controller actions are paused.
-pub fn send_mapping_mode_on_change(
-    mode: Res<ControllerMappingMode>,
-    sink: Option<Res<ClientEventSink>>,
-) {
-    if mode.is_changed()
-        && let Some(sink) = sink
-    {
-        send_mapping_mode(&mode, &sink);
-    }
-}
-
-/// Serializes and publishes one mapping mode snapshot.
-fn send_mapping_mode(mode: &ControllerMappingMode, sink: &ClientEventSink) {
-    sink.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &ActionsWsMessage::ControllerMappingMode(&mode.state()),
-    );
-}
-
-/// Serializes and publishes one catalog snapshot.
-fn send_catalog(registry: &ActionRegistry, sink: &ClientEventSink) {
-    sink.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &ActionsWsMessage::ActionCatalog(&registry.catalog()),
-    );
 }
 
 /// Broadcasts client-hosted action invocations to connected Web UI clients.

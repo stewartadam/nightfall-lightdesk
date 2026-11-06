@@ -17,6 +17,7 @@
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use bevy_state::app::StatesPlugin;
 use bevy_state::prelude::*;
 use nightfall_cmd_parse::prelude::*;
@@ -27,6 +28,7 @@ pub mod assertions;
 pub mod ast_conv;
 mod client;
 pub mod client_bridge;
+pub mod client_feed;
 pub mod client_ingress;
 pub mod command_lifecycle;
 pub mod data_provider;
@@ -100,6 +102,10 @@ pub mod prelude {
         EncodedClientMessage, LastClientDisconnected, OutboundFrame, PendingAudience,
         PendingReplies, SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
         encode_client_cbor,
+    };
+    pub use crate::client_feed::{
+        ClientFeed, ClientFeedAppExt, ClientFeedBuilder, ResourceFeed, ResourceFeedParam, every,
+        publish_client_feed, resync_client_feed,
     };
     pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
     pub use crate::command_lifecycle::{
@@ -232,7 +238,7 @@ impl Plugin for EnginePlugin {
         app.add_systems(
             Update,
             (
-                send_app_state_on_resync.before(ResyncHandling),
+                resync_client_feed::<AppStateFeed>.before(ResyncHandling),
                 send_runtime_capabilities_on_resync.before(ResyncHandling),
                 send_attribute_metadata_on_resync.before(ResyncHandling),
                 send_resync_complete.after(ResyncHandling),
@@ -240,12 +246,12 @@ impl Plugin for EnginePlugin {
         );
         app.add_systems(
             PostUpdate,
-            broadcast_app_state_on_change.in_set(ClientFeedback),
+            publish_client_feed::<AppStateFeed>
+                .run_if(state_changed::<AppState>)
+                .in_set(ClientFeedback),
         );
-        app.add_systems(
-            Render,
-            metrics::send_metrics_at_interval.in_set(ClientOutput),
-        );
+        app.add_client_feed::<metrics::MetricsFeed>()
+            .on_interval(metrics::SEND_INTERVAL);
         app.init_resource::<GlobalVariables>();
 
         register_ingress_command::<EngineCommand>(app);
@@ -263,9 +269,12 @@ impl Plugin for EnginePlugin {
             PostUpdate,
             ui_notification::forward_ui_notifications.in_set(ClientFeedback),
         );
+        // The retained showfile identity follows the state it describes.
         app.add_systems(
             Update,
-            ui_notification::send_pending_ui_notifications_on_resync.in_set(ResyncHandling),
+            ui_notification::send_pending_ui_notifications_on_resync
+                .after(ResyncHandling)
+                .before(send_resync_complete),
         );
 
         register_engine_operation::<EvalOperation>(app);
@@ -479,31 +488,20 @@ fn check_startup_complete(
     }
 }
 
-/// System that sends the current backend lifecycle state to clients that resync.
-fn send_app_state_on_resync(mut resync: ResyncReplies, app_state: Res<State<AppState>>) {
-    let Some(sink) = resync.sink() else {
-        return;
-    };
-
-    sink.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &EngineClientMessage::AppState(app_state.get()),
-    );
+/// The backend lifecycle state feed, sent on every transition and before plugin state on resync.
+#[derive(SystemParam)]
+struct AppStateFeed<'w> {
+    app_state: Res<'w, State<AppState>>,
 }
 
-/// System that broadcasts backend lifecycle transitions as they happen.
-fn broadcast_app_state_on_change(
-    app_state: Res<State<AppState>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if !app_state.is_changed() {
-        return;
+impl ClientFeed for AppStateFeed<'static> {
+    /// Publishes the lifecycle state in order, so a client sees every transition.
+    fn publish(feed: &AppStateFeed<'_>, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &EngineClientMessage::AppState(feed.app_state.get()),
+        );
     }
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &EngineClientMessage::AppState(app_state.get()),
-    );
 }
 
 /// System that sends static attribute metadata to resyncing clients before plugin resync handlers.

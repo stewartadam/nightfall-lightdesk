@@ -19,7 +19,6 @@ use nightfall_dmx::prelude::Attribute;
 use nightfall_engine::prelude::*;
 use nightfall_instances::{EditorPreviewInstance, InstanceClock, InstanceControls, InstanceId};
 use serde::{Deserialize, Serialize};
-use web_time::Instant;
 
 use crate::events::{PreviewStepFxDefinition, StepFxPreviewSessionId};
 use crate::step_fx::{ActiveStepFx, StepFxLanePhaseOffsets};
@@ -116,28 +115,27 @@ pub fn step_fx_preview_status(
     }
 }
 
-/// Sends the anchor of every running editor preview; ordinary playbacks are never included.
-///
-/// `discriminator` is non-droppable for a start, stop or speed change, which the editor must
-/// see, and droppable for a re-anchor, which the next one replaces.
-fn send_step_fx_previews(
-    previews: &Query<StepFxPreviewPlayback, With<EditorPreviewInstance>>,
-    discriminator: u8,
-    broadcaster: &ClientEventSink,
-) {
-    let sampled_at_epoch_ms = current_epoch_ms();
-    let statuses: Vec<_> = previews
-        .iter()
-        .map(|preview| step_fx_preview_status(preview, sampled_at_epoch_ms))
-        .collect();
-    broadcaster.publish(
-        discriminator,
-        &StepFxPreviewWsMessage::StepFxPreviews(&statuses),
-    );
-    tracing::trace!(
-        count = statuses.len(),
-        "Sending Step FX previews to websocket clients"
-    );
+/// The Step FX editor preview anchors feed; ordinary playbacks are never included.
+#[derive(bevy_ecs::system::SystemParam)]
+pub(crate) struct StepFxPreviewsFeed<'w, 's> {
+    previews: Query<'w, 's, StepFxPreviewPlayback, With<EditorPreviewInstance>>,
+}
+
+impl ClientFeed for StepFxPreviewsFeed<'static, 'static> {
+    /// Publishes the anchor of every running editor preview, sampled now. Each list is complete,
+    /// so a newer one replaces one still queued.
+    fn publish(feed: &StepFxPreviewsFeed<'_, '_>, sink: &ClientEventSink) {
+        let sampled_at_epoch_ms = current_epoch_ms();
+        let statuses: Vec<_> = feed
+            .previews
+            .iter()
+            .map(|preview| step_fx_preview_status(preview, sampled_at_epoch_ms))
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_DROPPABLE,
+            &StepFxPreviewWsMessage::StepFxPreviews(&statuses),
+        );
+    }
 }
 
 /// Changes that move a preview's clock anchor straight away. Phase offset corrections are left
@@ -151,57 +149,33 @@ pub(crate) struct StepFxPreviewChanges<'w, 's> {
     definitions: Query<'w, 's, (), Changed<PreviewStepFxDefinition>>,
 }
 
-impl StepFxPreviewChanges<'_, '_> {
-    /// Reports whether a preview started, stopped or changed what its anchor is built from,
-    /// consuming the removals so one stop does not trigger a send next frame too.
-    fn any(&mut self) -> bool {
-        let removed = !self.removed.is_empty();
-        self.removed.clear();
-        removed
-            || !self.added.is_empty()
-            || !self.controls.is_empty()
-            || !self.active.is_empty()
-            || !self.definitions.is_empty()
-    }
-}
-
-/// Sends the preview anchors when a preview starts, stops or changes speed.
+/// Run condition that passes when a preview starts, stops or changes what its anchor is built
+/// from.
 ///
-/// Runs where removals are still visible; a stop sends the remaining previews, often none.
-pub(crate) fn send_step_fx_previews_on_change(
-    previews: Query<StepFxPreviewPlayback, With<EditorPreviewInstance>>,
-    mut changes: StepFxPreviewChanges,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if changes.any() {
-        send_step_fx_previews(&previews, DISCRIMINATOR_NON_DROPPABLE, &broadcaster);
-    }
+/// Runs where removals are still visible, so a stop sends the remaining previews, often none,
+/// and consumes the removals so one stop does not pass next update too.
+pub(crate) fn step_fx_previews_changed(mut changes: StepFxPreviewChanges) -> bool {
+    let removed = changes.removed.read().count() > 0;
+    removed
+        || !changes.added.is_empty()
+        || !changes.controls.is_empty()
+        || !changes.active.is_empty()
+        || !changes.definitions.is_empty()
 }
 
-/// Re-anchors the running previews every [`REANCHOR_INTERVAL`], after this frame's clocks
-/// advanced, so the editor's playhead never drifts far from the backend clock.
-pub(crate) fn reanchor_step_fx_previews(
-    previews: Query<StepFxPreviewPlayback, With<EditorPreviewInstance>>,
-    mut last_sent: Local<Option<Instant>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if previews.is_empty() || last_sent.is_some_and(|sent_at| sent_at.elapsed() < REANCHOR_INTERVAL)
-    {
-        return;
-    }
-    send_step_fx_previews(&previews, DISCRIMINATOR_DROPPABLE, &broadcaster);
-    *last_sent = Some(Instant::now());
-}
-
-/// Sends the preview anchors to a client that asked for a full resync.
-pub(crate) fn handle_resync_state(
-    mut resync: ResyncReplies,
-    previews: Query<StepFxPreviewPlayback, With<EditorPreviewInstance>>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_step_fx_previews(&previews, DISCRIMINATOR_NON_DROPPABLE, &broadcaster);
+/// Registers the preview feed: sent on change, and re-anchored every [`REANCHOR_INTERVAL`]
+/// while a preview runs, after this frame's clocks advanced, so the editor's playhead never
+/// drifts far from the backend clock.
+pub(crate) fn register(app: &mut bevy_app::App) {
+    app.add_client_feed::<StepFxPreviewsFeed>()
+        .on_change(step_fx_previews_changed);
+    app.add_systems(
+        Render,
+        publish_client_feed::<StepFxPreviewsFeed>
+            .run_if(any_match_filter::<(With<StepFxPreviewSessionId>, With<EditorPreviewInstance>)>)
+            .run_if(every(REANCHOR_INTERVAL))
+            .in_set(ClientOutput),
+    );
 }
 
 /// Returns the current Unix epoch in milliseconds for browser interpolation anchors.
@@ -312,8 +286,18 @@ mod tests {
         let mut app = bevy_app::App::new();
         let (sender, receiver) = async_channel::unbounded();
         app.insert_resource(ClientEventSink::new(sender));
-        app.add_systems(bevy_app::Update, send_step_fx_previews_on_change);
-        app.add_systems(bevy_app::PostUpdate, reanchor_step_fx_previews);
+        app.add_systems(
+            bevy_app::Update,
+            publish_client_feed::<StepFxPreviewsFeed>.run_if(step_fx_previews_changed),
+        );
+        app.add_systems(
+            bevy_app::PostUpdate,
+            publish_client_feed::<StepFxPreviewsFeed>
+                .run_if(
+                    any_match_filter::<(With<StepFxPreviewSessionId>, With<EditorPreviewInstance>)>,
+                )
+                .run_if(every(REANCHOR_INTERVAL)),
+        );
 
         let preview = spawn_step_fx_playback(app.world_mut(), 0x740, true);
         spawn_step_fx_playback(app.world_mut(), 0x741, false);

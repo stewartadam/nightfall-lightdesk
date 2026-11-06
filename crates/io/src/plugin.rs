@@ -78,23 +78,9 @@ impl Plugin for IoPlugin {
                 .in_set(ClientFeedback)
                 .before(nightfall_engine::ui_notification::forward_ui_notifications),
         );
-        app.add_systems(
-            Render,
-            (
-                network_interfaces::send_network_interfaces_on_change,
-                network_stats::feed::send_failures_on_change,
-            )
-                .in_set(ClientOutput),
-        );
-        app.add_systems(
-            Update,
-            (
-                network_interfaces::handle_resync_state,
-                network_stats::feed::handle_resync_state,
-            )
-                .in_set(ResyncHandling)
-                .before(nightfall_engine::ui_notification::send_pending_ui_notifications_on_resync),
-        );
+        app.add_client_feed::<network_interfaces::NetworkInterfacesFeed>()
+            .on_change(network_interfaces::network_interfaces_changed);
+        app.add_resource_feed_when::<NetworkStats, _>(network_stats::feed::send_failures_changed);
     }
 }
 

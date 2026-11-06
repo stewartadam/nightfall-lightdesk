@@ -149,17 +149,20 @@ impl Plugin for CuePlugin {
         );
         app.add_systems(
             Render,
-            (
-                websocket::send_cues_on_change,
-                websocket::send_color_paths_on_change,
-                websocket::send_stale_sequence_lookahead_states,
-            )
-                .in_set(ClientOutput),
+            (websocket::send_stale_sequence_lookahead_states,).in_set(ClientOutput),
         );
-
+        app.add_client_feed::<websocket::CuesFeed>();
+        app.add_client_feed::<websocket::CueDurationProfilesFeed>()
+            .resync_after(resync_client_feed::<websocket::CuesFeed>)
+            .on_change(resource_changed::<nightfall_fixtures::prelude::FixtureDataProviderExt>);
+        app.add_client_feed::<websocket::SequencesFeed>()
+            .resync_after(resync_client_feed::<websocket::CueDurationProfilesFeed>);
+        app.add_client_feed::<websocket::ColorPathsFeed>()
+            .resync_after(resync_client_feed::<websocket::SequencesFeed>)
+            .on_change(resource_changed::<DataProvider<ColorPath>>);
         app.add_systems(
             Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
+            websocket::mark_sequence_lookahead_stale_on_resync.in_set(ResyncHandling),
         );
 
         events::register_event_systems(app);

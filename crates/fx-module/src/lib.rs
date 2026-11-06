@@ -318,10 +318,8 @@ impl Plugin for FxModulePlugin {
             PostUpdate,
             websocket::forward_fx_module_commands.in_set(ClientFeedback),
         );
-        app.add_systems(
-            Render,
-            websocket::send_fx_module_on_change.in_set(ClientOutput),
-        );
+        app.add_client_feed::<websocket::FxModulesFeed>()
+            .on_change(resource_changed::<DataProvider<StoredFxModule>>);
         app.add_systems(
             Render,
             instances::evaluate_fx_module.in_set(LayerGeneration),
@@ -333,10 +331,6 @@ impl Plugin for FxModulePlugin {
         app.add_systems(
             Update,
             instances::cleanup_released_fx_module_layers.in_set(EventHandling),
-        );
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
         );
     }
 }

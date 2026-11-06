@@ -220,25 +220,15 @@ impl Plugin for TimelinePlugin {
             PostUpdate,
             websocket::forward_timeline_commands.in_set(ClientFeedback),
         );
-        app.add_systems(
-            Render,
-            (
-                websocket::send_timelines_on_change,
-                websocket::send_timeline_recording_states_on_change,
-                websocket::send_timeline_recording_previews_on_change,
-                websocket::send_timeline_lookahead_item_statuses_on_change,
-                websocket::send_timeline_planned_cues_on_change,
-            )
-                .in_set(ClientOutput),
-        );
+        app.add_client_feed::<websocket::TimelinesFeed>()
+            .on_change(resource_changed::<DataProvider<Timeline>>);
+        app.add_resource_feed::<recording::TimelineRecordingStates>();
+        app.add_resource_feed::<recording::TimelineRecordingSessions>();
+        app.add_resource_feed::<timeline::TimelineLookaheadActionStatuses>();
+        app.add_resource_feed::<timeline::TimelinePlannedCuesByAction>();
         app.add_systems(
             Update,
             systems::update_timeline_planned_cues_system.after(EventHandling),
-        );
-
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
         );
     }
 }

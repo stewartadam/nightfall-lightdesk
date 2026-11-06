@@ -9,6 +9,7 @@
 //! WebSocket integration for scene object commands.
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
 
@@ -28,49 +29,25 @@ pub enum SceneObjectWsMessage<'a> {
     SceneObjectCommand(&'a SceneObjectCommand),
 }
 
-/// Send list of scene objects to websocket clients.
-pub fn send_scene_objects(
-    scene_object_provider: &SceneObjectDataProvider,
-    broadcaster: &ClientEventSink,
-) {
-    let scene_objects: Vec<SceneObject> = scene_object_provider
-        .iter()
-        .map(|e| e.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &SceneObjectWsMessage::SceneObjectDefinitions(&scene_objects),
-    );
-
-    tracing::trace!(
-        "Sending {} scene objects over websocket",
-        scene_objects.len()
-    );
+/// The scene object definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct SceneObjectsFeed<'w> {
+    scene_objects: Res<'w, SceneObjectDataProvider>,
 }
 
-/// Send scene objects when data provider changes
-pub fn send_scene_objects_on_change(
-    scene_object_provider: Res<SceneObjectDataProvider>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if !scene_object_provider.is_changed() {
-        return;
+impl ClientFeed for SceneObjectsFeed<'static> {
+    /// Publishes every scene object definition.
+    fn publish(feed: &SceneObjectsFeed<'_>, sink: &ClientEventSink) {
+        let scene_objects: Vec<SceneObject> = feed
+            .scene_objects
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &SceneObjectWsMessage::SceneObjectDefinitions(&scene_objects),
+        );
     }
-
-    send_scene_objects(&scene_object_provider, &broadcaster);
-}
-
-/// Handle ResyncState by sending scene objects.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    scene_object_provider: Res<SceneObjectDataProvider>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    send_scene_objects(&scene_object_provider, &broadcaster);
 }
 
 #[cfg(test)]

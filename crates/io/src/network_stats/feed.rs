@@ -17,9 +17,9 @@ use web_time::Instant;
 
 use super::{NetworkOutputSendFailure, NetworkStats};
 
-/// Shortest time between two sends, since a failing output updates its failure count on every
-/// output tick.
-const MIN_SEND_INTERVAL: Duration = Duration::from_millis(100);
+/// How often the failures are compared with the last list sent, since a failing output updates
+/// its failure count on every output tick.
+const CHECK_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Network output messages sent to clients.
 #[derive(Serialize)]
@@ -30,46 +30,41 @@ enum NetworkOutputWsMessage<'a> {
     NetworkOutputSendFailures(&'a [NetworkOutputSendFailure]),
 }
 
-/// Sends the failures list. It is only sent when it changes, so it is never dropped: a dropped
-/// recovery would leave the warning showing.
-fn send_failures(failures: &[NetworkOutputSendFailure], broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &NetworkOutputWsMessage::NetworkOutputSendFailures(failures),
-    );
-}
-
-/// What the failures feed last sent, and when.
-#[derive(Default)]
-pub(crate) struct SentFailures {
-    failures: Vec<NetworkOutputSendFailure>,
-    sent_at: Option<Instant>,
-}
-
-/// Sends the failures list when it differs from the last one sent, at most every
-/// [`MIN_SEND_INTERVAL`].
-pub(crate) fn send_failures_on_change(
-    stats: Res<NetworkStats>,
-    mut sent: Local<SentFailures>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let failures = stats.recent_send_failures();
-    if sent.failures == failures
-        || sent
-            .sent_at
-            .is_some_and(|sent_at| sent_at.elapsed() < MIN_SEND_INTERVAL)
-    {
-        return;
+impl ResourceFeed for NetworkStats {
+    /// Publishes the send failures list as a snapshot, so a newer list replaces one still queued.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_DROPPABLE,
+            &NetworkOutputWsMessage::NetworkOutputSendFailures(self.recent_send_failures()),
+        );
     }
-    send_failures(failures, &broadcaster);
-    sent.failures = failures.to_vec();
-    sent.sent_at = Some(Instant::now());
 }
 
-/// Sends the failures list to a client that asked for a full resync.
-pub(crate) fn handle_resync_state(mut resync: ResyncReplies, stats: Res<NetworkStats>) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-    send_failures(stats.recent_send_failures(), &broadcaster);
+/// The failures list the feed last passed for, and when.
+#[derive(Default)]
+pub(crate) struct CheckedFailures {
+    failures: Option<Vec<NetworkOutputSendFailure>>,
+    checked_at: Option<Instant>,
+}
+
+/// Run condition that passes when the failures list differs from the one it last passed for,
+/// comparing at most every [`CHECK_INTERVAL`].
+pub(crate) fn send_failures_changed(
+    stats: Res<NetworkStats>,
+    mut checked: Local<CheckedFailures>,
+) -> bool {
+    let now = Instant::now();
+    if checked
+        .checked_at
+        .is_some_and(|checked_at| now.duration_since(checked_at) < CHECK_INTERVAL)
+    {
+        return false;
+    }
+    checked.checked_at = Some(now);
+    let failures = stats.recent_send_failures();
+    if checked.failures.as_deref() == Some(failures) {
+        return false;
+    }
+    checked.failures = Some(failures.to_vec());
+    true
 }

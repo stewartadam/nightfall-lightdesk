@@ -105,19 +105,19 @@ impl Plugin for InputOscPlugin {
             Render,
             (
                 refresh_osc_mapping_diagnostics.run_if(bindings_need_diagnosis::<OscMappings>),
-                websocket::send_osc_state,
+                websocket::send_control_touches,
             )
-                .chain()
                 .in_set(ClientOutput),
         );
         app.add_systems(
             PostUpdate,
             websocket::send_external_evals.in_set(ClientFeedback),
         );
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
-        );
+        app.add_resource_feed::<OscSources>();
+        app.add_resource_feed::<OscMappings>();
+        app.add_resource_feed::<OscMappingDiagnostics>();
+        app.add_resource_feed::<OscRuntimeStatus>();
+        app.add_resource_feed::<LastOscEvent>();
     }
 }
 
