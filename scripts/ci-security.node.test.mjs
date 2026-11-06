@@ -136,6 +136,10 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
       contents: "read",
       "pull-requests": "read",
     },
+    "claude-review.yml/revoke": { issues: "write", "pull-requests": "write" },
+    "claude-review.yml/metadata": { contents: "read", "pull-requests": "read" },
+    "claude-review.yml/review": { contents: "read" },
+    "claude-review.yml/apply": { issues: "write", "pull-requests": "write" },
     "release.yml/publish": { contents: "write" },
     "desktop-updates.yml/sign": { contents: "read" },
     "desktop-updates.yml/publish": { contents: "write" },
@@ -150,6 +154,11 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
         file !== "release.yml" &&
         key !== "desktop-updates.yml/sign" &&
         key !== "website-release.yml/notify" &&
+        ![
+          "claude-review.yml/revoke",
+          "claude-review.yml/review",
+          "claude-review.yml/apply",
+        ].includes(key) &&
         !["release", "preview", "symbols"].includes(id)
       ) {
         assert.doesNotMatch(JSON.stringify(job), /secrets\./);

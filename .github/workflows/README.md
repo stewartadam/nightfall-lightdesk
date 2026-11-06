@@ -163,6 +163,47 @@ Both run from the default branch's copy of the workflow, never the PR's, and
 neither checks out PR code. The steps are gated by
 [github/command](https://github.com/github/command), pinned to a commit.
 
+## Claude mergeability review
+
+`claude-review.yml` lets small, low-risk PRs merge without waiting for a maintainer. When a
+same-repository PR into `develop` from someone with write access is opened ready or marked ready
+for review, or gets new commits while ready, and is not part of a stack:
+
+1. A size and path check (`scripts/merge-policy.mjs`) rejects PRs over 20 files or 400 changed
+   lines, PRs changing binary files, and PRs touching risky areas: CI, build and test tooling
+   (which the required checks run from the PR itself), dependencies and toolchain, the showfile
+   format, the websocket protocol crate, the desktop app, licensing, agent instructions (any
+   `CLAUDE.md`, since the review would load it) and Git attributes. Those get a "needs a human"
+   comment without spending a Claude review.
+2. Otherwise Claude reviews the PR against the rubric in `.github/claude-review.md`: no likely
+   bugs, low risk, tests for behavior changes, a description that matches the diff with release
+   notes, screenshots for visible changes, and the written conventions in `CLAUDE.md`. It can only
+   read files: the default branch at the workspace root and the PR head in `pr-head/`.
+3. The verdict is posted as one comment that later runs update. On "ready to auto-merge", the PR
+   gets the `auto-merge` label and GitHub auto-merge, so it merges only once the required checks
+   pass. Any reported bug overrides an auto-merge verdict.
+
+Pushing to a cleared PR, reopening it or converting it to draft disables its auto-merge, removes
+the label and marks the comment as withdrawn before any new review starts. This keys off the label:
+removing the label by hand leaves auto-merge on, so disable auto-merge itself to stop a merge. To keep a PR out of the review entirely, add the
+`no-auto-merge` label before marking it ready. Drafts, stacked PRs and bot PRs are never reviewed.
+
+The workflow runs on `pull_request_target`, so the workflow, the rubric and the policy script
+always come from `develop`: a PR cannot loosen the rules it is judged by, and changes to them take
+effect only after they merge. PR code is never executed. Reviews use the maintainer's Claude
+subscription and count against its usage limits.
+
+One-time setup:
+
+1. Run `claude setup-token` and store the token as the repository **secret**
+   `CLAUDE_CODE_OAUTH_TOKEN` (a variable is not read).
+2. Create a fine-grained personal access token for this repository with **Contents** and **Pull
+   requests** read and write, and store it as the secret `AUTO_MERGE_TOKEN`. GitHub does not start
+   workflows for merges made by the built-in workflow token, so without it merged PRs would skip
+   the `develop` push CI. Until it is set, reviews still post verdicts but never enable auto-merge.
+3. Keep **Allow auto-merge** on, and make sure the branch ruleset for `develop` requires every
+   check a merge must wait for, including **Release notes**.
+
 ## Native execution and caching
 
 `ci.yml` runs all native Rust validation in one Linux job so the
