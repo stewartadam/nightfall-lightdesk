@@ -62,6 +62,7 @@ import {
   registerPendingCurrentShowfileName,
   rejectPendingCommandWaiters,
   selectionFlattenRetryFromResult,
+  settleCommandCorrelation,
 } from "./command-correlation";
 import { normalizeCorrelationId } from "./console-scrollback";
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
@@ -482,6 +483,27 @@ function markResyncPending(): void {
 const BACKEND_SESSION_CHANGED_CONFIRMATION_CANCEL_REASON =
   "Selection flatten confirmation canceled: backend session changed";
 
+/**
+ * Fails a command the worker dropped because the socket was closed between reconnects: rejects
+ * its result waiter, so serialized senders such as the command line move on, and marks its
+ * console entry as failed. Untracked updates carry no command ID and need no cleanup.
+ */
+function rejectDroppedCommand(commandId: string | null) {
+  if (!commandId) return;
+  const commandKey = normalizeCorrelationId(commandId);
+  log.warn("Command dropped while reconnecting:", commandKey);
+  const { waiter } = settleCommandCorrelation(commandKey);
+  waiter?.reject(new EngineRuntimeCommandDisconnectedError());
+  applyConsoleCommandResult(commandKey, {
+    type: "Failed",
+    data: {
+      code: "client.disconnected",
+      message: "Failed to send command: disconnected",
+      details: null,
+    },
+  });
+}
+
 /** Cancels an outstanding selection-flatten confirmation and resolves its command as an error. */
 function cancelPendingSelectionFlattenConfirmation(reason: string) {
   const pendingConfirmation = selectionFlattenConfirmation.get();
@@ -648,6 +670,10 @@ export const engineRuntime = {
 
         case "commandResultReady":
           requestUrgentWebsocketPull();
+          break;
+
+        case "submitDropped":
+          rejectDroppedCommand(msg.commandId);
           break;
 
         case "resyncRequired":
