@@ -85,8 +85,8 @@ function isEditableFocusTarget(target: Element | null): boolean {
   );
 }
 
-/** Frames to retry command input focus: enough for a dialog to close and an edge to reveal it. */
-const COMMAND_LINE_FOCUS_FRAMES = 3;
+/** How long to retry command input focus while a dialog closes and an edge reveals the input. */
+const COMMAND_LINE_FOCUS_TIMEOUT_MS = 1000;
 
 /**
  * Focuses the docked command input only when activation would otherwise have no editor target.
@@ -94,7 +94,7 @@ const COMMAND_LINE_FOCUS_FRAMES = 3;
  * holds it and makes the page inert, or Dockview has not yet shown a panel from a collapsed edge.
  */
 function focusCommandLinePanelInputIfNeeded(api: DockviewApi): void {
-  let framesLeft = COMMAND_LINE_FOCUS_FRAMES;
+  const deadline = performance.now() + COMMAND_LINE_FOCUS_TIMEOUT_MS;
   /** Attempts focus, then waits a frame unless the panel lost activation or an editor holds focus. */
   const focusInput = () => {
     if (api.activePanel?.id !== "panel-CommandLine") return;
@@ -105,7 +105,7 @@ function focusCommandLinePanelInputIfNeeded(api: DockviewApi): void {
         ?.focus();
       if (isEditableFocusTarget(document.activeElement)) return;
     }
-    if (framesLeft-- > 0) requestAnimationFrame(focusInput);
+    if (performance.now() < deadline) requestAnimationFrame(focusInput);
   };
   focusInput();
 }
