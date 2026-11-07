@@ -191,9 +191,9 @@ async function focusVisualizerPanel(page: Page): Promise<void> {
   });
 }
 
-/** Returns the toolbar button for one visualizer tool. */
+/** Returns the option for one visualizer tool in the toolbar's mode group. */
 function visualizerToolButton(page: Page, label: string): Locator {
-  return page.getByRole("button", { name: new RegExp(`^${label} \\(`) });
+  return page.getByRole("radio", { name: new RegExp(`^${label} \\(`) });
 }
 
 /** Returns the focusable 3D visualizer canvas. */
@@ -235,7 +235,7 @@ async function switchVisualizerToMove(page: Page): Promise<void> {
   await focusVisualizerCanvas(page);
   await page.keyboard.press("m");
   await expect(visualizerToolButton(page, "Move")).toHaveAttribute(
-    "aria-pressed",
+    "aria-checked",
     "true",
   );
 }
@@ -255,11 +255,11 @@ test("visualizer shortcut does not leak after editing the header command line", 
   await page.keyboard.press("c");
 
   await expect(visualizerToolButton(page, "Move")).toHaveAttribute(
-    "aria-pressed",
+    "aria-checked",
     "true",
   );
   await expect(visualizerToolButton(page, "Camera")).toHaveAttribute(
-    "aria-pressed",
+    "aria-checked",
     "false",
   );
 
@@ -271,11 +271,11 @@ test("visualizer shortcut does not leak after editing the header command line", 
   await page.keyboard.press("c");
 
   await expect(visualizerToolButton(page, "Move")).toHaveAttribute(
-    "aria-pressed",
+    "aria-checked",
     "true",
   );
   await expect(visualizerToolButton(page, "Camera")).toHaveAttribute(
-    "aria-pressed",
+    "aria-checked",
     "false",
   );
 });
@@ -291,7 +291,7 @@ test("visualizer shortcut does not leak after editing a TanStack grid cell", asy
     await switchVisualizerToMove(page);
     await page.keyboard.press("s");
     await expect(visualizerToolButton(page, "Select")).toHaveAttribute(
-      "aria-pressed",
+      "aria-checked",
       "true",
     );
 
@@ -309,11 +309,11 @@ test("visualizer shortcut does not leak after editing a TanStack grid cell", asy
     await page.keyboard.press("c");
 
     await expect(visualizerToolButton(page, "Select")).toHaveAttribute(
-      "aria-pressed",
+      "aria-checked",
       "true",
     );
     await expect(visualizerToolButton(page, "Camera")).toHaveAttribute(
-      "aria-pressed",
+      "aria-checked",
       "false",
     );
 
@@ -321,7 +321,7 @@ test("visualizer shortcut does not leak after editing a TanStack grid cell", asy
     await page.keyboard.press("c");
 
     await expect(visualizerToolButton(page, "Camera")).toHaveAttribute(
-      "aria-pressed",
+      "aria-checked",
       "true",
     );
   } finally {

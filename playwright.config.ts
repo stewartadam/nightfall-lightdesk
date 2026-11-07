@@ -60,6 +60,8 @@ if (usesBackendPool && process.env.TEST_WORKER_INDEX === undefined) {
 
 export default defineConfig({
   testDir: "./webui/e2e",
+  // `*.node.test.ts` files beside the specs run under node:test (test:webui-node).
+  testMatch: "**/*.spec.ts",
   timeout: 45_000,
   workers: workerCount,
   expect: {

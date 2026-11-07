@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { lazyModuleRequest } from "./app-hooks";
 import { expect, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -20,9 +21,8 @@ test("lazy panels render after layout replacement and sample show creation", asy
     releasePanel = resolve;
   });
   let requestedPanel = false;
-  // Dev servers serve the source module; e2e builds name its chunk by source path.
   await page.route(
-    /\/features\/groups\/panel(\.tsx|-[\w-]+\.js)(\?|$)/,
+    lazyModuleRequest("features/groups/panel.tsx"),
     async (route) => {
       requestedPanel = true;
       await panelReady;
@@ -61,11 +61,9 @@ test("lazy panels render after layout replacement and sample show creation", asy
   await expect(
     page.getByRole("button", { name: "Add group", exact: true }),
   ).toBeVisible();
-  await page.evaluate(() => {
-    (window as any).initialGroupsPanel = (window as any).appStores.dockApi
-      .get()
-      .getPanel("panel-Groups");
-  });
+  const previousGroupUids = await page.evaluate(() =>
+    Object.keys((window as any).appStores.groups.get()),
+  );
   await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: /New Showfile/ }).click();
   const dialog = page.getByRole("dialog", {
@@ -76,14 +74,17 @@ test("lazy panels render after layout replacement and sample show creation", asy
   await dialog.getByRole("checkbox", { name: "Include sample data" }).check();
   await dialog.getByRole("button", { name: "Create Show" }).click();
   await expect(dialog).not.toBeVisible();
+  // The device's arrangement carries over to the new show, so its panels stay mounted.
+  await expect(page.getByTestId("status-showfile-name")).toHaveText(
+    "Lazy Sample Tour",
+  );
+  // Wait for the sample show's own groups, not ones left over from the previous show.
   await expect
     .poll(() =>
-      page.evaluate(() => {
-        const panel = (window as any).appStores.dockApi
-          .get()
-          ?.getPanel("panel-Groups");
-        return !!panel && panel !== (window as any).initialGroupsPanel;
-      }),
+      page.evaluate((previous) => {
+        const uids = Object.keys((window as any).appStores.groups.get());
+        return uids.length > 0 && uids.every((uid) => !previous.includes(uid));
+      }, previousGroupUids),
     )
     .toBe(true);
   await expect(

@@ -16,6 +16,7 @@ export * as solid from "solid-js";
 export * as layoutEntrance from "../../components/shell/docking/dockview/layout-entrance";
 export * as layoutReadiness from "../../components/shell/docking/layout-readiness";
 export * as startupReadiness from "../../components/shell/startup/readiness";
+export * as mappingMode from "../../features/io/model/mapping-mode";
 export * as propertyInspectorContext from "../../features/property-inspector/context/context-core";
 export * as timelineJump from "../../features/timeline/model/timeline-jump";
 export * as visualizerContext from "../../features/visualizer/context/visualizer-context";

@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { lazyModuleRequest, servesE2eBuild } from "./app-hooks";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -88,21 +89,10 @@ test("shows uncaught errors forwarded from a worker", async ({ page }) => {
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
   await page.evaluate(async () => {
-    const source = `
-      import { forwardWorkerUncaughtErrors } from "${location.origin}/lib/uncaught-error.ts";
-      forwardWorkerUncaughtErrors();
-      function decodeFrame() { throw new RangeError("worker frame out of range"); }
-      setTimeout(decodeFrame);
-      Promise.reject(new Error("worker rejection nobody handled"));
-    `;
-    const reporter = await import(
-      /* @vite-ignore */ `${location.origin}/lib/uncaught-error-reporter.ts`
+    const { startFailingWorker } = await window.__nightfallHarness.load(
+      "uncaught-error-worker",
     );
-    const worker = new Worker(
-      URL.createObjectURL(new Blob([source], { type: "text/javascript" })),
-      { type: "module" },
-    );
-    reporter.watchWorkerUncaughtErrors(worker, "test worker");
+    startFailingWorker("test worker");
   });
 
   const errorToasts = page.locator(
@@ -122,8 +112,9 @@ const DEMO_URL = "/?engine=embedded-demo&startup:draftRecovery=false&e2e=1";
 test("shows a fatal error when the workspace cannot load", async ({
   page,
 }, testInfo) => {
-  await page.route("**/components/shell/app/interactive-app.tsx*", (route) =>
-    route.abort(),
+  await page.route(
+    lazyModuleRequest("components/shell/app/interactive-app.tsx"),
+    (route) => route.abort(),
   );
   await page.goto(DEMO_URL);
 
@@ -181,6 +172,10 @@ test("shows startup errors over the splash and allows continuing", async ({
 test("shows a fatal error when the workspace shell fails to render", async ({
   page,
 }, testInfo) => {
+  test.skip(
+    servesE2eBuild,
+    "Stubs the shell layout module, which e2e builds bundle into the interactive app chunk; run with --vite-mode dev",
+  );
   await page.route("**/components/shell/app/shell-layout.tsx*", (route) =>
     route.fulfill({
       contentType: "text/javascript",

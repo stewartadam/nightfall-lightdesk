@@ -28,6 +28,8 @@ const harnessLoaders = {
     import("../fixtures/data-grid-editor-alignment"),
   "surface-budget-metrics": () => import("../fixtures/surface-budget-metrics"),
   "waveform-editor": () => import("../fixtures/waveform-editor"),
+  "uncaught-error-worker": () =>
+    import("../fixtures/uncaught-error-worker-host"),
 };
 
 export type HarnessName = keyof typeof harnessLoaders;

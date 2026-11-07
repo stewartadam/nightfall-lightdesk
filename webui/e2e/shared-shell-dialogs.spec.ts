@@ -55,12 +55,12 @@ test("shared shell dialogs fit a narrow viewport", async ({
   const licenses = page.getByRole("dialog", { name: "Third-Party Licenses" });
   await licenses.getByRole("searchbox").fill("preline");
   await licenses
-    .locator("summary")
+    .locator(".nf-collapsible-trigger")
     .filter({ hasText: /^preline / })
     .click();
-  await expect(licenses.locator("details[open] pre")).toContainText(
-    "Preline UI Fair Use License",
-  );
+  await expect(
+    licenses.locator('.nf-collapsible[data-open="true"] pre'),
+  ).toContainText("Preline UI Fair Use License");
   await expect(
     licenses.getByRole("button", { name: "Close third-party licenses dialog" }),
   ).toBeInViewport();
