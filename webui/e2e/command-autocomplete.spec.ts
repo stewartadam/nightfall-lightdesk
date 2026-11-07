@@ -8,6 +8,7 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { gridCellByKey } from "./data-grid-selectors";
+import { revealPanel } from "./dock-panels";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -1197,8 +1198,8 @@ test("keeps panel command input focused after storing a cue", async ({
       inactive: true,
       position: { referencePanel: "panel-Groups", direction: "within" },
     });
-    api.getPanel("panel-CommandLine")?.focus();
   });
+  await revealPanel(page, "panel-CommandLine");
   await expect(input).toBeVisible();
   await input.fill("fix 311 red @ 100");
   await input.press("Enter");
@@ -1224,7 +1225,6 @@ test("keeps panel command input focused after storing a cue", async ({
     )
     .toBe("panel-CueList");
   await expect(input).toBeFocused();
-  await page.getByRole("tab", { name: "Console", exact: true }).click();
   await page.getByRole("button", { name: "Search command history" }).click();
   const historySearch = page.getByRole("searchbox", {
     name: "Command history search",
@@ -1260,10 +1260,7 @@ test("keeps panel command input active after storing a cue with sequence editor 
     .toBe(sequenceEditor.panelId);
 
   await clickSequenceEditorCueLabel(page, sequenceEditor);
-  await page.evaluate(() => {
-    const api = (window as any).appStores.dockApi.get();
-    api.getPanel("panel-CommandLine")?.focus();
-  });
+  await revealPanel(page, "panel-CommandLine");
   await expect(input).toBeVisible();
   await input.fill("fix 311 red @ 100");
   await input.press("Enter");

@@ -17,6 +17,7 @@ import CrudLabelProperties from "../../../components/widgets/crud/crud-label-pro
 import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
 import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
+import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import {
   useConditionalShallowStore,
   useShallowStore,
@@ -204,13 +205,12 @@ export function createTimelineListController(
 
     const timelineUid = normalizeTimelineUid(timeline.identifiers.uid);
     const panelId = `panel-Timeline-${timelineUid}`;
-    api.getPanel(panelId)?.focus() ||
-      api.addPanel({
-        id: panelId,
-        component: "Timeline",
-        title: `Timeline ${timeline.identifiers.id}`,
-        params: { initialTimelineUid: timelineUid },
-      });
+    focusOrAddPanel(api, {
+      id: panelId,
+      component: "Timeline",
+      title: `Timeline ${timeline.identifiers.id}`,
+      params: { initialTimelineUid: timelineUid },
+    });
   };
 
   /** Selects a timeline before opening its context menu. */

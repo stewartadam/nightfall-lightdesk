@@ -59,5 +59,19 @@
     "formatter": {
       "quoteStyle": "double"
     }
-  }
+  },
+  "overrides": [
+    {
+      // Specs read the text a user sees through Playwright, where innerText respects
+      // layout and visibility; textContent would change what they assert.
+      "includes": ["webui/e2e/**"],
+      "linter": {
+        "rules": {
+          "performance": {
+            "useDomNodeTextContent": "off"
+          }
+        }
+      }
+    }
+  ]
 }

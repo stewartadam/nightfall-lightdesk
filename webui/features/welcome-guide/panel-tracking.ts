@@ -50,17 +50,23 @@ const TRANSIENT_OVERLAYS =
 const POLL_MS = 750;
 
 /**
- * Reports whether most of an element is unobstructed in the viewport.
+ * Reports whether most of an element's shown area is unobstructed in the viewport.
  * Samples a grid of points and ignores transient overlays, so the card or a dialog cannot hide a prerequisite.
+ * Sampling stays inside `clip`, so a panel that its dock clips counts only what covers its shown part.
  */
-export function isElementOnScreen(element: Element): boolean {
+export function isElementOnScreen(element: Element, clip?: Element): boolean {
   const rect = element.getBoundingClientRect();
-  if (rect.width < 1 || rect.height < 1) return false;
+  const bounds = clip?.getBoundingClientRect() ?? rect;
+  const left = Math.max(rect.left, bounds.left);
+  const top = Math.max(rect.top, bounds.top);
+  const width = Math.min(rect.right, bounds.right) - left;
+  const height = Math.min(rect.bottom, bounds.bottom) - top;
+  if (width < 1 || height < 1) return false;
   let hits = 0;
   for (let column = 0; column < SAMPLES_PER_AXIS; column++) {
     for (let row = 0; row < SAMPLES_PER_AXIS; row++) {
-      const x = rect.left + (rect.width * (column + 0.5)) / SAMPLES_PER_AXIS;
-      const y = rect.top + (rect.height * (row + 0.5)) / SAMPLES_PER_AXIS;
+      const x = left + (width * (column + 0.5)) / SAMPLES_PER_AXIS;
+      const y = top + (height * (row + 0.5)) / SAMPLES_PER_AXIS;
       if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight)
         continue;
       const topmost = document
@@ -70,6 +76,18 @@ export function isElementOnScreen(element: Element): boolean {
     }
   }
   return hits >= SAMPLES_PER_AXIS * SAMPLES_PER_AXIS * ON_SCREEN_SHARE;
+}
+
+/**
+ * Measures one shown panel, limiting grid panels to the dock because grid groups overflow it when
+ * declared minimum widths exceed the window.
+ */
+function isPanelOnScreen(entry: DockviewApi["panels"][number]): boolean {
+  const clip =
+    entry.group.api.location.type === "grid"
+      ? (entry.group.element.closest(".dv-dockview") ?? undefined)
+      : undefined;
+  return isElementOnScreen(entry.view.content.element, clip);
 }
 
 /** Reads every panel's identity, Dockview visibility, and on-screen state. */
@@ -83,7 +101,7 @@ function readPanels(api: DockviewApi): GuidePanel[] {
       sequenceUid: entry.params?.initialSequenceUid,
       stepFxUid: entry.params?.initialStepFxUid,
       visible,
-      onScreen: visible && isElementOnScreen(entry.view.content.element),
+      onScreen: visible && isPanelOnScreen(entry),
     };
   });
 }

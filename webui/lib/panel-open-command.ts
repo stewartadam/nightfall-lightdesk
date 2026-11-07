@@ -6,7 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { DockviewGroupLocation, EdgeGroupPosition } from "dockview";
+import type {
+  DockviewGroupLocation,
+  DockviewPanelRenderer,
+  EdgeGroupPosition,
+} from "dockview";
 import { activeBoardWorkspace } from "../state/layout-switcher";
 import {
   findPanelDefinitionByName,
@@ -82,6 +86,7 @@ interface AddPanelParams {
   initialHeight?: number;
   initialWidth?: number;
   position?: PanelPosition;
+  renderer?: DockviewPanelRenderer;
 }
 
 export interface PanelOpenDockApi {
@@ -361,6 +366,35 @@ function expandPanelEdgeGroup(
 }
 
 /**
+ * Focuses an open panel after expanding its edge group, because Dockview hides panels inside a
+ * collapsed edge and focusing does not expand it.
+ */
+function revealAndFocusPanel(
+  api: PanelOpenDockApi,
+  panel: FocusablePanel,
+): void {
+  expandPanelEdgeGroup(api, panel);
+  panel.focus();
+}
+
+/**
+ * Focuses a panel, or adds it with the caller's placement and renderer options when it is closed.
+ * Either way its edge group is expanded, because a panel added without a position joins the active
+ * group, which may be a collapsed edge.
+ */
+export function focusOrAddPanel(
+  api: PanelOpenDockApi,
+  params: AddPanelParams,
+): void {
+  const panel = api.getPanel(params.id);
+  if (panel) {
+    revealAndFocusPanel(api, panel);
+    return;
+  }
+  expandPanelEdgeGroup(api, api.addPanel(params) as FocusablePanel | undefined);
+}
+
+/**
  * Opens a panel, focuses an existing singleton, or skips when Dockview is unavailable. A board
  * filling the workspace is put away first so the panel is never hidden behind it. A beside target
  * opens the panel in that panel's group, or uses the default placement when it is closed.
@@ -380,8 +414,7 @@ export function openOrFocusPanel(
 
   const existingPanel = api.getPanel(panelId);
   if (existingPanel) {
-    expandPanelEdgeGroup(api, existingPanel);
-    existingPanel.focus();
+    revealAndFocusPanel(api, existingPanel);
     return "focused";
   }
 

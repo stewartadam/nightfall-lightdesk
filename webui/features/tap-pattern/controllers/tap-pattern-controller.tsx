@@ -12,6 +12,7 @@ import { v4 as uuidv4 } from "uuid";
 import { writeClipboardText } from "../../../lib/clipboard";
 import { sendCueUpdate, sendSequenceUpdate } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
+import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useShallowStore } from "../../../lib/use-shallow-store";
@@ -182,13 +183,7 @@ export function TapPatternController(props: TapPatternPanelProps) {
     }
 
     const panelId = `sequence-editor-panel-${sequence.identifiers.uid}`;
-    const panel = api.getPanel(panelId);
-    if (panel) {
-      panel.focus();
-      return;
-    }
-
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: panelId,
       component: "SequenceEditor",
       title: sequence.identifiers.label.trim()

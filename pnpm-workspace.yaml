@@ -9,4 +9,4 @@ minimumReleaseAge: 4320
 # right-edge scroll position. Drop this patch and the exact dockview pins in
 # package.json once Dockview ships the border-aware sizing fix.
 patchedDependencies:
-  dockview-core@8.7.0: patches/dockview-core@8.7.0.patch
+  dockview-core@8.8.3: patches/dockview-core@8.8.3.patch
