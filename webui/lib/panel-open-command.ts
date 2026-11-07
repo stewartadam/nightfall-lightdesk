@@ -366,9 +366,21 @@ function expandPanelEdgeGroup(
 }
 
 /**
+ * Focuses an open panel after expanding its edge group, because Dockview hides panels inside a
+ * collapsed edge and focusing does not expand it.
+ */
+function revealAndFocusPanel(
+  api: PanelOpenDockApi,
+  panel: FocusablePanel,
+): void {
+  expandPanelEdgeGroup(api, panel);
+  panel.focus();
+}
+
+/**
  * Focuses a panel, or adds it with the caller's placement and renderer options when it is closed.
- * Either way its edge group is expanded, because Dockview hides panels inside a collapsed edge and
- * a panel added without a position joins the active group, which may be one.
+ * Either way its edge group is expanded, because a panel added without a position joins the active
+ * group, which may be a collapsed edge.
  */
 export function focusOrAddPanel(
   api: PanelOpenDockApi,
@@ -376,8 +388,7 @@ export function focusOrAddPanel(
 ): void {
   const panel = api.getPanel(params.id);
   if (panel) {
-    expandPanelEdgeGroup(api, panel);
-    panel.focus();
+    revealAndFocusPanel(api, panel);
     return;
   }
   expandPanelEdgeGroup(api, api.addPanel(params) as FocusablePanel | undefined);
@@ -403,8 +414,7 @@ export function openOrFocusPanel(
 
   const existingPanel = api.getPanel(panelId);
   if (existingPanel) {
-    expandPanelEdgeGroup(api, existingPanel);
-    existingPanel.focus();
+    revealAndFocusPanel(api, existingPanel);
     return "focused";
   }
 
