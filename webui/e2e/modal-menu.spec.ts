@@ -226,7 +226,7 @@ test("patch wizard uses shared forms to create fixtures at narrow width", async 
   await addPatchPanel(page);
   await page.getByRole("button", { name: "Add fixture", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Patch Wizard" });
-  const filter = dialog.getByRole("textbox", { name: "Filter fixtures" });
+  const filter = dialog.getByRole("searchbox", { name: "Filter fixtures" });
   await filter.fill("Moving Head RGBW");
   await page.setViewportSize({ width: 390, height: 800 });
   await dialog.locator(".nf-dialog-surface").screenshot({
@@ -298,7 +298,7 @@ test("patch wizard creates and patches a fixture batch in one pass", async ({
   await page.getByRole("button", { name: "Add fixture", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Patch Wizard" });
   await dialog
-    .getByRole("textbox", { name: "Filter fixtures" })
+    .getByRole("searchbox", { name: "Filter fixtures" })
     .fill("Moving Head RGBW");
   await dialog
     .getByRole("row")

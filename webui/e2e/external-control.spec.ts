@@ -17,7 +17,10 @@ test.use({ emptyStartupWorld: true });
 /** Opens a new show and the transport panel through the public navigation flow. */
 async function openTransports(page: Page): Promise<void> {
   await page.setViewportSize({ width: 2200, height: 1000 });
+  // Clear once, so a later reload keeps the layout that holds the transports panel.
   await page.addInitScript(() => {
+    if (window.sessionStorage.getItem("e2e-storage-cleared")) return;
+    window.sessionStorage.setItem("e2e-storage-cleared", "true");
     window.localStorage.clear();
   });
   await page.goto("/?startup:draftRecovery=false&e2e=1");

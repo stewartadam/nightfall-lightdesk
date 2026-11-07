@@ -78,13 +78,14 @@ test("inactive Dockview tabs share a grey content-edge divider", async ({
         "background-size",
         vertical ? "1px 100%" : "100% 1px",
       );
+      // Production CSS minification writes `left` and `top` as `0`, which computes in px.
       await expect(header).toHaveCSS(
         "background-position",
         {
-          top: "50% 0%",
-          bottom: "50% 100%",
-          left: "0% 50%",
-          right: "100% 50%",
+          top: /^50% 0(%|px)$/,
+          bottom: /^50% 100%$/,
+          left: /^0(%|px) 50%$/,
+          right: /^100% 50%$/,
         }[side],
       );
       const inactive = header.locator(".dv-tab:not(.dv-active-tab)").first();
