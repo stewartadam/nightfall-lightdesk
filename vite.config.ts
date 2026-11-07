@@ -284,6 +284,31 @@ function e2eChunkFileName(chunk: { facadeModuleId: string | null }): string {
 }
 
 /**
+ * Declares the cascade layer order Tailwind expects before any stylesheet
+ * loads. Cascade layers rank by first appearance, and builds split component
+ * CSS into chunks whose links precede the Tailwind entry stylesheet, so a
+ * chunk's `@layer components` would otherwise rank below Tailwind's `base`
+ * preflight and lose its borders, padding and margins to the reset. Every
+ * HTML entry gets the statement here, so a new page cannot miss it. The list
+ * mirrors Tailwind v4's own layer statement and must follow it on upgrades.
+ */
+function cssLayerOrderPlugin(): Plugin {
+  return {
+    name: "nightfall:css-layer-order",
+    /** Prepends the layer order statement to every HTML page's head. */
+    transformIndexHtml() {
+      return [
+        {
+          tag: "style",
+          children: "@layer properties, theme, base, components, utilities;",
+          injectTo: "head-prepend",
+        },
+      ];
+    },
+  };
+}
+
+/**
  * Gives bundled modules the logger names they have on the dev server. A built
  * module's `import.meta.url` is its hashed output chunk, so log lines and
  * per-module log levels would otherwise name chunks instead of sources.
@@ -447,6 +472,7 @@ export default defineConfig(({ mode, command }) => {
     },
     plugins: [
       tailwindcss(),
+      cssLayerOrderPlugin(),
       solidPlugin(),
       distributionNoticesPlugin(),
       loggerModuleNamesPlugin(),
