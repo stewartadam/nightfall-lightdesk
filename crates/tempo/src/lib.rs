@@ -234,8 +234,15 @@ impl ShowTempo {
 
     /// Advances the beat counter to the current wall-clock time.
     pub fn advance(&mut self) {
-        let now = self.now_secs();
-        self.engine.advance_to(now);
+        self.advance_to_instant(Instant::now());
+    }
+
+    /// Advances the beat counter to `at`, such as the DMX output tick of the current render.
+    ///
+    /// Instants before the previous advance are ignored, so the counter never runs backwards.
+    pub fn advance_to_instant(&mut self, at: Instant) {
+        let time = at.saturating_duration_since(self.epoch).as_secs_f64();
+        self.engine.advance_to(time);
     }
 
     /// Applies one tempo command at the current wall-clock time.
@@ -277,9 +284,10 @@ impl ShowTempo {
     }
 }
 
-/// Advances the show tempo once per rendered frame.
-fn advance_show_tempo(mut tempo: ResMut<ShowTempo>) {
-    tempo.advance();
+/// Advances the show tempo once per rendered frame, to the DMX output tick of the render.
+fn advance_show_tempo(mut tempo: ResMut<ShowTempo>, render_pass: Option<Res<RenderPass>>) {
+    let at = render_output_instant(render_pass.as_deref());
+    tempo.advance_to_instant(at);
 }
 
 /// Applies tempo commands from clients and the command line and reports their outcome.

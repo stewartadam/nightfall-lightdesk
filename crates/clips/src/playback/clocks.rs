@@ -52,13 +52,17 @@ type AdvancedClockData = (
 ///
 /// Tempo-driven clocks advance by the beats the show tempo moved this frame, read as seconds,
 /// so speed changes scale from the current position without jumping.
+///
+/// Real time is measured to [`RenderPass::output_at`], the DMX output tick of this render, so
+/// clocks advance by exactly one output period per render.
 pub fn advance_realtime_instance_clocks(
     mut clocks: Query<AdvancedClockData>,
     tempo: Option<Res<ShowTempo>>,
+    render_pass: Option<Res<RenderPass>>,
     mut last_update: Local<Option<Instant>>,
     mut last_beat_position: Local<Option<f64>>,
 ) {
-    let now = Instant::now();
+    let now = render_output_instant(render_pass.as_deref());
     let real_delta = last_update
         .map(|last_update| now.saturating_duration_since(last_update))
         .unwrap_or_default();

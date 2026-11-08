@@ -390,10 +390,11 @@ impl TempoEngine {
     /// Jumps forward to the next downbeat at `now`, discarding any pending correction.
     ///
     /// This is the one operation that moves the counter discontinuously; it only ever moves
-    /// forward, by at most one bar.
+    /// forward, by at most one bar. `now` may lie slightly before the last advance, which runs
+    /// to the output tick of the render rather than the time the render started.
     pub fn snap(&mut self, now: f64) {
         let bar = f64::from(self.beats_per_bar);
-        let elapsed = self.beats_since_advance(now);
+        let elapsed = self.beats_relative_to_advance(now);
         let since_origin = self.beat_position + elapsed - self.bar_origin;
         let next_downbeat = self.bar_origin + (since_origin / bar).ceil() * bar;
         self.beat_position = (next_downbeat - elapsed).max(self.beat_position);
@@ -417,11 +418,6 @@ impl TempoEngine {
                 self.align(at, residual / interval, 1.0);
             }
         }
-    }
-
-    /// Beats elapsed between the last advance and `now` at the current tempo, never negative.
-    fn beats_since_advance(&self, now: f64) -> f64 {
-        self.beats_relative_to_advance(now).max(0.0)
     }
 
     /// Signed beats between the last advance and `time` at the current tempo; negative for
@@ -717,6 +713,23 @@ mod tests {
         assert!(after >= before);
         assert!((after - 4.0).abs() < 1e-9);
         assert!(!engine.is_settling());
+    }
+
+    /// Verifies a snap timed before the last advance, as when the counter already ran to the
+    /// output tick of the render in progress, puts the downbeat at the snap time rather than
+    /// at the advance.
+    #[test]
+    fn snap_before_last_advance_places_downbeat_at_snap_time() {
+        let mut engine = TempoEngine::default();
+        engine.advance_to(0.0);
+        run(&mut engine, 0.0, 1.0);
+        let beats_per_second = engine.snapshot().bpm / 60.0;
+        engine.snap(0.9);
+        let after = engine.snapshot().beat_position;
+        assert!(
+            (after - (4.0 + 0.1 * beats_per_second)).abs() < 1e-9,
+            "the counter should reach the downbeat at the snap time, got {after}"
+        );
     }
 
     /// Verifies snapshot helpers report the beat within the bar, the bar and the beat phase.

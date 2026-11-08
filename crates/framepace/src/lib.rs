@@ -267,6 +267,8 @@ pub struct FrameTimer {
     /// means a command arrived since, so the next frame starts early. `None` until the first
     /// frame, so wakes from before this world existed do not start an early frame.
     seen_wake: Option<u64>,
+    /// Whether [`RenderPass`] currently holds an output tick written by the limiter.
+    output_scheduled: bool,
 }
 impl Default for FrameTimer {
     fn default() -> Self {
@@ -276,6 +278,7 @@ impl Default for FrameTimer {
             rendering: true,
             render_time: Duration::ZERO,
             seen_wake: None,
+            output_scheduled: false,
         }
     }
 }
@@ -357,6 +360,8 @@ fn framerate_limiter(
     let frame_time = timer.frame_start.elapsed();
     let mut oversleep = Duration::ZERO;
     let mut next_renders = true;
+    // DMX output tick the next render is sent on, while the limiter schedules renders.
+    let mut output_at = None;
     #[cfg(not(target_arch = "wasm32"))]
     if settings.limiter.is_enabled() {
         if timer.rendering {
@@ -398,6 +403,7 @@ fn framerate_limiter(
         if woke_early {
             timer.next_tick = Some((tick, frame_target));
         } else {
+            output_at = Some(tick);
             // Planned from the tick this frame rendered for, not its start, so a shrinking lead
             // cannot plan a second render for the same tick.
             timer.next_tick = Some((
@@ -430,10 +436,15 @@ fn framerate_limiter(
     timer.frame_start = Instant::now();
     // Only the limiter's own changes are written, so hosts without a limit can drive
     // `RenderPass` themselves.
-    if next_renders != timer.rendering
-        && let Some(mut render_pass) = render_pass
-    {
-        render_pass.set_renders(next_renders);
+    if let Some(mut render_pass) = render_pass {
+        if next_renders != timer.rendering {
+            render_pass.set_renders(next_renders);
+        }
+        // Cleared once when the limiter turns off, so renders fall back to the current time.
+        if next_renders && (output_at.is_some() || timer.output_scheduled) {
+            render_pass.set_output_at(output_at);
+            timer.output_scheduled = output_at.is_some();
+        }
     }
     timer.rendering = next_renders;
     timer.seen_wake = waker.as_deref().map(FrameWaker::generation);
@@ -782,5 +793,45 @@ mod tests {
 
         app.update();
         assert!(app.world().resource::<RenderPass>().renders());
+    }
+
+    /// Verifies that each render's output instant is the grid tick it was planned for, so
+    /// consecutive renders advance playback clocks by whole output periods, and that turning
+    /// the limiter off hands renders back to the current time.
+    #[test]
+    fn render_output_instant_is_the_planned_grid_tick() {
+        let period = Duration::from_millis(20);
+        let mut app = limited_app(50.0, Duration::ZERO);
+        app.init_resource::<RenderPass>();
+        app.update();
+
+        let mut output_ticks = Vec::new();
+        for _ in 0..4 {
+            let planned = app.world().resource::<FrameTimer>().next_tick.unwrap().0;
+            app.update();
+            let output_at = app.world().resource::<RenderPass>().output_at();
+            assert_eq!(
+                output_at, planned,
+                "a render should be sent on its planned tick"
+            );
+            output_ticks.push(output_at);
+        }
+        assert!(
+            output_ticks.windows(2).all(|pair| {
+                let gap = pair[1] - pair[0];
+                gap >= period && gap.as_nanos() % period.as_nanos() == 0
+            }),
+            "output instants should be whole output periods apart, got {output_ticks:?}"
+        );
+
+        let last_tick = *output_ticks.last().unwrap();
+        app.world_mut().resource_mut::<FramepaceSettings>().limiter = Limiter::Off;
+        app.update();
+        let before = Instant::now();
+        let output_at = app.world().resource::<RenderPass>().output_at();
+        assert!(
+            output_at != last_tick && output_at >= before,
+            "without a limiter, renders should use the current time, not the last tick"
+        );
     }
 }

@@ -20,7 +20,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_io::prelude::{
-    TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UsbDmxDeviceInfo,
+    IoRuntimeSettings, TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UsbDmxDeviceInfo,
     usb_dmx_device_label, usb_dmx_device_selector_with_tiebreaker,
 };
 use nusb::MaybeFuture;
@@ -170,6 +170,12 @@ fn get_available_usb_dmx_devices() -> Vec<UsbDmxDeviceInfo> {
     devices
 }
 
+/// Retimes the uDMX output worker whenever IO settings change, including a showfile load
+/// replacing them, so uDMX writes on the same ticks as network DMX output.
+fn sync_udmx_output_rate(settings: Res<IoRuntimeSettings>) {
+    service::process_udmx_output_service().sync_with_settings(&settings);
+}
+
 /// Refreshes the USB DMX device list after output-service hotplug events.
 fn refresh_available_usb_dmx_devices(
     mut available_usb_dmx_devices: ResMut<AvailableUsbDmxDevices>,
@@ -225,7 +231,12 @@ impl Plugin for OutputUdmxUsbPlugin {
         app.insert_resource(udmx_service.client());
         app.add_systems(
             Update,
-            refresh_available_usb_dmx_devices.in_set(EventHandling),
+            (
+                refresh_available_usb_dmx_devices.in_set(EventHandling),
+                sync_udmx_output_rate
+                    .after(EventHandling)
+                    .run_if(resource_exists_and_changed::<IoRuntimeSettings>),
+            ),
         );
         app.add_resource_feed::<AvailableUsbDmxDevices>();
         app.add_systems(

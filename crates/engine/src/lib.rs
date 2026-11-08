@@ -148,7 +148,7 @@ pub mod prelude {
     };
     pub use crate::register_command_deserializer;
     pub use crate::register_ingress_command;
-    pub use crate::render_pass::{Render, RenderPass, add_render_schedule};
+    pub use crate::render_pass::{Render, RenderPass, add_render_schedule, render_output_instant};
     pub use crate::resync::{ResyncReplies, ResyncRequested, resync_audience};
     pub use crate::runtime_capabilities::{
         FxModuleCapability, LibraryCapability, RuntimeCapabilities, RuntimeMode,

@@ -8,26 +8,21 @@
 
 //! uDMX USB output via process-lifetime service host.
 
-use std::time::{Duration, Instant};
-
 use bevy_ecs::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_io::{IoRuntimeSettings, OutputTransport, TransportRuntimePolicy};
 
-use crate::service::UdmxOutputClient;
+use crate::service::{UdmxFrame, UdmxOutputClient};
 
-/// Minimum interval between DMX frames (15Hz = ~66.66ms)
-/// See: https://www.illutzminator.de/udmx-timing.html?L=1
-const DMX_FRAME_INTERVAL: Duration = Duration::from_micros(66667);
-
-/// Submits every composed uDMX wire frame to its selected device.
+/// Publishes every composed uDMX wire frame for its selected device.
 ///
 /// Frames come from [`OutputDmxFrames`], which already combines routed console windows,
-/// direct fixture output, and input passthrough for each USB device. Submission is skipped
-/// while USB output is disabled and rate limited to the uDMX frame interval.
+/// direct fixture output, and input passthrough for each USB device. The output worker writes
+/// whatever was published last on the shared tick grid, sending each device only the channels
+/// that changed. While USB output is disabled nothing is published, so devices keep their
+/// last values.
 pub fn output(
     udmx_client: Option<Res<UdmxOutputClient>>,
-    mut last_send: Local<Option<Instant>>,
     mut last_effective_output_enabled: Local<Option<bool>>,
     settings: Res<IoRuntimeSettings>,
     transport_policy: Option<Res<TransportRuntimePolicy>>,
@@ -44,77 +39,39 @@ pub fn output(
         }
         *last_effective_output_enabled = Some(usb_output_enabled);
     }
-    if !usb_output_enabled {
-        return;
-    }
-
     let Some(udmx_client) = udmx_client else {
         return;
     };
-
-    // Rate limit to avoid flooding the uDMX worker channel.
-    let now = Instant::now();
-    if let Some(last) = *last_send
-        && now.duration_since(last) < DMX_FRAME_INTERVAL
-    {
+    if !usb_output_enabled {
+        udmx_client.publish(Vec::new());
         return;
     }
-    *last_send = Some(now);
 
-    for frame in frames.iter() {
-        let OutputTransport::Udmx { device } = &frame.transport else {
-            continue;
-        };
-        let _ = udmx_client.submit_frame(device, &frame.channels);
-    }
+    udmx_client.publish(
+        frames
+            .iter()
+            .filter_map(|frame| {
+                let OutputTransport::Udmx { device } = &frame.transport else {
+                    return None;
+                };
+                Some(UdmxFrame {
+                    device: device.clone(),
+                    data: frame.channels,
+                })
+            })
+            .collect(),
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
 
     use bevy_app::App;
     use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
     use nightfall_io::SacnDelivery;
-    use tokio::sync::mpsc;
 
     use super::*;
-    use crate::service::UdmxCommand;
-
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    struct SentFrame {
-        device: String,
-        data: Vec<u8>,
-    }
-
-    fn spawn_mock_client() -> (
-        UdmxOutputClient,
-        Arc<Mutex<Vec<SentFrame>>>,
-        std::thread::JoinHandle<()>,
-    ) {
-        let client = UdmxOutputClient::default();
-        let (command_tx, mut command_rx) = mpsc::unbounded_channel::<UdmxCommand>();
-        client.set_sender(Some(command_tx));
-
-        let sent = Arc::new(Mutex::new(Vec::new()));
-        let sent_for_thread = Arc::clone(&sent);
-        let handle = std::thread::spawn(move || {
-            while let Some(command) = command_rx.blocking_recv() {
-                match command {
-                    UdmxCommand::SubmitFrame { device, data } => {
-                        sent_for_thread
-                            .lock()
-                            .expect("send capture lock poisoned")
-                            .push(SentFrame { device, data });
-                    }
-                    UdmxCommand::Shutdown => break,
-                }
-            }
-        });
-
-        (client, sent, handle)
-    }
 
     /// Builds a composed frame whose first channel holds `first`.
     fn frame(transport: OutputTransport, first: u8) -> OutputDmxFrame {
@@ -127,11 +84,12 @@ mod tests {
         }
     }
 
-    /// Runs the output system once with the given settings and frames, returning submissions.
-    fn submit_frames(settings: IoRuntimeSettings, frames: Vec<OutputDmxFrame>) -> Vec<SentFrame> {
+    /// Runs the output system once with the given settings and frames, returning what it
+    /// published for the output worker.
+    fn submit_frames(settings: IoRuntimeSettings, frames: Vec<OutputDmxFrame>) -> Vec<UdmxFrame> {
         let mut app = App::new();
-        let (client, sent, handle) = spawn_mock_client();
-        app.insert_resource(client);
+        let client = UdmxOutputClient::default();
+        app.insert_resource(client.clone());
         app.insert_resource(settings);
         app.init_resource::<OutputDmxFrames>();
         app.world_mut()
@@ -141,12 +99,10 @@ mod tests {
         app.add_systems(bevy_app::Update, output);
         app.update();
 
-        drop(app);
-        handle.join().expect("mock worker should exit");
-        sent.lock().expect("send capture lock poisoned").clone()
+        client.published().as_ref().clone()
     }
 
-    /// Verifies distinct uDMX transports submit frames to their selected devices and frames
+    /// Verifies distinct uDMX transports publish frames for their selected devices and frames
     /// composed for other transports are ignored.
     #[test]
     fn output_routes_each_udmx_transport_to_its_selected_device() {
@@ -183,7 +139,7 @@ mod tests {
         assert_eq!(sent_by_device["16c0:05dc:port:20:1.3"], 22);
     }
 
-    /// Verifies disabled USB output does not submit frames to the uDMX worker.
+    /// Verifies disabled USB output publishes nothing for the uDMX worker.
     #[test]
     fn output_does_not_send_when_usb_output_is_disabled() {
         let sent = submit_frames(
