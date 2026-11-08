@@ -153,6 +153,29 @@ impl MacroHarness {
             .status()
     }
 
+    /// Runs frames until the wall-clock show tempo reaches the given zero-based beat of its bar,
+    /// so a quantized launch typed next lands well clear of the downbeat on either side. The
+    /// deadline covers a full bar at the slowest tempo the engine allows.
+    fn wait_for_beat_in_bar(&mut self, beat: u32) {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            self.step();
+            let tempo = self
+                .app
+                .world()
+                .resource::<nightfall_tempo::prelude::ShowTempo>()
+                .snapshot();
+            if tempo.beat_in_bar() == beat {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the show tempo never reached beat {beat} of its bar"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     /// Returns the UID of the macro with this ID.
     fn macro_uid(&self, id: u32) -> uuid::Uuid {
         self.app
@@ -603,9 +626,15 @@ async fn macro_clip_launches_skip_launch_quantize() {
     }
     assert_eq!(harness.result(started), Some(CommandOutcome::succeeded()));
 
-    harness.eval("clip 3 start");
-    harness.step();
-    harness.step();
+    // A press just after a downbeat fires at once (launch grace), so type the launch mid-bar.
+    harness.wait_for_beat_in_bar(1);
+    let typed = harness.eval("clip 3 start");
+    for _ in 0..50 {
+        harness.step();
+        if !harness.armed_launches().is_empty() || harness.result(typed).is_some() {
+            break;
+        }
+    }
     assert_eq!(
         harness
             .armed_launches()
