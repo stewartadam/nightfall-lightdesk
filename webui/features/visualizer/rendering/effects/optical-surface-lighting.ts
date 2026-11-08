@@ -42,6 +42,7 @@ import {
   Lighting,
   LightsNode,
   type Node,
+  type NodeFrame,
   PointLight,
   RGBAFormat,
   type Scene,
@@ -230,10 +231,34 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
     // never-uploaded texture to a placeholder and re-resolves a binding only when that render
     // object refreshes in a frame where the version changed; render objects that skip that
     // frame keep sampling the placeholder, an all-zero aperture that floods surfaces with light.
-    // With change-only uploads the version may never change again, so later uploads must only
-    // replace the contents of storage every binding already references.
+    // Later uploads (see updateBefore) only replace the contents of the storage every binding
+    // already references.
     this.apertureTexture.needsUpdate = true;
     this.priorityTexture.needsUpdate = true;
+  }
+
+  /**
+   * Runs the addon's per-render light update, then uploads every changed texture that surface
+   * shading samples. Three uploads a texture only while refreshing a render object that binds
+   * it, and it skips that refresh when the object's material, geometry and material-driven
+   * lights are unchanged. A clustered light or gobo edit alone never qualifies, so a static
+   * surface would keep sampling the first upload: a light turned away, recolored or fitted with
+   * a gobo would keep its old footprint. The addon's own light texture escapes this only because
+   * its cluster compute pass binds it every render. An unchanged texture version makes these
+   * calls free.
+   */
+  override updateBefore(frame: NodeFrame): boolean | undefined {
+    const result = super.updateBefore(frame);
+    const renderer = frame.renderer;
+    if (renderer) {
+      renderer.initTexture(this.apertureTexture);
+      renderer.initTexture(this.priorityTexture);
+      if (this.goboAtlas) {
+        renderer.initTexture(this.goboAtlas.texture);
+        renderer.initTexture(this.goboAtlas.stacks.texture);
+      }
+    }
+    return result;
   }
 
   /**
