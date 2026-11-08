@@ -18,6 +18,10 @@ import {
 import { KeybindingController } from "../../../features/keybindings";
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
+import {
+  RigImportCommand,
+  RigImportDialog,
+} from "../../../features/rig-import";
 import { SelectionFlattenConfirmModal } from "../../../features/selection";
 import {
   AboutDialog,
@@ -54,6 +58,7 @@ function ShellRuntime() {
     <>
       <SettingsCommand />
       <ExportShowfileCommand />
+      <RigImportCommand />
       <FeedbackCommands />
       <ReleaseHeldButtonsCommand />
       <LayoutCommands />
@@ -71,6 +76,7 @@ function ShellRuntime() {
       <PatchWizard />
       <ObjectPatchWizardModal />
       <ShowfileDialogs />
+      <RigImportDialog />
       <AboutDialog />
       <SettingsOverlay />
       <TelemetryConsentPrompt />
