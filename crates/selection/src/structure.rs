@@ -570,6 +570,15 @@ impl SelectionResolver<'_> {
             return vec![];
         }
 
+        if Self::group_has_spatial_pipeline(group) {
+            return Self::resolve_group_structure_fixtures(
+                group,
+                data_source,
+                visited_groups,
+                warnings,
+            );
+        }
+
         visited_groups.insert(group.uid);
         let result = Self::resolve(
             &group.selection.source,
@@ -579,6 +588,61 @@ impl SelectionResolver<'_> {
         );
         visited_groups.remove(&group.uid);
         result
+    }
+
+    /// Returns whether a stored group carries spatial clauses or union branches.
+    ///
+    /// Such groups must resolve through the full spatial pipeline so a plain reference
+    /// keeps the order, mirroring and extra branches it was stored with. Groups that are
+    /// only a source keep the cheaper source resolution, which leaves whole-fixture refs
+    /// unexpanded.
+    pub(super) fn group_has_spatial_pipeline(group: &SelectionGroup) -> bool {
+        !group.selection.clauses.is_empty() || !group.selection.union.is_empty()
+    }
+
+    /// Resolves a group reference into iterator spans.
+    ///
+    /// A single group with a spatial pipeline keeps the spans its clauses produce (rows of a
+    /// grid, blocks, wings). Plain groups and combined group expressions yield one span per
+    /// fixture, in resolved order.
+    pub(super) fn resolve_group_ref_expr_spans(
+        group_ref_expr: &GroupRefExpr,
+        data_source: &dyn SelectionDataSource,
+        visited_groups: &mut HashSet<Uuid>,
+        warnings: &mut Vec<String>,
+    ) -> Vec<Vec<FixtureRef>> {
+        let single_group = match group_ref_expr {
+            GroupRefExpr::ByUid { uid } => data_source.group_by_uid(*uid),
+            GroupRefExpr::ById(group_id) => data_source.group_by_id(*group_id),
+            GroupRefExpr::ByLabel(label) if data_source.groups_available() => {
+                data_source.group_by_label(label)
+            }
+            _ => None,
+        };
+        if let Some(group) = single_group.filter(Self::group_has_spatial_pipeline) {
+            return Self::resolve_group_structure_buckets(
+                &group,
+                data_source,
+                visited_groups,
+                warnings,
+            )
+            .into_iter()
+            .map(|bucket| {
+                bucket
+                    .into_iter()
+                    .filter_map(|item| match item {
+                        SelectionStructureItem::Fixture(fixture_ref) => Some(fixture_ref),
+                        SelectionStructureItem::Group(_) => None,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .filter(|span| !span.is_empty())
+            .collect();
+        }
+        Self::resolve_group_ref_expr(group_ref_expr, data_source, visited_groups, warnings)
+            .into_iter()
+            .map(|fixture| vec![fixture])
+            .collect()
     }
 
     /// Resolve an inclusive group range and retain the direction requested by the expression.

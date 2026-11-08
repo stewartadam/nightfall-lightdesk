@@ -258,12 +258,12 @@ impl<'a> SelectionResolver<'a> {
                     .map(|fixture| vec![fixture])
                     .collect()
             }
-            SelectionExpr::Group(group_ref_expr) => {
-                Self::resolve_group_ref_expr(group_ref_expr, data_source, visited_groups, warnings)
-                    .into_iter()
-                    .map(|fixture| vec![fixture])
-                    .collect()
-            }
+            SelectionExpr::Group(group_ref_expr) => Self::resolve_group_ref_expr_spans(
+                group_ref_expr,
+                data_source,
+                visited_groups,
+                warnings,
+            ),
             SelectionExpr::Add { lhs, rhs } => {
                 let mut out =
                     Self::resolve_to_iterator_spans(lhs, data_source, visited_groups, warnings);
