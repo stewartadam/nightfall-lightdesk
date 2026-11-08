@@ -210,10 +210,16 @@ impl UdmxDevices {
             let Some(device) = self.open.get_mut(&selector) else {
                 continue;
             };
-            let Some((start, end)) = changed_span(self.written.get(&selector), &frame.data) else {
+            let runs = changed_runs(self.written.get(&selector), &frame.data);
+            if runs.is_empty() {
                 continue;
-            };
-            match submit_frame(device, start, &frame.data[start..end]) {
+            }
+            let result = runs
+                .into_iter()
+                .map(|(start, end)| submit_frame(device, start, &frame.data[start..end]))
+                .find(|result| !matches!(result, SubmitFrameResult::Submitted))
+                .unwrap_or(SubmitFrameResult::Submitted);
+            match result {
                 SubmitFrameResult::Submitted => {
                     self.written.insert(selector, frame.data);
                 }
@@ -255,26 +261,33 @@ impl UdmxDevices {
     }
 }
 
-/// Returns the channel range `start..end` that must be written for a device holding
-/// `written` to show `next`, or `None` when nothing changed.
+/// Unchanged channels between two changed runs below which the runs are written as one
+/// transfer, since each USB control transfer costs more than a few extra channels.
+const RUN_MERGE_GAP: usize = 16;
+
+/// Returns the channel ranges `start..end` that must be written for a device holding
+/// `written` to show `next`, empty when nothing changed.
 ///
-/// A device whose contents are unknown gets every channel.
-fn changed_span(
+/// Runs of changed channels closer than [`RUN_MERGE_GAP`] are merged, so channels changing far
+/// apart in the universe do not turn into one near-full-universe transfer. A device whose
+/// contents are unknown gets every channel.
+fn changed_runs(
     written: Option<&[u8; MAX_CHANNELS_PER_UNIVERSE]>,
     next: &[u8; MAX_CHANNELS_PER_UNIVERSE],
-) -> Option<(usize, usize)> {
+) -> Vec<(usize, usize)> {
     let Some(written) = written else {
-        return Some((0, MAX_CHANNELS_PER_UNIVERSE));
+        return vec![(0, MAX_CHANNELS_PER_UNIVERSE)];
     };
-    let start = written.iter().zip(next).position(|(old, new)| old != new)?;
-    let end = MAX_CHANNELS_PER_UNIVERSE
-        - written
-            .iter()
-            .zip(next)
-            .rev()
-            .position(|(old, new)| old != new)
-            .unwrap_or_default();
-    Some((start, end))
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    for channel in
+        (0..MAX_CHANNELS_PER_UNIVERSE).filter(|&channel| written[channel] != next[channel])
+    {
+        match runs.last_mut() {
+            Some((_, end)) if channel - *end < RUN_MERGE_GAP => *end = channel + 1,
+            _ => runs.push((channel, channel + 1)),
+        }
+    }
+    runs
 }
 
 /// Starts the nusb hotplug listener used by output reconnects and UI discovery refresh.
@@ -764,31 +777,33 @@ mod tests {
 
     /// A device whose contents are unknown is sent the whole universe.
     #[test]
-    fn changed_span_without_written_frame_covers_every_channel() {
+    fn changed_runs_without_written_frame_cover_every_channel() {
         let next = [7u8; MAX_CHANNELS_PER_UNIVERSE];
         assert_eq!(
-            changed_span(None, &next),
-            Some((0, MAX_CHANNELS_PER_UNIVERSE))
+            changed_runs(None, &next),
+            vec![(0, MAX_CHANNELS_PER_UNIVERSE)]
         );
     }
 
-    /// An unchanged frame writes nothing, and a change is narrowed to the first through last
-    /// differing channel, including the final channel of the universe.
+    /// An unchanged frame writes nothing, nearby changes share one run, distant changes get
+    /// their own runs, and the final channel of the universe is covered.
     #[test]
-    fn changed_span_narrows_to_differing_channels() {
+    fn changed_runs_group_nearby_changes_and_split_distant_ones() {
         let written = [0u8; MAX_CHANNELS_PER_UNIVERSE];
-        assert_eq!(changed_span(Some(&written), &written), None);
+        assert!(changed_runs(Some(&written), &written).is_empty());
 
         let mut next = written;
         next[3] = 255;
-        next[40] = 10;
-        assert_eq!(changed_span(Some(&written), &next), Some((3, 41)));
-
-        let mut last = written;
-        last[MAX_CHANNELS_PER_UNIVERSE - 1] = 1;
+        next[3 + RUN_MERGE_GAP - 1] = 10;
+        next[480] = 1;
+        next[MAX_CHANNELS_PER_UNIVERSE - 1] = 1;
         assert_eq!(
-            changed_span(Some(&written), &last),
-            Some((MAX_CHANNELS_PER_UNIVERSE - 1, MAX_CHANNELS_PER_UNIVERSE))
+            changed_runs(Some(&written), &next),
+            vec![
+                (3, 3 + RUN_MERGE_GAP),
+                (480, 481),
+                (MAX_CHANNELS_PER_UNIVERSE - 1, MAX_CHANNELS_PER_UNIVERSE),
+            ]
         );
     }
 

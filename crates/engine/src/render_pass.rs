@@ -86,6 +86,12 @@ impl RenderPass {
     }
 }
 
+/// Returns the instant render systems advance time to: [`RenderPass::output_at`] when the
+/// world has a [`RenderPass`], otherwise the current time.
+pub fn render_output_instant(render_pass: Option<&RenderPass>) -> Instant {
+    render_pass.map_or_else(Instant::now, RenderPass::output_at)
+}
+
 /// Adds the [`Render`] schedule to the main schedule order, right after [`Update`].
 ///
 /// [`EnginePlugin`](crate::EnginePlugin) calls this; apps built without it, such as plugin tests,

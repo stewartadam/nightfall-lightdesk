@@ -62,7 +62,7 @@ pub fn advance_realtime_instance_clocks(
     mut last_update: Local<Option<Instant>>,
     mut last_beat_position: Local<Option<f64>>,
 ) {
-    let now = render_pass.map_or_else(Instant::now, |render_pass| render_pass.output_at());
+    let now = render_output_instant(render_pass.as_deref());
     let real_delta = last_update
         .map(|last_update| now.saturating_duration_since(last_update))
         .unwrap_or_default();

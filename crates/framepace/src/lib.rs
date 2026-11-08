@@ -824,13 +824,14 @@ mod tests {
             "output instants should be whole output periods apart, got {output_ticks:?}"
         );
 
+        let last_tick = *output_ticks.last().unwrap();
         app.world_mut().resource_mut::<FramepaceSettings>().limiter = Limiter::Off;
         app.update();
         let before = Instant::now();
         let output_at = app.world().resource::<RenderPass>().output_at();
         assert!(
-            output_at >= before,
-            "without a limiter, renders should use the current time"
+            output_at != last_tick && output_at >= before,
+            "without a limiter, renders should use the current time, not the last tick"
         );
     }
 }

@@ -286,7 +286,7 @@ impl ShowTempo {
 
 /// Advances the show tempo once per rendered frame, to the DMX output tick of the render.
 fn advance_show_tempo(mut tempo: ResMut<ShowTempo>, render_pass: Option<Res<RenderPass>>) {
-    let at = render_pass.map_or_else(Instant::now, |render_pass| render_pass.output_at());
+    let at = render_output_instant(render_pass.as_deref());
     tempo.advance_to_instant(at);
 }
 
