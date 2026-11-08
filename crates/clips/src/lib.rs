@@ -22,6 +22,7 @@ pub mod ast_conv;
 mod command;
 mod instance_index;
 pub mod launch_quantize;
+mod live_state;
 mod lookup;
 mod model;
 pub mod playback;
@@ -40,6 +41,10 @@ pub use actions::{
 pub use command::{ClipCommand, ClipOperation, clip_action_from_command};
 pub use instance_index::{
     ClipReleaseAfterInstance, InstanceIndex, add_instances_to_index, remove_instances_from_index,
+};
+pub use live_state::{
+    CLIPS_LIVE_STATE, LiveClip, PendingLiveClips, capture_live_clips, restore_live_clips,
+    settle_pending_live_clips,
 };
 pub use lookup::{ClipLookup, ClipLookupError, ClipLookupSnapshot, log_clip_lookup_failure};
 pub use model::{Clip, ClipOptions, ClipSourceRef, MaterializedClip, Source};

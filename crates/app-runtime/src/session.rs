@@ -86,11 +86,16 @@ pub fn run_bevy_session(
 pub(super) fn run_world_swap_session_loop(initial_app: App, factory: WorldFactory) -> AppExit {
     let mut orchestrator = SwapOrchestrator::new(initial_app);
     let diagnostic_requests = crate::diagnostic_showfile::register_requests();
+    let live_state_requests = crate::systems::backup_mirror::register_live_state_requests();
 
     loop {
         orchestrator.active_app_mut().update();
         crate::diagnostic_showfile::respond_to_requests(
             &diagnostic_requests,
+            orchestrator.active_app_mut().world_mut(),
+        );
+        crate::systems::backup_mirror::respond_to_live_state_requests(
+            &live_state_requests,
             orchestrator.active_app_mut().world_mut(),
         );
 

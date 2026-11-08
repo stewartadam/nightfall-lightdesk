@@ -34,6 +34,7 @@ pub mod command_planner;
 pub mod definition_feeds;
 pub mod events;
 pub mod groups;
+pub mod live_state;
 pub mod painter;
 pub mod resources;
 pub mod settings;
@@ -105,6 +106,11 @@ impl Plugin for ProgrammingPlugin {
             .on_change(resource_changed::<BlueprintReferenceIndex>);
 
         app.init_resource::<Programmer>();
+        app.register_live_state(
+            live_state::PROGRAMMER_LIVE_STATE,
+            live_state::capture_live_programmer,
+            live_state::restore_live_programmer,
+        );
         app.init_resource::<events::StoreCueWorkflows>();
         app.init_resource::<events::StoreObjectWorkflows>();
         app.init_resource::<events::SelectionFlattenApprovals>();

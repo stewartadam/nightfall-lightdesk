@@ -426,6 +426,64 @@ pub fn handle_master_updates(
     }
 }
 
+/// Live state section key of master levels.
+pub const MASTERS_LIVE_STATE: &str = "masters";
+
+/// Level difference, in percent, a backup tolerates before matching its primary's master.
+const LIVE_LEVEL_TOLERANCE_PERCENT: f32 = 0.01;
+
+/// One master's level on the primary.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveMasterLevel {
+    /// Stable master UID.
+    pub uid: Uuid,
+    /// Level in percent.
+    pub level_percent: f32,
+}
+
+/// Captures every master's level.
+pub(crate) fn capture_live_master_levels(world: &mut World) -> Vec<LiveMasterLevel> {
+    let Some(masters) = world.get_resource::<DataProvider<Master>>() else {
+        return Vec::new();
+    };
+    let mut levels: Vec<LiveMasterLevel> = masters
+        .iter()
+        .map(|entry| LiveMasterLevel {
+            uid: *entry.key(),
+            level_percent: entry.value().level_percent,
+        })
+        .collect();
+    levels.sort_by_key(|level| level.uid);
+    levels
+}
+
+/// Moves this engine's masters to the primary's levels, through the same untracked update a
+/// fader move sends.
+pub(crate) fn restore_live_master_levels(
+    world: &mut World,
+    levels: Vec<LiveMasterLevel>,
+    _context: LiveStateRestore,
+) {
+    let Some(masters) = world.get_resource::<DataProvider<Master>>() else {
+        return;
+    };
+    let updates: Vec<MasterUpdate> = levels
+        .into_iter()
+        .filter_map(|level| {
+            let master = masters.get(level.uid).ok()?;
+            ((master.level_percent - level.level_percent).abs() > LIVE_LEVEL_TOLERANCE_PERCENT)
+                .then_some(MasterUpdate::SetLevel {
+                    id: master.identifiers.id,
+                    level_percent: level.level_percent,
+                })
+        })
+        .collect();
+    for update in updates {
+        world.write_message(update);
+    }
+}
+
 /// Publishes one terminal outcome for an applied master command.
 fn finish_master_command(
     responder: &mut CommandResponder,
@@ -744,6 +802,45 @@ mod tests {
         app.add_message::<CommandNoticeReply>();
         app.add_systems(Update, handle_master_commands);
         app
+    }
+
+    /// A backup's masters move to the primary's levels; masters already in step are left alone.
+    #[test]
+    fn live_master_levels_follow_the_primary() {
+        /// Builds a world with the default show masters and the untracked level updates.
+        fn masters_app() -> App {
+            let mut app = App::new();
+            app.init_resource::<DataProvider<Master>>();
+            app.add_message::<MasterUpdate>();
+            app.add_systems(Update, handle_master_updates);
+            add_default_show_masters(&mut app.world_mut().resource_mut::<DataProvider<Master>>())
+                .unwrap();
+            app
+        }
+        let mut primary = masters_app();
+        primary.world_mut().write_message(MasterUpdate::SetLevel {
+            id: 1,
+            level_percent: 40.0,
+        });
+        primary.update();
+        let levels = capture_live_master_levels(primary.world_mut());
+
+        let mut backup = masters_app();
+        restore_live_master_levels(backup.world_mut(), levels, LiveStateRestore::default());
+        let pending = backup
+            .world()
+            .resource::<Messages<MasterUpdate>>()
+            .iter_current_update_messages()
+            .count();
+        assert_eq!(pending, 1, "only the moved master needs an update");
+        backup.update();
+        let level = backup
+            .world()
+            .resource::<DataProvider<Master>>()
+            .get(DEFAULT_INTENSITY_MASTER_UID)
+            .unwrap()
+            .level_percent;
+        assert_eq!(level, 40.0);
     }
 
     /// Verifies master selection stores bind authored group aliases to stable group identities.

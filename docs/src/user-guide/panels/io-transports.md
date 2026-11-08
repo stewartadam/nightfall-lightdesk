@@ -51,7 +51,9 @@ To set one up:
 
 While it follows the primary, the backup:
 
-- Copies the primary's live show, including unsaved changes, within a few seconds of each change. Each copy replaces the show on the backup, so playback on the backup starts over from the copied show.
+- Copies the primary's live show, including unsaved changes, within a few seconds of each change.
+- Follows what the primary is playing about twice a second: running clips and their cues, levels and speeds, the tempo and its beat, timeline playback, master levels and the programmer. After a show change is copied, the backup picks playback up again where the primary is.
+- Keeps its timeline audio silent until it takes over.
 - Sends sACN one priority below the show's **sACN priority**, so sACN receivers listen to the primary while both are sending, and switch to the backup on their own if the primary's stream stops.
 - Mutes Art-Net and USB DMX, which have no priority to let the primary win.
 - Shows a banner on every connected device and refuses changes made there, including MIDI and OSC controllers mapped in the show. Panel layouts can still be arranged.
@@ -63,7 +65,7 @@ To take over, select **Take over** in the banner or under **Backup server**. The
 
 The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart. A primary forgets its paired devices when it restarts. When the banner says the primary needs its pairing PIN again, enter the new PIN under **Backup server** and select **Pair again**.
 
-The backup does not yet follow playback: running cues, fader levels and the programmer on the primary are not copied, and the backup does not take over on its own.
+When you take over, the backup keeps playing what the primary was playing at its last update, so at most about half a second of changes made just before the primary stopped can be missing. The clip levels faders set are copied, but the fader positions on screen are not. The backup does not yet take over on its own.
 
 ## USB
 

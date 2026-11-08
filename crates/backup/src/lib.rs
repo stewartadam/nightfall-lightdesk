@@ -41,6 +41,14 @@ pub const PAIRING_PATH: &str = "/api/pairing";
 /// Primary route that reports the revision of its live show.
 pub const SHOWFILE_REVISION_PATH: &str = "/api/showfiles/current/revision";
 
+/// Primary route that answers with a checkpoint of its live state: what is playing, at which
+/// level and position, the tempo and the programmer.
+pub const LIVE_STATE_PATH: &str = "/api/backup/live-state";
+
+/// Response header on a live state checkpoint carrying how many milliseconds the primary waited
+/// for its engine before capturing it, so the backup leaves that wait out of the checkpoint's age.
+pub const LIVE_STATE_WAIT_HEADER: &str = "x-nightfall-capture-wait-ms";
+
 /// Primary route that exports its live show as an archive.
 pub const SHOWFILE_EXPORT_PATH: &str = "/api/showfiles/current/export";
 
@@ -318,6 +326,35 @@ fn sync_backup_link(
     }
 }
 
+/// Sequence of the newest live state checkpoint this world applied. Every world starts without
+/// one, so the world a show load swaps in applies the latest checkpoint straight away.
+#[derive(Resource, Debug, Default)]
+struct AppliedCheckpoint(Option<u64>);
+
+/// Brings this backup's playback, tempo, masters and programmer in line with the primary's newest
+/// checkpoint. Does nothing once this host stops being a backup, so a takeover keeps the last
+/// state it applied.
+fn apply_live_state_checkpoints(world: &mut World) {
+    if !world.resource::<BackupState>().is_backup() {
+        return;
+    }
+    let applied = world.resource::<AppliedCheckpoint>().0;
+    let Some(checkpoint) = link::process_backup_link().checkpoint_after(applied) else {
+        return;
+    };
+    world.resource_mut::<AppliedCheckpoint>().0 = Some(checkpoint.sequence);
+    let errors = restore_live_state(
+        world,
+        &checkpoint.snapshot,
+        LiveStateRestore {
+            age: checkpoint.age(),
+        },
+    );
+    for error in errors {
+        tracing::warn!(%error, "backup_live_state_restore_failed");
+    }
+}
+
 /// Plugin that lets a native host follow a primary as its backup.
 pub struct BackupPlugin;
 
@@ -329,6 +366,7 @@ impl Plugin for BackupPlugin {
         tracing::debug!("Registering BackupPlugin");
         app.init_resource::<BackupState>();
         app.init_resource::<RoleError>();
+        app.init_resource::<AppliedCheckpoint>();
         app.init_resource::<DmxOutputStandby>();
         app.init_resource::<ClientIngressGate>();
         app.add_message::<MirroredShowfileReady>();
@@ -338,7 +376,11 @@ impl Plugin for BackupPlugin {
         app.add_systems(Startup, restore_backup_role);
         app.add_systems(
             Update,
-            (handle_backup_commands, sync_backup_link)
+            (
+                handle_backup_commands,
+                sync_backup_link,
+                apply_live_state_checkpoints,
+            )
                 .chain()
                 .in_set(EventHandling),
         );

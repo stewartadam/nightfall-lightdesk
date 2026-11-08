@@ -283,7 +283,7 @@ pub fn effective_sacn_priority(settings: &IoRuntimeSettings, standby: DmxOutputS
 ///
 /// A standby node keeps sACN running one priority step below the show's, so receivers fall back
 /// to it on their own when the primary's stream stops, and mutes Art-Net and USB DMX, which have
-/// no priority and would fight the primary.
+/// no priority and would fight the primary. Timeline audio is muted on a standby node too.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
 pub struct DmxOutputStandby(pub bool);

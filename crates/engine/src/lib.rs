@@ -35,6 +35,7 @@ pub mod data_provider;
 pub mod eval;
 pub mod eval_action;
 pub mod frame_waker;
+pub mod live_state;
 pub mod logging;
 mod metrics;
 pub mod object_changes;
@@ -119,6 +120,10 @@ pub mod prelude {
     pub use crate::eval::INTERNAL_ACTION_ORIGIN;
     pub use crate::eval_action::EvalOperation;
     pub use crate::frame_waker::FrameWaker;
+    pub use crate::live_state::{
+        LiveStateAppExt, LiveStateRegistry, LiveStateRestore, LiveStateSnapshot,
+        capture_live_state, restore_live_state,
+    };
     pub use crate::logging::{LogCommand, LogConfig, LogFilterError, LoggingPlugin, TracingTarget};
     pub use crate::object_changes::{ObjectChangePublication, ObjectChanged, ObjectChangesAppExt};
     pub use crate::object_crud::{ObjectCrud, apply_object_crud_command};

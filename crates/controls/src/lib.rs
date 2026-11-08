@@ -78,6 +78,11 @@ impl Plugin for ControlsPlugin {
 
         app.init_resource::<DataProvider<Master>>();
         app.init_resource::<Faders>();
+        app.register_live_state(
+            masters::MASTERS_LIVE_STATE,
+            masters::capture_live_master_levels,
+            masters::restore_live_master_levels,
+        );
         app.world_mut()
             .resource_mut::<UndoRegistry>()
             .register::<MasterCommand>();

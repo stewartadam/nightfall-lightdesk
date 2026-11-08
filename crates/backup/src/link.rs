@@ -15,20 +15,32 @@
 use std::{
     io::Write,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use nightfall_engine::prelude::LiveStateSnapshot;
 use reqwest::{StatusCode, header};
 use tokio::sync::watch;
 
 use crate::{
-    BackupLinkStatus, EXPORT_SOURCE_HEADER, EXPORT_SOURCE_LIVE, PAIRING_PATH, SHOWFILE_EXPORT_PATH,
-    SHOWFILE_REVISION_PATH, ShowfileRevision, preferences,
+    BackupLinkStatus, EXPORT_SOURCE_HEADER, EXPORT_SOURCE_LIVE, LIVE_STATE_PATH,
+    LIVE_STATE_WAIT_HEADER, PAIRING_PATH, SHOWFILE_EXPORT_PATH, SHOWFILE_REVISION_PATH,
+    ShowfileRevision, preferences,
 };
 
 /// Time between revision checks while the link is healthy.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Time between live state checkpoints once the backup holds the primary's show.
+const CHECKPOINT_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Sequence of the newest checkpoint received, shared by every primary this process follows, so
+/// a world that applied a checkpoint from an earlier link never mistakes a new one for stale.
+static CHECKPOINT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Time before retrying a primary that could not be reached.
 const RETRY_INTERVAL: Duration = Duration::from_secs(3);
@@ -78,11 +90,32 @@ pub(crate) struct MirroredShow {
     pub directory: PathBuf,
 }
 
+/// The newest live state checkpoint from the primary.
+#[derive(Debug, Clone)]
+pub(crate) struct LiveCheckpoint {
+    /// Increases with every checkpoint, so a world can tell which ones it already applied.
+    pub sequence: u64,
+    /// The primary's live state.
+    pub snapshot: LiveStateSnapshot,
+    /// When the backup received it.
+    pub received_at: Instant,
+    /// Estimated time the checkpoint spent travelling from the primary: half the round trip.
+    pub transit: Duration,
+}
+
+impl LiveCheckpoint {
+    /// Time since the primary captured this checkpoint.
+    pub fn age(&self) -> Duration {
+        self.transit + self.received_at.elapsed()
+    }
+}
+
 /// State the worker shares with the world.
 #[derive(Debug, Default)]
 struct LinkShared {
     report: LinkReport,
     mirror: Option<MirroredShow>,
+    checkpoint: Option<LiveCheckpoint>,
     /// Keeps the newest unpacked show on disk until the next one replaces it, since the world
     /// loads it a frame or more after the worker hands it over.
     unpacked: Option<tempfile::TempDir>,
@@ -127,6 +160,7 @@ impl BackupLink {
                 *current = target;
                 if let Ok(mut shared) = self.shared.lock() {
                     shared.mirror = None;
+                    shared.checkpoint = None;
                     shared.report = LinkReport::default();
                 }
             }
@@ -145,6 +179,15 @@ impl BackupLink {
     /// Takes the show unpacked since the previous call, if any.
     pub(crate) fn take_mirror(&self) -> Option<MirroredShow> {
         self.shared.lock().ok()?.mirror.take()
+    }
+
+    /// Returns the newest checkpoint when it is newer than `applied`, the sequence a world last
+    /// applied. Unlike a show copy, a checkpoint stays available, so the world that replaces
+    /// this one after a show load applies it again.
+    pub(crate) fn checkpoint_after(&self, applied: Option<u64>) -> Option<LiveCheckpoint> {
+        let shared = self.shared.lock().ok()?;
+        let checkpoint = shared.checkpoint.as_ref()?;
+        (applied < Some(checkpoint.sequence)).then(|| checkpoint.clone())
     }
 }
 
@@ -300,46 +343,122 @@ async fn follow(target: &LinkTarget, shared: &Mutex<LinkShared>) {
 
     let cookie = token.map(|token| format!("{}={token}", pairing_cookie_name(&target.address)));
     let mut loaded_revision: Option<String> = None;
+    let mut next_revision_check = Instant::now();
     loop {
-        let wait = match sync_once(&client, &base, cookie.as_deref(), &loaded_revision).await {
-            Ok(Some((revision, show, unpacked))) => {
-                loaded_revision = Some(revision.revision);
-                if let Ok(mut shared) = shared.lock() {
-                    shared.mirror = Some(show);
-                    shared.unpacked = Some(unpacked);
-                    shared.report = LinkReport {
-                        status: BackupLinkStatus::Synced,
-                        error: None,
-                        showfile_name: revision.showfile_name,
-                        synced_at_ms: Some(now_ms()),
-                    };
+        if Instant::now() >= next_revision_check {
+            let wait = check_revision(
+                &client,
+                &base,
+                cookie.as_deref(),
+                &mut loaded_revision,
+                shared,
+            )
+            .await;
+            next_revision_check = Instant::now() + wait;
+        }
+        if loaded_revision.is_some() {
+            let requested_at = Instant::now();
+            match fetch_live_state(&client, &base, cookie.as_deref()).await {
+                Ok((snapshot, primary_wait)) => {
+                    let round_trip = requested_at.elapsed().saturating_sub(primary_wait);
+                    if let Ok(mut shared) = shared.lock() {
+                        shared.checkpoint = Some(LiveCheckpoint {
+                            sequence: CHECKPOINT_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1,
+                            snapshot,
+                            received_at: Instant::now(),
+                            transit: round_trip / 2,
+                        });
+                    }
                 }
-                POLL_INTERVAL
+                Err(error) => {
+                    tracing::debug!(?error, "backup_live_state_fetch_failed");
+                }
             }
-            Ok(None) => {
-                update_report(shared, |report| {
-                    report.status = BackupLinkStatus::Synced;
-                    report.error = None;
-                });
-                POLL_INTERVAL
-            }
-            Err(LinkError::Unauthorized(message)) => {
-                update_report(shared, |report| {
-                    report.status = BackupLinkStatus::PairingRequired;
-                    report.error = Some(message);
-                });
-                RETRY_INTERVAL
-            }
-            Err(LinkError::Failed(message)) => {
-                update_report(shared, |report| {
-                    report.status = BackupLinkStatus::Unreachable;
-                    report.error = Some(message);
-                });
-                RETRY_INTERVAL
-            }
-        };
-        tokio::time::sleep(wait).await;
+        }
+        tokio::time::sleep(CHECKPOINT_INTERVAL).await;
     }
+}
+
+/// Checks the primary's show revision, copying the show when it changed, records the outcome in
+/// the link report, and returns how long to wait before the next check.
+async fn check_revision(
+    client: &reqwest::Client,
+    base: &str,
+    cookie: Option<&str>,
+    loaded_revision: &mut Option<String>,
+    shared: &Mutex<LinkShared>,
+) -> Duration {
+    match sync_once(client, base, cookie, loaded_revision).await {
+        Ok(Some((revision, show, unpacked))) => {
+            *loaded_revision = Some(revision.revision);
+            if let Ok(mut shared) = shared.lock() {
+                shared.mirror = Some(show);
+                shared.unpacked = Some(unpacked);
+                shared.report = LinkReport {
+                    status: BackupLinkStatus::Synced,
+                    error: None,
+                    showfile_name: revision.showfile_name,
+                    synced_at_ms: Some(now_ms()),
+                };
+            }
+            POLL_INTERVAL
+        }
+        Ok(None) => {
+            update_report(shared, |report| {
+                report.status = BackupLinkStatus::Synced;
+                report.error = None;
+            });
+            POLL_INTERVAL
+        }
+        Err(LinkError::Unauthorized(message)) => {
+            update_report(shared, |report| {
+                report.status = BackupLinkStatus::PairingRequired;
+                report.error = Some(message);
+            });
+            RETRY_INTERVAL
+        }
+        Err(LinkError::Failed(message)) => {
+            update_report(shared, |report| {
+                report.status = BackupLinkStatus::Unreachable;
+                report.error = Some(message);
+            });
+            RETRY_INTERVAL
+        }
+    }
+}
+
+/// Asks the primary for a checkpoint of its live state, returning it with how long the primary
+/// waited for its engine before capturing it.
+async fn fetch_live_state(
+    client: &reqwest::Client,
+    base: &str,
+    cookie: Option<&str>,
+) -> Result<(LiveStateSnapshot, Duration), LinkError> {
+    let mut request = client.get(format!("{base}{LIVE_STATE_PATH}"));
+    if let Some(cookie) = cookie {
+        request = request.header(header::COOKIE, cookie);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|error| LinkError::from_request(&error))?;
+    let response = check_status(response).await?;
+    let primary_wait = response
+        .headers()
+        .get(LIVE_STATE_WAIT_HEADER)
+        .and_then(|value| value.to_str().ok()?.parse().ok())
+        .map(Duration::from_millis)
+        .unwrap_or_default();
+    let body = response
+        .bytes()
+        .await
+        .map_err(|error| LinkError::from_request(&error))?;
+    let snapshot = serde_json::from_slice(&body).map_err(|error| {
+        LinkError::Failed(format!(
+            "The primary sent live state this version cannot read: {error}"
+        ))
+    })?;
+    Ok((snapshot, primary_wait))
 }
 
 /// Checks the primary's revision and, when it differs from the loaded one, downloads and unpacks

@@ -248,7 +248,16 @@ pub(super) fn hash_showfile_snapshot_with_metadata(
 
 /// Hashes a live show's contents for backups, ignoring its metadata, which records when and by
 /// which build the snapshot was taken rather than what the show holds.
-pub(crate) fn live_showfile_revision(snapshot: ShowfileSnapshot) -> Result<u64, String> {
+///
+/// The tempo, bar length and master levels are left out too: they change while the show runs,
+/// and the backup follows them through live state checkpoints instead of reloading the whole
+/// show. Launch quantize stays in, since only a reload carries it to the backup.
+pub(crate) fn live_showfile_revision(mut snapshot: ShowfileSnapshot) -> Result<u64, String> {
+    snapshot.tempo.bpm = 0.0;
+    snapshot.tempo.beats_per_bar = 0;
+    for master in &mut snapshot.masters {
+        master.level_percent = 0.0;
+    }
     hash_showfile_snapshot_with_metadata(&snapshot, &ShowfileMetadata::default())
 }
 
@@ -259,6 +268,23 @@ mod tests {
         manifest::read_current_showfile_manifest_from_dir,
     };
     use super::*;
+
+    /// A live tempo move leaves the backup revision alone, while a launch quantize change, which
+    /// only a reload carries to the backup, changes it.
+    #[test]
+    fn live_revision_ignores_tempo_but_not_launch_quantize() {
+        let show = ShowfileSnapshot::default();
+        let base = live_showfile_revision(show.clone()).unwrap();
+
+        let mut faster = show.clone();
+        faster.tempo.bpm = 140.0;
+        faster.tempo.beats_per_bar = 3;
+        assert_eq!(live_showfile_revision(faster).unwrap(), base);
+
+        let mut quantized = show;
+        quantized.tempo.launch_quantize = nightfall_tempo::LaunchQuantize::Bar;
+        assert_ne!(live_showfile_revision(quantized).unwrap(), base);
+    }
 
     /// Encode one gzip member for boundary and concatenated-stream regression cases.
     fn gzip_member(bytes: &[u8]) -> Vec<u8> {

@@ -26,6 +26,7 @@ pub mod ast_conv;
 pub mod components;
 pub mod events;
 pub mod external;
+pub mod live_state;
 pub mod systems;
 pub mod timecode;
 mod undo;
@@ -59,6 +60,11 @@ impl Plugin for TimecodePlugin {
 
         app.init_resource::<DataProvider<timecode::Timecode>>();
         app.init_resource::<external::ExternalTimecodeFeeds>();
+        app.register_live_state(
+            live_state::TIMECODES_LIVE_STATE,
+            live_state::capture_live_timecodes,
+            live_state::restore_live_timecodes,
+        );
 
         // Register undoable commands
         app.world_mut()

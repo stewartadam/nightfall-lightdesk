@@ -24,6 +24,39 @@ async function storedPriority(page: Page): Promise<number> {
   );
 }
 
+/** Returns whether the clip with `id` runs according to the page's clip store. */
+async function isClipRunning(page: Page, id: number): Promise<boolean> {
+  return page.evaluate((id) => {
+    const states = (window as any).appStores.clips.get() as Record<
+      string,
+      [{ identifiers: { id: number } }, boolean]
+    >;
+    return Object.values(states).some(
+      ([clip, isActive]) => clip.identifiers.id === id && isActive,
+    );
+  }, id);
+}
+
+/** Reads the tempo the page's engine is easing toward. */
+async function targetBpm(page: Page): Promise<number | undefined> {
+  return page.evaluate(
+    () => (window as any).appStores.showTempo.get()?.snapshot.target_bpm,
+  );
+}
+
+/** Sends one engine command over the page's websocket, as the UI does. */
+async function sendCommand(
+  page: Page,
+  module: string,
+  command: object,
+): Promise<void> {
+  await page.evaluate(
+    ({ module, command }) =>
+      (window as any).appStores.send({ module, command }),
+    { module, command },
+  );
+}
+
 /** Opens a panel from the Command Palette. */
 async function openPanel(page: Page, title: string): Promise<void> {
   await page.getByRole("button", { name: "Open command palette" }).click();
@@ -186,6 +219,98 @@ test("backup follows a primary, stays read-only, and takes over", async ({
     await enterPriority(page, 120);
     await expect.poll(() => storedPriority(page)).toBe(120);
     await page.screenshot({ path: testInfo.outputPath("5-taken-over.png") });
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});
+
+/**
+ * A backup follows the primary's playback: clips the primary starts and stops, and its tempo,
+ * reach the backup within a checkpoint or two, and a takeover keeps what was running.
+ */
+test("backup follows the primary's playback and keeps it on takeover", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto("/?e2e=1");
+    await waitForDockviewApp(page);
+
+    await openPanel(page, "I/O Transports");
+    const settings = page.getByTestId("backup-server-settings");
+    await settings
+      .getByTestId("backup-primary-address")
+      .fill(`127.0.0.1:${primary.backend.backendPort}`);
+    await settings.getByTestId("backup-follow").click();
+    const banner = page.getByTestId("backup-banner");
+    await expect(banner).toContainText("In step with the primary's", {
+      timeout: 60_000,
+    });
+    await expect.poll(() => isClipRunning(page, 1)).toBe(false);
+
+    await sendCommand(primaryPage, "ClipCommand", {
+      type: "StartClip",
+      data: { type: "Single", data: 1 },
+    });
+    await sendCommand(primaryPage, "TempoCommand", {
+      type: "SetBpm",
+      data: 140,
+    });
+    await expect.poll(() => isClipRunning(primaryPage, 1)).toBe(true);
+    await expect
+      .poll(() => isClipRunning(page, 1), { timeout: 30_000 })
+      .toBe(true);
+    await expect
+      .poll(() => targetBpm(page), { timeout: 30_000 })
+      .toBeCloseTo(140, 1);
+    await expect(page.getByTestId("startup-splash")).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await page.screenshot({
+      path: testInfo.outputPath("6-backup-follows-playback.png"),
+    });
+
+    await sendCommand(primaryPage, "ClipCommand", {
+      type: "StopClip",
+      data: { type: "Single", data: 1 },
+    });
+    await sendCommand(primaryPage, "ClipCommand", {
+      type: "StartClip",
+      data: { type: "Single", data: 2 },
+    });
+    await expect
+      .poll(() => isClipRunning(page, 1), { timeout: 30_000 })
+      .toBe(false);
+    await expect
+      .poll(() => isClipRunning(page, 2), { timeout: 30_000 })
+      .toBe(true);
+    await primaryPage.context().close();
+
+    await banner.getByTestId("backup-take-over").click();
+    await page
+      .getByRole("dialog", { name: "Take over output" })
+      .getByRole("button", { name: "Take over" })
+      .click();
+    await expect(banner).toBeHidden();
+    await expect.poll(() => isClipRunning(page, 2)).toBe(true);
+    await expect.poll(() => targetBpm(page)).toBeCloseTo(140, 1);
+    await page.screenshot({
+      path: testInfo.outputPath("7-taken-over-with-playback.png"),
+    });
+    await sendCommand(page, "ClipCommand", {
+      type: "StopClip",
+      data: { type: "Single", data: 2 },
+    });
   } finally {
     await stopPlaywrightTestBackend(primary.backend);
     stopPlaywrightWorkerSlot(primary.workerSlot);

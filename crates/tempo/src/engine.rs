@@ -375,6 +375,26 @@ impl TempoEngine {
         self.beats_per_bar = beats_per_bar;
     }
 
+    /// Moves the beat counter and bar grid straight to another engine's, discarding any pending
+    /// correction, as when a backup lines up with its primary after loading a show.
+    pub fn jump_to(&mut self, beat_position: f64, bar_origin: f64, bars_before_origin: u32) {
+        if beat_position.is_finite() && bar_origin.is_finite() {
+            self.beat_position = beat_position;
+            self.bar_origin = bar_origin;
+            self.bars_before_origin = bars_before_origin;
+            self.pending_phase = 0.0;
+        }
+    }
+
+    /// Lines the bar grid up with another engine's without moving the beat counter, so downbeats
+    /// fall on the same beats once both counters agree.
+    pub fn set_bar_grid(&mut self, bar_origin: f64, bars_before_origin: u32) {
+        if bar_origin.is_finite() {
+            self.bar_origin = bar_origin;
+            self.bars_before_origin = bars_before_origin;
+        }
+    }
+
     /// Shifts the phase by a signed number of beats, eased like any other correction.
     pub fn nudge(&mut self, beats: f64) {
         if beats.is_finite() {
