@@ -38,22 +38,39 @@ pub(super) fn handle_command(
     }
 }
 
-/// Stores a fixture definition and spawns its parameter entities.
+/// Stores a fixture definition and keeps its parameter entities in step with it.
 ///
-/// Storing over an existing UID replaces the fixture: its old parameter entities are
-/// despawned and rebuilt from the new definition, so element and parameter changes take
-/// effect. The command is validated first, so a rejected store leaves the old fixture intact.
+/// A new fixture gets parameter entities for every element. Storing over an existing UID
+/// with the same elements only updates the definition, so live values and color path
+/// defaults survive edits such as a label or placement change. Changed elements replace the
+/// fixture and rebuild its parameters. The command is validated first, so a rejected store
+/// leaves the old fixture intact.
 fn store_fixture(context: &mut FixtureCrudContext, command_id: CommandId, fixture: &Fixture) {
+    use crate::library::instantiate::{add_fixture_parameters, replace_fixture};
+
     tracing::debug!("Storing fixture with ID: {}", fixture.identifiers.id);
     let provider = &mut context.fixture_data_provider;
-    let stored = provider.inner.validate_add(fixture).and_then(|()| {
-        if let Ok((_, old_parameters)) = provider.remove_fixture(&fixture.identifiers.uid) {
-            for parameter in old_parameters {
-                context.commands.entity(parameter.entity()).despawn();
-            }
-        }
-        provider.inner.add(fixture.clone())
-    });
+    let existing_elements = provider
+        .inner
+        .get(fixture.identifiers.uid)
+        .map(|existing| existing.elements.clone())
+        .ok();
+    let stored = match provider.inner.validate_add(fixture) {
+        Err(error) => Err(error.to_string()),
+        Ok(()) => match existing_elements {
+            Some(elements) if elements == fixture.elements => provider
+                .inner
+                .add(fixture.clone())
+                .map_err(|error| error.to_string()),
+            Some(_) => replace_fixture(&mut context.commands, provider, fixture.clone())
+                .map_err(|error| error.message),
+            None => provider
+                .inner
+                .add(fixture.clone())
+                .map(|()| add_fixture_parameters(&mut context.commands, provider, fixture))
+                .map_err(|error| error.to_string()),
+        },
+    };
     if let Err(e) = stored {
         tracing::warn!("Failed to store fixture: {}", e);
         fail_fixture_command(
@@ -64,7 +81,6 @@ fn store_fixture(context: &mut FixtureCrudContext, command_id: CommandId, fixtur
         );
         return;
     }
-    crate::library::instantiate::add_fixture_parameters(&mut context.commands, provider, fixture);
     succeed_fixture_command(&mut context.responder, command_id);
 }
 

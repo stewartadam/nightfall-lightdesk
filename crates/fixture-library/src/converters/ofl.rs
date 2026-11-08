@@ -223,6 +223,7 @@ fn collect_mode_parameters<'a>(
 ) -> Vec<ModeParameter<'a>> {
     let index = channel_byte_index(ofl);
     let mut parameters: Vec<ModeParameter<'a>> = Vec::new();
+    let mut parameter_by_coarse_key = std::collections::HashMap::new();
 
     for (position, key) in mode.channels.iter().enumerate() {
         let Some(channel) = key.as_ref().and_then(|key| index.get(key)) else {
@@ -231,21 +232,18 @@ fn collect_mode_parameters<'a>(
         let Ok(slot) = u16::try_from(position + 1) else {
             continue;
         };
-        let parameter = match parameters
-            .iter()
-            .position(|parameter| parameter.coarse_key == channel.coarse_key)
-        {
-            Some(existing) => &mut parameters[existing],
-            None => {
+        let parameter_index = *parameter_by_coarse_key
+            .entry(channel.coarse_key.as_str())
+            .or_insert_with(|| {
                 parameters.push(ModeParameter {
                     coarse_key: channel.coarse_key.clone(),
                     element: channel.element,
                     source: channel.source,
                     offsets: Vec::new(),
                 });
-                parameters.last_mut().expect("parameter was just pushed")
-            }
-        };
+                parameters.len() - 1
+            });
+        let parameter = &mut parameters[parameter_index];
         if parameter.offsets.len() <= channel.byte {
             parameter.offsets.resize(channel.byte + 1, None);
         }
@@ -282,8 +280,14 @@ fn convert_mode_channels(
 
     for parameter in collect_mode_parameters(ofl, mode) {
         // Only bytes named contiguously from the coarse channel are usable: a
-        // fine alias without its coarse channel cannot be driven on its own.
-        let offsets: Vec<u16> = parameter.offsets.iter().map_while(|slot| *slot).collect();
+        // fine alias without its coarse channel cannot be driven on its own. Widths
+        // beyond 32 bits keep their four most significant bytes.
+        let offsets: Vec<u16> = parameter
+            .offsets
+            .iter()
+            .map_while(|slot| *slot)
+            .take(4)
+            .collect();
         let Some(resolution) = resolution_for_width(offsets.len()) else {
             continue;
         };

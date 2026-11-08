@@ -235,8 +235,9 @@ mod tests {
         }
     }
 
-    /// Verifies a stored fixture gets live parameter entities, and that storing it again
-    /// with different elements despawns the old entities and spawns the new ones.
+    /// Verifies a stored fixture gets live parameter entities, that re-storing it with the
+    /// same elements keeps them, and that different elements despawn the old entities and
+    /// spawn new ones.
     #[test]
     fn store_fixture_spawns_and_rebuilds_parameters() {
         use nightfall_dmx::prelude::Attribute;
@@ -263,6 +264,17 @@ mod tests {
             first
                 .iter()
                 .all(|parameter| app.world().get_entity(parameter.entity()).is_ok())
+        );
+
+        fixture.identifiers.label = "renamed".to_string();
+        submit_fixture_command(&mut app, FixtureCommand::StoreFixture(fixture.clone()));
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<FixtureDataProviderExt>()
+                .parameter_entities_for_fixture(uid),
+            first,
+            "an edit that keeps the elements should keep the live parameters"
         );
 
         fixture.elements[0].parameters = vec![coarse_parameter(Attribute::Intensity)];
