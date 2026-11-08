@@ -42,15 +42,13 @@ the websocket), treat it as risky.
    anything that could interrupt a running show. Refactors that move or rename a lot of engine
    code are not low risk even when small.
 3. **Tested.** A behavior change comes with tests that would fail without it, or the change is one
-   where tests do not apply (documentation, copy, styling, comments, test-only changes). Removing,
+   where tests do not apply (documentation, copy, styling, comments, test-only changes). A fix to
+   UI behavior needs a browser test that exercises it. Screenshots in the description are welcome
+   but never required. Removing,
    skipping or weakening an existing test means `needs-human`.
 4. **Does what it says.** The description matches the diff, and the diff contains nothing unrelated
    to it. The description has a `## Release notes` section with a `Notes:` declaration.
-5. **No new look to judge.** A PR that adds UI or changes how existing UI looks needs a human to
-   see it, so it is never cleared. A UI fix that restores intended behavior, without changing the
-   intended look, comes with a browser test that exercises the fixed behavior and would fail
-   without the fix.
-6. **Follows the written conventions.** No clear violation of a rule in `CLAUDE.md`, such as
+5. **Follows the written conventions.** No clear violation of a rule in `CLAUDE.md`, such as
    `console.log` instead of the logger, a function or test without a docstring, or a leftover debug
    print. Style preferences that `CLAUDE.md` does not state are not reasons to block.
 

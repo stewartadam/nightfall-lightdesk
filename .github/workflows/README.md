@@ -177,8 +177,7 @@ for review, or gets new commits while ready, and is not part of a stack:
    comment without spending a Claude review.
 2. Otherwise Claude reviews the PR against the rubric in `.github/claude-review.md`: no likely
    bugs, low risk, tests for behavior changes, a description that matches the diff with release
-   notes, no new or changed-looking UI (that always needs a human to see it; UI fixes need a
-   covering browser test), and the written conventions in `CLAUDE.md`. It can only
+   notes, browser tests for UI behavior fixes, and the written conventions in `CLAUDE.md`. It can only
    read files: the default branch at the workspace root and the PR head in `pr-head/`.
 3. The verdict is posted as one comment that later runs update. On "ready to auto-merge", the PR
    gets the `low-risk` label and GitHub auto-merge, so it merges only once the required checks
