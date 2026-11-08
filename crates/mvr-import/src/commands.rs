@@ -11,14 +11,17 @@
 use std::path::{Path, PathBuf};
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
+use nightfall::prelude::{FixtureRef, Group, Identifiers, SelectionExpr, SpatialSelection};
 use nightfall_engine::prelude::*;
 use nightfall_fixture_library::FixtureLibraryManager;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::{FixtureCommand, PatchRoute, RouteEndpoint};
+use nightfall_fixtures::{FixtureCommand, PatchRoute, RigFixtureUpdate, RouteEndpoint};
+use nightfall_programming::prelude::GroupCommand;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::plan::{ImportPlan, ShowFixtures, plan_import};
+use crate::plan::{ImportPlan, ShowFixture, ShowFixtures, ShowGroup, plan_import};
 use crate::preview::RigImportOptions;
 use crate::rig::{RigFile, RigPatch};
 use crate::sessions::RigImportSessions;
@@ -39,7 +42,8 @@ pub enum RigImportCommand {
         /// Choices shaping the import.
         options: RigImportOptions,
     },
-    /// Import the rig's new fixtures with their patch and placement, as one undoable step.
+    /// Import the rig as one undoable step: add its new fixtures with their patch and
+    /// placement, update fixtures already in the show, and make or refresh its groups.
     ///
     /// Fixture types taken from the file are added to the show first (and to the user's
     /// library when asked), which undo does not remove.
@@ -62,14 +66,98 @@ pub enum RigImportCommand {
 
 impl IngressCommand for RigImportCommand {}
 
-/// Reads the IDs and UIDs of the fixtures already in the show.
-fn show_fixtures(fixtures: &FixtureDataProviderExt) -> ShowFixtures {
-    let mut show = ShowFixtures::default();
-    for entry in fixtures.inner.iter() {
-        show.uids.insert(*entry.key());
-        show.ids.insert(entry.value().identifiers.id);
+/// The parts of the show an import is planned against.
+#[derive(SystemParam)]
+pub struct ShowState<'w> {
+    /// Fixtures in the show.
+    fixtures: Res<'w, FixtureDataProviderExt>,
+    /// Output routes, which hold the console patch.
+    output_routes: Res<'w, OutputRoutes>,
+    /// Groups in the show.
+    groups: Res<'w, DataProvider<Group>>,
+}
+
+impl ShowState<'_> {
+    /// Reads the fixtures with their console patch, and the groups.
+    fn snapshot(&self) -> ShowFixtures {
+        let mut patches: std::collections::HashMap<Uuid, (Vec<RigPatch>, bool)> =
+            std::collections::HashMap::new();
+        for route in &self.output_routes.routes {
+            let OutputTarget::Console { universe, address } = &route.target else {
+                continue;
+            };
+            let (uids, dmx_break, whole) = match &route.source {
+                OutputSource::Fixture {
+                    uids,
+                    element,
+                    param,
+                } => (uids, 1, element.is_none() && param.is_none()),
+                OutputSource::FixtureBreak { uids, dmx_break } => (uids, *dmx_break, true),
+                _ => continue,
+            };
+            // Any console route naming several fixtures blocks a repatch, as in `PatchRig`.
+            let shared = uids.len() > 1;
+            for uid in uids {
+                let entry = patches.entry(*uid).or_default();
+                entry.1 |= shared;
+                if let (false, true, Some(universe), Some(address)) =
+                    (shared, whole, universe, address)
+                {
+                    entry.0.push(RigPatch {
+                        dmx_break,
+                        universe: universe.start,
+                        address: *address,
+                    });
+                }
+            }
+        }
+
+        let mut show = ShowFixtures::default();
+        for entry in self.fixtures.inner.iter() {
+            let fixture = entry.value();
+            let (mut patch, shared_patch) = patches.remove(entry.key()).unwrap_or_default();
+            patch.sort_by_key(|entry| entry.dmx_break);
+            show.ids.insert(fixture.identifiers.id);
+            show.fixtures.insert(
+                *entry.key(),
+                ShowFixture {
+                    id: fixture.identifiers.id,
+                    label: fixture.identifiers.label.clone(),
+                    make: fixture.make.clone(),
+                    model: fixture.model.clone(),
+                    mode: fixture.mode.clone(),
+                    placement: fixture.placement.clone(),
+                    patch,
+                    shared_patch,
+                },
+            );
+        }
+        show.groups = self
+            .groups
+            .iter()
+            .map(|entry| ShowGroup {
+                id: entry.identifiers.id,
+                uid: entry.identifiers.uid,
+                label: entry.identifiers.label.clone(),
+                members: plain_members(&entry.selection),
+            })
+            .collect();
+        show
     }
-    show
+}
+
+/// Returns a group's members when its selection is a plain list of whole fixtures, the form
+/// the import writes, or `None` for any other selection.
+fn plain_members(selection: &SpatialSelection) -> Option<Vec<Uuid>> {
+    if !selection.clauses.is_empty() || !selection.union.is_empty() {
+        return None;
+    }
+    let SelectionExpr::Resolved(refs) = &selection.source else {
+        return None;
+    };
+    refs.iter()
+        .map(|reference| reference.index.is_none().then_some(reference.fixture_uid))
+        .collect()
 }
 
 /// Returns the error for a session that is unknown or was dropped.
@@ -95,20 +183,14 @@ pub fn handle_rig_import_commands(
     mut events: MessageReader<CommandEnvelope<RigImportCommand>>,
     sessions: Res<RigImportSessions>,
     library: Res<FixtureLibraryManager>,
-    fixtures: Res<FixtureDataProviderExt>,
+    show: ShowState,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
         let result = match &event.command {
             RigImportCommand::Preview { session, options } => match sessions.get(*session) {
                 Some(rig) => {
-                    let plan = plan_import(
-                        *session,
-                        &rig,
-                        &*library,
-                        &show_fixtures(&fixtures),
-                        options,
-                    );
+                    let plan = plan_import(*session, &rig, &*library, &show.snapshot(), options);
                     responder.succeed_with_output(event.command_id, &plan.preview)
                 }
                 None => responder.fail(event.command_id, unknown_session(*session)),
@@ -129,21 +211,23 @@ pub fn handle_rig_import_commands(
     }
 }
 
-/// Replaces each queued rig import commit with one `AddPatchedFixtures` command.
+/// Replaces each queued rig import commit with a `PatchRig` fixture command and a group
+/// store for each group.
 ///
-/// Runs in the pending command expansion stage, so the fixture command inherits the
-/// commit's command and undo IDs and undo captures the whole import as one step. Fixture
-/// types from the file are installed into the show package (and the user library when
-/// asked) first, because the fixtures are built from the library.
+/// Runs in the pending command expansion stage, so the replacement commands inherit the
+/// commit's command and undo IDs: the commit finishes when all of them have, and undo
+/// captures the whole import as one step. Fixture types from the file are installed into
+/// the show package (and the user library when asked) first, because the fixtures are built
+/// from the library.
 pub fn expand_rig_import_commits(
     mut pending: ResMut<PendingCommandBuffer>,
     sessions: Res<RigImportSessions>,
     mut library: ResMut<FixtureLibraryManager>,
-    fixtures: Res<FixtureDataProviderExt>,
+    show_state: ShowState,
     mut responder: CommandResponder,
 ) {
-    // Commits in one frame are planned against the fixtures earlier commits will add.
-    let mut show = show_fixtures(&fixtures);
+    // Commits in one frame are planned against what earlier commits will change.
+    let mut show = show_state.snapshot();
     for envelope in pending.drain() {
         let Some(RigImportCommand::Commit { session, options }) = envelope
             .payload
@@ -159,40 +243,53 @@ pub fn expand_rig_import_commits(
             continue;
         };
         let plan = plan_import(session, &rig, &*library, &show, &options);
-        match build_import(&rig, &plan, &mut library, &options) {
-            Ok(command) => {
-                for planned in &plan.fixtures {
-                    show.ids.insert(planned.id);
-                    show.uids.insert(rig.fixtures[planned.index].uid);
-                }
-                pending.push(PayloadEnvelope::with_context(
-                    envelope.command_id,
-                    envelope.undo_id,
-                    Box::new(command),
-                ));
+        let commands = match build_import(&rig, &plan, &mut library, &show_state.groups, &options) {
+            Ok(commands) => commands,
+            Err(error) => {
+                log_lifecycle(responder.fail(envelope.command_id, error));
+                continue;
             }
-            Err(error) => log_lifecycle(responder.fail(envelope.command_id, error)),
+        };
+        if let Err(error) = responder.expect_completions(envelope.command_id, commands.len()) {
+            tracing::error!(%error, "rig_import_command_completion_failed");
+            log_lifecycle(responder.fail(
+                envelope.command_id,
+                CommandError::new(
+                    "rig_import.not_tracked",
+                    "The rig import could not be applied",
+                ),
+            ));
+            continue;
+        }
+        show.apply(&rig, &plan);
+        for command in commands {
+            pending.push(PayloadEnvelope::with_context(
+                envelope.command_id,
+                envelope.undo_id,
+                command,
+            ));
         }
     }
 }
 
-/// Installs the fixture types the plan needs and builds the fixture command that adds and
-/// patches the plan's fixtures.
+/// Installs the fixture types the plan needs and builds the commands that apply it: one
+/// `PatchRig` for the fixtures, when any change, and one group store per group.
 fn build_import(
     rig: &RigFile,
     plan: &ImportPlan,
     library: &mut FixtureLibraryManager,
+    groups: &DataProvider<Group>,
     options: &RigImportOptions,
-) -> Result<FixtureCommand, CommandError> {
-    if plan.fixtures.is_empty() {
+) -> Result<Vec<DynEnginePayload>, CommandError> {
+    if plan.is_empty() {
         return Err(CommandError::new(
             "rig_import.nothing_to_import",
-            "The file has no fixtures that can be imported",
+            "The file has nothing to import or update",
         ));
     }
     install_fixture_types(plan, library, options.add_to_user_library)?;
 
-    let mut fixtures = Vec::with_capacity(plan.fixtures.len());
+    let mut add = Vec::with_capacity(plan.fixtures.len());
     let mut routes = Vec::new();
     for planned in &plan.fixtures {
         let source = &planned.source;
@@ -220,9 +317,64 @@ fn build_import(
                 .iter()
                 .map(|patch| patch_route(planned.id, patch)),
         );
-        fixtures.push(fixture);
+        add.push(fixture);
     }
-    Ok(FixtureCommand::AddPatchedFixtures { fixtures, routes })
+    let mut update = Vec::with_capacity(plan.updates.len());
+    for planned in &plan.updates {
+        let rig_fixture = &rig.fixtures[planned.index];
+        if planned.repatch {
+            routes.extend(
+                rig_fixture
+                    .patch
+                    .iter()
+                    .map(|patch| patch_route(planned.id, patch)),
+            );
+        }
+        update.push(RigFixtureUpdate {
+            uid: rig_fixture.uid,
+            label: planned.label.clone(),
+            placement: planned.placement.clone(),
+            repatch: planned.repatch,
+        });
+    }
+
+    let mut commands: Vec<DynEnginePayload> = Vec::new();
+    if !add.is_empty() || !update.is_empty() {
+        commands.push(Box::new(FixtureCommand::PatchRig {
+            add,
+            update,
+            routes,
+        }));
+    }
+    for planned in &plan.groups {
+        let selection = SpatialSelection::identity(SelectionExpr::Resolved(
+            planned
+                .members
+                .iter()
+                .map(|uid| FixtureRef {
+                    fixture_uid: *uid,
+                    index: None,
+                })
+                .collect(),
+        ));
+        let group = match planned.existing.and_then(|uid| groups.get(uid).ok()) {
+            Some(existing) => Group {
+                selection,
+                ..(*existing).clone()
+            },
+            None => Group {
+                identifiers: Identifiers {
+                    id: planned.id,
+                    uid: planned.uid,
+                    label: planned.name.clone(),
+                },
+                selection,
+                description: format!("Imported from {}", rig.file_name),
+            },
+        };
+        commands.push(Box::new(GroupCommand::StoreGroup(group)));
+    }
+    Ok(commands)
 }
 
 /// Builds the route patching one break of a fixture to its console address.

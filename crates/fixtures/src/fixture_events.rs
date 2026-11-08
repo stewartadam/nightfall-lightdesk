@@ -109,7 +109,7 @@ pub fn crud_events(
             }
             FixtureCommand::UpdateFixturePatch { .. }
             | FixtureCommand::AddDmxRoute { .. }
-            | FixtureCommand::AddPatchedFixtures { .. }
+            | FixtureCommand::PatchRig { .. }
             | FixtureCommand::RemoveDmxRoutes { .. } => patch::handle_command(&mut context, event),
             FixtureCommand::SetColorPathDefault { .. }
             | FixtureCommand::SetColorPathDefaultById { .. } => {

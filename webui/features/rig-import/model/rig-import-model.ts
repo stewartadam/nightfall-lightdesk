@@ -66,8 +66,12 @@ export function fixtureStatusLabel(status: types.FixtureImportStatus): string {
   switch (status) {
     case types.FixtureImportStatus.New:
       return "New";
+    case types.FixtureImportStatus.Update:
+      return "Update";
+    case types.FixtureImportStatus.Unchanged:
+      return "Unchanged";
     case types.FixtureImportStatus.AlreadyInShow:
-      return "Already in show";
+      return "In show, kept";
     case types.FixtureImportStatus.RepeatedInFile:
       return "Repeated UUID";
     case types.FixtureImportStatus.NeedsFixtureType:
@@ -135,4 +139,71 @@ export function withMappingMode(
   return mappings.map((mapping) =>
     mapping.spec === spec ? { ...mapping, mode } : mapping,
   );
+}
+
+/** Group source choices in the order the dialog's select lists them, with their labels. */
+export const GROUP_SOURCE_OPTIONS: readonly {
+  value: types.RigGroupSource;
+  label: string;
+}[] = [
+  { value: types.RigGroupSource.Auto, label: "Hanging positions, else layers" },
+  { value: types.RigGroupSource.HangingPositions, label: "Hanging positions" },
+  { value: types.RigGroupSource.Layers, label: "Layers" },
+  { value: types.RigGroupSource.Classes, label: "Classes" },
+  { value: types.RigGroupSource.None, label: "No groups" },
+];
+
+/** Counts fixtures in words: "1 fixture", "3 fixtures". */
+function fixtures(count: number): string {
+  return `${count} fixture${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * Words for the import button from the engine's counts: what gets added, what gets updated,
+ * or that only the groups are refreshed.
+ */
+export function importButtonLabel(preview: {
+  newFixtures: number;
+  updatedFixtures: number;
+  groups: readonly unknown[];
+}): string {
+  const { newFixtures, updatedFixtures } = preview;
+  if (newFixtures > 0 && updatedFixtures > 0) {
+    return `Import ${newFixtures}, update ${updatedFixtures}`;
+  }
+  if (newFixtures > 0) return `Import ${fixtures(newFixtures)}`;
+  if (updatedFixtures > 0) return `Update ${fixtures(updatedFixtures)}`;
+  if (preview.groups.length > 0) return "Refresh groups";
+  return "Import";
+}
+
+/** Whether committing a preview would change the show at all. */
+export function previewHasChanges(preview: {
+  newFixtures: number;
+  updatedFixtures: number;
+  groups: readonly unknown[];
+}): boolean {
+  return (
+    preview.newFixtures > 0 ||
+    preview.updatedFixtures > 0 ||
+    preview.groups.length > 0
+  );
+}
+
+/** Toast text after an import, naming what changed and the file. */
+export function importDoneMessage(preview: {
+  fileName: string;
+  newFixtures: number;
+  updatedFixtures: number;
+  groups: readonly unknown[];
+}): string {
+  const parts: string[] = [];
+  if (preview.newFixtures > 0)
+    parts.push(`added ${fixtures(preview.newFixtures)}`);
+  if (preview.updatedFixtures > 0) {
+    parts.push(`updated ${fixtures(preview.updatedFixtures)}`);
+  }
+  if (parts.length === 0) parts.push("refreshed the groups");
+  const sentence = parts.join(" and ");
+  return `${sentence[0]?.toUpperCase()}${sentence.slice(1)} from ${preview.fileName}`;
 }

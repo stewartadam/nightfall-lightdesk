@@ -11,6 +11,8 @@ import { test } from "node:test";
 import type * as types from "../../../types";
 import {
   formatPatch,
+  importButtonLabel,
+  importDoneMessage,
   libraryKey,
   numberingOption,
   withMappingMode,
@@ -93,4 +95,35 @@ test("type mappings", () => {
   assert.equal(mappings.length, 1);
   assert.equal(mappings[0]?.model, "Spiider");
   assert.deepEqual(withTypeMapping(mappings, "Wash.gdtf", "", library), []);
+});
+
+/** The import button says what the import does, from adding fixtures to only refreshing groups. */
+test("import button label", () => {
+  const preview = (
+    newFixtures: number,
+    updatedFixtures: number,
+    groups = 0,
+  ) => ({
+    newFixtures,
+    updatedFixtures,
+    groups: Array.from({ length: groups }),
+  });
+  assert.equal(importButtonLabel(preview(2, 0)), "Import 2 fixtures");
+  assert.equal(importButtonLabel(preview(0, 1)), "Update 1 fixture");
+  assert.equal(importButtonLabel(preview(3, 4)), "Import 3, update 4");
+  assert.equal(importButtonLabel(preview(0, 0, 2)), "Refresh groups");
+  assert.equal(importButtonLabel(preview(0, 0)), "Import");
+});
+
+/** The import toast names what changed and the file it came from. */
+test("import done message", () => {
+  const base = { fileName: "rig.mvr", groups: [] };
+  assert.equal(
+    importDoneMessage({ ...base, newFixtures: 2, updatedFixtures: 1 }),
+    "Added 2 fixtures and updated 1 fixture from rig.mvr",
+  );
+  assert.equal(
+    importDoneMessage({ ...base, newFixtures: 0, updatedFixtures: 0 }),
+    "Refreshed the groups from rig.mvr",
+  );
 });

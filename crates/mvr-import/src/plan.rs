@@ -11,16 +11,25 @@
 //! The preview and the commit both run [`plan_import`], so the IDs and statuses the user
 //! sees are exactly what the import applies.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use nightfall_fixtures::prelude::FixturePlacement;
 use uuid::Uuid;
 
 use crate::preview::{
     FixtureImportStatus, FixtureNumbering, FixturePreview, FixtureTypePreview, FixtureTypeStatus,
-    PatchPreview, RigImportOptions, RigImportPreview,
+    GroupPreview, PatchPreview, RigGroupSource, RigImportOptions, RigImportPreview,
 };
-use crate::rig::{RigFile, RigTypeSource};
+use crate::rig::{RigFile, RigFixture, RigPatch, RigTypeSource};
+
+/// How far, in metres, a fixture may be from its place in the file and still count as
+/// unmoved.
+const POSITION_TOLERANCE: f32 = 1e-3;
+
+/// How far, in degrees, a fixture may be turned from its rotation in the file and still
+/// count as unturned.
+const ROTATION_TOLERANCE: f32 = 1e-2;
 
 /// The fixture library as the planner sees it.
 pub trait LibraryLookup {
@@ -37,13 +46,100 @@ impl LibraryLookup for nightfall_fixture_library::FixtureLibraryManager {
     }
 }
 
-/// The fixtures already in the show, as the planner sees them.
+/// A fixture already in the show, as the planner compares it with the file.
+#[derive(Debug, Clone)]
+pub struct ShowFixture {
+    /// Fixture ID.
+    pub id: u32,
+    /// Label.
+    pub label: String,
+    /// Library manufacturer.
+    pub make: String,
+    /// Library model.
+    pub model: String,
+    /// Mode.
+    pub mode: String,
+    /// Position and rotation.
+    pub placement: FixturePlacement,
+    /// Console patch, one entry per break, in break order.
+    pub patch: Vec<RigPatch>,
+    /// Whether the fixture shares a console route with other fixtures, which the import
+    /// cannot move without moving them.
+    pub shared_patch: bool,
+}
+
+/// A group already in the show.
+#[derive(Debug, Clone)]
+pub struct ShowGroup {
+    /// Group ID.
+    pub id: u32,
+    /// Group UID.
+    pub uid: Uuid,
+    /// Group name.
+    pub label: String,
+    /// Member fixture UIDs when the group is a plain list of fixtures, the form the import
+    /// writes; `None` for a group defined any other way, which the import leaves alone.
+    pub members: Option<Vec<Uuid>>,
+}
+
+/// The show as the planner sees it.
 #[derive(Debug, Clone, Default)]
 pub struct ShowFixtures {
     /// Fixture IDs in use.
     pub ids: HashSet<u32>,
-    /// Fixture UIDs in use.
-    pub uids: HashSet<Uuid>,
+    /// Fixtures by UID.
+    pub fixtures: HashMap<Uuid, ShowFixture>,
+    /// Groups.
+    pub groups: Vec<ShowGroup>,
+}
+
+impl ShowFixtures {
+    /// Records what a planned import adds, so a later import in the same frame is planned
+    /// against the show as it will be.
+    pub fn apply(&mut self, rig: &RigFile, plan: &ImportPlan) {
+        for planned in &plan.fixtures {
+            let fixture = &rig.fixtures[planned.index];
+            self.ids.insert(planned.id);
+            self.fixtures.insert(
+                fixture.uid,
+                ShowFixture {
+                    id: planned.id,
+                    label: planned.label.clone(),
+                    make: planned.source.make.clone(),
+                    model: planned.source.model.clone(),
+                    mode: planned.mode.clone(),
+                    placement: fixture.placement.clone(),
+                    patch: fixture.patch.clone(),
+                    shared_patch: false,
+                },
+            );
+        }
+        for update in &plan.updates {
+            let fixture = &rig.fixtures[update.index];
+            if let Some(show) = self.fixtures.get_mut(&fixture.uid) {
+                if let Some(label) = &update.label {
+                    show.label = label.clone();
+                }
+                if let Some(placement) = &update.placement {
+                    show.placement = placement.clone();
+                }
+                if update.repatch {
+                    show.patch = fixture.patch.clone();
+                }
+            }
+        }
+        for group in &plan.groups {
+            match self.groups.iter_mut().find(|show| show.uid == group.uid) {
+                Some(show) => show.members = Some(group.members.clone()),
+                None => self.groups.push(ShowGroup {
+                    id: group.id,
+                    uid: group.uid,
+                    label: group.name.clone(),
+                    members: Some(group.members.clone()),
+                }),
+            }
+        }
+    }
 }
 
 /// The library fixture a resolved type is created from.
@@ -78,6 +174,36 @@ pub struct PlannedFixture {
     pub mode: String,
 }
 
+/// A fixture already in the show that the import changes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlannedUpdate {
+    /// Index into the rig's fixtures.
+    pub index: usize,
+    /// Nightfall fixture ID.
+    pub id: u32,
+    /// New label, when it changes.
+    pub label: Option<String>,
+    /// New placement, when it changes.
+    pub placement: Option<FixturePlacement>,
+    /// Whether the patch is replaced by the file's.
+    pub repatch: bool,
+}
+
+/// A group the import makes or refreshes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedGroup {
+    /// Group name.
+    pub name: String,
+    /// Group ID.
+    pub id: u32,
+    /// Group UID: the existing group's, or a new one.
+    pub uid: Uuid,
+    /// UID of the group with this name already in the show, if there is one.
+    pub existing: Option<Uuid>,
+    /// Member fixture UIDs in fixture ID order.
+    pub members: Vec<Uuid>,
+}
+
 /// What an import would do.
 #[derive(Debug, Clone)]
 pub struct ImportPlan {
@@ -85,6 +211,17 @@ pub struct ImportPlan {
     pub preview: RigImportPreview,
     /// Fixtures to add, in file order.
     pub fixtures: Vec<PlannedFixture>,
+    /// Fixtures already in the show to change, in file order.
+    pub updates: Vec<PlannedUpdate>,
+    /// Groups to make or refresh.
+    pub groups: Vec<PlannedGroup>,
+}
+
+impl ImportPlan {
+    /// Whether committing the plan would change the show.
+    pub fn is_empty(&self) -> bool {
+        self.fixtures.is_empty() && self.updates.is_empty() && self.groups.is_empty()
+    }
 }
 
 /// Plans an import of `rig` into a show that already holds `show`.
@@ -120,6 +257,7 @@ pub fn plan_import(
 
     let mut previews = Vec::with_capacity(rig.fixtures.len());
     let mut importable = Vec::new();
+    let mut updates = Vec::new();
     let mut seen = HashSet::new();
     for (index, fixture) in rig.fixtures.iter().enumerate() {
         let mut fixture_warnings = fixture.warnings.clone();
@@ -141,10 +279,31 @@ pub fn plan_import(
         let mode = source.as_ref().and_then(|source| {
             resolve_mode(source, fixture.mode.as_deref(), &mut fixture_warnings)
         });
-        let status = if show.uids.contains(&fixture.uid) {
-            FixtureImportStatus::AlreadyInShow
-        } else if repeated {
+        let label = label_for(&fixture.name, fixture.spec.as_deref(), source.as_ref());
+        let existing = (!repeated)
+            .then(|| show.fixtures.get(&fixture.uid))
+            .flatten();
+        let mut changes = Vec::new();
+        let status = if repeated {
             FixtureImportStatus::RepeatedInFile
+        } else if let Some(existing) = existing {
+            let update = compare_existing(
+                index,
+                fixture,
+                existing,
+                &label,
+                source.as_ref().zip(mode.as_deref()),
+                &mut changes,
+                &mut fixture_warnings,
+            );
+            match update {
+                None => FixtureImportStatus::Unchanged,
+                Some(update) if options.update_existing => {
+                    updates.push(update);
+                    FixtureImportStatus::Update
+                }
+                Some(_) => FixtureImportStatus::AlreadyInShow,
+            }
         } else if source.is_none() {
             FixtureImportStatus::NeedsFixtureType
         } else if mode.is_none() {
@@ -152,7 +311,6 @@ pub fn plan_import(
         } else {
             FixtureImportStatus::New
         };
-        let label = label_for(&fixture.name, fixture.spec.as_deref(), source.as_ref());
         if status == FixtureImportStatus::New {
             importable.push((index, source.clone().expect("new fixtures have a type")));
         }
@@ -160,9 +318,9 @@ pub fn plan_import(
             uid: fixture.uid,
             name: fixture.name.clone(),
             spec: fixture.spec.clone(),
-            mode,
+            mode: existing.map(|existing| existing.mode.clone()).or(mode),
             file_id: fixture.file_id,
-            fixture_id: None,
+            fixture_id: existing.map(|existing| existing.id),
             label,
             patch: fixture
                 .patch
@@ -176,7 +334,9 @@ pub fn plan_import(
             placement: fixture.placement.clone(),
             layer: fixture.layer.clone(),
             hanging_position: fixture.hanging_position.clone(),
+            class: fixture.class.clone(),
             status,
+            changes,
             warnings: fixture_warnings,
         });
     }
@@ -199,6 +359,9 @@ pub fn plan_import(
         });
     }
 
+    let group_source = resolve_group_source(rig, options.groups);
+    let groups = plan_groups(rig, &previews, group_source, show, &mut warnings);
+
     ImportPlan {
         preview: RigImportPreview {
             session,
@@ -206,11 +369,191 @@ pub fn plan_import(
             provider: rig.provider.clone(),
             fixture_types: type_previews,
             new_fixtures: fixtures.len() as u32,
+            updated_fixtures: updates.len() as u32,
+            group_source,
+            groups: groups
+                .iter()
+                .map(|group| GroupPreview {
+                    name: group.name.clone(),
+                    group_id: group.id,
+                    existing: group.existing.is_some(),
+                    fixture_count: group.members.len() as u32,
+                })
+                .collect(),
             fixtures: previews,
             warnings,
         },
         fixtures,
+        updates,
+        groups,
     }
+}
+
+/// Compares a fixture already in the show with the file and returns the update that makes
+/// it match, or `None` when it already does.
+///
+/// Labels change only when the file names the fixture, and the patch only when the file
+/// patches it. A shared patch is left alone with a warning, and a different fixture type or
+/// mode is reported but kept, because changing it would drop the fixture's programming.
+fn compare_existing(
+    index: usize,
+    fixture: &RigFixture,
+    existing: &ShowFixture,
+    label: &str,
+    resolved: Option<(&TypeSource, &str)>,
+    changes: &mut Vec<String>,
+    warnings: &mut Vec<String>,
+) -> Option<PlannedUpdate> {
+    let label = (!label.is_empty() && label != existing.label).then(|| label.to_string());
+    if let Some(label) = &label {
+        changes.push(format!("renamed to {label:?}"));
+    }
+    let placement = (!same_placement(&existing.placement, &fixture.placement))
+        .then(|| fixture.placement.clone());
+    if placement.is_some() {
+        changes.push("moved".to_string());
+    }
+    let mut repatch = false;
+    // Files that leave a fixture unpatched (Vectorworks writes address 0 for every fixture)
+    // keep the patch made in the show rather than removing it.
+    if !fixture.patch.is_empty() && existing.patch != fixture.patch {
+        if existing.shared_patch {
+            warnings.push(
+                "The patch differs, but the fixture shares a patch route with others, so it is \
+                 kept"
+                    .to_string(),
+            );
+        } else {
+            repatch = true;
+            changes.push("repatched".to_string());
+        }
+    }
+    if let Some((source, mode)) = resolved
+        && (source.make != existing.make || source.model != existing.model || mode != existing.mode)
+    {
+        warnings.push(format!(
+            "The file uses {} {} ({mode}); the show keeps {} {} ({})",
+            source.make, source.model, existing.make, existing.model, existing.mode
+        ));
+    }
+    (label.is_some() || placement.is_some() || repatch).then_some(PlannedUpdate {
+        index,
+        id: existing.id,
+        label,
+        placement,
+        repatch,
+    })
+}
+
+/// Whether two placements are the same within the tolerances.
+fn same_placement(a: &FixturePlacement, b: &FixturePlacement) -> bool {
+    let close = |x: f32, y: f32, tolerance: f32| (x - y).abs() <= tolerance;
+    let turned = |x: f32, y: f32| {
+        let difference = (x - y).rem_euclid(360.0);
+        difference.min(360.0 - difference) <= ROTATION_TOLERANCE
+    };
+    close(a.position.x, b.position.x, POSITION_TOLERANCE)
+        && close(a.position.y, b.position.y, POSITION_TOLERANCE)
+        && close(a.position.z, b.position.z, POSITION_TOLERANCE)
+        && turned(a.rotation.x, b.rotation.x)
+        && turned(a.rotation.y, b.rotation.y)
+        && turned(a.rotation.z, b.rotation.z)
+}
+
+/// Resolves `Auto` to hanging positions when any fixture has one, otherwise layers.
+fn resolve_group_source(rig: &RigFile, source: RigGroupSource) -> RigGroupSource {
+    match source {
+        RigGroupSource::Auto => {
+            if rig
+                .fixtures
+                .iter()
+                .any(|fixture| fixture.hanging_position.is_some())
+            {
+                RigGroupSource::HangingPositions
+            } else {
+                RigGroupSource::Layers
+            }
+        }
+        other => other,
+    }
+}
+
+/// Plans one group per hanging position, layer or class, holding the fixtures that are in
+/// the show after the import, in fixture ID order.
+///
+/// A group already in the show with the same name keeps its ID and gets the new members,
+/// unless it already has exactly them or is not a plain list of fixtures (then it is left
+/// alone with a warning). Other groups take the next free IDs.
+fn plan_groups(
+    rig: &RigFile,
+    previews: &[FixturePreview],
+    source: RigGroupSource,
+    show: &ShowFixtures,
+    warnings: &mut Vec<String>,
+) -> Vec<PlannedGroup> {
+    let key = |fixture: &RigFixture| -> Option<String> {
+        match source {
+            RigGroupSource::HangingPositions => fixture.hanging_position.clone(),
+            RigGroupSource::Layers => Some(fixture.layer.clone()),
+            RigGroupSource::Classes => fixture.class.clone(),
+            RigGroupSource::Auto | RigGroupSource::None => None,
+        }
+        .filter(|name| !name.trim().is_empty())
+    };
+    let mut members: Vec<(String, Vec<(u32, Uuid)>)> = Vec::new();
+    for (fixture, preview) in rig.fixtures.iter().zip(previews) {
+        let in_show = matches!(
+            preview.status,
+            FixtureImportStatus::New
+                | FixtureImportStatus::Update
+                | FixtureImportStatus::Unchanged
+                | FixtureImportStatus::AlreadyInShow
+        );
+        let (Some(name), Some(id), true) = (key(fixture), preview.fixture_id, in_show) else {
+            continue;
+        };
+        match members.iter_mut().find(|(candidate, _)| *candidate == name) {
+            Some((_, list)) => list.push((id, fixture.uid)),
+            None => members.push((name, vec![(id, fixture.uid)])),
+        }
+    }
+
+    let mut used: HashSet<u32> = show.groups.iter().map(|group| group.id).collect();
+    let mut next = used.iter().max().map_or(1, |max| max.saturating_add(1));
+    let mut planned = Vec::new();
+    for (name, mut list) in members {
+        list.sort_unstable_by_key(|(id, _)| *id);
+        let members: Vec<Uuid> = list.into_iter().map(|(_, uid)| uid).collect();
+        let existing = show.groups.iter().find(|group| group.label == name);
+        let (id, uid) = match existing {
+            Some(group) => match &group.members {
+                Some(current) if *current == members => continue,
+                Some(_) => (group.id, group.uid),
+                None => {
+                    warnings.push(format!(
+                        "Group {name:?} is kept as it is because it is not a plain list of \
+                         fixtures"
+                    ));
+                    continue;
+                }
+            },
+            None => {
+                while used.contains(&next) {
+                    next = next.saturating_add(1);
+                }
+                used.insert(next);
+                (next, Uuid::new_v4())
+            }
+        };
+        planned.push(PlannedGroup {
+            name,
+            id,
+            uid,
+            existing: existing.map(|group| group.uid),
+            members,
+        });
+    }
+    planned
 }
 
 /// Decides where a fixture type's definition comes from: a mapping in the options, the

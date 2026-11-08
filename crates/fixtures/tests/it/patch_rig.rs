@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Command-level checks that `AddPatchedFixtures` keeps a whole batch or none of it, and that
-//! its undo operation removes the batch and puts the routes back.
+//! Command-level checks that `PatchRig` keeps a whole rig change or none of it, and that its
+//! undo operation puts the fixtures and routes back.
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
@@ -23,7 +23,7 @@ use nightfall_fixtures::undo::{
     DmxRoutesSnapshot, PatchedFixturesSnapshot, RestorePatchedFixtures,
 };
 use nightfall_fixtures::websocket::SuppressFixtureChangedSnapshot;
-use nightfall_fixtures::{PatchRoute, RouteEndpoint};
+use nightfall_fixtures::{PatchRoute, RigFixtureUpdate, RouteEndpoint};
 use nightfall_io::prelude::*;
 use uuid::Uuid;
 
@@ -127,8 +127,9 @@ fn adds_fixtures_and_routes_together() {
     let mut app = app();
     send(
         &mut app,
-        FixtureCommand::AddPatchedFixtures {
-            fixtures: vec![dimmer(1), dimmer(2), dimmer(3)],
+        FixtureCommand::PatchRig {
+            add: vec![dimmer(1), dimmer(2), dimmer(3)],
+            update: vec![],
             routes: vec![patch(1, 1, 1), patch(2, 1, 2)],
         },
     );
@@ -149,15 +150,17 @@ fn rejects_a_batch_reusing_an_id() {
     let mut app = app();
     send(
         &mut app,
-        FixtureCommand::AddPatchedFixtures {
-            fixtures: vec![dimmer(1)],
+        FixtureCommand::PatchRig {
+            add: vec![dimmer(1)],
+            update: vec![],
             routes: vec![],
         },
     );
     send(
         &mut app,
-        FixtureCommand::AddPatchedFixtures {
-            fixtures: vec![dimmer(2), dimmer(1)],
+        FixtureCommand::PatchRig {
+            add: vec![dimmer(2), dimmer(1)],
+            update: vec![],
             routes: vec![],
         },
     );
@@ -172,8 +175,9 @@ fn rolls_back_when_a_route_overlaps() {
     let mut app = app();
     send(
         &mut app,
-        FixtureCommand::AddPatchedFixtures {
-            fixtures: vec![dimmer(1), dimmer(2)],
+        FixtureCommand::PatchRig {
+            add: vec![dimmer(1), dimmer(2)],
+            update: vec![],
             routes: vec![patch(1, 1, 1), patch(2, 1, 1)],
         },
     );
@@ -200,8 +204,9 @@ fn restore_removes_the_batch_and_its_routes() {
         .collect();
     send(
         &mut app,
-        FixtureCommand::AddPatchedFixtures {
-            fixtures,
+        FixtureCommand::PatchRig {
+            add: fixtures,
+            update: vec![],
             routes: vec![patch(1, 1, 1)],
         },
     );
@@ -211,6 +216,7 @@ fn restore_removes_the_batch_and_its_routes() {
         EngineOperationEnvelope::detached(RestorePatchedFixtures(PatchedFixturesSnapshot {
             remove: uids,
             restore: vec![],
+            revert: vec![],
             routes: DmxRoutesSnapshot {
                 input_routes: vec![],
                 output_routes: vec![],
@@ -222,4 +228,167 @@ fn restore_removes_the_batch_and_its_routes() {
 
     assert!(fixture_ids(&app).is_empty());
     assert!(app.world().resource::<OutputRoutes>().routes.is_empty());
+}
+
+/// Returns the stored fixture with `id`.
+fn stored(app: &App, id: u32) -> Fixture {
+    (*app
+        .world()
+        .resource::<FixtureDataProviderExt>()
+        .inner
+        .from_id(id)
+        .expect("fixture is stored"))
+    .clone()
+}
+
+/// Returns the console addresses of every output route, sorted.
+fn console_addresses(app: &App) -> Vec<(Option<DmxRange>, Option<u16>)> {
+    let mut addresses: Vec<_> = app
+        .world()
+        .resource::<OutputRoutes>()
+        .routes
+        .iter()
+        .filter_map(|route| match &route.target {
+            OutputTarget::Console { universe, address } => Some((*universe, *address)),
+            _ => None,
+        })
+        .collect();
+    addresses.sort_by_key(|(_, address)| *address);
+    addresses
+}
+
+/// Updating a fixture changes its label and placement and moves its patch, while a new
+/// fixture is added in the same change.
+#[test]
+fn updates_and_repatches_existing_fixtures() {
+    let mut app = app();
+    let existing = dimmer(1);
+    let uid = existing.identifiers.uid;
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![existing],
+            update: vec![],
+            routes: vec![patch(1, 1, 1)],
+        },
+    );
+
+    let mut placement = FixturePlacement::default();
+    placement.position.y = 6.0;
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![dimmer(2)],
+            update: vec![RigFixtureUpdate {
+                uid,
+                label: Some("FOH 1".to_owned()),
+                placement: Some(placement.clone()),
+                repatch: true,
+            }],
+            routes: vec![patch(1, 1, 10), patch(2, 1, 1)],
+        },
+    );
+
+    assert_eq!(fixture_ids(&app), [1, 2]);
+    let fixture = stored(&app, 1);
+    assert_eq!(fixture.identifiers.label, "FOH 1");
+    assert_eq!(fixture.placement, placement);
+    assert_eq!(
+        console_addresses(&app),
+        [
+            (Some(DmxRange::single(1)), Some(1)),
+            (Some(DmxRange::single(1)), Some(10))
+        ]
+    );
+}
+
+/// A failed repatch puts the changed fixture back as it was and keeps its old patch.
+#[test]
+fn failed_update_restores_the_fixture() {
+    let mut app = app();
+    let existing = dimmer(1);
+    let uid = existing.identifiers.uid;
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![existing, dimmer(2)],
+            update: vec![],
+            routes: vec![patch(1, 1, 1), patch(2, 1, 2)],
+        },
+    );
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![],
+            update: vec![RigFixtureUpdate {
+                uid,
+                label: Some("Moved".to_owned()),
+                placement: None,
+                repatch: true,
+            }],
+            routes: vec![patch(1, 1, 2)],
+        },
+    );
+
+    assert_eq!(stored(&app, 1).identifiers.label, "Dimmer 1");
+    assert_eq!(
+        console_addresses(&app),
+        [
+            (Some(DmxRange::single(1)), Some(1)),
+            (Some(DmxRange::single(1)), Some(2))
+        ]
+    );
+}
+
+/// The undo operation puts a changed fixture's definition back and keeps its parameters.
+#[test]
+fn restore_brings_back_changed_fixtures() {
+    let mut app = app();
+    let existing = dimmer(1);
+    let original = existing.clone();
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![existing],
+            update: vec![],
+            routes: vec![],
+        },
+    );
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![],
+            update: vec![RigFixtureUpdate {
+                uid: original.identifiers.uid,
+                label: Some("Changed".to_owned()),
+                placement: None,
+                repatch: false,
+            }],
+            routes: vec![],
+        },
+    );
+    assert_eq!(stored(&app, 1).identifiers.label, "Changed");
+
+    let envelope =
+        EngineOperationEnvelope::detached(RestorePatchedFixtures(PatchedFixturesSnapshot {
+            remove: vec![],
+            restore: vec![],
+            revert: vec![original],
+            routes: DmxRoutesSnapshot {
+                input_routes: vec![],
+                output_routes: vec![],
+                disabled_routes: vec![],
+            },
+        }));
+    app.world_mut().write_message(envelope);
+    app.update();
+
+    assert_eq!(fixture_ids(&app), [1]);
+    assert_eq!(stored(&app, 1).identifiers.label, "Dimmer 1");
+    let parameters = app
+        .world_mut()
+        .query::<&Parameter>()
+        .iter(app.world())
+        .count();
+    assert_eq!(parameters, 1, "the fixture keeps its one parameter entity");
 }
