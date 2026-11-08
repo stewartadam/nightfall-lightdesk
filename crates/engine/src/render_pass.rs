@@ -25,6 +25,7 @@
 
 use bevy_app::{MainScheduleOrder, prelude::*};
 use bevy_ecs::{prelude::*, schedule::ScheduleLabel};
+use web_time::Instant;
 
 /// Schedule of render passes: clocks, layer generation, compositing, virtual dimming and output.
 ///
@@ -44,11 +45,16 @@ struct RunRender;
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RenderPass {
     renders: bool,
+    /// When the output of the current render is sent, if a frame limiter schedules it.
+    output_at: Option<Instant>,
 }
 
 impl Default for RenderPass {
     fn default() -> Self {
-        Self { renders: true }
+        Self {
+            renders: true,
+            output_at: None,
+        }
     }
 }
 
@@ -61,6 +67,22 @@ impl RenderPass {
     /// Marks whether the update about to start runs the [`Render`] schedule.
     pub fn set_renders(&mut self, renders: bool) {
         self.renders = renders;
+    }
+
+    /// Returns the instant playback clocks advance to in the current render.
+    ///
+    /// With a frame limiter this is the DMX output tick the render is sent on, so consecutive
+    /// renders sample playback exactly one output period apart and a step edge that lands on a
+    /// tick always falls on the same side of it, however late in the frame a clock system runs.
+    /// Without one (tests, the browser runtime) it is the current time.
+    pub fn output_at(&self) -> Instant {
+        self.output_at.unwrap_or_else(Instant::now)
+    }
+
+    /// Records when the output of the render about to start is sent, or `None` when no frame
+    /// limiter schedules renders.
+    pub fn set_output_at(&mut self, output_at: Option<Instant>) {
+        self.output_at = output_at;
     }
 }
 
