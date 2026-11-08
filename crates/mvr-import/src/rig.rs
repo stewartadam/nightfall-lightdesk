@@ -9,9 +9,10 @@
 //! Reading an MVR file into the parts an import needs.
 //!
 //! Reading happens off the engine thread: it unzips the archive, parses the scene, copies
-//! out every GDTF file the fixtures name and reads each one's make, model and modes. The
-//! result holds no reference to the archive, so the engine can keep it while the user looks
-//! at the preview.
+//! out every GDTF file the fixtures name and reads each one's make, model and modes, and
+//! turns the models of trusses, supports and other scenery into GLB files. The result
+//! holds no reference to the archive, so the engine can keep it while the user looks at
+//! the preview.
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -21,10 +22,13 @@ use std::path::{Path, PathBuf};
 use nightfall_fixture_library::GdtfMetadata;
 use nightfall_fixtures::prelude::FixturePlacement;
 use nightfall_mvr::prelude::*;
+use nightfall_object_library::ObjectMetadata;
+use nightfall_object_library::manager::write_object_bundle;
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use crate::placement::convert_transform;
+use crate::geometry::{GeometryCache, Mesh};
+use crate::placement::{convert_transform, split_transform};
 
 /// Why an MVR file could not be read for import.
 #[derive(Debug, thiserror::Error)]
@@ -112,6 +116,51 @@ pub struct RigFixture {
     pub warnings: Vec<String>,
 }
 
+/// What kind of scenery an imported scene object stands for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[typeshare::typeshare]
+pub enum RigSceneryKind {
+    /// A truss section, imported as its own object.
+    Truss,
+    /// A support such as a motor or a ground support tower, imported as its own object.
+    Support,
+    /// Every other object of a layer with a model (set pieces, the venue, video screens and
+    /// projectors), merged into one object per layer.
+    Layer,
+}
+
+/// A model built from the archive, written as a scene object bundle in the rig's working
+/// folder.
+#[derive(Debug, Clone)]
+pub struct RigModel {
+    /// Where the `.robj` bundle is.
+    pub path: PathBuf,
+    /// Content fingerprint of the GLB file.
+    pub revision: String,
+    /// Number of triangles in the model.
+    pub triangles: usize,
+}
+
+/// A truss, support or layer of scenery from the rig, converted to Nightfall space.
+#[derive(Debug, Clone)]
+pub struct RigScenery {
+    /// MVR UUID of the object, or of the layer for merged scenery; it becomes the scene
+    /// object's UID.
+    pub uid: Uuid,
+    /// Name in the file.
+    pub name: String,
+    /// What the object stands for.
+    pub kind: RigSceneryKind,
+    /// Name of the layer the object is on.
+    pub layer: String,
+    /// Placement in Nightfall space. The model already holds the object's scale.
+    pub placement: FixturePlacement,
+    /// The object's model, or `None` when the file has no readable geometry for it.
+    pub model: Option<RigModel>,
+    /// Things about the object the import leaves out or adjusts.
+    pub warnings: Vec<String>,
+}
+
 /// An MVR file read for import.
 #[derive(Debug)]
 pub struct RigFile {
@@ -123,6 +172,9 @@ pub struct RigFile {
     pub fixture_types: Vec<RigFixtureType>,
     /// Fixtures in file order.
     pub fixtures: Vec<RigFixture>,
+    /// Trusses and supports in file order, then one merged entry per layer with other
+    /// scenery.
+    pub scenery: Vec<RigScenery>,
     /// Problems with the file as a whole.
     pub warnings: Vec<String>,
     /// Folder holding the extracted GDTF files; removed when the rig is dropped.
@@ -144,7 +196,8 @@ pub fn read_rig_file(path: &Path, file_name: &str) -> Result<RigFile, RigReadErr
 /// Reads an MVR archive: its fixtures, their types and placements.
 ///
 /// Fixtures nested inside other fixtures (accessories attached to a geometry) are skipped
-/// with a warning, because their position depends on the parent's model.
+/// with a warning, because their position depends on the parent's model. Scenery models
+/// are converted to GLB here, so the engine never parses geometry.
 pub fn read_rig<R: Read + Seek>(reader: R, file_name: &str) -> Result<RigFile, RigReadError> {
     let mut archive = MvrArchive::open(reader)?;
     let workdir = tempfile::Builder::new()
@@ -164,7 +217,7 @@ pub fn read_rig<R: Read + Seek>(reader: R, file_name: &str) -> Result<RigFile, R
         ));
     }
 
-    let scene = archive.scene();
+    let scene = archive.scene().clone();
     let positions: BTreeMap<Uuid, String> = scene
         .positions()
         .map(|position| (position.uuid, position.name.clone()))
@@ -199,15 +252,165 @@ pub fn read_rig<R: Read + Seek>(reader: R, file_name: &str) -> Result<RigFile, R
             RigFixtureType { spec, source }
         })
         .collect();
+    let scenery = read_scenery(
+        &mut archive,
+        &scene,
+        workdir.path(),
+        file_name,
+        &mut warnings,
+    )?;
 
     Ok(RigFile {
         file_name: file_name.to_string(),
         provider,
         fixture_types,
         fixtures,
+        scenery,
         warnings,
         _workdir: workdir,
     })
+}
+
+/// Builds the models of the scene's trusses, supports and other scenery.
+///
+/// Each truss and support becomes its own entry, placed where the file puts it with its
+/// model drawn around its own origin. Every other object with geometry (scene objects,
+/// video screens, projectors) is merged into one entry per layer, drawn in world space,
+/// because venues are often made of thousands of small pieces.
+fn read_scenery<R: Read + Seek>(
+    archive: &mut MvrArchive<R>,
+    scene: &Scene,
+    workdir: &Path,
+    file_name: &str,
+    warnings: &mut Vec<String>,
+) -> Result<Vec<RigScenery>, RigReadError> {
+    let symdefs = scene
+        .symdefs()
+        .map(|symdef| (symdef.uuid, symdef))
+        .collect();
+    let mut cache = GeometryCache::new(archive, symdefs);
+    let mut scenery = Vec::new();
+    let mut layers: Vec<(Uuid, String, Mesh, Vec<String>)> = Vec::new();
+    for placed in scene.placed_objects() {
+        let (object, kind) = match placed.node {
+            SceneNode::Truss(object) => (object, RigSceneryKind::Truss),
+            SceneNode::Support(object) => (object, RigSceneryKind::Support),
+            SceneNode::SceneObject(object)
+            | SceneNode::VideoScreen(object)
+            | SceneNode::Projector(object) => (object, RigSceneryKind::Layer),
+            _ => continue,
+        };
+        if object.geometries.nodes.is_empty() {
+            if kind != RigSceneryKind::Layer {
+                warnings.push(format!(
+                    "Skipped {} {}: it has no model in the file",
+                    if kind == RigSceneryKind::Truss {
+                        "truss"
+                    } else {
+                        "support"
+                    },
+                    if object.name.trim().is_empty() {
+                        "without a name"
+                    } else {
+                        object.name.trim()
+                    },
+                ));
+            }
+            continue;
+        }
+        if kind == RigSceneryKind::Layer {
+            let index = match layers
+                .iter()
+                .position(|(uid, ..)| *uid == placed.layer.uuid)
+            {
+                Some(index) => index,
+                None => {
+                    layers.push((
+                        placed.layer.uuid,
+                        placed.layer.name.clone(),
+                        Mesh::default(),
+                        Vec::new(),
+                    ));
+                    layers.len() - 1
+                }
+            };
+            let (_, _, mesh, layer_warnings) = &mut layers[index];
+            cache.add(&object.geometries, &placed.world, mesh, layer_warnings);
+            continue;
+        }
+        let (placement, local) = split_transform(&placed.world);
+        let mut mesh = Mesh::default();
+        let mut object_warnings = Vec::new();
+        cache.add(&object.geometries, &local, &mut mesh, &mut object_warnings);
+        let model = write_model(&mesh, workdir, object.uuid, &object.name, file_name)?;
+        scenery.push(RigScenery {
+            uid: object.uuid,
+            name: object.name.clone(),
+            kind,
+            layer: placed.layer.name.clone(),
+            placement,
+            model,
+            warnings: object_warnings,
+        });
+    }
+    for (uid, name, mesh, layer_warnings) in layers {
+        let model = write_model(&mesh, workdir, uid, &name, file_name)?;
+        if model.is_none() {
+            warnings.push(format!("Layer {name} has no readable scenery models"));
+            warnings.extend(layer_warnings);
+            continue;
+        }
+        scenery.push(RigScenery {
+            uid,
+            name: name.clone(),
+            kind: RigSceneryKind::Layer,
+            layer: name,
+            placement: FixturePlacement::default(),
+            model,
+            warnings: layer_warnings,
+        });
+    }
+    Ok(scenery)
+}
+
+/// Writes a model as a `.robj` scene object bundle named after the object, ready to copy
+/// into a show, or returns `None` for an empty model.
+///
+/// The bundle is built here, off the engine thread, so committing the import only copies
+/// files.
+fn write_model(
+    mesh: &Mesh,
+    workdir: &Path,
+    uid: Uuid,
+    name: &str,
+    file_name: &str,
+) -> Result<Option<RigModel>, RigReadError> {
+    if mesh.is_empty() {
+        return Ok(None);
+    }
+    let glb = mesh.to_glb();
+    let revision = nightfall_fixture_model::prelude::fixture_asset_etag(&glb);
+    let path = workdir.join(format!("scenery-{}.robj", uid.simple()));
+    let metadata = ObjectMetadata {
+        name: if name.trim().is_empty() {
+            "MVR scenery".to_string()
+        } else {
+            name.trim().to_string()
+        },
+        category: "Imported".to_string(),
+        description: format!("Imported from {file_name}"),
+        scale: 1.0,
+        author: String::new(),
+        license: String::new(),
+        tags: vec!["mvr".to_string()],
+    };
+    write_object_bundle(&path, &metadata, &glb)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    Ok(Some(RigModel {
+        path,
+        revision,
+        triangles: mesh.triangle_count(),
+    }))
 }
 
 /// Converts one MVR fixture, noting what the import cannot carry over.

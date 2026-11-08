@@ -12,6 +12,8 @@ use nightfall_fixtures::prelude::FixturePlacement;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub use crate::rig::RigSceneryKind;
+
 /// How the imported fixtures get their Nightfall fixture IDs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
@@ -80,6 +82,8 @@ pub struct RigImportOptions {
     pub update_existing: bool,
     /// What the import makes groups from.
     pub groups: RigGroupSource,
+    /// Import trusses, supports and other scenery as scene objects.
+    pub scenery: bool,
     /// Also copy fixture types from the file into the user's fixture library, not only
     /// into the show.
     pub add_to_user_library: bool,
@@ -89,12 +93,14 @@ pub struct RigImportOptions {
 }
 
 impl Default for RigImportOptions {
-    /// Keeps file IDs, updates fixtures already in the show and groups automatically.
+    /// Keeps file IDs, updates fixtures already in the show, groups automatically and
+    /// brings in the scenery.
     fn default() -> Self {
         Self {
             numbering: FixtureNumbering::default(),
             update_existing: true,
             groups: RigGroupSource::default(),
+            scenery: true,
             add_to_user_library: false,
             type_mappings: Vec::new(),
         }
@@ -230,6 +236,54 @@ pub struct GroupPreview {
     pub fixture_count: u32,
 }
 
+/// What the import does with a truss, support or layer of scenery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum SceneryImportStatus {
+    /// The object is added to the show.
+    New,
+    /// A scene object with this UUID is in the show and is changed to match the file.
+    Update,
+    /// A scene object with this UUID is in the show and already matches the file.
+    Unchanged,
+    /// A scene object with this UUID is in the show and differs from the file, but updates
+    /// are turned off, so it is left alone.
+    AlreadyInShow,
+    /// Scenery import is turned off.
+    Skipped,
+    /// The file has no readable model for the object.
+    NoModel,
+}
+
+/// A truss, support or layer of scenery in the file and what the import does with it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[typeshare::typeshare]
+pub struct SceneryPreview {
+    /// MVR UUID of the object, or of the layer for merged scenery.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub uid: Uuid,
+    /// Scene object label.
+    pub label: String,
+    /// What the object stands for.
+    pub kind: RigSceneryKind,
+    /// Layer in the file.
+    pub layer: String,
+    /// Scene object ID: the one it gets when new, or the one it has when already in the
+    /// show.
+    pub scene_object_id: Option<u32>,
+    /// Number of triangles in its model.
+    pub triangles: u32,
+    /// What the import does with it.
+    pub status: SceneryImportStatus,
+    /// How a scene object already in the show differs from the file ("moved",
+    /// "new model").
+    pub changes: Vec<String>,
+    /// Details the import leaves out or adjusts.
+    pub warnings: Vec<String>,
+}
+
 /// Everything an import would do, shown before it is applied.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -255,6 +309,10 @@ pub struct RigImportPreview {
     pub group_source: RigGroupSource,
     /// Groups the import makes or refreshes.
     pub groups: Vec<GroupPreview>,
+    /// Trusses, supports and layers of scenery in the file.
+    pub scenery: Vec<SceneryPreview>,
+    /// Number of scene objects the import adds or changes.
+    pub scenery_changes: u32,
     /// Problems with the file as a whole.
     pub warnings: Vec<String>,
 }

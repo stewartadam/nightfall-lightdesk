@@ -22,6 +22,7 @@ use crate::preview::{
     GroupPreview, PatchPreview, RigGroupSource, RigImportOptions, RigImportPreview,
 };
 use crate::rig::{RigFile, RigFixture, RigPatch, RigTypeSource};
+use crate::scenery::{SceneryPlan, ShowScenery, plan_scenery};
 
 /// How far, in metres, a fixture may be from its place in the file and still count as
 /// unmoved.
@@ -91,6 +92,8 @@ pub struct ShowFixtures {
     pub fixtures: HashMap<Uuid, ShowFixture>,
     /// Groups.
     pub groups: Vec<ShowGroup>,
+    /// Scene objects.
+    pub scenery: ShowScenery,
 }
 
 impl ShowFixtures {
@@ -139,6 +142,7 @@ impl ShowFixtures {
                 }),
             }
         }
+        self.scenery.apply(rig, &plan.scenery);
     }
 }
 
@@ -215,12 +219,17 @@ pub struct ImportPlan {
     pub updates: Vec<PlannedUpdate>,
     /// Groups to make or refresh.
     pub groups: Vec<PlannedGroup>,
+    /// Scene objects to add or change for the rig's scenery.
+    pub scenery: SceneryPlan,
 }
 
 impl ImportPlan {
     /// Whether committing the plan would change the show.
     pub fn is_empty(&self) -> bool {
-        self.fixtures.is_empty() && self.updates.is_empty() && self.groups.is_empty()
+        self.fixtures.is_empty()
+            && self.updates.is_empty()
+            && self.groups.is_empty()
+            && self.scenery.objects.is_empty()
     }
 }
 
@@ -361,6 +370,7 @@ pub fn plan_import(
 
     let group_source = resolve_group_source(rig, options.groups);
     let groups = plan_groups(rig, &previews, group_source, show, &mut warnings);
+    let scenery = plan_scenery(rig, &show.scenery, options);
 
     ImportPlan {
         preview: RigImportPreview {
@@ -381,11 +391,14 @@ pub fn plan_import(
                 })
                 .collect(),
             fixtures: previews,
+            scenery_changes: scenery.objects.len() as u32,
+            scenery: scenery.previews.clone(),
             warnings,
         },
         fixtures,
         updates,
         groups,
+        scenery,
     }
 }
 
@@ -446,7 +459,7 @@ fn compare_existing(
 }
 
 /// Whether two placements are the same within the tolerances.
-fn same_placement(a: &FixturePlacement, b: &FixturePlacement) -> bool {
+pub(crate) fn same_placement(a: &FixturePlacement, b: &FixturePlacement) -> bool {
     let close = |x: f32, y: f32, tolerance: f32| (x - y).abs() <= tolerance;
     let turned = |x: f32, y: f32| {
         let difference = (x - y).rem_euclid(360.0);

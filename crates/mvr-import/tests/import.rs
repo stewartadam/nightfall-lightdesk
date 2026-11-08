@@ -25,10 +25,12 @@ use nightfall_fixtures::websocket::SuppressFixtureChangedSnapshot;
 use nightfall_fixtures::{FixtureCommand, RouteEndpoint};
 use nightfall_io::prelude::*;
 use nightfall_mvr_import::commands::expand_rig_import_commits;
+use nightfall_mvr_import::geometry::{Mesh, read_gltf};
 use nightfall_mvr_import::plan::{ShowFixture, ShowFixtures, ShowGroup, plan_import};
 use nightfall_mvr_import::prelude::*;
 use nightfall_mvr_import::rig::{RigPatch, RigTypeSource, read_rig};
 use nightfall_programming::prelude::GroupCommand;
+use nightfall_scene_objects::prelude::*;
 use uuid::Uuid;
 use zip::write::SimpleFileOptions;
 
@@ -323,6 +325,7 @@ fn import_app(library: FixtureLibraryManager, sessions: RigImportSessions) -> Ap
     app.init_resource::<PendingCommandBuffer>();
     app.init_resource::<FixtureDataProviderExt>();
     app.init_resource::<DataProvider<Group>>();
+    app.init_resource::<nightfall_scene_objects::prelude::SceneObjectDataProvider>();
     app.init_resource::<InputRoutes>();
     app.init_resource::<OutputRoutes>();
     app.init_resource::<DisabledRoutes>();
@@ -441,6 +444,161 @@ fn commit_adds_fixtures_with_patch_and_placement() {
     assert_eq!(app.world().resource::<OutputRoutes>().routes.len(), 2);
 }
 
+/// UUID of the truss in the scenery rig.
+const TRUSS_UUID: &str = "1F0C7A52-3C9B-4E0D-8B5A-2B1E3D4C5F61";
+/// UUID of the venue layer in the scenery rig.
+const VENUE_UUID: &str = "6A7B8C9D-0E1F-4A2B-9C3D-4E5F6A7B8C9D";
+
+/// Builds an MVR archive with one unnamed truss, turned a quarter in plan and stretched to
+/// twice its model's length, and a venue layer holding a set piece and a video screen that
+/// share one model: a single triangle.
+fn scenery_rig_bytes() -> Vec<u8> {
+    let triangle = Mesh {
+        positions: vec![[0.0, 0.0, 0.0], [1000.0, 0.0, 0.0], [0.0, 0.0, 1000.0]],
+        indices: vec![0, 1, 2],
+    };
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<GeneralSceneDescription verMajor="1" verMinor="6" provider="Test">
+  <Scene>
+    <Layers>
+      <Layer uuid="83A405B6-8378-482D-9F72-AAD2EE51AABE" name="Rigging">
+        <ChildList>
+          <Truss uuid="{TRUSS_UUID}" name="">
+            <Matrix>{{0,2,0}}{{-1,0,0}}{{0,0,1}}{{1000,2000,6000}}</Matrix>
+            <Geometries><Geometry3D fileName="piece.glb"/></Geometries>
+          </Truss>
+        </ChildList>
+      </Layer>
+      <Layer uuid="{VENUE_UUID}" name="Venue">
+        <ChildList>
+          <SceneObject uuid="0B6E2E4A-1C77-4F55-A1F0-0F1E2D3C4B5A" name="Riser">
+            <Geometries><Geometry3D fileName="piece.glb"/></Geometries>
+          </SceneObject>
+          <VideoScreen uuid="5D4C3B2A-1F0E-4D9C-8B7A-6F5E4D3C2B1A" name="Screen">
+            <Matrix>{{1,0,0}}{{0,1,0}}{{0,0,1}}{{0,5000,0}}</Matrix>
+            <Geometries><Geometry3D fileName="piece.glb"/></Geometries>
+          </VideoScreen>
+        </ChildList>
+      </Layer>
+    </Layers>
+  </Scene>
+</GeneralSceneDescription>"#
+    );
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, contents) in [
+        ("GeneralSceneDescription.xml", xml.into_bytes()),
+        ("piece.glb", triangle.to_glb()),
+    ] {
+        writer
+            .start_file(name, SimpleFileOptions::default())
+            .expect("start file");
+        writer.write_all(&contents).expect("write file");
+    }
+    writer.finish().expect("finish archive").into_inner()
+}
+
+/// The truss becomes its own scene object, placed by its rotation with its stretch baked
+/// into the model, while the venue's two pieces merge into one object drawn in world space.
+/// A second import of the same file changes nothing, a moved truss is put back, and turning
+/// scenery off skips it all.
+#[test]
+fn plans_scenery_objects() {
+    let rig = read_rig(Cursor::new(scenery_rig_bytes()), "scenery.mvr").unwrap();
+    assert_eq!(rig.scenery.len(), 2, "{:#?}", rig.warnings);
+    let truss = &rig.scenery[0];
+    assert_eq!(truss.uid, uuid(TRUSS_UUID));
+    assert_eq!(truss.kind, RigSceneryKind::Truss);
+    assert_eq!(
+        truss.placement.position,
+        PlacementPosition {
+            x: 1.0,
+            y: 6.0,
+            z: -2.0
+        }
+    );
+    assert_eq!(truss.placement.rotation.y, 90.0);
+    let local = read_gltf(
+        &nightfall_object_library::manager::extract_model_from_bundle(
+            &truss.model.as_ref().unwrap().path,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let stretched = local.positions[1];
+    assert!(
+        (stretched[0] - 2000.0).abs() < 0.5 && stretched[1].abs() < 0.5,
+        "{stretched:?}"
+    );
+    let venue = &rig.scenery[1];
+    assert_eq!(venue.uid, uuid(VENUE_UUID));
+    assert_eq!(venue.kind, RigSceneryKind::Layer);
+    assert_eq!(venue.model.as_ref().unwrap().triangles, 2);
+
+    let root = tempfile::tempdir().unwrap();
+    let library = empty_library(root.path());
+    let mut show = ShowFixtures::default();
+    show.scenery.ids.insert(4);
+    let options = RigImportOptions::default();
+    let plan = plan_import(Uuid::new_v4(), &rig, &library, &show, &options);
+    let rows: Vec<_> = plan
+        .preview
+        .scenery
+        .iter()
+        .map(|row| (row.label.as_str(), row.scene_object_id, row.status))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("Truss 1", Some(5), SceneryImportStatus::New),
+            ("Venue", Some(6), SceneryImportStatus::New),
+        ]
+    );
+    assert_eq!(plan.preview.scenery_changes, 2);
+
+    show.apply(&rig, &plan);
+    let again = plan_import(Uuid::new_v4(), &rig, &library, &show, &options);
+    assert!(again.is_empty());
+    assert!(
+        again
+            .preview
+            .scenery
+            .iter()
+            .all(|row| row.status == SceneryImportStatus::Unchanged)
+    );
+
+    show.scenery
+        .objects
+        .get_mut(&truss.uid)
+        .unwrap()
+        .placement
+        .position
+        .x += 1.0;
+    let moved = plan_import(Uuid::new_v4(), &rig, &library, &show, &options);
+    assert_eq!(moved.scenery.objects.len(), 1);
+    assert_eq!(moved.preview.scenery[0].status, SceneryImportStatus::Update);
+    assert_eq!(moved.preview.scenery[0].changes, ["moved"]);
+
+    let skipped = plan_import(
+        Uuid::new_v4(),
+        &rig,
+        &library,
+        &ShowFixtures::default(),
+        &RigImportOptions {
+            scenery: false,
+            ..RigImportOptions::default()
+        },
+    );
+    assert!(skipped.scenery.objects.is_empty());
+    assert!(
+        skipped
+            .preview
+            .scenery
+            .iter()
+            .all(|row| row.status == SceneryImportStatus::Skipped)
+    );
+}
+
 /// Opens one of the public samples, or returns `None` when they were not downloaded.
 fn sample(name: &str) -> Option<nightfall_mvr_import::rig::RigFile> {
     let dir = std::env::var_os("NIGHTFALL_MVR_SAMPLES_DIR")?;
@@ -512,10 +670,37 @@ fn plans_vectorworks_scene_objects() {
     assert_eq!(ids, (1..=72).collect::<Vec<_>>());
 }
 
+/// Both public samples carry trusses or scenery with readable models: Capture's trusses
+/// come out as separate objects of truss length, and every model converts without
+/// warnings.
+#[test]
+#[ignore = "requires NIGHTFALL_MVR_SAMPLES_DIR"]
+fn reads_sample_scenery() {
+    for name in ["capture_demo_show.mvr", "scene_objects.mvr"] {
+        let rig = sample(name).expect("NIGHTFALL_MVR_SAMPLES_DIR is set");
+        assert!(!rig.scenery.is_empty(), "{name} has scenery");
+        for scenery in &rig.scenery {
+            assert!(
+                scenery.model.is_some(),
+                "{name}: {} has a model",
+                scenery.name
+            );
+            assert!(
+                scenery.warnings.is_empty(),
+                "{name}: {:?}",
+                scenery.warnings
+            );
+        }
+    }
+}
+
 /// Submits a commit for `session`, runs its expansion, then dispatches the fixture command
-/// it turned into, if any, and runs that too. Returns the fixture command and the number of
-/// group stores.
-fn commit_session(app: &mut App, session: Uuid) -> (Option<FixtureCommand>, usize) {
+/// it turned into, if any, and runs that too. Returns the fixture command, the number of
+/// group stores and the scene objects stored for the scenery.
+fn commit_session(
+    app: &mut App,
+    session: Uuid,
+) -> (Option<FixtureCommand>, usize, Vec<SceneObject>) {
     let envelope = CommandEnvelope::new(
         RigImportCommand::Commit {
             session,
@@ -542,6 +727,7 @@ fn commit_session(app: &mut App, session: Uuid) -> (Option<FixtureCommand>, usiz
         .drain();
     let mut command = None;
     let mut groups = 0;
+    let mut scenery = Vec::new();
     for envelope in &queued {
         let payload = envelope.payload.as_any();
         if let Some(fixture_command) = payload.downcast_ref::<FixtureCommand>() {
@@ -550,6 +736,10 @@ fn commit_session(app: &mut App, session: Uuid) -> (Option<FixtureCommand>, usiz
                 "the commit expands into one fixture command"
             );
             command = Some(fixture_command.clone());
+        } else if let Some(SceneObjectCommand::StoreSceneObject(object)) =
+            payload.downcast_ref::<SceneObjectCommand>()
+        {
+            scenery.push(object.clone());
         } else {
             assert!(payload.is::<GroupCommand>(), "unexpected command");
             groups += 1;
@@ -565,7 +755,7 @@ fn commit_session(app: &mut App, session: Uuid) -> (Option<FixtureCommand>, usiz
         app.world_mut().write_message(dispatched);
         app.update();
     }
-    (command, groups)
+    (command, groups, scenery)
 }
 
 /// The whole Capture demo show imports: its five GDTFs convert, all 76 fixtures are stored
@@ -580,10 +770,22 @@ fn imports_capture_demo_show() {
     let sessions = RigImportSessions::default();
     let session = sessions.insert(rig);
     let mut app = import_app(empty_library(root.path()), sessions);
+    nightfall::set_active_show_data_dir(root.path().join("show"));
 
-    let (command, groups) = commit_session(&mut app, session);
+    let (command, groups, scenery) = commit_session(&mut app, session);
     assert!(command.is_some());
     assert!(groups > 0, "the layers become groups");
+    assert_eq!(scenery.len(), 17, "13 trusses and four layers of scenery");
+    let bundles = std::fs::read_dir(root.path().join("show/scene-objects"))
+        .unwrap()
+        .count();
+    assert_eq!(bundles, 17);
+    {
+        let mut stored = app.world_mut().resource_mut::<SceneObjectDataProvider>();
+        for object in scenery {
+            stored.add(object).unwrap();
+        }
+    }
 
     assert_eq!(
         app.world()
@@ -595,7 +797,8 @@ fn imports_capture_demo_show() {
     );
     assert_eq!(app.world().resource::<OutputRoutes>().routes.len(), routes);
 
-    let (command, regrouped) = commit_session(&mut app, session);
+    let (command, regrouped, rescenery) = commit_session(&mut app, session);
+    assert!(rescenery.is_empty(), "the scenery is unchanged");
     assert!(
         command.is_none(),
         "nothing changed, so no fixture is touched"

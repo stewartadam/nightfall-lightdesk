@@ -42,6 +42,8 @@ import {
   numberingOption,
   previewHasChanges,
   rigImportDialogOpen,
+  sceneryKindLabel,
+  sceneryStatusLabel,
   withMappingMode,
   withTypeMapping,
 } from "../model/rig-import-model";
@@ -79,6 +81,7 @@ export function RigImportDialog() {
   const [groupSource, setGroupSource] = createSignal<types.RigGroupSource>(
     types.RigGroupSource.Auto,
   );
+  const [scenery, setScenery] = createSignal(true);
   const [mappings, setMappings] = createSignal<types.FixtureTypeMapping[]>([]);
   const [dragging, setDragging] = createSignal(false);
   let fileInput: HTMLInputElement | undefined;
@@ -89,6 +92,7 @@ export function RigImportDialog() {
     numbering: numberingOption(numbering(), numberingValue()),
     updateExisting: updateExisting(),
     groups: groupSource(),
+    scenery: scenery(),
     addToUserLibrary: addToUserLibrary(),
     typeMappings: mappings(),
   });
@@ -107,6 +111,7 @@ export function RigImportDialog() {
     setAddToUserLibrary(false);
     setUpdateExisting(true);
     setGroupSource(types.RigGroupSource.Auto);
+    setScenery(true);
     setMappings([]);
     setStage("pick");
   };
@@ -159,6 +164,7 @@ export function RigImportDialog() {
         addToUserLibrary,
         updateExisting,
         groupSource,
+        scenery,
         mappings,
       ],
       () => {
@@ -211,6 +217,9 @@ export function RigImportDialog() {
         fixture.status === types.FixtureImportStatus.Unchanged ||
         fixture.status === types.FixtureImportStatus.AlreadyInShow,
     ) ?? false;
+  /** Whether the file has trusses or scenery, which offers the scenery choice. */
+  const hasScenery = () => (preview()?.scenery.length ?? 0) > 0;
+  /** Whether the file has fixture types of its own, which offers copying them to the library. */
   const hasEmbeddedTypes = () =>
     preview()?.fixtureTypes.some((type) => type.status.type === "Embedded") ??
     false;
@@ -328,6 +337,10 @@ export function RigImportDialog() {
                 <Show when={current().updatedFixtures > 0}>
                   , {current().updatedFixtures} updated
                 </Show>
+                <Show when={current().sceneryChanges > 0}>
+                  , with {current().sceneryChanges} scenery{" "}
+                  {current().sceneryChanges === 1 ? "object" : "objects"}
+                </Show>
                 .
               </p>
               <Show when={current().warnings.length > 0}>
@@ -396,6 +409,17 @@ export function RigImportDialog() {
                       }
                     />
                     Update fixtures already in the show to match the file
+                  </label>
+                </Show>
+                <Show when={hasScenery()}>
+                  <label class="flex items-center gap-2 text-sm text-gray-300">
+                    <Checkbox
+                      checked={scenery()}
+                      onChange={(event) =>
+                        setScenery(event.currentTarget.checked)
+                      }
+                    />
+                    Import trusses and scenery
                   </label>
                 </Show>
                 <Show when={hasEmbeddedTypes()}>
@@ -570,6 +594,65 @@ export function RigImportDialog() {
                       </tbody>
                     </Table>
                   </div>
+                </section>
+              </Show>
+
+              <Show when={hasScenery()}>
+                <section class="flex min-h-0 flex-col gap-2">
+                  <h3 class="text-xs font-semibold uppercase text-gray-400">
+                    Scenery
+                  </h3>
+                  <TableScroll
+                    aria-label="Scenery in the rig"
+                    class="max-h-48 rounded border border-gray-700"
+                  >
+                    <Table aria-label="Scenery in the rig">
+                      <thead class="text-left">
+                        <tr>
+                          <th scope="col" class="w-16">
+                            ID
+                          </th>
+                          <th scope="col">Name</th>
+                          <th scope="col">Kind</th>
+                          <th scope="col">Layer</th>
+                          <th scope="col" class="text-right">
+                            Triangles
+                          </th>
+                          <th scope="col">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <For each={current().scenery}>
+                          {(object) => (
+                            <tr
+                              title={object.warnings.join("\n") || undefined}
+                              data-status={object.status}
+                            >
+                              <td>{object.sceneObjectId ?? "–"}</td>
+                              <td>{object.label}</td>
+                              <td>{sceneryKindLabel(object.kind)}</td>
+                              <td>{object.layer || "–"}</td>
+                              <td class="text-right">
+                                {object.triangles.toLocaleString()}
+                              </td>
+                              <td>
+                                {sceneryStatusLabel(object.status)}
+                                <Show when={object.changes.length > 0}>
+                                  <span class="text-gray-500">
+                                    {" "}
+                                    ({object.changes.join(", ")})
+                                  </span>
+                                </Show>
+                                <Show when={object.warnings.length > 0}>
+                                  <span class="text-amber-400"> ⚠</span>
+                                </Show>
+                              </td>
+                            </tr>
+                          )}
+                        </For>
+                      </tbody>
+                    </Table>
+                  </TableScroll>
                 </section>
               </Show>
 
