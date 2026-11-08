@@ -46,8 +46,10 @@ the websocket), treat it as risky.
    skipping or weakening an existing test means `needs-human`.
 4. **Does what it says.** The description matches the diff, and the diff contains nothing unrelated
    to it. The description has a `## Release notes` section with a `Notes:` declaration.
-5. **Visible changes are shown.** If the PR changes something a user can see in the UI, the
-   description includes a screenshot or video of the result.
+5. **Visible changes are shown.** If the PR adds UI or changes how existing UI looks, the
+   description includes a screenshot or video of the result. A fix that restores intended
+   behavior, without changing the intended look, may instead come with a browser test that
+   exercises the fixed behavior and would fail without the fix.
 6. **Follows the written conventions.** No clear violation of a rule in `CLAUDE.md`, such as
    `console.log` instead of the logger, a function or test without a docstring, or a leftover debug
    print. Style preferences that `CLAUDE.md` does not state are not reasons to block.
