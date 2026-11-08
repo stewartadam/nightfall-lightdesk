@@ -215,6 +215,9 @@ pub struct OflTemplateChannel {
     /// Capabilities
     #[serde(default)]
     pub capabilities: Vec<OflCapability>,
+
+    /// Fine channel keys with $pixelKey placeholders, most significant first (optional)
+    pub fine_channel_aliases: Option<Vec<String>>,
 }
 
 /// Channel capability (DMX range with function)

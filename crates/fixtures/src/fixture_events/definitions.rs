@@ -38,10 +38,23 @@ pub(super) fn handle_command(
     }
 }
 
-/// Stores a fixture definition.
+/// Stores a fixture definition and spawns its parameter entities.
+///
+/// Storing over an existing UID replaces the fixture: its old parameter entities are
+/// despawned and rebuilt from the new definition, so element and parameter changes take
+/// effect. The command is validated first, so a rejected store leaves the old fixture intact.
 fn store_fixture(context: &mut FixtureCrudContext, command_id: CommandId, fixture: &Fixture) {
     tracing::debug!("Storing fixture with ID: {}", fixture.identifiers.id);
-    if let Err(e) = context.fixture_data_provider.inner.add(fixture.clone()) {
+    let provider = &mut context.fixture_data_provider;
+    let stored = provider.inner.validate_add(fixture).and_then(|()| {
+        if let Ok((_, old_parameters)) = provider.remove_fixture(&fixture.identifiers.uid) {
+            for parameter in old_parameters {
+                context.commands.entity(parameter.entity()).despawn();
+            }
+        }
+        provider.inner.add(fixture.clone())
+    });
+    if let Err(e) = stored {
         tracing::warn!("Failed to store fixture: {}", e);
         fail_fixture_command(
             &mut context.responder,
@@ -51,6 +64,7 @@ fn store_fixture(context: &mut FixtureCrudContext, command_id: CommandId, fixtur
         );
         return;
     }
+    crate::library::instantiate::add_fixture_parameters(&mut context.commands, provider, fixture);
     succeed_fixture_command(&mut context.responder, command_id);
 }
 
