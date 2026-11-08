@@ -240,6 +240,11 @@ impl MaterializedSequence {
         self.set_position_at_playback_position(prev_pos, playback_position);
     }
 
+    /// Returns whether `position` (1-based) names a materialized cue that navigation can jump to.
+    pub(crate) fn can_set_position(&self, position: u32) -> bool {
+        position != 0 && position as usize <= self.mcues.len()
+    }
+
     /// Sets the position to the provided cue
     pub fn set_position(&mut self, position: u32) {
         self.set_position_at_playback_position(position, None);
@@ -311,7 +316,13 @@ impl MaterializedSequence {
         self.release_layer = None;
         self.invalidate_render_prefix_cache();
 
-        if self.mcues.is_empty() {
+        if !self.can_set_position(position) {
+            tracing::warn!(
+                uid = %self.identifiers().uid,
+                position,
+                materialized = self.mcues.len(),
+                "Ignoring a jump to a cue position that is not materialized"
+            );
             return;
         }
 

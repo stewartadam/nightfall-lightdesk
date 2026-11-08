@@ -13,7 +13,7 @@ use nightfall_engine::prelude::*;
 use crate::commands::UndoCommand;
 use crate::context::UndoContext;
 use crate::dispatcher::{UndoRegistry, UndoReplay, UndoReplayContext};
-use crate::manager::{UndoEntry, UndoGroup, UndoManager};
+use crate::manager::{RedoGroup, UndoEntry, UndoGroup, UndoManager};
 
 /// Builds inverse history entries only when every command in a group is valid in current state.
 fn generate_inverse_entries(world: &World, group: &UndoGroup) -> Option<Vec<UndoEntry>> {
@@ -140,12 +140,15 @@ pub fn handle_undo_commands(
                     };
 
                     // Push redo group
-                    world.resource_mut::<UndoManager>().push_redo(UndoGroup {
-                        entries: redo_entries,
-                        description: group.description.clone(),
-                        timestamp: web_time::Instant::now(),
-                        is_gurq_preserved: group.is_gurq_preserved,
-                        undo_id: UndoId::new(),
+                    world.resource_mut::<UndoManager>().push_redo(RedoGroup {
+                        group: UndoGroup {
+                            entries: redo_entries,
+                            description: group.description.clone(),
+                            timestamp: web_time::Instant::now(),
+                            is_gurq_preserved: group.is_gurq_preserved,
+                            undo_id: UndoId::new(),
+                        },
+                        undone: group,
                     });
 
                     world
@@ -168,15 +171,16 @@ pub fn handle_undo_commands(
             }
 
             UndoCommand::Redo {} => {
-                let group_opt = world.resource_mut::<UndoManager>().pop_redo();
+                let redo_opt = world.resource_mut::<UndoManager>().pop_redo();
 
-                if let Some(group) = group_opt {
+                if let Some(redo) = redo_opt {
+                    let group = &redo.group;
                     tracing::debug!("Executing redo: {}", group.description);
 
                     // Generate undo entries from the inverse commands
-                    let Some(undo_entries) = generate_inverse_entries(world, &group) else {
+                    let Some(undo_entries) = generate_inverse_entries(world, group) else {
                         let description = group.description.clone();
-                        world.resource_mut::<UndoManager>().push_redo(group);
+                        world.resource_mut::<UndoManager>().push_redo(redo);
                         finish_command_in_world(
                             world,
                             event.command_id,
@@ -192,10 +196,10 @@ pub fn handle_undo_commands(
                     };
 
                     let Some(replays) =
-                        prepare_group_replays(world, &group, event.command_id, event.undo_id)
+                        prepare_group_replays(world, group, event.command_id, event.undo_id)
                     else {
                         let description = group.description.clone();
-                        world.resource_mut::<UndoManager>().push_redo(group);
+                        world.resource_mut::<UndoManager>().push_redo(redo);
                         finish_command_in_world(
                             world,
                             event.command_id,

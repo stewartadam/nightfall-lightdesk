@@ -2521,4 +2521,6 @@ async fn automation_programmer_clear_completes() {
     assert_eq!(outcome, Some(CommandOutcome::succeeded()));
 }
 
+mod cue_undo;
+mod desk_harness;
 mod macros;

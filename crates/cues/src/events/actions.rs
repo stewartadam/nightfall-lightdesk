@@ -299,6 +299,19 @@ pub fn cue_action_events(
                     outbound.succeed_cue(correlation_id);
                 }
             }
+            CueOperation::RemoveCue(cue_uid) => {
+                if restore_cue_snapshot(
+                    *cue_uid,
+                    None,
+                    &selection_resolver,
+                    correlation_id,
+                    &mut cue_data_provider,
+                    &mut outbound,
+                    &mut cue_definition_changes,
+                ) {
+                    outbound.succeed_cue(correlation_id);
+                }
+            }
             CueOperation::StoreCueInSequence {
                 sequence_id,
                 cue_id,
@@ -421,7 +434,7 @@ pub fn cue_action_events(
                 ) {
                     continue;
                 }
-                let _ = restore_sequence_snapshot(
+                if restore_sequence_snapshot(
                     *sequence_id,
                     previous_sequence.as_deref(),
                     &selection_resolver,
@@ -429,7 +442,9 @@ pub fn cue_action_events(
                     &mut sequence_data_provider,
                     &mut outbound,
                     &mut sequence_definition_changes,
-                );
+                ) {
+                    outbound.succeed_cue(correlation_id);
+                }
             }
         }
     }
