@@ -7,6 +7,7 @@
  */
 
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::sync::mpsc::{Receiver as StdReceiver, Sender as StdSender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -14,69 +15,54 @@ use std::time::{Duration, Instant};
 
 use bevy_ecs::prelude::Resource;
 use futures_util::StreamExt;
+use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
 use nightfall_engine::prelude::{
     DebugPanicTarget, is_process_shutdown_requested, maybe_trigger_debug_worker_panic,
 };
 use nightfall_io::prelude::{
-    DEFAULT_USB_DMX_DEVICE_SELECTOR, UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
+    DEFAULT_USB_DMX_DEVICE_SELECTOR, IoRuntimeSettings, UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
     usb_dmx_device_selector_matches,
 };
-use nightfall_service_host::prelude::{WorkerSlot, process_singleton};
+use nightfall_service_host::prelude::{
+    FixedRatePeriod, FixedRateWorker, WorkerSlot, process_singleton,
+};
 use nusb::MaybeFuture;
-use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
-/// uDMX output client handle.
+/// One uDMX universe the worker writes to its device on every tick.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UdmxFrame {
+    /// Selected USB device selector.
+    pub device: String,
+    /// Channel values.
+    pub data: [u8; MAX_CHANNELS_PER_UNIVERSE],
+}
+
+/// uDMX output client used inside ECS worlds.
+///
+/// Engine frames publish the latest composed universes here; the output worker writes
+/// whatever was published last on the shared tick grid at the configured output rate.
 #[derive(Clone, Default, Resource)]
 pub struct UdmxOutputClient {
-    command_tx: Arc<Mutex<Option<UnboundedSender<UdmxCommand>>>>,
+    frames: Arc<Mutex<Arc<Vec<UdmxFrame>>>>,
 }
 
 impl UdmxOutputClient {
-    /// Submit a full uDMX frame.
-    ///
-    /// Returns `false` when the service is unavailable.
-    pub fn submit_frame(&self, device: &str, data: &[u8]) -> bool {
-        {
-            let maybe_sender = self
-                .command_tx
-                .lock()
-                .ok()
-                .and_then(|sender| sender.clone());
-            let Some(command_tx) = maybe_sender else {
-                return false;
-            };
-
-            command_tx
-                .send(UdmxCommand::SubmitFrame {
-                    device: device.to_string(),
-                    data: data.to_vec(),
-                })
-                .is_ok()
+    /// Replaces the frames the worker writes from its next tick onwards.
+    pub fn publish(&self, frames: Vec<UdmxFrame>) {
+        if let Ok(mut published) = self.frames.lock() {
+            *published = Arc::new(frames);
         }
     }
 
-    pub(crate) fn set_sender(&self, sender: Option<UnboundedSender<UdmxCommand>>) {
-        if let Ok(mut command_tx) = self.command_tx.lock() {
-            *command_tx = sender;
-        }
+    /// Returns the frames the worker writes on its next tick.
+    pub(crate) fn published(&self) -> Arc<Vec<UdmxFrame>> {
+        self.frames
+            .lock()
+            .map(|frames| Arc::clone(&frames))
+            .unwrap_or_default()
     }
 }
 
-/// Commands sent to the uDMX worker.
-#[derive(Debug)]
-pub enum UdmxCommand {
-    /// Submit full frame data for output.
-    SubmitFrame {
-        /// Selected USB device selector.
-        device: String,
-        /// Full DMX frame data.
-        data: Vec<u8>,
-    },
-    /// Shutdown worker loop.
-    Shutdown,
-}
-
-const UDMX_WORKER_IDLE_SLEEP: Duration = Duration::from_millis(10);
 const UDMX_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 const UDMX_RECONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -121,107 +107,174 @@ impl UdmxHotplugListener {
     }
 }
 
-/// Worker handles used to submit uDMX frames and shut down device monitoring.
+/// Worker that writes the latest published uDMX frames on the shared tick grid, plus the
+/// hotplug watcher that reports device changes to it.
 pub(crate) struct UdmxWorker {
-    /// Command sender used to queue frame submissions and shutdown requests.
-    pub(crate) command_tx: UnboundedSender<UdmxCommand>,
-    join_handle: Option<std::thread::JoinHandle<()>>,
+    worker: FixedRateWorker,
     hotplug_listener: Option<UdmxHotplugListener>,
 }
 
 impl UdmxWorker {
-    pub(crate) fn spawn(hotplug_subscribers: UdmxHotplugSubscribers) -> Option<Self> {
+    /// Starts the hotplug watcher and a worker that writes `client`'s published frames on
+    /// every tick of `period`.
+    pub(crate) fn spawn(
+        hotplug_subscribers: UdmxHotplugSubscribers,
+        client: UdmxOutputClient,
+        period: FixedRatePeriod,
+    ) -> Option<Self> {
         let (hotplug_event_rx, hotplug_listener) = spawn_hotplug_listener(hotplug_subscribers);
-
-        let (command_tx, mut command_rx) = unbounded_channel::<UdmxCommand>();
-        let join_handle = thread::Builder::new()
-            .name("udmx-service".to_string())
-            .spawn(move || {
-                let mut devices: HashMap<String, ConnectedUdmxDevice> = HashMap::new();
-                let mut next_retry_at: HashMap<String, Instant> = HashMap::new();
-                loop {
-                    maybe_trigger_debug_worker_panic(DebugPanicTarget::OutputUdmxThread);
-                    if handle_hotplug_events(&mut devices, &hotplug_event_rx) {
-                        next_retry_at.clear();
-                    }
-
-                    if is_process_shutdown_requested() {
-                        break;
-                    }
-
-                    let command = match command_rx.try_recv() {
-                        Ok(command) => command,
-                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
-                            thread::sleep(UDMX_WORKER_IDLE_SLEEP);
-                            continue;
-                        }
-                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
-                    };
-
-                    match command {
-                        UdmxCommand::SubmitFrame { device, data } => {
-                            let selector = normalize_device_selector(&device);
-                            if !devices.contains_key(&selector) {
-                                let retry_at = next_retry_at
-                                    .get(&selector)
-                                    .copied()
-                                    .unwrap_or_else(Instant::now);
-                                if Instant::now() >= retry_at {
-                                    if let Some(opened_device) = init_device(&selector) {
-                                        tracing::info!(selector, "uDMX device connected");
-                                        devices.insert(selector.clone(), opened_device);
-                                    }
-                                    next_retry_at.insert(
-                                        selector.clone(),
-                                        Instant::now() + UDMX_RETRY_INTERVAL,
-                                    );
-                                }
-                            }
-                            let Some(current_device) = devices.get_mut(&selector) else {
-                                continue;
-                            };
-                            if matches!(
-                                submit_frame(current_device, &data),
-                                SubmitFrameResult::DeviceLost
-                            ) {
-                                tracing::error!(
-                                    selector,
-                                    "uDMX output worker disabling output after disconnect"
-                                );
-                                devices.remove(&selector);
-                                next_retry_at.remove(&selector);
-                            }
-                        }
-                        UdmxCommand::Shutdown => break,
-                    }
+        let mut devices = UdmxDevices::new(hotplug_event_rx);
+        let spawned = FixedRateWorker::spawn("udmx-service", period, move || {
+            maybe_trigger_debug_worker_panic(DebugPanicTarget::OutputUdmxThread);
+            if is_process_shutdown_requested() {
+                return ControlFlow::Break(());
+            }
+            devices.write(&client.published());
+            ControlFlow::Continue(())
+        });
+        match spawned {
+            Ok(worker) => {
+                tracing::debug!("uDMX service worker started");
+                Some(Self {
+                    worker,
+                    hotplug_listener,
+                })
+            }
+            Err(error) => {
+                tracing::warn!(?error, "Could not start uDMX output worker");
+                let mut hotplug_listener = hotplug_listener;
+                if let Some(listener) = hotplug_listener.as_mut() {
+                    listener.shutdown();
                 }
-                tracing::debug!("uDMX service worker exiting");
-            })
-            .expect("failed to spawn uDMX service worker");
-
-        tracing::debug!("uDMX service worker started");
-        Some(Self {
-            command_tx,
-            join_handle: Some(join_handle),
-            hotplug_listener,
-        })
+                None
+            }
+        }
     }
 
+    /// Stops the output worker and the hotplug watcher and waits for both to exit.
     pub(crate) fn shutdown(&mut self) {
-        let _ = self.command_tx.send(UdmxCommand::Shutdown);
-        if let Some(join_handle) = self.join_handle.take() {
-            let _ = join_handle.join();
-        }
+        self.worker.shutdown();
         if let Some(hotplug_listener) = self.hotplug_listener.as_mut() {
             hotplug_listener.shutdown();
         }
+        tracing::debug!("uDMX service worker exited");
     }
 
+    /// Returns whether the output worker is still running.
     pub(crate) fn is_alive(&self) -> bool {
-        self.join_handle
-            .as_ref()
-            .is_some_and(|join_handle| !join_handle.is_finished())
+        self.worker.is_alive()
     }
+}
+
+/// Open uDMX devices and what was last written to each, owned by the output worker thread.
+struct UdmxDevices {
+    /// Devices currently open, by normalized selector.
+    open: HashMap<String, ConnectedUdmxDevice>,
+    /// Earliest time a device that failed to open is tried again, by normalized selector.
+    next_retry_at: HashMap<String, Instant>,
+    /// Channel values each open device is known to hold, by normalized selector. Missing
+    /// after a device opens or a write fails, so the next write sends every channel.
+    written: HashMap<String, [u8; MAX_CHANNELS_PER_UNIVERSE]>,
+    /// Device attach and detach notifications from the hotplug watcher.
+    hotplug_event_rx: Option<StdReceiver<UdmxHotplugEvent>>,
+}
+
+impl UdmxDevices {
+    /// Creates an empty device set fed by `hotplug_event_rx`.
+    fn new(hotplug_event_rx: Option<StdReceiver<UdmxHotplugEvent>>) -> Self {
+        Self {
+            open: HashMap::new(),
+            next_retry_at: HashMap::new(),
+            written: HashMap::new(),
+            hotplug_event_rx,
+        }
+    }
+
+    /// Writes one tick's frames, opening devices as needed and sending each device only the
+    /// channels that differ from what it already holds.
+    ///
+    /// The uDMX firmware needs roughly 66 ms to take all 512 channels, so writing whole
+    /// universes would cap output near 15 Hz; a chase or strobe usually changes a few
+    /// channels, which transfer within one tick. A transfer that runs past the next tick
+    /// makes the worker skip that tick instead of queueing frames.
+    fn write(&mut self, frames: &[UdmxFrame]) {
+        if handle_hotplug_events(&mut self.open, &self.hotplug_event_rx) {
+            self.next_retry_at.clear();
+        }
+        self.written
+            .retain(|selector, _| self.open.contains_key(selector));
+
+        for frame in frames {
+            let selector = normalize_device_selector(&frame.device);
+            self.open_if_due(&selector);
+            let Some(device) = self.open.get_mut(&selector) else {
+                continue;
+            };
+            let Some((start, end)) = changed_span(self.written.get(&selector), &frame.data) else {
+                continue;
+            };
+            match submit_frame(device, start, &frame.data[start..end]) {
+                SubmitFrameResult::Submitted => {
+                    self.written.insert(selector, frame.data);
+                }
+                SubmitFrameResult::Failed | SubmitFrameResult::Reconnected => {
+                    self.written.remove(&selector);
+                }
+                SubmitFrameResult::DeviceLost => {
+                    tracing::error!(
+                        selector,
+                        "uDMX output worker disabling output after disconnect"
+                    );
+                    self.open.remove(&selector);
+                    self.next_retry_at.remove(&selector);
+                    self.written.remove(&selector);
+                }
+            }
+        }
+    }
+
+    /// Opens the device for `selector` unless it is open or its retry time has not come.
+    fn open_if_due(&mut self, selector: &str) {
+        if self.open.contains_key(selector) {
+            return;
+        }
+        let now = Instant::now();
+        if self
+            .next_retry_at
+            .get(selector)
+            .is_some_and(|retry_at| now < *retry_at)
+        {
+            return;
+        }
+        if let Some(opened_device) = init_device(selector) {
+            tracing::info!(selector, "uDMX device connected");
+            self.open.insert(selector.to_string(), opened_device);
+        }
+        self.next_retry_at
+            .insert(selector.to_string(), now + UDMX_RETRY_INTERVAL);
+    }
+}
+
+/// Returns the channel range `start..end` that must be written for a device holding
+/// `written` to show `next`, or `None` when nothing changed.
+///
+/// A device whose contents are unknown gets every channel.
+fn changed_span(
+    written: Option<&[u8; MAX_CHANNELS_PER_UNIVERSE]>,
+    next: &[u8; MAX_CHANNELS_PER_UNIVERSE],
+) -> Option<(usize, usize)> {
+    let Some(written) = written else {
+        return Some((0, MAX_CHANNELS_PER_UNIVERSE));
+    };
+    let start = written.iter().zip(next).position(|(old, new)| old != new)?;
+    let end = MAX_CHANNELS_PER_UNIVERSE
+        - written
+            .iter()
+            .zip(next)
+            .rev()
+            .position(|(old, new)| old != new)
+            .unwrap_or_default();
+    Some((start, end))
 }
 
 /// Starts the nusb hotplug listener used by output reconnects and UI discovery refresh.
@@ -336,19 +389,25 @@ fn handle_hotplug_events<DeviceId: Eq, Interface>(
 
 /// Result of writing a DMX frame to the active uDMX device.
 enum SubmitFrameResult {
+    /// The channels were written.
     Submitted,
+    /// The device was lost and reopened without writing, so its contents are unknown.
+    Reconnected,
+    /// The device was lost and could not be reopened.
     DeviceLost,
+    /// The transfer failed for another reason.
     Failed,
 }
 
-/// Submit a DMX frame over USB and attempt reconnect when disconnect is detected.
-fn submit_frame(device: &mut ConnectedUdmxDevice, data: &[u8]) -> SubmitFrameResult {
+/// Writes `data` to the device's channels starting at zero-based channel `start`, and attempts
+/// a reconnect when the device has disconnected.
+fn submit_frame(device: &mut ConnectedUdmxDevice, start: usize, data: &[u8]) -> SubmitFrameResult {
     let control_out = nusb::transfer::ControlOut {
         control_type: nusb::transfer::ControlType::Vendor,
         recipient: nusb::transfer::Recipient::Interface,
         request: 2,               // UDMX_SET_CHANNEL_RANGE
         value: data.len() as u16, // number of channels
-        index: 0,                 // starting channel
+        index: start as u16,      // starting channel
         data,
     };
 
@@ -370,7 +429,7 @@ fn submit_frame(device: &mut ConnectedUdmxDevice, data: &[u8]) -> SubmitFrameRes
                 {
                     tracing::info!(selector, "uDMX reconnect succeeded");
                     *device = new_device;
-                    return SubmitFrameResult::Submitted;
+                    return SubmitFrameResult::Reconnected;
                 }
                 return SubmitFrameResult::DeviceLost;
             }
@@ -548,6 +607,7 @@ pub struct UdmxOutputService {
     slot: WorkerSlot<UdmxWorker>,
     client: UdmxOutputClient,
     hotplug_subscribers: UdmxHotplugSubscribers,
+    period: FixedRatePeriod,
 }
 
 impl UdmxOutputService {
@@ -556,22 +616,25 @@ impl UdmxOutputService {
             slot: WorkerSlot::new(),
             client: UdmxOutputClient::default(),
             hotplug_subscribers: Arc::new(Mutex::new(Vec::new())),
+            period: FixedRatePeriod::new(IoRuntimeSettings::default().dmx_output_interval()),
         }
     }
 
     /// Ensure a process-lifetime uDMX worker is running.
     pub fn ensure_started(&self) -> bool {
         let hotplug_subscribers = self.hotplug_subscribers.clone();
-        let has_worker = self.slot.ensure(
-            move || UdmxWorker::spawn(hotplug_subscribers.clone()),
+        let client = self.client.clone();
+        let period = self.period.clone();
+        self.slot.ensure(
+            move || UdmxWorker::spawn(hotplug_subscribers.clone(), client.clone(), period.clone()),
             |worker| worker.shutdown(),
             |worker| worker.is_alive(),
-        );
-        let sender = self
-            .slot
-            .with_worker(|worker| worker.map(|worker| worker.command_tx.clone()));
-        self.client.set_sender(sender);
-        has_worker
+        )
+    }
+
+    /// Writes on the DMX output rate from `settings`, retiming a running worker in place.
+    pub fn sync_with_settings(&self, settings: &IoRuntimeSettings) {
+        self.period.set(settings.dmx_output_interval());
     }
 
     /// Cloneable uDMX output client for insertion into ECS worlds.
@@ -591,7 +654,7 @@ impl UdmxOutputService {
     /// Shutdown process-lifetime worker.
     pub fn shutdown(&self) {
         self.slot.shutdown(|worker| worker.shutdown());
-        self.client.set_sender(None);
+        self.client.publish(Vec::new());
     }
 }
 
@@ -697,6 +760,36 @@ mod tests {
         assert!(changed);
         assert!(!devices.contains_key("device-a"));
         assert!(devices.contains_key("device-b"));
+    }
+
+    /// A device whose contents are unknown is sent the whole universe.
+    #[test]
+    fn changed_span_without_written_frame_covers_every_channel() {
+        let next = [7u8; MAX_CHANNELS_PER_UNIVERSE];
+        assert_eq!(
+            changed_span(None, &next),
+            Some((0, MAX_CHANNELS_PER_UNIVERSE))
+        );
+    }
+
+    /// An unchanged frame writes nothing, and a change is narrowed to the first through last
+    /// differing channel, including the final channel of the universe.
+    #[test]
+    fn changed_span_narrows_to_differing_channels() {
+        let written = [0u8; MAX_CHANNELS_PER_UNIVERSE];
+        assert_eq!(changed_span(Some(&written), &written), None);
+
+        let mut next = written;
+        next[3] = 255;
+        next[40] = 10;
+        assert_eq!(changed_span(Some(&written), &next), Some((3, 41)));
+
+        let mut last = written;
+        last[MAX_CHANNELS_PER_UNIVERSE - 1] = 1;
+        assert_eq!(
+            changed_span(Some(&written), &last),
+            Some((MAX_CHANNELS_PER_UNIVERSE - 1, MAX_CHANNELS_PER_UNIVERSE))
+        );
     }
 
     /// Retries a failing device open until it succeeds. The timeout is far above the time three
