@@ -52,7 +52,7 @@ To set one up:
 While it follows the primary, the backup:
 
 - Copies the primary's live show, including unsaved changes, within a few seconds of each change.
-- Follows what the primary is playing about twice a second: running clips and their cues, levels and speeds, the tempo and its beat, timeline playback, master levels and the programmer. After a show change is copied, the backup picks playback up again where the primary is.
+- Follows what the primary is playing: running clips and their cues, levels and speeds, the tempo and its beat, timeline playback, master levels, faders and the programmer. Clip, fader, master, tempo, timecode and programmer changes made on the primary's screens, keyboard and controllers reach the backup as they happen, and the backup also checks its playback against the primary's about twice a second. After a show change is copied, the backup picks playback up again where the primary is.
 - Keeps its timeline audio silent until it takes over.
 - Sends sACN one priority below the show's **sACN priority**, so sACN receivers listen to the primary while both are sending, and switch to the backup on their own if the primary's stream stops.
 - Mutes Art-Net and USB DMX, which have no priority to let the primary win.
@@ -65,7 +65,7 @@ To take over, select **Take over** in the banner or under **Backup server**. The
 
 The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart. A primary forgets its paired devices when it restarts. When the banner says the primary needs its pairing PIN again, enter the new PIN under **Backup server** and select **Pair again**.
 
-When you take over, the backup keeps playing what the primary was playing at its last update, so at most about half a second of changes made just before the primary stopped can be missing. The clip levels faders set are copied, but the fader positions on screen are not. The backup does not yet take over on its own.
+When you take over, the backup keeps playing what the primary was playing. While the backup loads a newly copied show, its banner says it is loading the primary's show. The backup does not yet take over on its own.
 
 ## USB
 

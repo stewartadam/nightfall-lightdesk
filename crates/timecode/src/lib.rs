@@ -52,6 +52,12 @@ impl Plugin for TimecodePlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering TimecodePlugin");
         register_client_command::<TimecodeCommand>(app, Undo::Captured);
+        app.forward_commands_to_backup::<TimecodeCommand>(&[
+            "StartTimecode",
+            "PauseTimecode",
+            "StopTimecode",
+            "SeekTimecode",
+        ]);
         app.add_message::<EngineOperationEnvelope<TimecodeOperation>>();
         app.add_message::<TimecodeEvent>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<

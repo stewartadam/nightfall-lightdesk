@@ -1211,6 +1211,11 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
       const { engineRuntime } = await import("../lib/engine-runtime");
       engineRuntime.sendCommand(data);
     },
+    /** Send an untracked update, such as a fader move, to the backend via WebSocket. */
+    sendUpdate: async (module: string, update: object) => {
+      const { engineRuntime } = await import("../lib/engine-runtime");
+      engineRuntime.sendUpdate(module, update);
+    },
     /** Send a command to the backend and wait for its CommandResult response. */
     sendAndAwait: async (data: object) => {
       const { engineRuntime } = await import("../lib/engine-runtime");

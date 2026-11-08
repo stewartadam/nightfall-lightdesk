@@ -30,6 +30,7 @@ mod client;
 pub mod client_bridge;
 pub mod client_feed;
 pub mod client_ingress;
+pub mod command_forwarding;
 pub mod command_lifecycle;
 pub mod data_provider;
 pub mod eval;
@@ -111,6 +112,10 @@ pub mod prelude {
     pub use crate::client_ingress::{
         ClientIngressGate, CommandJsonEnvelopeReceiver, READ_ONLY_COMMAND_ERROR,
         UpdateJsonEnvelopeReceiver, allow_command_while_read_only, allow_update_while_read_only,
+    };
+    pub use crate::command_forwarding::{
+        CommandForwarding, CommandForwardingAppExt, FORWARDED_COMMAND_SOURCE, ForwardedEntry,
+        RecordedEntry, apply_forwarded_entry, is_forwarded_origin, latest_forwarded_sequence,
     };
     pub use crate::command_lifecycle::{
         ActiveCommand, CommandLifecycleError, CommandNoticeReply, CommandRegistrationError,

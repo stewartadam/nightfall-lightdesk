@@ -8,6 +8,7 @@ edition.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
 nightfall = { path = "../common" }
+nightfall-actions = { path = "../actions" }
 nightfall-engine = { path = "../engine" }
 nightfall-io = { path = "../io", features = ["ecs"] }
 nightfall-websocket = { path = "../websocket" }

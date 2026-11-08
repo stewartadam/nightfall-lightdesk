@@ -13,12 +13,16 @@ use std::sync::{Mutex, OnceLock, mpsc};
 
 use axum::{
     Json,
+    extract::Query,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
 };
 use bevy::prelude::*;
-use nightfall_backup::prelude::{MirroredShowfileReady, ShowfileRevision};
+use nightfall_backup::{
+    forwarding::{ForwardCursor, forward_journal},
+    prelude::{MirroredShowfileReady, ShowfileRevision},
+};
 use nightfall_engine::prelude::*;
 use nightfall_websocket::prelude::HttpRouteRegistry;
 
@@ -61,14 +65,40 @@ pub(crate) fn load_mirrored_showfiles(
     );
 }
 
-/// Registers the routes a backup polls: the revision of this host's live show and checkpoints
-/// of its live state.
+/// Registers the routes a backup polls: the revision of this host's live show, checkpoints of
+/// its live state and the commands it forwards.
 pub(crate) fn register_backup_http_routes(registry: &mut HttpRouteRegistry) {
     registry.register(
         nightfall_backup::SHOWFILE_REVISION_PATH,
         get(current_showfile_revision),
     );
     registry.register(nightfall_backup::LIVE_STATE_PATH, get(current_live_state));
+    registry.register(
+        nightfall_backup::FORWARDED_COMMANDS_PATH,
+        get(forwarded_commands),
+    );
+}
+
+/// Answers with the commands forwarded after the backup's cursor, holding the request open for
+/// a while when there are none yet. Without a cursor it answers at once with where to start.
+async fn forwarded_commands(Query(query): Query<ForwardedQuery>) -> Response {
+    let cursor = query
+        .session
+        .zip(query.after)
+        .map(|(session, after)| ForwardCursor { session, after });
+    Json(
+        forward_journal()
+            .wait_after(cursor, nightfall_backup::FORWARDED_WAIT)
+            .await,
+    )
+    .into_response()
+}
+
+/// A backup's cursor in the forwarded command journal, absent on its first request.
+#[derive(serde::Deserialize)]
+struct ForwardedQuery {
+    session: Option<u64>,
+    after: Option<u64>,
 }
 
 /// Reply channel for one live state checkpoint request.
@@ -114,6 +144,8 @@ pub(crate) fn respond_to_live_state_requests(
 
 /// Answers with a checkpoint of this host's live state.
 async fn current_live_state() -> Response {
+    // A backup asking for checkpoints will read forwarded commands next, so start recording.
+    forward_journal().note_reader();
     let sender = LIVE_STATE_REQUESTS
         .get()
         .and_then(|lock| lock.lock().ok()?.clone());

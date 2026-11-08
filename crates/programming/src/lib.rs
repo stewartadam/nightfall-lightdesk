@@ -74,6 +74,20 @@ impl Plugin for ProgrammingPlugin {
         app.add_settings_command(settings::apply);
         register_client_command::<events::ProgrammerCommand>(app, Undo::Captured);
         register_client_command::<UserCommand>(app, Undo::Captured);
+        app.forward_commands_to_backup::<events::ProgrammerCommand>(&[
+            "ClearProgrammer",
+            "ClearProgrammerSelection",
+            "ClearProgrammerValues",
+            "ReleaseProgrammerValues",
+            "AddProgrammerInstruction",
+            "AddProgrammerInstructionWithActiveSelection",
+            "ApplyAttributeOperations",
+            "SetProgrammerSelection",
+            "SetProgrammerSpatialSelection",
+            "AddProgrammerSelection",
+            "RemoveProgrammerSelection",
+            "RecallCue",
+        ]);
         register_engine_operation::<ProgrammerOperation>(app);
         app.register_command_action::<serde::de::IgnoredAny, events::ProgrammerCommand, _>(
             ActionDescriptor::new(PROGRAMMER_CLEAR_ACTION_ID, "Clear programmer", "Programmer")

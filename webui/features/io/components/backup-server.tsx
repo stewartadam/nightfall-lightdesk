@@ -27,6 +27,8 @@ export function describeBackupLink(state: BackupState): string {
   switch (state.link) {
     case BackupLinkStatus.Connecting:
       return "Connecting to the primary";
+    case BackupLinkStatus.Loading:
+      return "Loading the primary's show";
     case BackupLinkStatus.Synced:
       return state.showfile_name
         ? `In step with the primary's show "${state.showfile_name}"`

@@ -132,14 +132,23 @@ pub fn process_update_json_envelopes(world: &mut World) {
             tracing::trace!(%module, "read_only_update_dropped");
             continue;
         }
-        world.resource_scope(|world, registry: Mut<UpdateDeserializerRegistry>| {
+        let forwarded =
+            crate::command_forwarding::forwards_update(world, &module).then(|| update.clone());
+        let applied = world.resource_scope(|world, registry: Mut<UpdateDeserializerRegistry>| {
             let Some(deserializer) = registry.get(&module) else {
-                return;
+                return false;
             };
-            if let Err(error) = deserializer(world, update, sender) {
-                tracing::warn!(%module, %error, "update_deserialize_failed");
+            match deserializer(world, update, sender) {
+                Ok(()) => true,
+                Err(error) => {
+                    tracing::warn!(%module, %error, "update_deserialize_failed");
+                    false
+                }
             }
         });
+        if applied && let Some(forwarded) = forwarded {
+            crate::command_forwarding::record_forwarded_update(world, module, forwarded);
+        }
     }
 }
 

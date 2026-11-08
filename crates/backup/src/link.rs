@@ -27,9 +27,11 @@ use reqwest::{StatusCode, header};
 use tokio::sync::watch;
 
 use crate::{
-    BackupLinkStatus, EXPORT_SOURCE_HEADER, EXPORT_SOURCE_LIVE, LIVE_STATE_PATH,
-    LIVE_STATE_WAIT_HEADER, PAIRING_PATH, SHOWFILE_EXPORT_PATH, SHOWFILE_REVISION_PATH,
-    ShowfileRevision, preferences,
+    BackupLinkStatus, EXPORT_SOURCE_HEADER, EXPORT_SOURCE_LIVE, FORWARDED_COMMANDS_PATH,
+    LIVE_STATE_PATH, LIVE_STATE_WAIT_HEADER, PAIRING_PATH, SHOWFILE_EXPORT_PATH,
+    SHOWFILE_REVISION_PATH, ShowfileRevision,
+    forwarding::{ForwardCursor, ForwardedBatch, commands_through},
+    preferences,
 };
 
 /// Time between revision checks while the link is healthy.
@@ -37,6 +39,21 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Time between live state checkpoints once the backup holds the primary's show.
 const CHECKPOINT_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Longest a copied show counts as loading. A load that fails leaves the current world in place,
+/// so no new world ends the wait; after this the link reports its plain status again.
+const MIRROR_LOAD_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Longest a request for forwarded commands may take: the primary holds it open for up to
+/// [`crate::FORWARDED_WAIT`] while nothing happens.
+const FORWARDED_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Time between looks for a checkpoint to start reading forwarded commands from.
+const CURSOR_START_POLL: Duration = Duration::from_millis(100);
+
+/// Forwarded entries the link holds for a world that is not taking them, before it gives up on
+/// replaying them.
+const MAX_QUEUED_FORWARDED: usize = 4096;
 
 /// Sequence of the newest checkpoint received, shared by every primary this process follows, so
 /// a world that applied a checkpoint from an earlier link never mistakes a new one for stale.
@@ -116,9 +133,35 @@ struct LinkShared {
     report: LinkReport,
     mirror: Option<MirroredShow>,
     checkpoint: Option<LiveCheckpoint>,
+    /// Forwarded commands the world has not taken yet, oldest first.
+    forwarded: Vec<ForwardedBatch>,
+    /// When the world took the newest copied show to load, until a world with it starts.
+    loading_since: Option<Instant>,
+    /// Whether forwarded commands are held back while a checkpoint is requested.
+    holding: bool,
     /// Keeps the newest unpacked show on disk until the next one replaces it, since the world
     /// loads it a frame or more after the worker hands it over.
     unpacked: Option<tempfile::TempDir>,
+}
+
+impl LinkShared {
+    /// Queues a forwarded batch for the world. When the world has stopped taking them, as while
+    /// it loads a show, the oldest are replaced by a gap, so the world waits for a checkpoint
+    /// rather than replaying a partial history.
+    fn queue_forwarded(&mut self, batch: ForwardedBatch) {
+        self.forwarded.push(batch);
+        let queued: usize = self.forwarded.iter().map(|batch| batch.entries.len()).sum();
+        if queued > MAX_QUEUED_FORWARDED
+            && let Some(newest) = self.forwarded.pop()
+        {
+            self.forwarded.clear();
+            self.forwarded.push(ForwardedBatch {
+                entries: Vec::new(),
+                gap: true,
+                ..newest
+            });
+        }
+    }
 }
 
 /// Handle to the link worker, shared by every world in the process.
@@ -161,6 +204,9 @@ impl BackupLink {
                 if let Ok(mut shared) = self.shared.lock() {
                     shared.mirror = None;
                     shared.checkpoint = None;
+                    shared.forwarded.clear();
+                    shared.loading_since = None;
+                    shared.holding = false;
                     shared.report = LinkReport::default();
                 }
             }
@@ -169,16 +215,48 @@ impl BackupLink {
     }
 
     /// Returns the latest link progress.
+    ///
+    /// While a copied show is still loading, a link in step reports [`BackupLinkStatus::Loading`]
+    /// instead, so the backup is not called in step before it holds the show.
     pub(crate) fn report(&self) -> LinkReport {
-        self.shared
-            .lock()
-            .map(|shared| shared.report.clone())
-            .unwrap_or_default()
+        let Ok(shared) = self.shared.lock() else {
+            return LinkReport::default();
+        };
+        let mut report = shared.report.clone();
+        let loading = shared
+            .loading_since
+            .is_some_and(|since| since.elapsed() < MIRROR_LOAD_TIMEOUT);
+        if loading && report.status == BackupLinkStatus::Synced {
+            report.status = BackupLinkStatus::Loading;
+        }
+        report
     }
 
-    /// Takes the show unpacked since the previous call, if any.
+    /// Takes the show unpacked since the previous call, if any, and counts it as loading until
+    /// [`Self::finish_mirror_load`].
     pub(crate) fn take_mirror(&self) -> Option<MirroredShow> {
-        self.shared.lock().ok()?.mirror.take()
+        let mut shared = self.shared.lock().ok()?;
+        let mirror = shared.mirror.take()?;
+        shared.loading_since = Some(Instant::now());
+        Some(mirror)
+    }
+
+    /// Records that a new world started, which ends any copied show's load.
+    pub(crate) fn finish_mirror_load(&self) {
+        if let Ok(mut shared) = self.shared.lock() {
+            shared.loading_since = None;
+        }
+    }
+
+    /// Takes the commands forwarded since the previous call, oldest first, or none while a
+    /// checkpoint is being requested.
+    pub(crate) fn take_forwarded(&self) -> Vec<ForwardedBatch> {
+        self.shared
+            .lock()
+            .ok()
+            .filter(|shared| !shared.holding)
+            .map(|mut shared| std::mem::take(&mut shared.forwarded))
+            .unwrap_or_default()
     }
 
     /// Returns the newest checkpoint when it is newer than `applied`, the sequence a world last
@@ -342,26 +420,39 @@ async fn follow(target: &LinkTarget, shared: &Mutex<LinkShared>) {
     }
 
     let cookie = token.map(|token| format!("{}={token}", pairing_cookie_name(&target.address)));
+    tokio::join!(
+        follow_show_and_checkpoints(&client, &base, cookie.as_deref(), shared),
+        follow_commands(&client, &base, cookie.as_deref(), shared),
+    );
+}
+
+/// Keeps the backup's copy of the show in step with the primary's revisions and fetches live
+/// state checkpoints while a show is loaded. Never returns.
+async fn follow_show_and_checkpoints(
+    client: &reqwest::Client,
+    base: &str,
+    cookie: Option<&str>,
+    shared: &Mutex<LinkShared>,
+) {
     let mut loaded_revision: Option<String> = None;
     let mut next_revision_check = Instant::now();
     loop {
         if Instant::now() >= next_revision_check {
-            let wait = check_revision(
-                &client,
-                &base,
-                cookie.as_deref(),
-                &mut loaded_revision,
-                shared,
-            )
-            .await;
+            let wait = check_revision(client, base, cookie, &mut loaded_revision, shared).await;
             next_revision_check = Instant::now() + wait;
         }
         if loaded_revision.is_some() {
+            // Forwarded commands wait while the checkpoint is requested, so every one the world
+            // replays was recorded before the primary captured it: the checkpoint is never older
+            // than what the world already applied.
+            set_holding(shared, true);
             let requested_at = Instant::now();
-            match fetch_live_state(&client, &base, cookie.as_deref()).await {
-                Ok((snapshot, primary_wait)) => {
-                    let round_trip = requested_at.elapsed().saturating_sub(primary_wait);
-                    if let Ok(mut shared) = shared.lock() {
+            let fetched = fetch_live_state(client, base, cookie).await;
+            if let Ok(mut shared) = shared.lock() {
+                shared.holding = false;
+                match fetched {
+                    Ok((snapshot, primary_wait)) => {
+                        let round_trip = requested_at.elapsed().saturating_sub(primary_wait);
                         shared.checkpoint = Some(LiveCheckpoint {
                             sequence: CHECKPOINT_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1,
                             snapshot,
@@ -369,14 +460,115 @@ async fn follow(target: &LinkTarget, shared: &Mutex<LinkShared>) {
                             transit: round_trip / 2,
                         });
                     }
-                }
-                Err(error) => {
-                    tracing::debug!(?error, "backup_live_state_fetch_failed");
+                    Err(error) => {
+                        tracing::debug!(?error, "backup_live_state_fetch_failed");
+                    }
                 }
             }
         }
         tokio::time::sleep(CHECKPOINT_INTERVAL).await;
     }
+}
+
+/// Holds forwarded commands back from the world, or releases them.
+fn set_holding(shared: &Mutex<LinkShared>, holding: bool) {
+    if let Ok(mut shared) = shared.lock() {
+        shared.holding = holding;
+    }
+}
+
+/// Returns where to start reading forwarded commands: just after the commands the newest
+/// checkpoint reflects, when it is newer than `used`, the checkpoint an earlier start came from.
+fn start_cursor(shared: &Mutex<LinkShared>, used: Option<u64>) -> Option<(u64, ForwardCursor)> {
+    let shared = shared.lock().ok()?;
+    let checkpoint = shared.checkpoint.as_ref()?;
+    if used >= Some(checkpoint.sequence) {
+        return None;
+    }
+    let through = commands_through(&checkpoint.snapshot)?;
+    Some((
+        checkpoint.sequence,
+        ForwardCursor {
+            session: through.session,
+            after: through.sequence,
+        },
+    ))
+}
+
+/// Reads the commands the primary forwards as they happen and queues them for the world.
+///
+/// Reading starts right after the commands a checkpoint reflects, so nothing between the
+/// checkpoint and the first forwarded command is missed. After a gap it starts again from the
+/// next checkpoint. Never returns.
+async fn follow_commands(
+    client: &reqwest::Client,
+    base: &str,
+    cookie: Option<&str>,
+    shared: &Mutex<LinkShared>,
+) {
+    let mut cursor: Option<ForwardCursor> = None;
+    let mut started_from: Option<u64> = None;
+    loop {
+        let Some(current) = cursor else {
+            match start_cursor(shared, started_from) {
+                Some((checkpoint, start)) => {
+                    started_from = Some(checkpoint);
+                    cursor = Some(start);
+                }
+                None => tokio::time::sleep(CURSOR_START_POLL).await,
+            }
+            continue;
+        };
+        match fetch_forwarded(client, base, cookie, Some(current)).await {
+            Ok(batch) => {
+                cursor = (!batch.gap).then_some(ForwardCursor {
+                    session: batch.session,
+                    after: batch.latest,
+                });
+                if (batch.gap || !batch.entries.is_empty())
+                    && let Ok(mut shared) = shared.lock()
+                {
+                    shared.queue_forwarded(batch);
+                }
+            }
+            Err(error) => {
+                tracing::debug!(?error, "backup_forwarded_fetch_failed");
+                tokio::time::sleep(RETRY_INTERVAL).await;
+            }
+        }
+    }
+}
+
+/// Waits for the primary to forward commands after `cursor`.
+async fn fetch_forwarded(
+    client: &reqwest::Client,
+    base: &str,
+    cookie: Option<&str>,
+    cursor: Option<ForwardCursor>,
+) -> Result<ForwardedBatch, LinkError> {
+    let query = cursor.map_or_else(String::new, |cursor| {
+        format!("?session={}&after={}", cursor.session, cursor.after)
+    });
+    let mut request = client
+        .get(format!("{base}{FORWARDED_COMMANDS_PATH}{query}"))
+        .timeout(FORWARDED_REQUEST_TIMEOUT);
+    if let Some(cookie) = cookie {
+        request = request.header(header::COOKIE, cookie);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|error| LinkError::from_request(&error))?;
+    let body = check_status(response)
+        .await?
+        .bytes()
+        .await
+        .map_err(|error| LinkError::from_request(&error))?;
+    serde_json::from_slice(&body).map_err(|error| {
+        LinkError::Failed(format!(
+            "The primary forwarded commands this version cannot read: {error}"
+        ))
+    })
 }
 
 /// Checks the primary's show revision, copying the show when it changed, records the outcome in

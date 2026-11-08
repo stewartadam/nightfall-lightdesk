@@ -104,6 +104,7 @@ fn handle_ingress_typed<C: IngressCommand + Clone + 'static>(
         return;
     }
 
+    crate::command_forwarding::record_forwarded_command(world, command, &origin);
     let Some(mut messages) = world.get_resource_mut::<Messages<CommandEnvelope<C>>>() else {
         tracing::warn!(
             command_type = %std::any::type_name::<C>(),

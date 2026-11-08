@@ -316,3 +316,111 @@ test("backup follows the primary's playback and keeps it on takeover", async ({
     stopPlaywrightWorkerSlot(primary.workerSlot);
   }
 });
+
+/** Reads how many commands the page's backend has recorded for its backup. */
+async function forwardedPosition(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/backup/commands");
+    return ((await response.json()) as { latest: number }).latest;
+  });
+}
+
+/** Reads the console value of the fader at `index` from the page's fader store. */
+async function faderValue(
+  page: Page,
+  index: number,
+): Promise<number | undefined> {
+  return page.evaluate(
+    (index) =>
+      (
+        (window as any).appStores.faders.get() as {
+          index: number;
+          console_value: number;
+        }[]
+      ).find((fader) => fader.index === index)?.console_value,
+    index,
+  );
+}
+
+/**
+ * A backup replays the commands and fader moves the primary accepts as they happen, including
+ * fader positions, which live state checkpoints do not carry.
+ */
+test("backup replays the primary's fader moves as they happen", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto("/?e2e=1");
+    await waitForDockviewApp(page);
+
+    await openPanel(page, "I/O Transports");
+    const settings = page.getByTestId("backup-server-settings");
+    await settings
+      .getByTestId("backup-primary-address")
+      .fill(`127.0.0.1:${primary.backend.backendPort}`);
+    await settings.getByTestId("backup-follow").click();
+    const banner = page.getByTestId("backup-banner");
+    await expect(banner).toContainText("In step with the primary's", {
+      timeout: 60_000,
+    });
+    await expect(page.getByTestId("startup-splash")).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    // Give the backup a checkpoint to start replaying from.
+    await page.waitForTimeout(1_500);
+
+    const fader = await primaryPage.evaluate(
+      () =>
+        ((window as any).appStores.faders.get() as { index: number }[])[2]
+          ?.index,
+    );
+    expect(fader).toBeDefined();
+    const forwardedBefore = await forwardedPosition(primaryPage);
+    await primaryPage.evaluate(
+      (fader) =>
+        (window as any).appStores.sendUpdate("FaderUpdate", {
+          type: "SetConsoleValue",
+          data: { fader_index: fader, value: 60 },
+        }),
+      fader,
+    );
+    await expect
+      .poll(() => faderValue(primaryPage, fader as number))
+      .toBeCloseTo(60, 1);
+    await expect
+      .poll(() => faderValue(page, fader as number), { timeout: 10_000 })
+      .toBeCloseTo(60, 1);
+    expect(await forwardedPosition(primaryPage)).toBeGreaterThan(
+      forwardedBefore,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath("8-backup-replays-fader.png"),
+    });
+
+    await primaryPage.evaluate(
+      (fader) =>
+        (window as any).appStores.sendUpdate("FaderUpdate", {
+          type: "SetConsoleValue",
+          data: { fader_index: fader, value: 0 },
+        }),
+      fader,
+    );
+    await expect
+      .poll(() => faderValue(page, fader as number), { timeout: 10_000 })
+      .toBeCloseTo(0, 2);
+    await primaryPage.context().close();
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});

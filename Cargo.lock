@@ -5314,6 +5314,7 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "nightfall",
+ "nightfall-actions",
  "nightfall-engine",
  "nightfall-io",
  "nightfall-websocket",

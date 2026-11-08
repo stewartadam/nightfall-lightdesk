@@ -1115,6 +1115,7 @@ pub fn expand_fader_button_commands(
     masters: Res<DataProvider<Master>>,
     mut flash_outputs: FlashOutputs,
     mut responder: CommandResponder,
+    mut forwarding: Option<ResMut<CommandForwarding>>,
 ) {
     for envelope in pending.drain() {
         let Some(input) = envelope
@@ -1147,6 +1148,13 @@ pub fn expand_fader_button_commands(
             FaderButtonInput::Go(_) => None,
         };
         if let Some(result) = held_input {
+            // Flash buttons never reach dispatch, where commands are recorded for a backup.
+            if result.is_ok()
+                && let Some(forwarding) = forwarding.as_mut()
+                && let Some(command) = envelope.payload.as_any().downcast_ref::<FaderCommand>()
+            {
+                forwarding.record_command(command, None);
+            }
             finish_fader_command(&mut responder, envelope.command_id, result);
             continue;
         }

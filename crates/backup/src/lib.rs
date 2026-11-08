@@ -24,8 +24,11 @@ use nightfall_engine::prelude::*;
 use nightfall_io::DmxOutputStandby;
 use serde::{Deserialize, Serialize};
 
+pub mod forwarding;
 mod link;
 mod preferences;
+
+use forwarding::CommandsThrough;
 
 /// Prelude for ergonomic imports.
 pub mod prelude {
@@ -51,6 +54,12 @@ pub const LIVE_STATE_WAIT_HEADER: &str = "x-nightfall-capture-wait-ms";
 
 /// Primary route that exports its live show as an archive.
 pub const SHOWFILE_EXPORT_PATH: &str = "/api/showfiles/current/export";
+
+/// Primary route a backup long-polls for the commands the primary forwards as they happen.
+pub const FORWARDED_COMMANDS_PATH: &str = "/api/backup/commands";
+
+/// Longest the primary holds a forwarded commands request open while nothing happens.
+pub const FORWARDED_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Export response header naming where the exported show came from.
 pub const EXPORT_SOURCE_HEADER: &str = "x-showfile-export-source";
@@ -81,6 +90,8 @@ pub enum BackupLinkStatus {
     Off,
     /// The host is reaching the primary for the first time.
     Connecting,
+    /// The host copied the primary's current show and is loading it.
+    Loading,
     /// The host holds the primary's current show.
     Synced,
     /// The primary refused this host and needs its pairing PIN again.
@@ -212,6 +223,7 @@ fn restore_backup_role(
     role_error.0 = error;
     *standby = DmxOutputStandby(state.is_backup());
     gate.set_read_only(state.read_only_reason());
+    link::process_backup_link().finish_mirror_load();
     link::process_backup_link().set_target(stored.primary_address.map(|address| {
         link::LinkTarget {
             address,
@@ -326,23 +338,48 @@ fn sync_backup_link(
     }
 }
 
-/// Sequence of the newest live state checkpoint this world applied. Every world starts without
-/// one, so the world a show load swaps in applies the latest checkpoint straight away.
+/// How far this world has followed the primary. Every world starts with neither, so the world a
+/// show load swaps in applies the latest checkpoint straight away and replays forwarded
+/// commands only from there.
 #[derive(Resource, Debug, Default)]
-struct AppliedCheckpoint(Option<u64>);
+struct BackupTracking {
+    /// Sequence of the newest checkpoint this world looked at.
+    checkpoint: Option<u64>,
+    /// The newest forwarded command this world's state reflects, once a checkpoint told it
+    /// where to start. `None` while forwarded commands cannot be replayed.
+    through: Option<CommandsThrough>,
+}
+
+impl BackupTracking {
+    /// Returns whether a checkpoint reflecting `through` is older than what this world already
+    /// replayed, so restoring it would undo forwarded commands.
+    fn is_stale(&self, through: Option<CommandsThrough>) -> bool {
+        matches!(
+            (self.through, through),
+            (Some(current), Some(through))
+                if current.session == through.session && through.sequence < current.sequence
+        )
+    }
+}
 
 /// Brings this backup's playback, tempo, masters and programmer in line with the primary's newest
-/// checkpoint. Does nothing once this host stops being a backup, so a takeover keeps the last
-/// state it applied.
+/// checkpoint, unless forwarded commands already took this world past it. Does nothing once this
+/// host stops being a backup, so a takeover keeps the last state it applied.
 fn apply_live_state_checkpoints(world: &mut World) {
     if !world.resource::<BackupState>().is_backup() {
         return;
     }
-    let applied = world.resource::<AppliedCheckpoint>().0;
+    let applied = world.resource::<BackupTracking>().checkpoint;
     let Some(checkpoint) = link::process_backup_link().checkpoint_after(applied) else {
         return;
     };
-    world.resource_mut::<AppliedCheckpoint>().0 = Some(checkpoint.sequence);
+    let through = forwarding::commands_through(&checkpoint.snapshot);
+    let mut tracking = world.resource_mut::<BackupTracking>();
+    tracking.checkpoint = Some(checkpoint.sequence);
+    if tracking.is_stale(through) {
+        return;
+    }
+    tracking.through = through;
     let errors = restore_live_state(
         world,
         &checkpoint.snapshot,
@@ -352,6 +389,45 @@ fn apply_live_state_checkpoints(world: &mut World) {
     );
     for error in errors {
         tracing::warn!(%error, "backup_live_state_restore_failed");
+    }
+}
+
+/// Replays the commands the primary forwarded since this world's checkpoint, in order, and
+/// skips those the checkpoint already reflects. A gap in the primary's history stops replay
+/// until the next checkpoint.
+///
+/// Until a checkpoint tells this world where to start, as in a world a show load just swapped
+/// in, forwarded commands stay queued, so none between that checkpoint and now are lost.
+fn replay_forwarded_commands(world: &mut World) {
+    if !world.resource::<BackupState>().is_backup() {
+        let _ = link::process_backup_link().take_forwarded();
+        return;
+    }
+    if world.resource::<BackupTracking>().through.is_none() {
+        return;
+    }
+    for batch in link::process_backup_link().take_forwarded() {
+        let mut tracking = world.resource_mut::<BackupTracking>();
+        if batch.gap {
+            tracking.through = None;
+            continue;
+        }
+        let Some(mut through) = tracking
+            .through
+            .filter(|through| through.session == batch.session)
+        else {
+            continue;
+        };
+        for (sequence, entry) in batch.entries {
+            if sequence <= through.sequence {
+                continue;
+            }
+            through.sequence = sequence;
+            if let Err(error) = apply_forwarded_entry(world, entry) {
+                tracing::warn!(%error, "backup_forwarded_command_failed");
+            }
+        }
+        world.resource_mut::<BackupTracking>().through = Some(through);
     }
 }
 
@@ -366,7 +442,13 @@ impl Plugin for BackupPlugin {
         tracing::debug!("Registering BackupPlugin");
         app.init_resource::<BackupState>();
         app.init_resource::<RoleError>();
-        app.init_resource::<AppliedCheckpoint>();
+        app.init_resource::<BackupTracking>();
+        app.init_resource::<CommandForwarding>();
+        app.register_live_state(
+            forwarding::COMMANDS_LIVE_STATE,
+            forwarding::capture_commands_through,
+            forwarding::restore_commands_through,
+        );
         app.init_resource::<DmxOutputStandby>();
         app.init_resource::<ClientIngressGate>();
         app.add_message::<MirroredShowfileReady>();
@@ -376,14 +458,20 @@ impl Plugin for BackupPlugin {
         app.add_systems(Startup, restore_backup_role);
         app.add_systems(
             Update,
-            (
-                handle_backup_commands,
-                sync_backup_link,
-                apply_live_state_checkpoints,
-            )
+            (handle_backup_commands, sync_backup_link)
                 .chain()
                 .in_set(EventHandling),
         );
+        // Replayed commands join the frame's command buffer before it is processed, so their
+        // effect lands in the same frame and the next checkpoint never applies them twice.
+        app.add_systems(
+            Update,
+            (apply_live_state_checkpoints, replay_forwarded_commands)
+                .chain()
+                .in_set(InputHandling),
+        );
+        app.add_systems(First, forwarding::update_forward_recording);
+        app.add_systems(Last, forwarding::publish_forwarded_commands);
         app.add_resource_feed::<BackupState>();
     }
 }
@@ -391,6 +479,22 @@ impl Plugin for BackupPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A checkpoint older than the forwarded commands a world replayed is stale, while a newer
+    /// one, one from a restarted primary, or the first one is not.
+    #[test]
+    fn checkpoints_behind_replayed_commands_are_stale() {
+        let through = |session, sequence| Some(CommandsThrough { session, sequence });
+        let tracking = BackupTracking {
+            checkpoint: Some(4),
+            through: through(1, 10),
+        };
+        assert!(tracking.is_stale(through(1, 9)));
+        assert!(!tracking.is_stale(through(1, 10)));
+        assert!(!tracking.is_stale(through(1, 11)));
+        assert!(!tracking.is_stale(through(2, 1)));
+        assert!(!BackupTracking::default().is_stale(through(1, 1)));
+    }
 
     /// Typed addresses normalize to `host:port`, and anything else is refused with guidance.
     #[test]

@@ -54,6 +54,9 @@ impl Plugin for TempoPlugin {
         tracing::debug!("Registering TempoPlugin");
         app.init_resource::<ShowTempo>();
         register_client_command::<TempoCommand>(app, Undo::Captured);
+        // Taps, resyncs and nudges depend on when they land, so the backup takes the tempo and
+        // phase they produce from checkpoints instead.
+        app.forward_commands_to_backup::<TempoCommand>(&["SetBpm", "Multiply", "SetBeatsPerBar"]);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::TempoAstConverter>(
         );
         actions::register_tempo_actions(app);

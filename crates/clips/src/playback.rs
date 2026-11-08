@@ -68,6 +68,22 @@ impl Plugin for ClipsPlugin {
         register_clip_source_routing(app);
         crate::register_clip_actions(app);
         register_client_command::<InstanceCommand>(app, Undo::Captured);
+        app.forward_commands_to_backup::<ClipCommand>(&[
+            "StartClip",
+            "StartClipAtTiming",
+            "StopClip",
+            "StopClipAtTiming",
+            "GoClip",
+            "BackClip",
+            "LaunchArmed",
+            "SetSpeed",
+            "GotoClip",
+        ])
+        .forward_commands_to_backup::<InstanceCommand>(&[
+            "StopAll",
+            "StopByTag",
+            "StopByKind",
+        ]);
         register_engine_operation::<PlaybackOperation>(app);
         register_engine_operation::<PlaybackReleaseOperation>(app);
         app.add_message::<InstanceControlUpdate>();

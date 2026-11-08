@@ -75,6 +75,16 @@ impl Plugin for ControlsPlugin {
         app.add_message::<ClientDisconnected>();
         register_update_deserializer(app, "FaderUpdate", websocket::deserialize_fader_update);
         register_update_deserializer(app, "MasterUpdate", websocket::deserialize_master_update);
+        app.forward_commands_to_backup::<MasterCommand>(&[
+            "SetMasterLevel",
+            "ToggleMaster",
+            "CommitMasterLevel",
+        ])
+        // Go and the other button modes become clip and master commands, which are forwarded
+        // themselves; only flash presses and releases are forwarded as fader commands.
+        .forward_commands_to_backup::<FaderCommand>(&["PressButton", "ReleaseButton"])
+        .forward_updates_to_backup("FaderUpdate")
+        .forward_updates_to_backup("MasterUpdate");
 
         app.init_resource::<DataProvider<Master>>();
         app.init_resource::<Faders>();
