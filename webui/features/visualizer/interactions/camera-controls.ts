@@ -38,15 +38,6 @@ type CapturingControlsElement = HTMLElement & {
   releasePointerCapture?: (pointerId: number) => void;
 };
 
-type OrbitControlsPointerInternals = OrbitControls & {
-  state?: number;
-  _pointers?: number[];
-  _pointerPositions?: Record<number, unknown>;
-  _onPointerMove?: EventListener;
-  _onPointerUp?: EventListener;
-  domElement: CapturingControlsElement;
-};
-
 /**
  * Base speed for dolly movement. Actual speed scales with current distance
  * to maintain consistent perceived movement at all zoom levels.
@@ -187,36 +178,58 @@ function releasePointerCapture(
 }
 
 /**
- * Clear OrbitControls pointer-drag state without changing the camera.
+ * Follows OrbitControls drags through its public events and the pointers it captures,
+ * so a drag can be abandoned without reading the controls' private pointer state.
  */
-function clearOrbitControlsPointerState(controls: OrbitControls): void {
-  const internals = controls as OrbitControlsPointerInternals;
-  const activePointerIds = [...(internals._pointers ?? [])];
-
-  for (const pointerId of activePointerIds) {
-    releasePointerCapture(internals.domElement, pointerId);
-  }
-
-  const ownerDocument = internals.domElement.ownerDocument as
-    | EventTarget
-    | undefined;
-  if (ownerDocument && internals._onPointerMove) {
-    ownerDocument.removeEventListener("pointermove", internals._onPointerMove);
-  }
-  if (ownerDocument && internals._onPointerUp) {
-    ownerDocument.removeEventListener("pointerup", internals._onPointerUp);
-  }
-
-  if (internals._pointers) {
-    internals._pointers.length = 0;
-  }
-  if (internals._pointerPositions) {
-    internals._pointerPositions = {};
-  }
-  if (internals.state !== undefined && internals.state !== -1) {
-    internals.dispatchEvent({ type: "end" });
-  }
-  internals.state = -1;
+function trackOrbitDrag(
+  controls: OrbitControls,
+  domElement: CapturingControlsElement,
+): { cancel(): void; dispose(): void } {
+  const pointers = new Set<number>();
+  let dragging = false;
+  /** OrbitControls captures every pointer it accepts on press. */
+  const handlePointerDown = (event: PointerEvent) => {
+    if (controls.enabled) pointers.add(event.pointerId);
+  };
+  /** Forgets a pointer once it is released or the browser cancels it. */
+  const handlePointerUp = (event: PointerEvent) => {
+    pointers.delete(event.pointerId);
+  };
+  /** Marks a drag as started. */
+  const handleStart = () => {
+    dragging = true;
+  };
+  /** Marks the drag as finished, whether by the user or by cancelling; no pointer is held. */
+  const handleEnd = () => {
+    dragging = false;
+    pointers.clear();
+  };
+  domElement.addEventListener("pointerdown", handlePointerDown);
+  domElement.addEventListener("pointerup", handlePointerUp);
+  domElement.addEventListener("pointercancel", handlePointerUp);
+  controls.addEventListener("start", handleStart);
+  controls.addEventListener("end", handleEnd);
+  return {
+    /** Ends any drag in progress without moving the camera, keeping the controls usable. */
+    cancel() {
+      for (const pointerId of pointers)
+        releasePointerCapture(domElement, pointerId);
+      pointers.clear();
+      // Disconnecting drops the controls' pointer list, document drag listeners and drag
+      // state; reconnecting restores its element listeners for the next interaction.
+      controls.disconnect();
+      controls.connect(domElement);
+      if (dragging) controls.dispatchEvent({ type: "end" });
+    },
+    /** Stops following drags; the controls themselves stay connected. */
+    dispose() {
+      domElement.removeEventListener("pointerdown", handlePointerDown);
+      domElement.removeEventListener("pointerup", handlePointerUp);
+      domElement.removeEventListener("pointercancel", handlePointerUp);
+      controls.removeEventListener("start", handleStart);
+      controls.removeEventListener("end", handleEnd);
+    },
+  };
 }
 
 /**
@@ -224,7 +237,6 @@ function clearOrbitControlsPointerState(controls: OrbitControls): void {
  */
 export function cancelControlsInteraction(controls: OrbitControls): void {
   controlsBehaviorControllers.get(controls)?.cancelInteraction();
-  clearOrbitControlsPointerState(controls);
 }
 
 /**
@@ -433,13 +445,19 @@ function setupDollyControls(
   });
   domElement.addEventListener("pointerup", handlePointerUp);
   domElement.addEventListener("pointercancel", handlePointerUp);
+  const orbitDrag = trackOrbitDrag(controls, domElement);
 
   return {
     setRotationMode,
     getRotationMode: () => rotationMode,
-    cancelInteraction: cancelCenterLockedRotation,
+    /** Abandons both the center-locked rotation and any OrbitControls drag. */
+    cancelInteraction: () => {
+      cancelCenterLockedRotation();
+      orbitDrag.cancel();
+    },
     dispose: () => {
       cancelCenterLockedRotation();
+      orbitDrag.dispose();
       if (wheelTargetUpdateTimeout !== null) {
         clearTimeout(wheelTargetUpdateTimeout);
         wheelTargetUpdateTimeout = null;

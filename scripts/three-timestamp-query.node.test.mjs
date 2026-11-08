@@ -19,7 +19,8 @@ const UPGRADE_HINT =
   "depend on this three.js member; update the GPU timing code after a three upgrade";
 
 /**
- * GPU timing reads private three.js members. This fails with an actionable
+ * GPU timing reads three.js members that @types/three does not declare, so the
+ * compiler cannot catch their removal. This fails with an actionable
  * message when an upgrade drops or renames any of them, instead of timing
  * silently vanishing.
  */

@@ -370,8 +370,8 @@ export function startRenderLoop(
     callbacks?.onUpdate?.();
     const updateEnd = performance.now();
 
-    // Render scene and track timing. `inspector.frames` is a three.js
-    // internal, guarded by scripts/three-timestamp-query.node.test.mjs.
+    // Render scene and track timing. @types/three omits the inspector's
+    // `frames`, guarded by scripts/three-timestamp-query.node.test.mjs.
     const timedRenderer = state.renderer as unknown as TimestampRenderer;
     const gpu = state.inspector
       ? readInspectorGpuSample(

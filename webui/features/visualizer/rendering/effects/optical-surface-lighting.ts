@@ -6,27 +6,22 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import ClusteredLightsNode from "three/addons/tsl/lighting/ClusteredLightsNode.js";
 import {
   abs,
   Break,
-  clamp,
   directPointLight,
   dot,
   exp,
   Fn,
-  float,
   If,
   int,
   ivec2,
   Loop,
-  log,
   max,
   mix,
   positionView,
   positionWorld,
   pow,
-  screenCoordinate,
   smoothstep,
   textureLoad,
   uniform,
@@ -43,14 +38,20 @@ import {
   LightsNode,
   type Node,
   type NodeFrame,
+  NodeUpdateType,
+  NodeUtils,
   PointLight,
   RGBAFormat,
   type Scene,
-  Vector2,
   Vector3,
   type WebGPURenderer,
 } from "three/webgpu";
 import type { QualityProfile } from "../quality-profile";
+import {
+  type ClusterCamera,
+  ClusteredLightGrid,
+  type ClusterLightData,
+} from "./clustered-light-grid";
 import type { ResolvedEmitterOptics } from "./emitter-optics";
 import { GoboAtlas } from "./gobo-atlas";
 import { sampleGoboProjection } from "./gobo-projection";
@@ -86,32 +87,12 @@ export class OpticalSurfaceLight extends PointLight {
   }
 }
 
-interface ClusterLightData {
-  position: Node<"vec3">;
-  viewPosition: Node<"vec3">;
-  distance: Node<"float">;
-  cutoffDistance?: Node<"float">;
-  color: Node<"vec3">;
-  decay: Node<"float">;
+/** Shading inputs of one clustered source after optical attenuation. */
+interface OpticalLightData extends ClusterLightData {
+  cutoffDistance: Node<"float">;
 }
 
-/** Runtime extension points in the installed Three addon that its declaration file omits. */
-interface ClusterRuntime {
-  _screenClusterIndex: Node<"int">;
-  _gridDimensions: Node<"vec2">;
-  _cameraNear: Node<"float">;
-  _cameraFar: Node<"float">;
-  zSlices: number;
-  _lightSortOrder: number[];
-  getTile(index: Node<"int">): Node<"int">;
-  updateProgram(renderer: unknown): void;
-  updateLightsTexture(camera: Camera): void;
-  getLightData(index: Node<"int">): ClusterLightData;
-}
-const clusterPrototype =
-  ClusteredLightsNode.prototype as unknown as ClusterRuntime;
-
-/** The installed runtime accepts a light vector; its declaration still names a view position. */
+/** The light-vector form `directPointLight` takes at runtime; its declaration still names a view position. */
 const directOpticalPointLight = directPointLight as unknown as (parameters: {
   color: Node<"vec3">;
   lightVector: Node<"vec3">;
@@ -119,45 +100,15 @@ const directOpticalPointLight = directPointLight as unknown as (parameters: {
   decayExponent: Node<"float">;
 }) => ReturnType<typeof directPointLight>;
 
-/** Adds aperture attenuation to Three's existing cluster lookup and material BRDF integration. */
-export class OpticalClusteredLightsNode extends ClusteredLightsNode {
-  private readonly targetSize = new Vector2();
-  private readonly pixelScale = uniform(new Vector2(1, 1));
-  /** Maps scaled fragment pixels into the stable full-canvas cluster grid. */
-  private readonly scaledClusterIndex = Fn(() => {
-    const runtime = this as unknown as ClusterRuntime;
-    const tile = screenCoordinate
-      .mul(this.pixelScale)
-      .div(this.tileSize)
-      .floor();
-    const dimensions = runtime._gridDimensions;
-    const slice = clamp(
-      log(positionView.z.negate().div(runtime._cameraNear))
-        .div(log(runtime._cameraFar.div(runtime._cameraNear)))
-        .mul(runtime.zSlices)
-        .floor(),
-      float(0),
-      float(runtime.zSlices - 1),
-    );
-    return int(tile.x)
-      .add(int(tile.y).mul(int(dimensions.x)))
-      .add(int(slice).mul(int(dimensions.x.mul(dimensions.y))));
-  })().toVar();
-
-  /** Matches cluster pixels to the active render target when the scene resolution is reduced. */
-  updateProgram(renderer: WebGPURenderer): void {
-    const target = renderer.getRenderTarget();
-    renderer.getDrawingBufferSize(this.targetSize);
-    this.pixelScale.value.set(
-      target ? this.targetSize.x / target.width : 1,
-      target ? this.targetSize.y / target.height : 1,
-    );
-    clusterPrototype.updateProgram.call(this, renderer);
-    (this as unknown as ClusterRuntime)._screenClusterIndex =
-      this.scaledClusterIndex;
-  }
-  /** The addon's setLights routes only non-shadowing point lights into this array. */
-  declare clusteredLights: PointLight[];
+/** Clustered surface lighting with aperture attenuation, on top of the material's BRDF integration. */
+export class OpticalClusteredLightsNode extends LightsNode {
+  /** Lights shaded by the material's regular analytic light nodes. */
+  readonly materialLights: Light[] = [];
+  /** Non-shadowing point lights assigned to clusters, capped at {@link maxLights}. */
+  readonly clusteredLights: PointLight[] = [];
+  private readonly grid: ClusteredLightGrid;
+  /** Renderer of the last setup or update, which fits the grid before each render. */
+  private renderer: WebGPURenderer | null = null;
   private readonly apertureData: Float32Array;
   private readonly apertureTexture: DataTexture;
   private readonly atlasColumns = uniform(4);
@@ -174,32 +125,60 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
   omittedPointLights = 0;
   renderedOmittedPointLights = 0;
 
-  /** Keeps cluster uploads inside allocated storage without turning overflow into unbounded material lights. */
+  /**
+   * Clusters non-shadowing point lights and leaves every other light to the material.
+   * Cluster uploads stay inside allocated storage; overflow is not turned into unbounded
+   * material lights but ranked per frame by {@link updateLightsTexture}.
+   */
   override setLights(lights: Light[]): this {
-    super.setLights(lights);
+    this.materialLights.length = 0;
+    this.pointCandidates.length = 0;
+    for (const light of lights) {
+      if (light instanceof PointLight && light.castShadow !== true)
+        this.pointCandidates.push(light);
+      else this.materialLights.push(light);
+    }
     this.omittedPointLights = Math.max(
       0,
-      this.clusteredLights.length - this.maxLights,
+      this.pointCandidates.length - this.maxLights,
     );
-    if (this.omittedPointLights > 0) {
-      this.pointCandidates.length = this.clusteredLights.length;
-      for (let i = 0; i < this.clusteredLights.length; i++)
-        this.pointCandidates[i] = this.clusteredLights[i];
-      this.clusteredLights.length = this.maxLights;
-    } else {
-      this.pointCandidates.length = 0;
-    }
-    return this;
+    const kept = Math.min(this.pointCandidates.length, this.maxLights);
+    this.clusteredLights.length = kept;
+    for (let i = 0; i < kept; i++)
+      this.clusteredLights[i] = this.pointCandidates[i];
+    if (this.omittedPointLights === 0) this.pointCandidates.length = 0;
+    return super.setLights(lights);
+  }
+
+  /** Only lights outside the clusters get the material's per-light analytic nodes. */
+  override getBuiltinLights(): Light[] {
+    return this.materialLights;
+  }
+
+  /**
+   * Includes this node's identity and version, so materials never share cluster bindings
+   * between nodes and rebind when grid storage is replaced.
+   */
+  override customCacheKey(): number {
+    return NodeUtils.hash(this.id, this.version, super.customCacheKey());
   }
 
   /** Bounds surface work with a fixed cluster capacity and a shared optical parameter texture. */
   constructor(
-    maxLights = 1024,
-    maxPerCluster = 64,
+    readonly maxLights = 1024,
+    readonly maxLightsPerCluster = 64,
     private readonly goboAtlas?: GoboAtlas,
     private readonly shadows?: OpticalShadowPool,
   ) {
-    super(maxLights, 32, 24, maxPerCluster);
+    super();
+    this.updateBeforeType = NodeUpdateType.RENDER;
+    this.grid = new ClusteredLightGrid(
+      maxLights,
+      32,
+      24,
+      maxLightsPerCluster,
+      this.id,
+    );
     this.lightSelector = new SurfaceLightSelector(maxLights);
     this.apertureData = new Float32Array(maxLights * 4 * 6);
     this.apertureTexture = new DataTexture(
@@ -237,35 +216,61 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
     this.priorityTexture.needsUpdate = true;
   }
 
-  /**
-   * Runs the addon's per-render light update, then uploads every changed texture that surface
-   * shading samples. Three uploads a texture only while refreshing a render object that binds
-   * it, and it skips that refresh when the object's material, geometry and material-driven
-   * lights are unchanged. A clustered light or gobo edit alone never qualifies, so a static
-   * surface would keep sampling the first upload: a light turned away, recolored or fitted with
-   * a gobo would keep its old footprint. The addon's own light texture escapes this only because
-   * its cluster compute pass binds it every render. An unchanged texture version makes these
-   * calls free.
-   */
-  override updateBefore(frame: NodeFrame): boolean | undefined {
-    const result = super.updateBefore(frame);
-    const renderer = frame.renderer;
-    if (renderer) {
-      renderer.initTexture(this.apertureTexture);
-      renderer.initTexture(this.priorityTexture);
-      if (this.goboAtlas) {
-        renderer.initTexture(this.goboAtlas.texture);
-        renderer.initTexture(this.goboAtlas.stacks.texture);
-      }
-    }
-    return result;
+  /** Depth-sorted cluster index to {@link clusteredLights} index, as of the last texture update. */
+  get sortOrder(): readonly number[] {
+    return this.grid.sortOrder;
   }
 
   /**
-   * Mirrors the addon's depth-sorted light order so each cluster index finds the correct aperture,
-   * and ranks the full-cluster priority list. Textures upload only when their contents change.
+   * Fits the cluster grid to the framebuffer of the render about to start. Called before
+   * that render prepares its objects, so replacing storage cannot affect pending work.
    */
-  updateLightsTexture(camera: Camera): void {
+  updateSize(): void {
+    if (this.renderer && this.grid.fitRenderer(this.renderer))
+      this.needsUpdate = true;
+  }
+
+  /**
+   * Uploads this render's light data, assigns lights to clusters, then uploads every changed
+   * texture that surface shading samples. Three uploads a texture only while refreshing a render
+   * object that binds it, and it skips that refresh when the object's material, geometry and
+   * material-driven lights are unchanged. A clustered light or gobo edit alone never qualifies,
+   * so a static surface would keep sampling the first upload: a light turned away, recolored or
+   * fitted with a gobo would keep its old footprint. The cluster light data escapes this only
+   * because the cluster compute pass binds it every render. An unchanged texture version makes
+   * these calls free.
+   */
+  override updateBefore(frame: NodeFrame): undefined {
+    const { renderer, camera } = frame;
+    if (!renderer || !camera) return;
+    // Lit scene renders all use perspective cameras; see ClusteredLightGrid.dispatch.
+    const clusterCamera = camera as ClusterCamera;
+    this.initGrid(renderer as WebGPURenderer);
+    this.updateLightsTexture(clusterCamera);
+    this.grid.dispatch(renderer as WebGPURenderer, clusterCamera);
+    renderer.initTexture(this.apertureTexture);
+    renderer.initTexture(this.priorityTexture);
+    if (this.goboAtlas) {
+      renderer.initTexture(this.goboAtlas.texture);
+      renderer.initTexture(this.goboAtlas.stacks.texture);
+    }
+  }
+
+  /**
+   * Allocates the grid on first use. Later size changes wait for {@link updateSize}: while
+   * rendering, replaced storage could still be referenced by unsubmitted commands.
+   */
+  private initGrid(renderer: WebGPURenderer): void {
+    this.renderer = renderer;
+    if (!this.grid.ready) this.grid.fitRenderer(renderer);
+  }
+
+  /**
+   * Writes the depth-sorted cluster light data, mirrors that order in the aperture texture so
+   * each cluster index finds its aperture, and ranks the full-cluster priority list. Optical
+   * textures upload only when their contents change.
+   */
+  updateLightsTexture(camera: ClusterCamera): void {
     this.renderedOmittedPointLights = this.omittedPointLights;
     if (this.omittedPointLights > 0)
       this.lightSelector.select(
@@ -274,8 +279,8 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
         this.clusteredLights,
       );
     if (this.goboAtlas) this.atlasColumns.value = this.goboAtlas.tilesPerRow;
-    clusterPrototype.updateLightsTexture.call(this, camera);
-    const order = (this as unknown as ClusterRuntime)._lightSortOrder;
+    this.grid.writeLights(this.clusteredLights, camera);
+    const order = this.grid.sortOrder;
     const stride = this.maxLights * 4;
     const count = Math.min(this.clusteredLights.length, this.maxLights);
     this.texturesChanged = false;
@@ -394,8 +399,8 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
   }
 
   /** Attenuates each clustered source before Three evaluates the receiving surface's BRDF. */
-  getLightData(index: Node<"int">): ClusterLightData {
-    const light = clusterPrototype.getLightData.call(this, index);
+  private getLightData(index: Node<"int">): OpticalLightData {
+    const light = this.grid.lightData(index);
     const right = textureLoad(this.apertureTexture, ivec2(int(index), 0));
     const up = textureLoad(this.apertureTexture, ivec2(int(index), 1));
     const forward = textureLoad(this.apertureTexture, ivec2(int(index), 2));
@@ -473,20 +478,16 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
   override setupLights(
     ...[builder, lightNodes]: Parameters<LightsNode["setupLights"]>
   ): void {
-    const runtime = this as unknown as ClusterRuntime;
-    runtime.updateProgram(builder.renderer);
-    const context = builder as unknown as {
-      context: {
-        reflectedLight: {
-          directDiffuse: Node<"vec3">;
-          directSpecular: Node<"vec3">;
-        };
+    this.initGrid(builder.renderer as WebGPURenderer);
+    const { reflectedLight } = builder.context as {
+      reflectedLight: {
+        directDiffuse: Node<"vec3">;
+        directSpecular: Node<"vec3">;
       };
-      lightsNode: LightsNode;
     };
-    context.context.reflectedLight.directDiffuse.toStack();
-    context.context.reflectedLight.directSpecular.toStack();
-    LightsNode.prototype.setupLights.call(this, builder, lightNodes);
+    reflectedLight.directDiffuse.toStack();
+    reflectedLight.directSpecular.toStack();
+    super.setupLights(builder, lightNodes);
     Fn(() => {
       const listSize = this.maxLightsPerCluster;
       // Cluster lists hold ascending 1-based sorted indices and end at the first 0 unless full,
@@ -495,7 +496,7 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
       Loop(listSize + this.priorityCapacity, ({ i }) => {
         const lightIndex = int(0).toVar();
         If(i.lessThan(listSize), () => {
-          lightIndex.assign(runtime.getTile(i));
+          lightIndex.assign(this.grid.tile(i));
           If(lightIndex.equal(0), () => {
             Break();
           });
@@ -525,13 +526,13 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
                 ),
               ),
             () => {
-              context.lightsNode.setupDirectLight(
+              this.setupDirectLight(
                 builder,
                 this,
                 directOpticalPointLight({
                   color,
                   lightVector,
-                  cutoffDistance: cutoffDistance ?? distance,
+                  cutoffDistance,
                   decayExponent: decay,
                 }),
               );
@@ -542,10 +543,12 @@ export class OpticalClusteredLightsNode extends ClusteredLightsNode {
     }, "void")();
   }
 
-  /** Releases the additional optical textures when the renderer's scene lighting is disposed. */
-  disposeApertures(): void {
+  /** Frees the cluster grid and the optical textures. */
+  override dispose(): void {
+    this.grid.dispose();
     this.apertureTexture.dispose();
     this.priorityTexture.dispose();
+    super.dispose();
   }
 }
 
@@ -572,12 +575,16 @@ export class OpticalSurfaceLighting extends Lighting {
     return omitted;
   }
 
-  /** Clears stale diagnostics even when an empty scene skips light-texture updates. */
+  /**
+   * Clears stale diagnostics even when an empty scene skips light-texture updates, and fits
+   * the cluster grid to this render's framebuffer before any of its objects are prepared.
+   */
   override beginRender(scene: Scene): void {
     const node = this.getNode(scene);
     if (node instanceof OpticalClusteredLightsNode)
       node.renderedOmittedPointLights = 0;
     super.beginRender(scene);
+    if (node instanceof OpticalClusteredLightsNode) node.updateSize();
   }
 
   /** Creates one clustered node per renderer-managed scene/camera lighting context. */
@@ -593,9 +600,9 @@ export class OpticalSurfaceLighting extends Lighting {
     return node;
   }
 
-  /** Releases adapter textures alongside the owning renderer. */
-  dispose(): void {
-    for (const node of this.nodes) node.disposeApertures();
+  /** Releases every lights node's grid and optical textures, plus the shared masks and shadow maps. */
+  override dispose(): void {
+    super.dispose();
     this.nodes.clear();
     this.goboAtlas?.dispose();
     this.shadows?.dispose();
