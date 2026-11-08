@@ -85,6 +85,11 @@ async fn export_current_showfile(Json(options): Json<ShowfileExportRequest>) -> 
             "Application data directory unavailable",
         );
     };
+    let source = if capture.source == crate::diagnostic_showfile::LIVE_SOURCE {
+        nightfall_backup::EXPORT_SOURCE_LIVE
+    } else {
+        nightfall_backup::EXPORT_SOURCE_STORED
+    };
     let result = tokio::task::spawn_blocking(move || {
         let mut prepared = super::export::prepare_showfile_export(
             capture.snapshot,
@@ -92,7 +97,7 @@ async fn export_current_showfile(Json(options): Json<ShowfileExportRequest>) -> 
             &app_data,
             options.policy,
         )?;
-        if capture.source != "current engine state" {
+        if capture.source != crate::diagnostic_showfile::LIVE_SOURCE {
             prepared.warnings.push(
                 "The engine did not respond; the latest stored showfile was exported.".to_string(),
             );
@@ -113,6 +118,7 @@ async fn export_current_showfile(Json(options): Json<ShowfileExportRequest>) -> 
                         "attachment; filename=\"showfile.zip\"",
                     )
                     .header("x-showfile-export-warnings", warnings.to_string())
+                    .header(nightfall_backup::EXPORT_SOURCE_HEADER, source)
                     .body(Body::from_stream(stream))
                     .expect("showfile export response should be valid"),
             )

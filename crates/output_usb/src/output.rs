@@ -10,7 +10,7 @@
 
 use bevy_ecs::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_io::{IoRuntimeSettings, OutputTransport, TransportRuntimePolicy};
+use nightfall_io::{DmxOutputStandby, IoRuntimeSettings, OutputTransport, TransportRuntimePolicy};
 
 use crate::service::{UsbDmxFrame, UsbDmxOutputClient};
 
@@ -19,20 +19,25 @@ use crate::service::{UsbDmxFrame, UsbDmxOutputClient};
 /// Frames come from [`OutputDmxFrames`], which already combines routed console windows,
 /// direct fixture output, and input passthrough for each USB device. The output worker writes
 /// whatever was published last on the shared tick grid, sending each device only the channels
-/// that changed. While USB output is disabled nothing is published, so devices keep their
-/// last values.
+/// that changed. While USB output is disabled, or this node is a standby backup, nothing is
+/// published, so devices keep their last values.
 pub(crate) fn output(
     usb_client: Option<Res<UsbDmxOutputClient>>,
     mut last_effective_output_enabled: Local<Option<bool>>,
     settings: Res<IoRuntimeSettings>,
     transport_policy: Option<Res<TransportRuntimePolicy>>,
+    standby: Option<Res<DmxOutputStandby>>,
     frames: Res<OutputDmxFrames>,
 ) {
+    // USB DMX has no source priority, so a standby backup must not send alongside the primary.
     let usb_output_enabled = transport_policy
         .as_deref()
         .map_or(settings.usb_output_enabled, |policy| {
             policy.usb_output_enabled(&settings)
-        });
+        })
+        && standby
+            .as_deref()
+            .is_none_or(|standby| standby.allows_unprioritized_output());
     if *last_effective_output_enabled != Some(usb_output_enabled) {
         if !usb_output_enabled {
             tracing::info!("USB DMX output is disabled by effective USB output state");
@@ -87,10 +92,21 @@ mod tests {
     /// Runs the output system once with the given settings and frames, returning what it
     /// published for the output worker.
     fn submit_frames(settings: IoRuntimeSettings, frames: Vec<OutputDmxFrame>) -> Vec<UsbDmxFrame> {
+        submit_frames_with_standby(settings, frames, DmxOutputStandby(false))
+    }
+
+    /// Runs the output system once on a node in the given standby state, returning what it
+    /// published for the output worker.
+    fn submit_frames_with_standby(
+        settings: IoRuntimeSettings,
+        frames: Vec<OutputDmxFrame>,
+        standby: DmxOutputStandby,
+    ) -> Vec<UsbDmxFrame> {
         let mut app = App::new();
         let client = UsbDmxOutputClient::default();
         app.insert_resource(client.clone());
         app.insert_resource(settings);
+        app.insert_resource(standby);
         app.init_resource::<OutputDmxFrames>();
         app.world_mut()
             .resource_mut::<OutputDmxFrames>()
@@ -153,6 +169,24 @@ mod tests {
                 },
                 42,
             )],
+        );
+
+        assert!(sent.is_empty());
+    }
+
+    /// Verifies a standby backup keeps USB DMX silent, since USB DMX has no priority to let the
+    /// primary win.
+    #[test]
+    fn output_does_not_send_on_a_standby_backup() {
+        let sent = submit_frames_with_standby(
+            IoRuntimeSettings::default(),
+            vec![frame(
+                OutputTransport::Usb {
+                    device: "default".to_string(),
+                },
+                42,
+            )],
+            DmxOutputStandby(true),
         );
 
         assert!(sent.is_empty());

@@ -17,7 +17,10 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_io::SacnOutputIdentity;
-use nightfall_io::prelude::{IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy};
+use nightfall_io::prelude::{
+    DmxOutputStandby, IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy,
+    effective_sacn_priority,
+};
 
 pub mod output_sacn;
 mod service;
@@ -62,6 +65,32 @@ fn sync_sacn_output_binding(
     );
 }
 
+/// Applies the show's sACN priority, one step lower while this node is a standby backup, to the
+/// output worker whenever either changes.
+fn sync_sacn_priority(
+    sacn_client: Option<Res<service::SacnOutputClient>>,
+    settings: Option<Res<IoRuntimeSettings>>,
+    standby: Option<Res<DmxOutputStandby>>,
+) {
+    let (Some(sacn_client), Some(settings)) = (sacn_client, settings) else {
+        return;
+    };
+    let standby_changed = standby.as_ref().is_some_and(|standby| standby.is_changed());
+    if !settings.is_changed() && !standby_changed {
+        return;
+    }
+    let standby = standby.map(|standby| *standby).unwrap_or_default();
+    let priority = effective_sacn_priority(&settings, standby);
+    if sacn_client.priority() != priority {
+        tracing::info!(
+            priority,
+            standby = standby.is_standby(),
+            "sACN priority set"
+        );
+        sacn_client.set_priority(priority);
+    }
+}
+
 /// Stops the sACN output worker once the app is exiting, while the process is still alive.
 ///
 /// The output service lives in a process-wide static that is never dropped, so without this the
@@ -103,7 +132,14 @@ impl Plugin for OutputSacnPlugin {
         app.insert_resource(sacn_client);
         app.insert_resource(sacn_output_identity);
         app.add_systems(Update, sync_sacn_output_identity.in_set(InputHandling));
-        app.add_systems(Update, sync_sacn_output_binding.after(EventHandling));
+        // The priority is applied before the worker binds, so a standby node's first packet
+        // already carries the lowered priority.
+        app.add_systems(
+            Update,
+            (sync_sacn_priority, sync_sacn_output_binding)
+                .chain()
+                .after(EventHandling),
+        );
         app.add_systems(Last, stop_sacn_output_on_exit);
         app.add_systems(
             Render,
@@ -111,5 +147,52 @@ impl Plugin for OutputSacnPlugin {
                 .after(nightfall_fixtures::output_frames::compose_output_frames)
                 .in_set(DmxOutput),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Builds an app that runs only the priority sync against a fresh output client.
+    fn priority_app(standby: bool) -> (App, service::SacnOutputClient) {
+        let client = service::SacnOutputClient::default();
+        let mut app = App::new();
+        app.insert_resource(client.clone());
+        app.insert_resource(IoRuntimeSettings::default());
+        app.insert_resource(DmxOutputStandby(standby));
+        app.add_systems(Update, sync_sacn_priority);
+        (app, client)
+    }
+
+    /// The worker follows the show's priority, drops one step while the node is a standby
+    /// backup, and returns to the show's priority when the backup takes over.
+    #[test]
+    fn priority_follows_show_setting_and_standby() {
+        let (mut app, client) = priority_app(false);
+        app.update();
+        assert_eq!(client.priority(), 100);
+
+        app.world_mut()
+            .resource_mut::<IoRuntimeSettings>()
+            .sacn_priority = 150;
+        app.update();
+        assert_eq!(client.priority(), 150);
+
+        app.world_mut().resource_mut::<DmxOutputStandby>().0 = true;
+        app.update();
+        assert_eq!(client.priority(), 149);
+
+        app.world_mut().resource_mut::<DmxOutputStandby>().0 = false;
+        app.update();
+        assert_eq!(client.priority(), 150);
+    }
+
+    /// A node that starts as a standby backup never transmits at the show's own priority.
+    #[test]
+    fn standby_node_starts_below_the_show_priority() {
+        let (mut app, client) = priority_app(true);
+        app.update();
+        assert_eq!(client.priority(), 99);
     }
 }

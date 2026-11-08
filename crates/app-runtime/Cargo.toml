@@ -23,6 +23,7 @@ nightfall-config = { path = "../config" }
 nightfall-actions = { path = "../actions" }
 nightfall-macros = { path = "../macros" }
 nightfall-audio = { path = "../audio", optional = true }
+nightfall-backup = { path = "../backup" }
 nightfall-beat-detection = { path = "../beat-detection", optional = true }
 nightfall-composition = { path = "../composition" }
 nightfall-compositor = { path = "../compositor" }

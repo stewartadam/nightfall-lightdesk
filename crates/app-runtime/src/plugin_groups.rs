@@ -37,9 +37,9 @@ pub struct NativePlugins {
 
 impl PluginGroup for NativePlugins {
     /// Builds the shared show plugins, inserts audio after the engine, the websocket server after
-    /// the fixture compositor, telemetry commands after the websocket server, the fixture and
-    /// object libraries after macros, and FX modules after FX, then appends the output and input
-    /// groups.
+    /// the fixture compositor, telemetry commands after the websocket server, the backup role after
+    /// telemetry commands, the fixture and object libraries after macros, and FX modules after FX,
+    /// then appends the output and input groups.
     fn build(self) -> PluginGroupBuilder {
         let timeline = TimelinePlugin::new(self.timeline_audio_enabled);
         #[cfg(feature = "beat-detection")]
@@ -52,6 +52,7 @@ impl PluginGroup for NativePlugins {
         .maybe_core_audio()
         .add_after::<FixtureCompositorPlugin>(WebsocketPlugin::new(self.websocket_port))
         .add_after::<WebsocketPlugin>(crate::telemetry::TelemetryCommandsPlugin)
+        .add_after::<crate::telemetry::TelemetryCommandsPlugin>(nightfall_backup::BackupPlugin)
         .maybe_fixture_library()
         .maybe_object_library()
         .add_after::<FxPlugin>(FxModulePlugin)

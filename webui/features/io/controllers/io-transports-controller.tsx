@@ -40,6 +40,7 @@ import {
   $networkInterfaceStatus,
 } from "../../../state/settings";
 import * as types from "../../../types";
+import { BackupServerSettings } from "../components/backup-server";
 import { ExternalControlSettings } from "../components/external-control-settings";
 import { NetworkInterfaceSummary } from "../components/network-interface-summary";
 import { NetworkTargetAddRow } from "../components/network-target-add-row";
@@ -609,6 +610,7 @@ export function IoTransportsController() {
           defaultInterfaceName={defaultInterfaceName()}
         >
           <ExternalControlSettings />
+          <BackupServerSettings />
         </NetworkInterfaceSummary>
 
         <section class="mb-6" aria-label="USB output transports">

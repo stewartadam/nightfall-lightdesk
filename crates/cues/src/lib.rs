@@ -110,6 +110,7 @@ impl Plugin for CuePlugin {
             },
         );
         register_client_command::<CueCommand>(app, Undo::Captured);
+        allow_command_while_read_only(app, CueCommand::COMMAND_MODULE, "ListColorPaths");
         register_engine_operation::<SequencePlaybackOperation>(app);
         register_engine_operation::<undo::RestoreSequencePosition>(app);
         register_client_command::<events::CuePreviewCommand>(app, Undo::Captured);

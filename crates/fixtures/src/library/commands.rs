@@ -248,6 +248,9 @@ impl FixtureLibraryCommandResult {
 /// [`finish_fixture_library_commands`].
 pub fn register_fixture_library_commands(app: &mut bevy_app::App) {
     register_client_command::<FixtureLibraryCommand>(app, Undo::Skipped);
+    for query in ["ListAvailableFixtures", "GetFixtureProfile"] {
+        allow_command_while_read_only(app, FixtureLibraryCommand::COMMAND_MODULE, query);
+    }
     app.add_message::<FixtureLibraryCommandResult>();
 }
 

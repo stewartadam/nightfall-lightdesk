@@ -257,6 +257,7 @@ dependencies = [
  "nightfall",
  "nightfall-actions",
  "nightfall-audio",
+ "nightfall-backup",
  "nightfall-beat-detection",
  "nightfall-clips",
  "nightfall-cmd-parse",
@@ -5302,6 +5303,28 @@ dependencies = [
  "tokio",
  "tracing",
  "typeshare",
+]
+
+[[package]]
+name = "nightfall-backup"
+version = "0.1.0-alpha.5"
+dependencies = [
+ "axum",
+ "bevy_app",
+ "bevy_ecs",
+ "nightfall",
+ "nightfall-engine",
+ "nightfall-io",
+ "nightfall-websocket",
+ "nightfall-workspace-hack",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "typeshare",
+ "zip",
 ]
 
 [[package]]

@@ -217,6 +217,8 @@ impl Plugin for FixturePlugin {
             universe_stream::DMX_UNIVERSE_WATCH_MODULE,
             universe_stream::deserialize_dmx_universe_watch,
         );
+        allow_update_while_read_only(app, parameter_state::PARAMETER_KEYFRAME_REQUEST_MODULE);
+        allow_update_while_read_only(app, universe_stream::DMX_UNIVERSE_WATCH_MODULE);
 
         app.init_resource::<data_provider_ext::FixtureDataProviderExt>();
         app.init_resource::<routes::InputRoutes>();

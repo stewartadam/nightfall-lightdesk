@@ -39,6 +39,32 @@ A phone, tablet or other computer must enter the **Pairing PIN** shown under Ext
 
 The PIN keeps casual visitors on your network out; it does not protect against an attacker on it. Nightfall serves other devices over plain HTTP, so anyone who can watch network traffic can capture the PIN or a paired device's session and take control. Use External control only on networks you trust.
 
+## Backup server
+
+A backup server is a second computer running Nightfall that keeps a copy of the show on the primary computer, ready to take over if the primary fails.
+
+To set one up:
+
+1. On the primary, turn on **External control** and note its address and **Pairing PIN**.
+1. On the backup, open I/O Transports and enter the primary's address, such as `192.168.1.20:3030`, under **Backup server**.
+1. Enter the primary's PIN and select **Follow primary**. A primary on the same computer does not need a PIN.
+
+While it follows the primary, the backup:
+
+- Copies the primary's live show, including unsaved changes, within a few seconds of each change. Each copy replaces the show on the backup, so playback on the backup starts over from the copied show.
+- Sends sACN one priority below the show's **sACN priority**, so sACN receivers listen to the primary while both are sending, and switch to the backup on their own if the primary's stream stops.
+- Mutes Art-Net and USB DMX, which have no priority to let the primary win.
+- Shows a banner on every connected device and refuses changes made there, including MIDI and OSC controllers mapped in the show. Panel layouts can still be arranged.
+- Copies assets the show uses from outside its folder, such as audio files, so the backup can play them after it takes over.
+
+The backup loads each copy as a working draft under the primary's showfile name, replacing the backup's own unsaved draft of a show with that name. The saved showfile on the backup is not changed.
+
+To take over, select **Take over** in the banner or under **Backup server**. The backup stops following the primary and outputs the copied show at the show's own priority on every transport. Take over only when the primary has stopped, because both computers would otherwise send the same universes at the same priority.
+
+The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart. A primary forgets its paired devices when it restarts. When the banner says the primary needs its pairing PIN again, enter the new PIN under **Backup server** and select **Pair again**.
+
+The backup does not yet follow playback: running cues, fader levels and the programmer on the primary are not copied, and the backup does not take over on its own.
+
 ## USB
 
 Choose a detected USB device for an output target, give the target a unique ID, and enable **USB output** when ready. Review Missing device or duplicate-device status before attempting output. If no device is listed, check the physical connection and host access to the device.

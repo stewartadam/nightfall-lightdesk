@@ -36,6 +36,7 @@ function makeSettings(
     artnet_sync_enabled: false,
     sacn_sync_enabled: false,
     sacn_sync_universe: 1,
+    sacn_priority: 100,
     network_output_enabled: true,
     network_input_enabled: true,
     usb_output_enabled: true,

@@ -16,7 +16,9 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_io::prelude::{IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy};
+use nightfall_io::prelude::{
+    DmxOutputStandby, IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy,
+};
 
 pub mod output_artnet;
 mod service;
@@ -40,25 +42,44 @@ impl Default for OutputArtnetPlugin {
     }
 }
 
+/// Rebinds the Art-Net worker when IO settings, network interfaces or the standby state change.
+///
+/// Art-Net has no source priority, so a standby backup keeps its worker stopped instead of
+/// sending alongside the primary.
 fn sync_artnet_output_binding(
     settings: Option<Res<IoRuntimeSettings>>,
     network_interface_state: Option<Res<NetworkInterfaceState>>,
     transport_policy: Option<Res<TransportRuntimePolicy>>,
+    standby: Option<Res<DmxOutputStandby>>,
 ) {
     let (Some(settings), Some(network_interface_state), Some(transport_policy)) =
         (settings, network_interface_state, transport_policy)
     else {
         return;
     };
-    if !settings.is_changed() && !network_interface_state.is_changed() {
+    let standby_changed = standby.as_ref().is_some_and(|standby| standby.is_changed());
+    if !settings.is_changed() && !network_interface_state.is_changed() && !standby_changed {
         return;
     }
 
     let _ = service::process_artnet_output_service().sync_with_settings(
         &settings,
         &network_interface_state,
-        &transport_policy,
+        &unprioritized_output_policy(&transport_policy, standby.as_deref().copied()),
     );
+}
+
+/// Returns the host transport policy with network output withheld while this node is a standby
+/// backup.
+fn unprioritized_output_policy(
+    policy: &TransportRuntimePolicy,
+    standby: Option<DmxOutputStandby>,
+) -> TransportRuntimePolicy {
+    let allowed = standby.unwrap_or_default().allows_unprioritized_output();
+    TransportRuntimePolicy {
+        allow_network_output: policy.allow_network_output && allowed,
+        ..*policy
+    }
 }
 
 impl Plugin for OutputArtnetPlugin {
@@ -79,5 +100,31 @@ impl Plugin for OutputArtnetPlugin {
                 .in_set(DmxOutput),
         );
         app.add_systems(Update, sync_artnet_output_binding.after(EventHandling));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A standby backup withholds Art-Net output even where the host allows it, and an active
+    /// node keeps the host's own choice.
+    #[test]
+    fn standby_withholds_network_output() {
+        let allowed = TransportRuntimePolicy::default();
+        assert!(
+            !unprioritized_output_policy(&allowed, Some(DmxOutputStandby(true)))
+                .allow_network_output
+        );
+        assert!(
+            unprioritized_output_policy(&allowed, Some(DmxOutputStandby(false)))
+                .allow_network_output
+        );
+        assert!(unprioritized_output_policy(&allowed, None).allow_network_output);
+        let denied = TransportRuntimePolicy::new(false, true, true);
+        assert!(
+            !unprioritized_output_policy(&denied, Some(DmxOutputStandby(false)))
+                .allow_network_output
+        );
     }
 }

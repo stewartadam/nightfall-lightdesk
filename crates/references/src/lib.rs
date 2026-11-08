@@ -280,6 +280,7 @@ impl Plugin for ReferencesPlugin {
             REFERENCE_WATCH_MODULE,
             deserialize_reference_watch,
         );
+        allow_update_while_read_only(app, REFERENCE_WATCH_MODULE);
         app.add_systems(
             Update,
             (

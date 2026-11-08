@@ -36,6 +36,9 @@ impl Plugin for ObjectLibraryPlugin {
 
         // Register object library commands with the engine
         register_client_command::<ObjectLibraryCommand>(app, Undo::Skipped);
+        for query in ["ListAvailableObjects", "GetObjectProfile"] {
+            allow_command_while_read_only(app, ObjectLibraryCommand::COMMAND_MODULE, query);
+        }
         app.add_message::<crate::websocket::ObjectLibraryCommandResult>();
 
         // Register HTTP routes for model serving

@@ -107,7 +107,10 @@ pub mod prelude {
         ClientFeed, ClientFeedAppExt, ClientFeedBuilder, ResourceFeed, ResourceFeedParam, every,
         publish_client_feed, resync_client_feed,
     };
-    pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
+    pub use crate::client_ingress::{
+        ClientIngressGate, CommandJsonEnvelopeReceiver, READ_ONLY_COMMAND_ERROR,
+        UpdateJsonEnvelopeReceiver, allow_command_while_read_only, allow_update_while_read_only,
+    };
     pub use crate::command_lifecycle::{
         ActiveCommand, CommandLifecycleError, CommandNoticeReply, CommandRegistrationError,
         CommandReply, CommandResponder, CommandTracker, FinishedCommand, finish_command_in_world,
@@ -215,6 +218,7 @@ impl Plugin for EnginePlugin {
                 DmxOutput.after(VdimProcessing),
             ),
         );
+        app.init_resource::<ClientIngressGate>();
         app.configure_sets(PostUpdate, ClientFeedback.before(CommandFeedbackEgress));
         app.init_resource::<CommandDeserializerRegistry>();
         app.init_resource::<UpdateDeserializerRegistry>();
@@ -256,6 +260,7 @@ impl Plugin for EnginePlugin {
 
         register_ingress_command::<EngineCommand>(app);
         register_command_deserializer::<EngineCommand>(app, eval::deserialize_engine_command);
+        allow_command_while_read_only(app, EngineCommand::COMMAND_MODULE, "ResyncState");
         protocol::dispatch_ast::register_converter::<ast_conv::EngineAstConverter>();
         app.add_message::<ResyncRequested>();
         app.add_systems(Update, resync::begin_resync.in_set(InputHandling));

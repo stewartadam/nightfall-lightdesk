@@ -40,6 +40,15 @@ pub const MIN_SACN_UNIVERSE: u16 = 1;
 /// Highest sACN universe, and so the highest synchronization universe.
 pub const MAX_SACN_UNIVERSE: u16 = 63_999;
 
+/// sACN source priority a show transmits at unless it chooses another.
+pub const DEFAULT_SACN_PRIORITY: u8 = 100;
+
+/// Lowest sACN priority a show may choose, leaving 0 free for a backup one step below it.
+pub const MIN_SACN_PRIORITY: u8 = 1;
+
+/// Highest priority the sACN standard allows.
+pub const MAX_SACN_PRIORITY: u8 = 200;
+
 /// Process-scoped permissions that cap showfile transport preferences.
 ///
 /// This resource is intentionally not serialized. A showfile can preserve the
@@ -143,6 +152,13 @@ pub struct IoRuntimeSettings {
         deserialize_with = "deserialize_sacn_sync_universe"
     )]
     pub sacn_sync_universe: u16,
+    /// sACN source priority for every output universe, clamped on load. A backup transmits one
+    /// step lower so receivers prefer the primary while both are sending.
+    #[serde(
+        default = "default_sacn_priority",
+        deserialize_with = "deserialize_sacn_priority"
+    )]
+    pub sacn_priority: u8,
 }
 
 impl Default for IoRuntimeSettings {
@@ -161,6 +177,7 @@ impl Default for IoRuntimeSettings {
             artnet_sync_enabled: false,
             sacn_sync_enabled: false,
             sacn_sync_universe: default_sacn_sync_universe(),
+            sacn_priority: default_sacn_priority(),
         }
     }
 }
@@ -231,6 +248,56 @@ where
     D: serde::Deserializer<'de>,
 {
     u16::deserialize(deserializer).map(sanitize_sacn_sync_universe)
+}
+
+/// Returns the default sACN source priority for serde defaults.
+pub fn default_sacn_priority() -> u8 {
+    DEFAULT_SACN_PRIORITY
+}
+
+/// Clamps a show's sACN priority to [`MIN_SACN_PRIORITY`]..=[`MAX_SACN_PRIORITY`].
+pub fn sanitize_sacn_priority(priority: u8) -> u8 {
+    priority.clamp(MIN_SACN_PRIORITY, MAX_SACN_PRIORITY)
+}
+
+/// Deserializes a showfile's sACN priority, clamping it to the supported range.
+fn deserialize_sacn_priority<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    u8::deserialize(deserializer).map(sanitize_sacn_priority)
+}
+
+/// Returns the sACN priority this node transmits at: the show's priority, or one step below it
+/// while the node is a standby backup, so receivers keep following the primary.
+pub fn effective_sacn_priority(settings: &IoRuntimeSettings, standby: DmxOutputStandby) -> u8 {
+    let priority = sanitize_sacn_priority(settings.sacn_priority);
+    if standby.is_standby() {
+        priority - 1
+    } else {
+        priority
+    }
+}
+
+/// Whether this node is a standby backup that must not take over DMX output yet.
+///
+/// A standby node keeps sACN running one priority step below the show's, so receivers fall back
+/// to it on their own when the primary's stream stops, and mutes Art-Net and USB DMX, which have
+/// no priority and would fight the primary.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
+pub struct DmxOutputStandby(pub bool);
+
+impl DmxOutputStandby {
+    /// Returns whether this node is currently a standby backup.
+    pub const fn is_standby(self) -> bool {
+        self.0
+    }
+
+    /// Returns whether Art-Net and USB DMX output may transmit.
+    pub const fn allows_unprioritized_output(self) -> bool {
+        !self.0
+    }
 }
 
 /// Returns the tick interval for a network DMX output rate after sanitizing it.
@@ -649,6 +716,42 @@ mod tests {
         value["dmx_output_rate_hz"] = serde_json::json!(1000);
         let settings: IoRuntimeSettings = serde_json::from_value(value).unwrap();
         assert_eq!(settings.dmx_output_rate_hz, MAX_DMX_OUTPUT_RATE_HZ);
+    }
+
+    /// Showfiles without an sACN priority load at 100, and hand-edited values are clamped so a
+    /// backup always has a lower step left.
+    #[test]
+    fn sacn_priority_defaults_and_is_clamped_on_load() {
+        let mut value = serde_json::to_value(IoRuntimeSettings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("sacn_priority");
+        let settings: IoRuntimeSettings = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(settings.sacn_priority, DEFAULT_SACN_PRIORITY);
+        value["sacn_priority"] = serde_json::json!(0);
+        let settings: IoRuntimeSettings = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(settings.sacn_priority, MIN_SACN_PRIORITY);
+        value["sacn_priority"] = serde_json::json!(255);
+        let settings: IoRuntimeSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(settings.sacn_priority, MAX_SACN_PRIORITY);
+    }
+
+    /// A standby backup transmits one step below the show's priority, even at the lowest
+    /// priority a show may pick.
+    #[test]
+    fn standby_transmits_one_step_below_the_show_priority() {
+        let mut settings = IoRuntimeSettings::default();
+        assert_eq!(
+            effective_sacn_priority(&settings, DmxOutputStandby(false)),
+            100
+        );
+        assert_eq!(
+            effective_sacn_priority(&settings, DmxOutputStandby(true)),
+            99
+        );
+        settings.sacn_priority = 0;
+        assert_eq!(
+            effective_sacn_priority(&settings, DmxOutputStandby(true)),
+            0
+        );
     }
 
     /// Verifies automatic selection resolves to the host default interface.

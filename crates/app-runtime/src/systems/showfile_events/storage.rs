@@ -246,6 +246,12 @@ pub(super) fn hash_showfile_snapshot_with_metadata(
     Ok(hasher.finish())
 }
 
+/// Hashes a live show's contents for backups, ignoring its metadata, which records when and by
+/// which build the snapshot was taken rather than what the show holds.
+pub(crate) fn live_showfile_revision(snapshot: ShowfileSnapshot) -> Result<u64, String> {
+    hash_showfile_snapshot_with_metadata(&snapshot, &ShowfileMetadata::default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{

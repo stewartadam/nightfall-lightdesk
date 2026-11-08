@@ -171,6 +171,11 @@ pub(super) fn init_bevy_with_transport_policy(
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
     );
+    systems::backup_mirror::register_backup_http_routes(
+        &mut app
+            .world_mut()
+            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
+    );
     #[cfg(feature = "beat-detection")]
     crate::beat_model_http::register_routes(
         &mut app
@@ -249,6 +254,7 @@ pub(super) fn init_bevy_with_transport_policy(
             bevy::ecs::schedule::ApplyDeferred,
             systems::deleted_object_instances::release_deleted_object_instances,
             systems::quit_event::handle_events,
+            systems::backup_mirror::load_mirrored_showfiles,
             handle_periodic_draft_autosave,
             save_draft_when_last_client_disconnects,
             handle_process_shutdown_request,

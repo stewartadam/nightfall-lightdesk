@@ -44,6 +44,7 @@ import {
   $availableAudioDevices,
   $availableNetworkInterfaces,
   $availableUsbDmxDevices,
+  $backupState,
   $externalControlState,
   $networkInterfaceStatus,
   $settings,
@@ -278,6 +279,11 @@ export function applyOscListenerStatusSnapshot(
 /** Applies host-owned telemetry consent so every client reflects the same choices. */
 export function applyTelemetryStateSnapshot(state: types.TelemetryState): void {
   setStoreAction($telemetryState, "Receive TelemetryState", state);
+}
+
+/** Applies the host-owned backup role and link state so every client shows the same banner. */
+export function applyBackupStateSnapshot(state: types.BackupState): void {
+  setStoreAction($backupState, "Receive BackupState", state);
 }
 
 /** Applies host-owned external control preferences and listener health. */

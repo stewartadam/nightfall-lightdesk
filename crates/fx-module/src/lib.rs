@@ -273,6 +273,11 @@ impl Plugin for FxModulePlugin {
         app.insert_non_send(instances::PreviewFxModuleRuntimeStates::default());
 
         register_client_command::<FxModuleCommand>(app, Undo::Captured);
+        allow_command_while_read_only(
+            app,
+            FxModuleCommand::COMMAND_MODULE,
+            "ListAvailableFxModules",
+        );
         app.add_message::<FxModulePreviewUpdate>();
         app.register_clip_source(
             ClipSourceKind::FxModule,

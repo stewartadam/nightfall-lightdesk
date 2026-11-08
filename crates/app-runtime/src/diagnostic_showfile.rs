@@ -12,39 +12,60 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock, mpsc};
 
 /// Showfile state and the asset root belonging to the same engine snapshot.
+#[derive(Clone)]
 pub struct DiagnosticShowfile {
     pub snapshot: nightfall_showfile::ShowfileSnapshot,
+    /// Name of the open showfile in a live capture, or `None` for the default showfile and for
+    /// stored fallbacks.
+    pub showfile_name: Option<String>,
     pub asset_root: PathBuf,
     pub source: &'static str,
 }
 
+/// Source label of a capture taken from the running engine rather than from storage.
+pub const LIVE_SOURCE: &str = "current engine state";
+
 type Reply = tokio::sync::oneshot::Sender<Result<DiagnosticShowfile, String>>;
 static REQUESTS: OnceLock<Mutex<Option<mpsc::SyncSender<Reply>>>> = OnceLock::new();
 
+/// Requests that may wait for the same frame's capture. Exports, diagnostic bundles and every
+/// following backup's revision checks share the channel, so it holds several at once.
+const PENDING_CAPTURE_REQUESTS: usize = 8;
+
 /// Registers a bounded request channel for the active session, surviving its world swaps.
 pub(crate) fn register_requests() -> mpsc::Receiver<Reply> {
-    let (sender, receiver) = mpsc::sync_channel(1);
+    let (sender, receiver) = mpsc::sync_channel(PENDING_CAPTURE_REQUESTS);
     *REQUESTS.get_or_init(Mutex::default).lock().unwrap() = Some(sender);
     receiver
 }
 
 /// Captures requested state on the engine thread without changing or saving the user's showfile.
+///
+/// Every request waiting this frame is answered from one capture, so concurrent exports and
+/// backup revision checks cost a single snapshot of the world.
 pub(crate) fn respond_to_requests(
     receiver: &mpsc::Receiver<Reply>,
     world: &mut bevy::prelude::World,
 ) {
-    if let Ok(reply) = receiver.try_recv() {
-        if reply.is_closed() {
-            return;
-        }
-        let result = nightfall_showfile::snapshot_from_world(world).and_then(|snapshot| {
-            Ok(DiagnosticShowfile {
-                snapshot,
-                asset_root: nightfall::active_show_data_dir().ok_or("No active showfile")?,
-                source: "current engine state",
-            })
-        });
-        let _ = reply.send(result);
+    let replies: Vec<Reply> = receiver
+        .try_iter()
+        .filter(|reply| !reply.is_closed())
+        .collect();
+    if replies.is_empty() {
+        return;
+    }
+    let result = nightfall_showfile::snapshot_from_world(world).and_then(|snapshot| {
+        Ok(DiagnosticShowfile {
+            snapshot,
+            showfile_name: world
+                .get_resource::<crate::systems::showfile_events::CurrentShowfile>()
+                .and_then(|current| current.name().map(str::to_string)),
+            asset_root: nightfall::active_show_data_dir().ok_or("No active showfile")?,
+            source: LIVE_SOURCE,
+        })
+    });
+    for reply in replies {
+        let _ = reply.send(result.clone());
     }
 }
 
@@ -54,6 +75,7 @@ pub(crate) fn read_stored_showfile(asset_root: PathBuf) -> Result<DiagnosticShow
         .map_err(|error| format!("Could not read the stored showfile: {error}"))?;
     Ok(DiagnosticShowfile {
         snapshot,
+        showfile_name: None,
         asset_root,
         source: "latest stored snapshot (engine unavailable)",
     })
