@@ -58,8 +58,10 @@ impl MaterializedFx {
 
         let render_attribute = |(attribute, waveform): (&Attribute, &FxWaveform)| {
             let mut acc = (Vec::new(), Vec::new());
-            let remaining = elapsed.as_micros() % waveform.cycle_length.as_micros();
-            let ratio = remaining as f32 / waveform.cycle_length.as_micros() as f32;
+            // A cycle shorter than a microsecond is held at its start rather than dividing by zero.
+            let cycle_micros = waveform.cycle_length.as_micros().max(1);
+            let remaining = elapsed.as_micros() % cycle_micros;
+            let ratio = remaining as f32 / cycle_micros as f32;
             let samples = waveform.sample(resolved_selection, Percentage::from(ratio));
 
             for (selection_index, sampled_value) in
