@@ -333,8 +333,8 @@ importers:
         specifier: ^2.11.15
         version: 2.11.15(solid-js@1.9.18)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)(yaml@2.9.1))
       wasm-pack:
-        specifier: ^0.15.1
-        version: 0.15.1
+        specifier: 0.15.0
+        version: 0.15.0
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -2172,8 +2172,8 @@ packages:
     resolution: {integrity: sha512-3hu+tD8YzSLGuFYtPRb48vdhKMi0KQV5sn+uWr8+7dMEq/2G/dtLrdDinkLjqq5TIbIBjYJ4Ax/n3YiaW7QM8A==}
     engines: {node: 20 || >=22}
 
-  wasm-pack@0.15.1:
-    resolution: {integrity: sha512-PF9zzc5tBVwN0E4Vff9o4hXWbg2VMt8YBhA0CiJ+T98cn2i1ElXSs9Hww6ZCWOVn+Kke3WMSPNXDdlMn7DXvnA==}
+  wasm-pack@0.15.0:
+    resolution: {integrity: sha512-DdqtGWc3+iFx+7lL7QU5LBWs7qMnwQSWxF0htSfE15sNa3roVwHjAkTm2JXgueU2GGfSwNqbq2EzyC2b/biKDA==}
     engines: {node: '>=16'}
     hasBin: true
 
@@ -3709,7 +3709,7 @@ snapshots:
 
   walk-up-path@4.0.0: {}
 
-  wasm-pack@0.15.1:
+  wasm-pack@0.15.0:
     dependencies:
       tar: 7.5.22
 
