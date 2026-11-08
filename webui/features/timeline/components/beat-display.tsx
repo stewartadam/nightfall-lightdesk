@@ -13,7 +13,7 @@ import { durationToMs } from "../../../lib/utils";
 import { timelineBeatgridPreview } from "../../../state/appStores";
 import "./timeline-footer.css";
 import { useTimelineContext } from "../context/timeline-context";
-import { getBeatInfo, msPerBeat } from "../model/grid-utils";
+import { beatsElapsed, getBeatInfo, msPerBeat } from "../model/grid-utils";
 
 export type BeatDisplayProps = {
   showWhenDisabled?: boolean; // Whether to show when beatgrid is disabled
@@ -57,7 +57,7 @@ export const BeatDisplay = (props: BeatDisplayProps) => {
           anchorMs = markerMs;
         }
 
-        const beatFromAnchor = Math.floor((position - anchorMs) / beatDuration);
+        const beatFromAnchor = beatsElapsed(position - anchorMs, beatDuration);
         const totalBeat = Math.max(0, anchorBeat + beatFromAnchor);
         const bar = Math.floor(totalBeat / beatsPerBar) + 1;
         const beatInBar = (totalBeat % beatsPerBar) + 1;
