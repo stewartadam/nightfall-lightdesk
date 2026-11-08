@@ -488,8 +488,8 @@ pub enum RouteEndpoint {
     Disabled,
 }
 
-/// One route added by [`FixtureCommand::AddPatchedFixtures`], with default priority and
-/// fixtures packed one after another.
+/// One route added by [`FixtureCommand::PatchRig`], with default priority and fixtures
+/// packed one after another.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct PatchRoute {
@@ -497,6 +497,23 @@ pub struct PatchRoute {
     pub source: RouteEndpoint,
     /// Route target endpoint.
     pub target: RouteEndpoint,
+}
+
+/// Changes [`FixtureCommand::PatchRig`] makes to a fixture already in the show.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[typeshare::typeshare]
+pub struct RigFixtureUpdate {
+    /// UID of the fixture to change.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub uid: uuid::Uuid,
+    /// New label, or `None` to keep it.
+    pub label: Option<String>,
+    /// New placement, or `None` to keep it.
+    pub placement: Option<crate::placement::FixturePlacement>,
+    /// Remove the fixture's console patch so the command's routes can patch it again.
+    pub repatch: bool,
 }
 
 /// Commands for fixture-related operations
@@ -519,14 +536,17 @@ pub enum FixtureCommand {
     /// Delete a fixture
     DeleteFixture(u32),
 
-    /// Add several fixtures and patch them as one change.
+    /// Add fixtures, change fixtures already in the show and patch them, as one change.
     ///
     /// Every fixture and route is checked before the change is kept, so one conflicting ID,
-    /// UID or address leaves the show unchanged. Used to bring in a whole rig at once.
-    AddPatchedFixtures {
+    /// UID or address leaves the show unchanged. Used to bring in or refresh a whole rig at
+    /// once.
+    PatchRig {
         /// Fixtures to add, each with an ID and UID no other fixture uses.
-        fixtures: Vec<fixture::Fixture>,
-        /// Routes patching the new fixtures, applied in order.
+        add: Vec<fixture::Fixture>,
+        /// Fixtures already in the show to change.
+        update: Vec<RigFixtureUpdate>,
+        /// Routes patching the added and repatched fixtures, applied in order.
         routes: Vec<PatchRoute>,
     },
 

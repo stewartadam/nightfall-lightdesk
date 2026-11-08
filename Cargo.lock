@@ -6078,6 +6078,7 @@ dependencies = [
  "nightfall-fixtures",
  "nightfall-io",
  "nightfall-mvr",
+ "nightfall-programming",
  "nightfall-websocket",
  "nightfall-workspace-hack",
  "serde",

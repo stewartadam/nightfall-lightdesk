@@ -58,10 +58,11 @@ function storedZip(files: Record<string, string>): Buffer {
 }
 
 /**
- * Builds an MVR file with two hung washes on a truss whose fixture type is not in the file, so
- * the import has to borrow a stand-in from the library.
+ * Builds an MVR file with two hung washes on the LX 1 truss whose fixture type is not in the
+ * file, so the import has to borrow a stand-in from the library. The right wash's position
+ * and address can be moved to stand for the designer's next revision of the rig.
  */
-function washRig(): Buffer {
+function washRig(rightX = 2000, rightAddress = "200.233"): Buffer {
   const fixture = (
     uuid: string,
     name: string,
@@ -83,13 +84,34 @@ function washRig(): Buffer {
     <AUXData><Position uuid="0E2DC6B1-7C42-4B3F-9D0B-7D1C8C2F2A11" name="LX 1"/></AUXData>
     <Layers>
       <Layer uuid="83A405B6-8378-482D-9F72-AAD2EE51AABE" name="Rig">
-        <ChildList>${fixture("9D1C0D7E-0000-4000-8000-000000000001", "Wash left", FIRST_ID, -2000, "200.1")}${fixture("9D1C0D7E-0000-4000-8000-000000000002", "Wash right", SECOND_ID, 2000, "200.233")}
+        <ChildList>${fixture("9D1C0D7E-0000-4000-8000-000000000001", "Wash left", FIRST_ID, -2000, "200.1")}${fixture("9D1C0D7E-0000-4000-8000-000000000002", "Wash right", SECOND_ID, rightX, rightAddress)}
         </ChildList>
       </Layer>
     </Layers>
   </Scene>
 </GeneralSceneDescription>`;
   return storedZip({ "GeneralSceneDescription.xml": xml });
+}
+
+/** Reads the X position of the fixture with `id`, in metres. */
+async function fixtureX(page: Page, id: number): Promise<number | undefined> {
+  return page.evaluate((wanted) => {
+    const fixtures = (window as any).appStores?.fixtures?.get?.() ?? {};
+    const fixture = Object.values(fixtures).find(
+      (candidate: any) => candidate?.identifiers?.id === wanted,
+    ) as any;
+    return fixture?.placement?.position?.x as number | undefined;
+  }, id);
+}
+
+/** Reads the names of the show's groups. */
+async function groupNames(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const groups = (window as any).appStores?.groups?.get?.() ?? {};
+    return Object.values(groups).map(
+      (group: any) => group?.identifiers?.label as string,
+    );
+  });
 }
 
 /** Reads which of the test's fixture IDs the show now has. */
@@ -109,10 +131,12 @@ async function importedFixtureIds(page: Page): Promise<number[]> {
 }
 
 /**
- * Walks the import from the app menu on a blank show: upload, choose a stand-in type, review,
- * import, and check the fixtures land in the show.
+ * Walks the import from the app menu: upload, choose a stand-in type, review, import, and
+ * check the fixtures and their hanging position group land in the show. Then imports a
+ * revision of the file that moves and repatches one wash, which updates that fixture in place
+ * and leaves the group, which already holds both washes, alone.
  */
-test("imports a rig from an MVR file with a stand-in fixture type", async ({
+test("imports a rig from an MVR file and updates it from a revision", async ({
   backendSlot,
   page,
 }) => {
@@ -146,11 +170,14 @@ test("imports a rig from an MVR file with a stand-in fixture type", async ({
   await page.screenshot({ path: test.info().outputPath("2-missing-type.png") });
 
   const typeSelect = dialog.getByLabel("Library fixture for Acme@Wash.gdtf");
-  await typeSelect.selectOption({ index: 1 });
+  await typeSelect.selectOption({ label: "Generic Moving Head RGBW" });
   await expect(summary).toContainText("2 of 2 fixtures will be added");
   await expect(dialog.getByRole("cell", { name: "Stand-in" })).toBeVisible();
   await expect(dialog.getByRole("cell", { name: "200.1" })).toBeVisible();
   await expect(dialog.getByRole("cell", { name: "200.233" })).toBeVisible();
+  const groups = dialog.getByRole("table", { name: "Groups the import makes" });
+  await expect(groups.getByRole("cell", { name: "LX 1" })).toBeVisible();
+  await expect(groups.getByRole("cell", { name: "New" })).toBeVisible();
 
   await dialog.getByLabel("Fixture numbering").selectOption("Offset");
   await dialog.getByLabel("ID offset").fill("0");
@@ -162,5 +189,33 @@ test("imports a rig from an MVR file with a stand-in fixture type", async ({
   await expect
     .poll(() => importedFixtureIds(page))
     .toEqual([FIRST_ID, SECOND_ID]);
+  await expect.poll(() => groupNames(page)).toContain("LX 1");
   await page.screenshot({ path: test.info().outputPath("4-imported.png") });
+
+  await page.locator("button[title='Menu']").click();
+  await page.getByRole("button", { name: "Import Rig from MVR" }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByTestId("rig-import-file").setInputFiles({
+    name: "wash-rig-v2.mvr",
+    mimeType: "application/octet-stream",
+    buffer: washRig(3000, "200.301"),
+  });
+  await expect(summary).toContainText(
+    "0 of 2 fixtures will be added, 1 updated",
+  );
+  await expect(
+    dialog.getByRole("cell", { name: "Update (moved, repatched)" }),
+  ).toBeVisible();
+  await expect(dialog.getByRole("cell", { name: "Unchanged" })).toBeVisible();
+  await expect(groups, "LX 1 already holds both washes").toBeHidden();
+  await expect(
+    dialog.getByLabel("Update fixtures already in the show to match the file"),
+  ).toBeChecked();
+  await page.screenshot({ path: test.info().outputPath("5-reimport.png") });
+
+  await dialog.getByRole("button", { name: "Update 1 fixture" }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => fixtureX(page, SECOND_ID)).toBeCloseTo(3);
+  expect(await fixtureX(page, FIRST_ID)).toBeCloseTo(-2);
+  await page.screenshot({ path: test.info().outputPath("6-updated.png") });
 });

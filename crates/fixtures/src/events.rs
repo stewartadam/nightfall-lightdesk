@@ -150,7 +150,8 @@ fn remove_fixture(
 }
 
 /// Handle RestorePatchedFixtures operations: remove the batch's fixtures, bring back the
-/// snapshotted ones and put the DMX routes back as they were.
+/// snapshotted ones, put back the definitions of changed ones and put the DMX routes back
+/// as they were.
 pub fn handle_restore_patched_fixtures(
     mut commands: Commands,
     mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestorePatchedFixtures>>,
@@ -169,6 +170,18 @@ pub fn handle_restore_patched_fixtures(
         for fixture in &snapshot.restore {
             if let Err(error) = restore_fixture(&mut commands, &mut data_provider, fixture) {
                 failure.get_or_insert(error);
+            }
+        }
+        for fixture in &snapshot.revert {
+            if data_provider.inner.get(fixture.identifiers.uid).is_err() {
+                failure.get_or_insert(format!(
+                    "Fixture {} is no longer in the show",
+                    fixture.identifiers.id
+                ));
+                continue;
+            }
+            if let Err(error) = data_provider.inner.add(fixture.clone()) {
+                failure.get_or_insert(error.to_string());
             }
         }
         input_routes.routes = snapshot.routes.input_routes.clone();
