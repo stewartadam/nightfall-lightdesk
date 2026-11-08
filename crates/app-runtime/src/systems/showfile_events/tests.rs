@@ -117,6 +117,44 @@ fn write_test_showfile_manifest(
         .expect("write test showfile manifest");
 }
 
+/// Holds the process config lock with showfile storage pointed at a temporary directory.
+///
+/// Show switches save the outgoing draft, so handler tests that open or create shows need
+/// their own data directory instead of the user's. Dropping it restores the defaults.
+struct TempShowfileRoot {
+    root: tempfile::TempDir,
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+impl TempShowfileRoot {
+    /// Locks process config and points the data directory at a new temporary folder.
+    fn new() -> Self {
+        let guard = crate::process_config_lock()
+            .lock()
+            .expect("process config lock");
+        let root = tempfile::tempdir().expect("create showfile root");
+        nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+        nightfall::clear_active_show_data_dir();
+        Self {
+            root,
+            _guard: guard,
+        }
+    }
+
+    /// Returns the temporary data directory.
+    fn path(&self) -> &std::path::Path {
+        self.root.path()
+    }
+}
+
+impl Drop for TempShowfileRoot {
+    /// Restores the default data directory before the lock is released.
+    fn drop(&mut self) {
+        nightfall::clear_active_show_data_dir();
+        nightfall::set_nightfall_data_dir(None);
+    }
+}
+
 /// Registers and queues one showfile command for handler tests.
 fn submit_showfile_command(world: &mut World, command: ShowfileCommand) -> CommandId {
     let command_id = CommandId::new();
@@ -1857,6 +1895,7 @@ fn save_showfile_event_emits_success_result_and_toast() {
 
 #[test]
 fn new_showfile_event_is_deferred_when_swap_request_resource_exists() {
+    let _root = TempShowfileRoot::new();
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
     world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
@@ -1892,6 +1931,7 @@ fn new_showfile_event_is_deferred_when_swap_request_resource_exists() {
 /// Verifies named new-show commands defer through the world swap queue with their name.
 #[test]
 fn named_new_showfile_event_is_deferred_when_swap_request_resource_exists() {
+    let _root = TempShowfileRoot::new();
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
     world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
@@ -1930,9 +1970,7 @@ fn named_new_showfile_event_is_deferred_when_swap_request_resource_exists() {
 /// Verifies load commands defer through the world swap queue with their optional name.
 #[test]
 fn load_showfile_event_is_deferred_when_swap_request_resource_exists() {
-    let _guard = crate::process_config_lock()
-        .lock()
-        .expect("process config lock");
+    let _root = TempShowfileRoot::new();
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
     world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
@@ -1968,9 +2006,7 @@ fn load_showfile_event_is_deferred_when_swap_request_resource_exists() {
 /// Verifies draft load commands defer through the same world swap queue as saved loads.
 #[test]
 fn load_draft_showfile_event_is_deferred_when_swap_request_resource_exists() {
-    let _guard = crate::process_config_lock()
-        .lock()
-        .expect("process config lock");
+    let _root = TempShowfileRoot::new();
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
     world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
@@ -2182,11 +2218,52 @@ fn load_showfile_revision_event_preserves_saved_showfile_until_save() {
     nightfall::set_nightfall_data_dir(None);
 }
 
+/// Verifies opening or creating another show first saves the open show's unsaved edits into
+/// its draft, since the world swap drops the current world before any autosave runs.
+#[test]
+fn switching_shows_saves_the_outgoing_draft() {
+    for command in [
+        ShowfileCommand::LoadNamedShowfile("other".to_string()),
+        ShowfileCommand::NewShowfile,
+    ] {
+        let root = TempShowfileRoot::new();
+        let mut world = setup_world();
+        world.insert_resource(crate::PendingWorldSwapRequest::default());
+        world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
+        world
+            .resource_mut::<CurrentShowfile>()
+            .set_name(Some("tour"))
+            .expect("name the open show");
+        let draft_manifest = root
+            .path()
+            .join(SHOWFILE_DRAFTS_DIR)
+            .join("tour.nightfall-show")
+            .join(SHOWFILE_MANIFEST_FILENAME);
+        assert!(!draft_manifest.exists());
+
+        submit_showfile_command(&mut world, command.clone());
+        world
+            .run_system_once(handle_events)
+            .expect("run showfile handler");
+
+        assert!(
+            draft_manifest.is_file(),
+            "{command:?} should save the open show's draft before switching"
+        );
+        assert_eq!(
+            world
+                .resource_mut::<crate::PendingWorldSwapRequest>()
+                .take_requests()
+                .len(),
+            1,
+            "{command:?} should still queue the switch"
+        );
+    }
+}
+
 #[test]
 fn mixed_world_swap_events_preserve_original_order() {
-    let _guard = crate::process_config_lock()
-        .lock()
-        .expect("process config lock");
+    let _root = TempShowfileRoot::new();
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
     world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
