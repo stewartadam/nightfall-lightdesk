@@ -297,6 +297,10 @@ export async function startPlaywrightTestBackend({
         // Tests that turn reports on must never reach the project's services.
         NIGHTFALL_ERROR_REPORTS_DSN: "",
         NIGHTFALL_USAGE_REPORTS_URL: "",
+        // Keep sign-ins in memory: each rebuilt backend has a new code signature, so reading
+        // the developer's keychain would raise a macOS access prompt that "Always Allow"
+        // cannot silence.
+        NIGHTFALL_SYSTEM_KEYCHAIN: "false",
         NIGHTFALL_INPUT_ARTNET: "false",
         NIGHTFALL_INPUT_SACN_ENABLED: "false",
         NIGHTFALL_OUTPUT_ARTNET: "false",

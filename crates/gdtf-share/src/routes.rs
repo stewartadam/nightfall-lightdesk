@@ -92,9 +92,14 @@ impl GdtfShare {
     }
 }
 
-/// Registers the GDTF Share routes against the real GDTF Share API.
-pub fn register_routes(registry: &mut HttpRouteRegistry, folders: GdtfShareFolders) {
-    match GdtfShareAccount::new() {
+/// Registers the GDTF Share routes against the real GDTF Share API, remembering the sign-in in
+/// the system keychain when `system_keychain` is set and in memory otherwise.
+pub fn register_routes(
+    registry: &mut HttpRouteRegistry,
+    folders: GdtfShareFolders,
+    system_keychain: bool,
+) {
+    match GdtfShareAccount::new(system_keychain) {
         Ok(account) => {
             for (path, routes) in routes(GdtfShare::new(account, folders)) {
                 registry.register(path, routes);

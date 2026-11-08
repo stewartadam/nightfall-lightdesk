@@ -91,12 +91,19 @@ pub struct GdtfShareAccount {
 }
 
 impl GdtfShareAccount {
-    /// The production account: the real GDTF Share API, the platform keychain and any
-    /// credentials set in the environment.
-    pub fn new() -> Result<Self, ShareError> {
+    /// The production account: the real GDTF Share API, any credentials set in the
+    /// environment, and the platform keychain when `system_keychain` is set. Without it the
+    /// sign-in is remembered in memory for this run only, so test backends never touch (or
+    /// prompt for) the developer's keychain.
+    pub fn new(system_keychain: bool) -> Result<Self, ShareError> {
+        let open_vault: VaultOpener = if system_keychain {
+            Arc::new(CredentialVault::platform)
+        } else {
+            Arc::new(CredentialVault::in_memory)
+        };
         Ok(Self::with_parts(
             ShareClient::new(crate::client::API_BASE_URL)?,
-            Arc::new(CredentialVault::platform),
+            open_vault,
             Credentials::from_environment(),
         ))
     }
