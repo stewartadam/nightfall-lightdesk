@@ -290,6 +290,7 @@ fn create_scene_object_from_library(
             color_override: None,
             library_object_name: Some(profile.metadata.name.clone()),
             library_object_version: Some(asset_version),
+            keep_model_origin: false,
         },
     );
     validate_scene_object_changes(scene_objects, updates.iter().chain([&scene_object]))?;
@@ -401,6 +402,7 @@ fn scene_object_for_profile(
         color_override: existing.color_override,
         library_object_name: Some(profile.metadata.name.clone()),
         library_object_version: Some(asset_version.to_string()),
+        keep_model_origin: false,
     });
     Ok(scene_object)
 }

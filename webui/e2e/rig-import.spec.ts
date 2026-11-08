@@ -19,13 +19,13 @@ test.describe.configure({ timeout: 120_000 });
 /**
  * Packs files into an uncompressed ZIP archive, which is all an MVR file needs to be readable.
  */
-function storedZip(files: Record<string, string>): Buffer {
+function storedZip(files: Record<string, string | Buffer>): Buffer {
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
   let offset = 0;
   for (const [name, text] of Object.entries(files)) {
     const nameBytes = Buffer.from(name, "utf8");
-    const data = Buffer.from(text, "utf8");
+    const data = typeof text === "string" ? Buffer.from(text, "utf8") : text;
     const checksum = crc32(data);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
@@ -58,11 +58,118 @@ function storedZip(files: Record<string, string>): Buffer {
 }
 
 /**
+ * Builds a GLB model of one box from `min` to `max`, in glTF's Y-up metres, the way MVR
+ * stores GLB geometry.
+ */
+function boxGlb(
+  min: [number, number, number],
+  max: [number, number, number],
+): Buffer {
+  const corners: number[] = [];
+  for (let corner = 0; corner < 8; corner += 1) {
+    corners.push(
+      corner & 1 ? max[0] : min[0],
+      corner & 2 ? max[1] : min[1],
+      corner & 4 ? max[2] : min[2],
+    );
+  }
+  const faces = [
+    [0, 2, 3, 1],
+    [4, 5, 7, 6],
+    [0, 1, 5, 4],
+    [2, 6, 7, 3],
+    [0, 4, 6, 2],
+    [1, 3, 7, 5],
+  ];
+  const indices = faces.flatMap(([a, b, c, d]) => [a, b, c, a, c, d]);
+  const positions = Buffer.from(new Float32Array(corners).buffer);
+  const indexBytes = Buffer.from(new Uint16Array(indices).buffer);
+  const binary = Buffer.concat([
+    positions,
+    indexBytes,
+    Buffer.alloc((4 - (indexBytes.length % 4)) % 4),
+  ]);
+  const json = JSON.stringify({
+    asset: { version: "2.0" },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+    buffers: [{ byteLength: binary.length }],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: positions.length },
+      {
+        buffer: 0,
+        byteOffset: positions.length,
+        byteLength: indexBytes.length,
+      },
+    ],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 8, type: "VEC3", min, max },
+      {
+        bufferView: 1,
+        componentType: 5123,
+        count: indices.length,
+        type: "SCALAR",
+      },
+    ],
+  });
+  const jsonBytes = Buffer.from(json + " ".repeat((4 - (json.length % 4)) % 4));
+  const header = Buffer.alloc(12);
+  header.writeUInt32LE(0x46546c67, 0);
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(12 + 8 + jsonBytes.length + 8 + binary.length, 8);
+  const chunk = (type: number, data: Buffer) => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32LE(data.length, 0);
+    head.writeUInt32LE(type, 4);
+    return Buffer.concat([head, data]);
+  };
+  return Buffer.concat([
+    header,
+    chunk(0x4e4f534a, jsonBytes),
+    chunk(0x004e4942, binary),
+  ]);
+}
+
+/**
+ * Builds an MVR file with the two washes of {@link washRig} hung under a six metre truss,
+ * and a stage deck on a layer of its own.
+ */
+function trussRig(): Buffer {
+  const scenery = `
+      <Layer uuid="2C4E6A80-1B3D-4F5A-8C7E-9D0B1A2C3E4F" name="Rigging">
+        <ChildList>
+          <Truss uuid="5E1F2A3B-4C5D-4E6F-8A7B-9C0D1E2F3A4B" name="LX 1 truss">
+            <Matrix>{1,0,0}{0,1,0}{0,0,1}{0,2000,6300}</Matrix>
+            <Geometries><Geometry3D fileName="truss.glb"/></Geometries>
+          </Truss>
+        </ChildList>
+      </Layer>
+      <Layer uuid="3D5F7B91-2C4E-4A6B-9D8F-0E1C2B3D4F5A" name="Stage">
+        <ChildList>
+          <SceneObject uuid="6F2A3B4C-5D6E-4F7A-8B9C-0D1E2F3A4B5C" name="Deck">
+            <Geometries><Geometry3D fileName="deck.glb"/></Geometries>
+          </SceneObject>
+        </ChildList>
+      </Layer>`;
+  return washRig(2000, "200.233", scenery, {
+    "truss.glb": boxGlb([-3, -0.15, -0.15], [3, 0.15, 0.15]),
+    "deck.glb": boxGlb([-4, 0, -1], [4, 1, 3]),
+  });
+}
+
+/**
  * Builds an MVR file with two hung washes on the LX 1 truss whose fixture type is not in the
  * file, so the import has to borrow a stand-in from the library. The right wash's position
  * and address can be moved to stand for the designer's next revision of the rig.
  */
-function washRig(rightX = 2000, rightAddress = "200.233"): Buffer {
+function washRig(
+  rightX = 2000,
+  rightAddress = "200.233",
+  extraLayers = "",
+  extraFiles: Record<string, Buffer> = {},
+): Buffer {
   const fixture = (
     uuid: string,
     name: string,
@@ -86,11 +193,11 @@ function washRig(rightX = 2000, rightAddress = "200.233"): Buffer {
       <Layer uuid="83A405B6-8378-482D-9F72-AAD2EE51AABE" name="Rig">
         <ChildList>${fixture("9D1C0D7E-0000-4000-8000-000000000001", "Wash left", FIRST_ID, -2000, "200.1")}${fixture("9D1C0D7E-0000-4000-8000-000000000002", "Wash right", SECOND_ID, rightX, rightAddress)}
         </ChildList>
-      </Layer>
+      </Layer>${extraLayers}
     </Layers>
   </Scene>
 </GeneralSceneDescription>`;
-  return storedZip({ "GeneralSceneDescription.xml": xml });
+  return storedZip({ "GeneralSceneDescription.xml": xml, ...extraFiles });
 }
 
 /** Reads the X position of the fixture with `id`, in metres. */
@@ -218,4 +325,99 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
   await expect.poll(() => fixtureX(page, SECOND_ID)).toBeCloseTo(3);
   expect(await fixtureX(page, FIRST_ID)).toBeCloseTo(-2);
   await page.screenshot({ path: test.info().outputPath("6-updated.png") });
+});
+
+/** Reads the show's scene objects with their labels, heights (to the centimetre) and model settings. */
+async function sceneObjectSummaries(page: Page): Promise<
+  {
+    label: string;
+    y: number;
+    keepModelOrigin?: boolean;
+  }[]
+> {
+  return page.evaluate(() => {
+    const objects = (window as any).appStores?.sceneObjects?.get?.() ?? {};
+    return Object.values(objects).map((object: any) => ({
+      label: object?.identifiers?.label as string,
+      y: Math.round((object?.placement?.position?.y ?? 0) * 100) / 100,
+      keepModelOrigin: object?.properties?.data?.keepModelOrigin as
+        | boolean
+        | undefined,
+    }));
+  });
+}
+
+/**
+ * Imports a rig whose washes hang under a truss above a stage deck: the review lists the
+ * truss and the deck's layer as scenery, and after the import both are scene objects drawn
+ * where the file puts them, with the washes under the truss.
+ */
+test("imports trusses and scenery as scene objects", async ({
+  backendSlot,
+  page,
+}) => {
+  await prepareFreshBackendShowfile(backendSlot.backendPort);
+  await page.goto("/?e2e=1");
+  await waitForDockviewApp(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores?.fixtureLibrary?.get?.().length ?? 0,
+      ),
+    )
+    .toBeGreaterThan(0);
+
+  await page.locator("button[title='Menu']").click();
+  await page.getByRole("button", { name: "Import Rig from MVR" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import Rig from MVR" });
+  await dialog.getByTestId("rig-import-file").setInputFiles({
+    name: "truss-rig.mvr",
+    mimeType: "application/octet-stream",
+    buffer: trussRig(),
+  });
+  const summary = dialog.getByTestId("rig-import-summary");
+  await expect(summary).toContainText("with 2 scenery objects");
+  await dialog
+    .getByLabel("Library fixture for Acme@Wash.gdtf")
+    .selectOption({ label: "Generic Moving Head RGBW" });
+  await dialog.getByLabel("Fixture numbering").selectOption("Offset");
+  await dialog.getByLabel("ID offset").fill("0");
+  await dialog.getByLabel("ID offset").blur();
+  const scenery = dialog.getByRole("table", { name: "Scenery in the rig" });
+  await expect(scenery.getByRole("cell", { name: "LX 1 truss" })).toBeVisible();
+  await expect(
+    scenery.getByRole("cell", { name: "Layer scenery" }),
+  ).toBeVisible();
+  await expect(scenery.getByRole("cell", { name: "New" })).toHaveCount(2);
+  await expect(dialog.getByLabel("Import trusses and scenery")).toBeChecked();
+  await scenery.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: test.info().outputPath("1-scenery.png") });
+
+  await dialog.getByRole("button", { name: "Import 2 fixtures" }).click();
+  await expect(dialog).toBeHidden();
+  await expect
+    .poll(() => sceneObjectSummaries(page))
+    .toEqual(
+      expect.arrayContaining([
+        { label: "LX 1 truss", y: 6.3, keepModelOrigin: true },
+        { label: "Stage", y: 0, keepModelOrigin: true },
+      ]),
+    );
+  await expect
+    .poll(() => importedFixtureIds(page))
+    .toEqual([FIRST_ID, SECOND_ID]);
+  // The headless visualizer renders only a few frames a second, so give it time to draw
+  // the loaded models before the screenshot.
+  await page.waitForTimeout(15_000);
+  await page.screenshot({ path: test.info().outputPath("2-visualizer.png") });
+
+  await page.locator("button[title='Menu']").click();
+  await page.getByRole("button", { name: "Import Rig from MVR" }).click();
+  await dialog.getByTestId("rig-import-file").setInputFiles({
+    name: "truss-rig.mvr",
+    mimeType: "application/octet-stream",
+    buffer: trussRig(),
+  });
+  await expect(scenery.getByRole("cell", { name: "Unchanged" })).toHaveCount(2);
+  await dialog.getByRole("button", { name: "Close rig import dialog" }).click();
 });

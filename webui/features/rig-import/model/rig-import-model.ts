@@ -158,52 +158,89 @@ function fixtures(count: number): string {
   return `${count} fixture${count === 1 ? "" : "s"}`;
 }
 
-/**
- * Words for the import button from the engine's counts: what gets added, what gets updated,
- * or that only the groups are refreshed.
- */
-export function importButtonLabel(preview: {
+/** What the import button, the change check and the done toast read from a preview. */
+type PreviewCounts = {
   newFixtures: number;
   updatedFixtures: number;
+  sceneryChanges: number;
   groups: readonly unknown[];
-}): string {
+};
+
+/** Counts scenery objects in words: "1 scenery object", "17 scenery objects". */
+function sceneryObjects(count: number): string {
+  return `${count} scenery object${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * Words for the import button from the engine's counts: what gets added, what gets updated,
+ * or that only the scenery or the groups change.
+ */
+export function importButtonLabel(preview: PreviewCounts): string {
   const { newFixtures, updatedFixtures } = preview;
   if (newFixtures > 0 && updatedFixtures > 0) {
     return `Import ${newFixtures}, update ${updatedFixtures}`;
   }
   if (newFixtures > 0) return `Import ${fixtures(newFixtures)}`;
   if (updatedFixtures > 0) return `Update ${fixtures(updatedFixtures)}`;
+  if (preview.sceneryChanges > 0) return "Import scenery";
   if (preview.groups.length > 0) return "Refresh groups";
   return "Import";
 }
 
 /** Whether committing a preview would change the show at all. */
-export function previewHasChanges(preview: {
-  newFixtures: number;
-  updatedFixtures: number;
-  groups: readonly unknown[];
-}): boolean {
+export function previewHasChanges(preview: PreviewCounts): boolean {
   return (
     preview.newFixtures > 0 ||
     preview.updatedFixtures > 0 ||
+    preview.sceneryChanges > 0 ||
     preview.groups.length > 0
   );
 }
 
 /** Toast text after an import, naming what changed and the file. */
-export function importDoneMessage(preview: {
-  fileName: string;
-  newFixtures: number;
-  updatedFixtures: number;
-  groups: readonly unknown[];
-}): string {
+export function importDoneMessage(
+  preview: PreviewCounts & { fileName: string },
+): string {
   const parts: string[] = [];
   if (preview.newFixtures > 0)
     parts.push(`added ${fixtures(preview.newFixtures)}`);
   if (preview.updatedFixtures > 0) {
     parts.push(`updated ${fixtures(preview.updatedFixtures)}`);
   }
+  if (preview.sceneryChanges > 0) {
+    parts.push(`imported ${sceneryObjects(preview.sceneryChanges)}`);
+  }
   if (parts.length === 0) parts.push("refreshed the groups");
   const sentence = parts.join(" and ");
   return `${sentence[0]?.toUpperCase()}${sentence.slice(1)} from ${preview.fileName}`;
+}
+
+/** Short words for what the import does with a truss, support or layer of scenery. */
+export function sceneryStatusLabel(status: types.SceneryImportStatus): string {
+  switch (status) {
+    case types.SceneryImportStatus.New:
+      return "New";
+    case types.SceneryImportStatus.Update:
+      return "Update";
+    case types.SceneryImportStatus.Unchanged:
+      return "Unchanged";
+    case types.SceneryImportStatus.AlreadyInShow:
+      return "In show, kept";
+    case types.SceneryImportStatus.Skipped:
+      return "Skipped";
+    case types.SceneryImportStatus.NoModel:
+      return "No model";
+  }
+}
+
+/** Short words for what a scenery row stands for. */
+export function sceneryKindLabel(kind: types.RigSceneryKind): string {
+  switch (kind) {
+    case types.RigSceneryKind.Truss:
+      return "Truss";
+    case types.RigSceneryKind.Support:
+      return "Support";
+    case types.RigSceneryKind.Layer:
+      return "Layer scenery";
+  }
 }

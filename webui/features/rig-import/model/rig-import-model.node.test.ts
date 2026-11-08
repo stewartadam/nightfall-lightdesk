@@ -103,24 +103,36 @@ test("import button label", () => {
     newFixtures: number,
     updatedFixtures: number,
     groups = 0,
+    sceneryChanges = 0,
   ) => ({
     newFixtures,
     updatedFixtures,
+    sceneryChanges,
     groups: Array.from({ length: groups }),
   });
   assert.equal(importButtonLabel(preview(2, 0)), "Import 2 fixtures");
   assert.equal(importButtonLabel(preview(0, 1)), "Update 1 fixture");
   assert.equal(importButtonLabel(preview(3, 4)), "Import 3, update 4");
   assert.equal(importButtonLabel(preview(0, 0, 2)), "Refresh groups");
+  assert.equal(importButtonLabel(preview(0, 0, 2, 3)), "Import scenery");
   assert.equal(importButtonLabel(preview(0, 0)), "Import");
 });
 
 /** The import toast names what changed and the file it came from. */
 test("import done message", () => {
-  const base = { fileName: "rig.mvr", groups: [] };
+  const base = { fileName: "rig.mvr", groups: [], sceneryChanges: 0 };
   assert.equal(
     importDoneMessage({ ...base, newFixtures: 2, updatedFixtures: 1 }),
     "Added 2 fixtures and updated 1 fixture from rig.mvr",
+  );
+  assert.equal(
+    importDoneMessage({
+      ...base,
+      newFixtures: 1,
+      updatedFixtures: 0,
+      sceneryChanges: 17,
+    }),
+    "Added 1 fixture and imported 17 scenery objects from rig.mvr",
   );
   assert.equal(
     importDoneMessage({ ...base, newFixtures: 0, updatedFixtures: 0 }),

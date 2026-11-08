@@ -164,6 +164,11 @@ pub struct CustomProperties {
     /// Optional object library content version fingerprint
     #[serde(default)]
     pub library_object_version: Option<String>,
+    /// Draw the model around its own origin instead of centring it and standing it on the
+    /// floor. Set for models whose coordinates are already where they belong, such as
+    /// scenery imported from an MVR file.
+    #[serde(default)]
+    pub keep_model_origin: bool,
 }
 
 /// Type-specific properties for scene objects
