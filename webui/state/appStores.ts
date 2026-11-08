@@ -39,6 +39,7 @@ import {
 import {
   $availableNetworkInterfaces,
   $availableUsbDmxDevices,
+  $backupState,
   $externalControlState,
   $networkInterfaceStatus,
   $settings,
@@ -1083,6 +1084,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     settings: $settings,
     availableNetworkInterfaces: $availableNetworkInterfaces,
     externalControlState: $externalControlState,
+    backupState: $backupState,
     telemetryState: $telemetryState,
     availableUsbDmxDevices: $availableUsbDmxDevices,
     networkInterfaceStatus: $networkInterfaceStatus,

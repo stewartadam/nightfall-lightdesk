@@ -37,7 +37,7 @@ use std::{
 pub use input::{
     ARTNET_SOURCE_TIMEOUT, AcceptedDmxFrame, ArtNetRecentFramesByUniverse, DmxInputSet,
     IoRuntimeNotification, RouteTransport, SACN_SOURCE_TIMEOUT, SacnOutputIdentity,
-    UniverseSourceMerge,
+    UniverseSourceMerge, note_sacn_sources_heard, sacn_source_heard_within,
 };
 pub use network_stats::{NetworkOutputSendFailure, NetworkStats};
 #[cfg(feature = "plugin")]

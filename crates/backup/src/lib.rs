@@ -12,6 +12,8 @@
 //! the primary's live show, transmits sACN one priority step below the show's so receivers keep
 //! following the primary, mutes Art-Net and USB DMX, and refuses changes from its own clients.
 //! Taking over ends the role: the host keeps the copied show and outputs it as a normal desk.
+//! A backup also takes over on its own when its primary stops answering, and a primary that
+//! finds its backup took over rejoins as that host's backup; see [`failover`].
 //!
 //! The role is a host preference rather than show data, because the show itself is copied from
 //! the primary.
@@ -21,9 +23,10 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_io::DmxOutputStandby;
+use nightfall_io::{DmxOutputStandby, SacnOutputIdentity, sacn_source_heard_within};
 use serde::{Deserialize, Serialize};
 
+pub mod failover;
 pub mod forwarding;
 mod link;
 mod preferences;
@@ -117,12 +120,32 @@ pub struct BackupState {
     /// Unix time in milliseconds of the last show copied from the primary.
     #[typeshare(serialized_as = "Option<number>")]
     pub synced_at_ms: Option<u64>,
+    /// Takeover epoch, raised by every takeover so the host that took over last can be told
+    /// apart from the one it replaced.
+    #[typeshare(serialized_as = "number")]
+    pub epoch: u64,
+    /// Whether this host takes over on its own when its primary stops answering.
+    pub auto_take_over: bool,
+    /// `host:port` of the backup following this host, so clients can switch to it when this
+    /// host goes away.
+    pub backup_address: Option<String>,
+    /// Unix time in milliseconds when this host last took over on its own because its primary
+    /// stopped answering.
+    #[typeshare(serialized_as = "Option<number>")]
+    pub took_over_automatically_at_ms: Option<u64>,
 }
 
 impl BackupState {
     /// Returns whether this host currently backs up a primary.
     pub fn is_backup(&self) -> bool {
         self.primary_address.is_some()
+    }
+
+    /// Takes the stored role, epoch and automatic takeover setting.
+    fn apply_preferences(&mut self, stored: &preferences::BackupPreferences) {
+        self.primary_address = stored.primary_address.clone();
+        self.epoch = stored.epoch;
+        self.auto_take_over = stored.auto_take_over;
     }
 
     /// Returns the reason shown to clients whose changes a backup refuses.
@@ -150,6 +173,11 @@ pub enum BackupCommand {
     },
     /// Stops following and outputs the copied show as a normal desk.
     TakeOver,
+    /// Turns automatic takeover on or off for when this host follows a primary.
+    SetAutoTakeOver {
+        /// Whether to take over on its own once the primary stops answering.
+        enabled: bool,
+    },
 }
 
 impl IngressCommand for BackupCommand {}
@@ -211,17 +239,33 @@ struct RoleError(Option<String>);
 ///
 /// The output and ingress restrictions apply here too, before the world's first frame, so a
 /// backup never transmits unprioritized output or accepts a change while a new world starts.
+///
+/// A host that remembers a backup also holds its output until it has checked whether that backup
+/// took over while this host was away.
 fn restore_backup_role(
     mut state: ResMut<BackupState>,
     mut role_error: ResMut<RoleError>,
     mut standby: ResMut<DmxOutputStandby>,
     mut gate: ResMut<ClientIngressGate>,
+    port: Option<Res<nightfall_websocket::BackendPort>>,
 ) {
     let (stored, error) = preferences::load(preferences::preferences_path().as_deref());
     state.available = true;
-    state.primary_address = stored.primary_address.clone();
+    state.apply_preferences(&stored);
+    state.took_over_automatically_at_ms = failover::took_over_automatically_at();
     role_error.0 = error;
-    *standby = DmxOutputStandby(state.is_backup());
+    if let Some(port) = port {
+        failover::set_own_port(port.0);
+    }
+    failover::set_backup_peer(stored.backup_peer.clone());
+    // The link checks this host's backup against the stored epoch, so publish it before the
+    // link starts rather than waiting for the first frame.
+    failover::publish_host_status(failover::HostStatus {
+        following: state.is_backup(),
+        epoch: state.epoch,
+        sacn_cid: None,
+    });
+    *standby = DmxOutputStandby(state.is_backup() || awaiting_peer_check());
     gate.set_read_only(state.read_only_reason());
     link::process_backup_link().finish_mirror_load();
     link::process_backup_link().set_target(stored.primary_address.map(|address| {
@@ -241,17 +285,42 @@ fn handle_backup_commands(
     mut responder: CommandResponder,
 ) {
     for envelope in commands.read() {
+        let changes_role = !matches!(envelope.command, BackupCommand::SetAutoTakeOver { .. });
         let outcome = match &envelope.command {
             BackupCommand::FollowPrimary { address, pin } => {
                 follow_primary(address, pin.as_deref())
             }
-            BackupCommand::TakeOver => take_over(),
+            BackupCommand::TakeOver if state.is_backup() => Ok(take_over()),
+            // A host that follows no one has nothing to take over.
+            BackupCommand::TakeOver => Ok((
+                preferences::load(preferences::preferences_path().as_deref()).0,
+                None,
+            )),
+            BackupCommand::SetAutoTakeOver { enabled } => {
+                let enabled = *enabled;
+                Ok(preferences::update(
+                    preferences::preferences_path().as_deref(),
+                    |stored| stored.auto_take_over = enabled,
+                ))
+            }
         };
         let result = match outcome {
-            Ok(primary_address) => {
-                state.primary_address = primary_address;
-                role_error.0 = None;
-                responder.succeed(envelope.command_id)
+            // The change applies even when it could not be stored, so a backup can always take
+            // over; the operator learns it will not survive a restart.
+            Ok((stored, save_error)) => {
+                state.apply_preferences(&stored);
+                if changes_role {
+                    failover::set_took_over_automatically_at(None);
+                    state.took_over_automatically_at_ms = None;
+                }
+                role_error.0 = save_error.clone();
+                match save_error {
+                    None => responder.succeed(envelope.command_id),
+                    Some(message) => responder.fail(
+                        envelope.command_id,
+                        CommandError::new("backup.role_not_saved", message),
+                    ),
+                }
             }
             Err(message) => {
                 role_error.0 = Some(message.clone());
@@ -267,45 +336,151 @@ fn handle_backup_commands(
     }
 }
 
-/// Stores `address` as this host's primary and starts following it.
-fn follow_primary(address: &str, pin: Option<&str>) -> Result<Option<String>, String> {
+/// The role a change leaves this host with, and why it could not be stored, if it could not.
+type RoleChange = (preferences::BackupPreferences, Option<String>);
+
+/// Stores `address` as this host's primary and starts following it, returning the new role.
+///
+/// The primary becomes this host's only peer: a backup has no backup of its own to remember.
+fn follow_primary(address: &str, pin: Option<&str>) -> Result<RoleChange, String> {
     let address = normalize_address(address)?;
     let pin = pin.map(str::trim).filter(|pin| !pin.is_empty());
-    preferences::save(
-        preferences::preferences_path().as_deref(),
-        &preferences::BackupPreferences {
-            primary_address: Some(address.clone()),
-            pairing_token: None,
-        },
-    )?;
+    let (stored, save_error) =
+        preferences::update(preferences::preferences_path().as_deref(), |stored| {
+            stored.primary_address = Some(address.clone());
+            stored.pairing_token = None;
+            stored.backup_peer = None;
+        });
+    failover::set_backup_peer(None);
     tracing::info!(%address, "Following a primary as its backup");
     link::process_backup_link().set_target(Some(link::LinkTarget {
-        address: address.clone(),
+        address,
         pin: pin.map(str::to_string),
         token: None,
     }));
-    Ok(Some(address))
+    Ok((stored, save_error))
 }
 
-/// Clears the stored primary and stops following it.
-fn take_over() -> Result<Option<String>, String> {
-    preferences::save(
-        preferences::preferences_path().as_deref(),
-        &preferences::BackupPreferences::default(),
-    )?;
-    tracing::info!("Backup took over output");
-    link::process_backup_link().set_target(None);
-    Ok(None)
+/// Stops following the primary and returns the new role.
+///
+/// The takeover raises the epoch past both hosts' last one and remembers the old primary as this
+/// host's backup peer, so if the old primary is still running, or comes back, it sees this
+/// takeover is newer and rejoins as this host's backup.
+fn take_over() -> RoleChange {
+    let link = link::process_backup_link();
+    let primary_epoch = link.primary_epoch();
+    let (stored, save_error) =
+        preferences::update(preferences::preferences_path().as_deref(), |stored| {
+            stored.epoch = failover::takeover_epoch(stored.epoch, primary_epoch);
+            stored.backup_peer = stored.primary_address.take();
+            stored.pairing_token = None;
+        });
+    failover::set_backup_peer(stored.backup_peer.clone());
+    tracing::info!(epoch = stored.epoch, "Backup took over output");
+    link.set_target(None);
+    // The old primary is the host this one just replaced; checking it before outputting would
+    // only delay the takeover.
+    link.mark_peer_checked();
+    (stored, save_error)
+}
+
+/// Becomes the backup of `address`, the host that last backed this one up and has since taken
+/// over with `epoch`, and returns the new role.
+///
+/// No pairing token exists for that host yet, so on another computer the link asks for its PIN;
+/// meanwhile this host stays silent as a backup does.
+fn rejoin_as_backup(address: &str, epoch: u64) -> RoleChange {
+    let (stored, save_error) =
+        preferences::update(preferences::preferences_path().as_deref(), |stored| {
+            stored.primary_address = Some(address.to_string());
+            stored.pairing_token = None;
+            stored.backup_peer = None;
+            stored.epoch = stored.epoch.max(epoch);
+        });
+    failover::set_backup_peer(None);
+    link::process_backup_link().set_target(Some(link::LinkTarget {
+        address: address.to_string(),
+        pin: None,
+        token: None,
+    }));
+    (stored, save_error)
+}
+
+/// Returns whether this host remembers a backup it has not checked yet in this process, in which
+/// case it holds its output: that backup may have taken over while this host was away.
+fn awaiting_peer_check() -> bool {
+    failover::backup_peer().is_some() && !link::process_backup_link().peer_checked()
+}
+
+/// Takes over on its own once the primary has not answered a heartbeat for
+/// [`failover::FAILOVER_TIMEOUT`], when automatic takeover is on.
+///
+/// A primary whose sACN still arrives is alive even if the network between the hosts failed, so
+/// the backup holds off while it hears it.
+fn take_over_when_primary_is_lost(
+    mut state: ResMut<BackupState>,
+    mut role_error: ResMut<RoleError>,
+    mut held_off: Local<bool>,
+) {
+    if !state.is_backup() || !state.auto_take_over {
+        return;
+    }
+    let Some(silence) = link::process_backup_link().primary_silence() else {
+        *held_off = false;
+        return;
+    };
+    let sacn_heard = silence
+        .primary
+        .sacn_cid
+        .is_some_and(|cid| sacn_source_heard_within(cid, failover::FAILOVER_TIMEOUT));
+    if !failover::should_take_over(silence.silent_for, sacn_heard) {
+        let holding_off = sacn_heard && silence.silent_for >= failover::FAILOVER_TIMEOUT;
+        if holding_off && !*held_off {
+            tracing::warn!(
+                "The primary stopped answering, but its sACN still arrives; not taking over"
+            );
+        }
+        *held_off = holding_off;
+        return;
+    }
+    tracing::warn!(
+        silent_for = ?silence.silent_for,
+        "The primary stopped answering; taking over automatically"
+    );
+    let (stored, save_error) = take_over();
+    state.apply_preferences(&stored);
+    let at = link::now_ms();
+    failover::set_took_over_automatically_at(Some(at));
+    state.took_over_automatically_at_ms = Some(at);
+    role_error.0 = save_error;
+}
+
+/// Rejoins as the backup of the host that last backed this one up, once the link found it
+/// running as a primary with a newer epoch.
+fn rejoin_when_backup_took_over(mut state: ResMut<BackupState>, mut role_error: ResMut<RoleError>) {
+    let Some((address, epoch)) = link::process_backup_link().take_rejoin() else {
+        return;
+    };
+    if state.is_backup() {
+        return;
+    }
+    let (stored, save_error) = rejoin_as_backup(&address, epoch);
+    state.apply_preferences(&stored);
+    failover::set_took_over_automatically_at(None);
+    state.took_over_automatically_at_ms = None;
+    role_error.0 = save_error;
 }
 
 /// Mirrors the link's progress into the client-facing state, applies the output and ingress
-/// restrictions of the backup role, and hands newly copied shows to the world.
+/// restrictions of the backup role, adopts the primary's epoch, publishes this host's status to
+/// other hosts, and hands newly copied shows to the world.
 fn sync_backup_link(
     mut state: ResMut<BackupState>,
     role_error: Res<RoleError>,
     mut standby: ResMut<DmxOutputStandby>,
     mut gate: ResMut<ClientIngressGate>,
     mut mirrored: MessageWriter<MirroredShowfileReady>,
+    sacn_identity: Option<Res<SacnOutputIdentity>>,
 ) {
     let link = link::process_backup_link();
     let report = if state.is_backup() {
@@ -313,16 +488,37 @@ fn sync_backup_link(
     } else {
         link::LinkReport::default()
     };
+    let mut epoch = state.epoch;
+    if state.is_backup()
+        && let Some(primary_epoch) = link.primary_epoch().filter(|primary| *primary > epoch)
+    {
+        // A later takeover by this host must outrank every takeover the primary saw.
+        let (stored, save_error) =
+            preferences::update(preferences::preferences_path().as_deref(), |stored| {
+                stored.epoch = stored.epoch.max(primary_epoch);
+            });
+        if let Some(error) = save_error {
+            tracing::warn!(%error, "Could not store the primary's epoch");
+        }
+        epoch = stored.epoch.max(primary_epoch);
+    }
     let next = BackupState {
         link: report.status,
         error: report.error.or_else(|| role_error.0.clone()),
         showfile_name: report.showfile_name,
         synced_at_ms: report.synced_at_ms,
+        epoch,
+        backup_address: failover::backup_peer().filter(|_| !state.is_backup()),
         ..state.clone()
     };
     state.set_if_neq(next);
+    failover::publish_host_status(failover::HostStatus {
+        following: state.is_backup(),
+        epoch: state.epoch,
+        sacn_cid: sacn_identity.and_then(|identity| identity.cid),
+    });
 
-    standby.set_if_neq(DmxOutputStandby(state.is_backup()));
+    standby.set_if_neq(DmxOutputStandby(state.is_backup() || awaiting_peer_check()));
     let reason = state.read_only_reason();
     if gate.read_only_reason() != reason.as_deref() {
         gate.set_read_only(reason);
@@ -455,10 +651,16 @@ impl Plugin for BackupPlugin {
         register_client_command::<BackupCommand>(app, Undo::Skipped);
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "TakeOver");
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "FollowPrimary");
+        allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "SetAutoTakeOver");
         app.add_systems(Startup, restore_backup_role);
         app.add_systems(
             Update,
-            (handle_backup_commands, sync_backup_link)
+            (
+                handle_backup_commands,
+                take_over_when_primary_is_lost,
+                rejoin_when_backup_took_over,
+                sync_backup_link,
+            )
                 .chain()
                 .in_set(EventHandling),
         );

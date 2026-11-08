@@ -69,6 +69,11 @@ pub struct RemotePairingPin {
 /// Endpoint a device uses to learn whether it must pair and to submit the PIN.
 pub(crate) const PAIRING_PATH: &str = "/api/pairing";
 
+/// Prefix of routes any device on the network may read without pairing. They report facts
+/// other Nightfall hosts need before pairing, such as a backup's role, and never control the
+/// backend.
+pub const PUBLIC_API_PREFIX: &str = "/api/public/";
+
 /// Loopback-only endpoint that shows or regenerates the PIN for the operator.
 pub(crate) const PAIRING_PIN_PATH: &str = "/api/pairing/pin";
 
@@ -222,12 +227,13 @@ fn lockout(count: u32) -> Option<Duration> {
 
 /// Returns whether a path controls the backend and so needs a paired device.
 ///
-/// The pairing endpoint itself stays open so a new device can submit the PIN, and the
-/// web UI files stay open so it can load the page that asks for it.
+/// The pairing endpoint itself stays open so a new device can submit the PIN, the web UI
+/// files stay open so it can load the page that asks for it, and routes under
+/// [`PUBLIC_API_PREFIX`] stay open for other Nightfall hosts.
 fn requires_pairing(path: &str) -> bool {
     let controls_backend =
         path == "/ws" || path.starts_with("/ws/") || path == "/api" || path.starts_with("/api/");
-    controls_backend && path != PAIRING_PATH
+    controls_backend && path != PAIRING_PATH && !path.starts_with(PUBLIC_API_PREFIX)
 }
 
 /// Refuses remote requests to backend routes until the device has paired.
@@ -473,7 +479,7 @@ mod tests {
         }
     }
 
-    /// Only backend routes other than the pairing endpoint are gated.
+    /// Only backend routes other than the pairing endpoint and public routes are gated.
     #[test]
     fn gate_covers_backend_routes_only() {
         for path in ["/ws", "/api/showfiles", "/api", PAIRING_PIN_PATH] {
@@ -485,6 +491,7 @@ mod tests {
             "/assets/index-abc.js",
             "/cues",
             PAIRING_PATH,
+            "/api/public/backup/status",
         ] {
             assert!(!requires_pairing(path), "{path}");
         }

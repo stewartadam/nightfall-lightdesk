@@ -61,11 +61,23 @@ While it follows the primary, the backup:
 
 The backup loads each copy as a working draft under the primary's showfile name, replacing the backup's own unsaved draft of a show with that name. The saved showfile on the backup is not changed.
 
-To take over, select **Take over** in the banner or under **Backup server**. The backup stops following the primary and outputs the copied show at the show's own priority on every transport. Take over only when the primary has stopped, because both computers would otherwise send the same universes at the same priority.
+To take over, select **Take over** in the banner or under **Backup server**. The backup stops following the primary and outputs the copied show at the show's own priority on every transport. If the primary is still running and can reach the backup, it steps down within a few seconds and becomes the backup's backup, so the two never keep sending the same universes at the same priority.
 
 The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart. A primary forgets its paired devices when it restarts. When the banner says the primary needs its pairing PIN again, enter the new PIN under **Backup server** and select **Pair again**.
 
-When you take over, the backup keeps playing what the primary was playing. While the backup loads a newly copied show, its banner says it is loading the primary's show. The backup does not yet take over on its own.
+When you take over, the backup keeps playing what the primary was playing. While the backup loads a newly copied show, its banner says it is loading the primary's show.
+
+### Automatic takeover
+
+The backup checks on the primary twice a second. When **Take over automatically** is on, which it is by default, the backup takes over on its own once the primary has not answered for 3 seconds. **Backup server** then says when it took over. If the backup receives sACN on a universe the primary sends, it does not take over while the primary's sACN still arrives, since the primary is then still running and only the network between the two computers failed.
+
+A backup only takes over on its own after it has reached the primary and loaded its show since it last started.
+
+The primary lists its backup under **Backup server**. If a device loses its connection to the primary, the connection message offers **Open the backup**, which opens the backup's address.
+
+When the old primary comes back, it checks its backup before sending anything. Finding that the backup took over, it becomes the backup's backup instead: it stays silent, refuses changes, and follows the new primary. On another computer it asks for the new primary's PIN first; enter it under **Backup server** and select **Pair again**. To swap the roles back, take over on the old primary.
+
+If the backup itself loses the network, it cannot tell that apart from the primary failing and takes over too. When the network returns, the computer that took over last keeps the show, and the other steps down. Turn off **Take over automatically** if you would rather decide every takeover yourself.
 
 ## USB
 

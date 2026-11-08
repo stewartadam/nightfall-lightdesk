@@ -84,11 +84,15 @@ async function enterPriority(page: Page, priority: number): Promise<void> {
   await expect(dialog).toBeHidden();
 }
 
-/** Opens a browser page on another backend through the run's shared dev server. */
+/**
+ * Opens a browser page on another backend through the run's shared dev server. `path` defaults
+ * to the test mode, which hides the connection-lost overlay.
+ */
 async function openBackendPage(
   browser: Browser,
   baseURL: string,
   backendPort: number,
+  path = "/?e2e=1",
 ): Promise<Page> {
   const { hostname } = new URL(baseURL);
   const context = await browser.newContext({
@@ -117,7 +121,7 @@ async function openBackendPage(
     },
   });
   const page = await context.newPage();
-  await page.goto(`${baseURL}/?e2e=1`);
+  await page.goto(`${baseURL}${path}`);
   await waitForDockviewApp(page);
   return page;
 }
@@ -421,6 +425,159 @@ test("backup replays the primary's fader moves as they happen", async ({
     await primaryPage.context().close();
   } finally {
     await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});
+
+/** Makes the page's backend follow the primary on `primaryPort` and waits until it is in step. */
+async function followPrimary(page: Page, primaryPort: number): Promise<void> {
+  await page.goto("/?e2e=1");
+  await waitForDockviewApp(page);
+  await openPanel(page, "I/O Transports");
+  const settings = page.getByTestId("backup-server-settings");
+  await settings
+    .getByTestId("backup-primary-address")
+    .fill(`127.0.0.1:${primaryPort}`);
+  await settings.getByTestId("backup-follow").click();
+  await expect(page.getByTestId("backup-banner")).toContainText(
+    "In step with the primary's",
+    { timeout: 60_000 },
+  );
+  await expect(page.getByTestId("startup-splash")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+}
+
+/**
+ * Taking over on the backup while the primary still runs makes the old primary step down: it
+ * finds its backup answering as a newer primary and follows it, silent and read-only.
+ */
+test("a primary whose backup took over steps down and follows it", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await followPrimary(page, primary.backend.backendPort);
+
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await primaryPage.setViewportSize({ width: 1600, height: 1000 });
+    await openPanel(primaryPage, "I/O Transports");
+    await expect(primaryPage.getByTestId("backup-peer")).toContainText(
+      `Backed up by 127.0.0.1:${backendSlot.backendPort}`,
+      { timeout: 30_000 },
+    );
+
+    await page
+      .getByTestId("backup-banner")
+      .getByTestId("backup-take-over")
+      .click();
+    await page
+      .getByRole("dialog", { name: "Take over output" })
+      .getByRole("button", { name: "Take over" })
+      .click();
+    await expect(page.getByTestId("backup-banner")).toBeHidden();
+
+    const primaryBanner = primaryPage.getByTestId("backup-banner");
+    await expect(primaryBanner).toContainText(
+      `Backup of 127.0.0.1:${backendSlot.backendPort}`,
+      { timeout: 30_000 },
+    );
+    await expect(primaryBanner).toContainText("In step with the primary's", {
+      timeout: 60_000,
+    });
+    await expect(primaryPage.getByTestId("startup-splash")).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await openPanel(primaryPage, "I/O Transports");
+    await primaryPage
+      .getByTestId("backup-server-settings")
+      .scrollIntoViewIfNeeded();
+    await primaryPage.screenshot({
+      path: testInfo.outputPath("9-old-primary-follows.png"),
+    });
+    await primaryPage.context().close();
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});
+
+/**
+ * When the primary stops, its clients are offered the backup, and the backup takes over on its
+ * own once the primary has been silent for a few seconds.
+ */
+test("backup takes over on its own when the primary stops", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  let primaryRunning = true;
+  try {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await followPrimary(page, primary.backend.backendPort);
+
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+      "/",
+    );
+    await primaryPage.setViewportSize({ width: 1600, height: 1000 });
+    await expect
+      .poll(
+        () =>
+          primaryPage.evaluate(
+            () => (window as any).appStores.backupState.get().backup_address,
+          ),
+        { timeout: 30_000 },
+      )
+      .toBe(`127.0.0.1:${backendSlot.backendPort}`);
+
+    primaryRunning = false;
+    await stopPlaywrightTestBackend(primary.backend);
+
+    const offer = primaryPage.getByTestId("connection-backup");
+    await expect(offer).toBeVisible({ timeout: 30_000 });
+    await expect(
+      offer.getByRole("link", { name: "Open the backup" }),
+    ).toHaveAttribute(
+      "href",
+      `http://${new URL(backendSlot.baseURL).hostname}:${backendSlot.backendPort}/`,
+    );
+    // The offer stays up while the primary is gone, past the overlay's fade-in.
+    await primaryPage.waitForTimeout(3_000);
+    await expect(offer).toBeVisible();
+    await primaryPage.screenshot({
+      path: testInfo.outputPath("10-clients-offered-the-backup.png"),
+    });
+    await primaryPage.context().close();
+
+    await expect(page.getByTestId("backup-banner")).toBeHidden({
+      timeout: 30_000,
+    });
+    await openPanel(page, "I/O Transports");
+    await expect(
+      page.getByTestId("backup-took-over-automatically"),
+    ).toBeVisible();
+    await expect(page.getByTestId("backup-peer")).toContainText(
+      `Backed up by 127.0.0.1:${primary.backend.backendPort}`,
+    );
+    await page.getByTestId("backup-server-settings").scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath("11-took-over-automatically.png"),
+    });
+  } finally {
+    if (primaryRunning) await stopPlaywrightTestBackend(primary.backend);
     stopPlaywrightWorkerSlot(primary.workerSlot);
   }
 });

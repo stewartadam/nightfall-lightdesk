@@ -120,6 +120,10 @@ export const $backupState = atom<BackupState>({
   error: undefined,
   showfile_name: undefined,
   synced_at_ms: undefined,
+  epoch: 0,
+  auto_take_over: true,
+  backup_address: undefined,
+  took_over_automatically_at_ms: undefined,
 });
 
 /** Host-owned external control preferences and live listener status. */

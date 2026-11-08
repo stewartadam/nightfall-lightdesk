@@ -8,7 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createSignal, Show } from "solid-js";
-import { Input } from "../../../components/ui/form-controls";
+import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { commandClient } from "../../../lib/engine-commands";
@@ -40,6 +40,11 @@ export function describeBackupLink(state: BackupState): string {
     default:
       return "Not connected";
   }
+}
+
+/** Formats a Unix time in milliseconds as a local time of day. */
+function timeOfDay(ms: number): string {
+  return new Date(ms).toLocaleTimeString();
 }
 
 /**
@@ -76,7 +81,7 @@ function TakeOverButton(props: { size?: "compact" | "inline" }) {
       <DeleteConfirmModal
         isOpen={confirming()}
         title="Take over output"
-        message="This Nightfall stops following the primary and outputs the copied show at the show's own priority. Take over only when the primary has stopped, or both will send the same universes."
+        message="This Nightfall stops following the primary and outputs the copied show at the show's own priority. A primary that can still reach this computer steps down and becomes its backup."
         confirmLabel="Take over"
         focusCancel
         onCancel={() => setConfirming(false)}
@@ -209,11 +214,55 @@ export function BackupServerSettings() {
             </>
           )}
         </Show>
+        <Show
+          when={
+            !state().primary_address && state().took_over_automatically_at_ms
+          }
+        >
+          {(at) => (
+            <p
+              class="mt-2 text-xs text-amber-200"
+              data-testid="backup-took-over-automatically"
+            >
+              Took over automatically at {timeOfDay(at())} because the primary
+              stopped answering.
+            </p>
+          )}
+        </Show>
+        <Show when={state().backup_address}>
+          {(backup) => (
+            <p class="mt-2 text-xs text-gray-300" data-testid="backup-peer">
+              Backed up by {backup()}.
+            </p>
+          )}
+        </Show>
+        <label class="mt-2 flex items-start gap-2 text-xs text-gray-300">
+          <Checkbox
+            checked={state().auto_take_over}
+            onChange={(event) => {
+              const box = event.currentTarget;
+              // Show what the engine applied, which a failed command leaves unchanged.
+              void sendBackupCommand({
+                type: "SetAutoTakeOver",
+                data: { enabled: box.checked },
+              }).then(() => {
+                box.checked = state().auto_take_over;
+              });
+            }}
+            data-testid="backup-auto-take-over"
+          />
+          <span>
+            Take over automatically when the primary stops answering for 3
+            seconds, unless its sACN still arrives here.
+          </span>
+        </label>
         <p class="mt-2 text-xs text-gray-400">
           A backup keeps a copy of another Nightfall's live show. It sends sACN
           one priority below the show's so receivers follow the primary, mutes
           Art-Net and USB DMX, and turns off changes on this computer. The
-          primary needs external control on. Saved on this computer.
+          primary needs external control on. When a backup takes over, the old
+          primary steps down and follows it once it can reach it again. Saved on
+          this computer.
         </p>
         <Show when={state().error}>
           {(error) => (

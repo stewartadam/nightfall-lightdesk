@@ -26,10 +26,11 @@ import { allShortcuts } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import { $pairingPromptOpen } from "../../../lib/pairing";
 import { appLifecycle } from "../../../state/app-lifecycle";
+import { $backupState } from "../../../state/settings";
 import { DialogBackdrop, DialogSurface } from "../../ui/dialog";
 import Modal from "../../ui/modal";
 import Tooltip from "../../ui/tooltip";
-import { Button } from "../../ui/visual-language/button";
+import { Button, buttonClass } from "../../ui/visual-language/button";
 import { shouldBlockDisconnectedOverlayKey } from "./key-filter";
 
 const log = getLogger(import.meta.url);
@@ -53,6 +54,20 @@ function isOverlaySuppressedForE2E(): boolean {
   return params.get("e2e") === "1";
 }
 
+/**
+ * Returns the URL that opens the backup at `address` (`host:port`) from this browser. A backup
+ * the primary reached over loopback runs on the primary's computer, which this browser reaches
+ * under the page's own host name.
+ */
+export function backupUrl(address: string): string {
+  const separator = address.lastIndexOf(":");
+  const host = address.slice(0, separator);
+  const port = address.slice(separator + 1);
+  const loopback =
+    host === "localhost" || host === "[::1]" || host.startsWith("127.");
+  return `http://${loopback ? window.location.hostname : host}:${port}/`;
+}
+
 /** Blocks disconnected interactive sessions while startup owns its own connection UI. */
 const ConnectionOverlay = () => {
   if (isOverlaySuppressedForE2E()) {
@@ -64,6 +79,7 @@ const ConnectionOverlay = () => {
   });
   const lifecycle = useStore(appLifecycle);
   const pairingPromptOpen = useStore($pairingPromptOpen);
+  const backupState = useStore($backupState);
   const initialConnected = connectionStatus() === EngineRuntimeStatus.Connected;
   const initiallyBlocked =
     lifecycle().phase === "interactive" && !initialConnected;
@@ -280,6 +296,26 @@ const ConnectionOverlay = () => {
                 <span class="startup-status-dot" />
                 <span class="startup-status-dot" />
               </div>
+              <Show when={backupState().backup_address}>
+                {(backup) => (
+                  <div
+                    class="flex flex-col items-center gap-2 text-center text-sm text-gray-300"
+                    data-testid="connection-backup"
+                  >
+                    <span>
+                      A backup follows this Nightfall at {backup()}. If this
+                      computer stopped, the backup takes over.
+                    </span>
+                    <a
+                      class={buttonClass("primary")}
+                      data-size="compact"
+                      href={backupUrl(backup())}
+                    >
+                      Open the backup
+                    </a>
+                  </div>
+                )}
+              </Show>
             </Show>
           </div>
         </DialogSurface>

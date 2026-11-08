@@ -11,6 +11,10 @@
 //! A worker thread pairs with the primary, polls the revision of its live show, and downloads
 //! and unpacks the show whenever the revision changes. The world picks up each unpacked show and
 //! loads it. The link outlives world swaps, which the backup itself causes on every load.
+//!
+//! Alongside, the worker sends the primary a heartbeat, which tells the world when the primary
+//! went silent. While the host follows no one, the worker instead checks whether the backup that
+//! last followed it took over meanwhile.
 
 use std::{
     io::Write,
@@ -30,6 +34,10 @@ use crate::{
     BackupLinkStatus, EXPORT_SOURCE_HEADER, EXPORT_SOURCE_LIVE, FORWARDED_COMMANDS_PATH,
     LIVE_STATE_PATH, LIVE_STATE_WAIT_HEADER, PAIRING_PATH, SHOWFILE_EXPORT_PATH,
     SHOWFILE_REVISION_PATH, ShowfileRevision,
+    failover::{
+        self, BACKUP_PORT_HEADER, HEARTBEAT_INTERVAL, HOST_STATUS_PATH, HostStatus,
+        PEER_CHECK_INTERVAL, STATUS_TIMEOUT,
+    },
     forwarding::{ForwardCursor, ForwardedBatch, commands_through},
     preferences,
 };
@@ -127,9 +135,24 @@ impl LiveCheckpoint {
     }
 }
 
+/// How long the primary has been silent, for a world deciding whether to take over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PrimarySilence {
+    /// Time since the primary last answered a heartbeat.
+    pub silent_for: Duration,
+    /// The primary's last heartbeat answer.
+    pub primary: HostStatus,
+}
+
 /// State the worker shares with the world.
 #[derive(Debug, Default)]
 struct LinkShared {
+    /// When the primary last answered a heartbeat, and with what.
+    heartbeat: Option<(Instant, HostStatus)>,
+    /// The backup that last followed this host, found running as a newer primary, with its epoch.
+    rejoin: Option<(String, u64)>,
+    /// Whether the check for a backup that took over finished at least once in this process.
+    peer_checked: bool,
     report: LinkReport,
     mirror: Option<MirroredShow>,
     checkpoint: Option<LiveCheckpoint>,
@@ -207,6 +230,8 @@ impl BackupLink {
                     shared.forwarded.clear();
                     shared.loading_since = None;
                     shared.holding = false;
+                    shared.heartbeat = None;
+                    shared.rejoin = None;
                     shared.report = LinkReport::default();
                 }
             }
@@ -259,6 +284,49 @@ impl BackupLink {
             .unwrap_or_default()
     }
 
+    /// Returns how long the primary has been silent, once the link heard from it and holds a
+    /// loaded copy of its show; before that a takeover would have nothing to output.
+    pub(crate) fn primary_silence(&self) -> Option<PrimarySilence> {
+        let shared = self.shared.lock().ok()?;
+        let loading = shared
+            .loading_since
+            .is_some_and(|since| since.elapsed() < MIRROR_LOAD_TIMEOUT);
+        if loading || shared.report.synced_at_ms.is_none() {
+            return None;
+        }
+        let (heard_at, primary) = shared.heartbeat.as_ref()?;
+        Some(PrimarySilence {
+            silent_for: heard_at.elapsed(),
+            primary: primary.clone(),
+        })
+    }
+
+    /// Returns the epoch the primary last reported.
+    pub(crate) fn primary_epoch(&self) -> Option<u64> {
+        let shared = self.shared.lock().ok()?;
+        shared.heartbeat.as_ref().map(|(_, status)| status.epoch)
+    }
+
+    /// Takes the backup found running as a newer primary, with its epoch, if any.
+    pub(crate) fn take_rejoin(&self) -> Option<(String, u64)> {
+        self.shared.lock().ok()?.rejoin.take()
+    }
+
+    /// Counts the check for a backup that took over as done, so output is not held for it.
+    pub(crate) fn mark_peer_checked(&self) {
+        if let Ok(mut shared) = self.shared.lock() {
+            shared.peer_checked = true;
+        }
+    }
+
+    /// Returns whether the check for a backup that took over finished at least once and left no
+    /// rejoin for the world to apply, so output may start.
+    pub(crate) fn peer_checked(&self) -> bool {
+        self.shared
+            .lock()
+            .is_ok_and(|shared| shared.peer_checked && shared.rejoin.is_none())
+    }
+
     /// Returns the newest checkpoint when it is newer than `applied`, the sequence a world last
     /// applied. Unlike a show copy, a checkpoint stays available, so the world that replaces
     /// this one after a show load applies it again.
@@ -275,7 +343,8 @@ pub(crate) fn process_backup_link() -> &'static BackupLink {
     LINK.get_or_init(BackupLink::spawn)
 }
 
-/// Runs the worker: follows each target until it changes, idling while there is none.
+/// Runs the worker: follows each target until it changes, and watches the host's backup while
+/// there is none.
 fn run_worker(mut target_rx: watch::Receiver<Option<LinkTarget>>, shared: Arc<Mutex<LinkShared>>) {
     remove_stale_mirrors();
     let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -294,8 +363,13 @@ fn run_worker(mut target_rx: watch::Receiver<Option<LinkTarget>>, shared: Arc<Mu
             match target {
                 None => {
                     set_report(&shared, LinkReport::default());
-                    if target_rx.changed().await.is_err() {
-                        return;
+                    tokio::select! {
+                        () = watch_backup_peer(&shared) => {}
+                        changed = target_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                        }
                     }
                 }
                 Some(target) => {
@@ -317,6 +391,96 @@ fn run_worker(mut target_rx: watch::Receiver<Option<LinkTarget>>, shared: Arc<Mu
             }
         }
     });
+}
+
+/// Returns an HTTP client for talking to other Nightfall hosts, bypassing any system proxy.
+fn host_client(timeout: Duration) -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .no_proxy()
+        .timeout(timeout)
+        .build()
+}
+
+/// Checks the backup that last followed this host, while this host runs as a primary, and
+/// queues a rejoin when the backup took over since. Never returns.
+///
+/// Each check counts as done whether or not the backup answered, so a host whose backup is
+/// switched off is not held back.
+async fn watch_backup_peer(shared: &Mutex<LinkShared>) {
+    let client = match host_client(STATUS_TIMEOUT) {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, "Could not start checking this host's backup");
+            if let Ok(mut shared) = shared.lock() {
+                shared.peer_checked = true;
+            }
+            return std::future::pending().await;
+        }
+    };
+    loop {
+        let own = failover::host_status();
+        let mut rejoin = None;
+        if let Some(peer) = failover::backup_peer().filter(|_| !own.following) {
+            match fetch_host_status(&client, &format!("http://{peer}")).await {
+                Ok(status) if failover::should_rejoin(own.epoch, &status) => {
+                    tracing::warn!(
+                        %peer,
+                        epoch = status.epoch,
+                        "This host's backup took over; rejoining as its backup"
+                    );
+                    rejoin = Some((peer, status.epoch));
+                }
+                Ok(_) => {}
+                Err(error) => tracing::debug!(?error, %peer, "backup_peer_check_failed"),
+            }
+        }
+        // One lock, so the world never sees the check done without the rejoin it found.
+        if let Ok(mut shared) = shared.lock() {
+            if rejoin.is_some() {
+                shared.rejoin = rejoin;
+            }
+            shared.peer_checked = true;
+        }
+        tokio::time::sleep(PEER_CHECK_INTERVAL).await;
+    }
+}
+
+/// Asks the host at `base` for its role and epoch.
+async fn fetch_host_status(client: &reqwest::Client, base: &str) -> Result<HostStatus, LinkError> {
+    let response = client
+        .get(format!("{base}{HOST_STATUS_PATH}"))
+        .send()
+        .await
+        .map_err(|error| LinkError::from_request(&error))?;
+    let body = check_status(response)
+        .await?
+        .bytes()
+        .await
+        .map_err(|error| LinkError::from_request(&error))?;
+    serde_json::from_slice(&body).map_err(|error| {
+        LinkError::Failed(format!(
+            "The host sent a status this version cannot read: {error}"
+        ))
+    })
+}
+
+/// Sends the primary a heartbeat every [`HEARTBEAT_INTERVAL`] and records each answer, so the
+/// world can tell when the primary went silent. Never returns.
+async fn follow_heartbeat(base: &str, shared: &Mutex<LinkShared>) {
+    let Ok(client) = host_client(STATUS_TIMEOUT) else {
+        return std::future::pending().await;
+    };
+    loop {
+        match fetch_host_status(&client, base).await {
+            Ok(status) => {
+                if let Ok(mut shared) = shared.lock() {
+                    shared.heartbeat = Some((Instant::now(), status));
+                }
+            }
+            Err(error) => tracing::debug!(?error, "backup_heartbeat_failed"),
+        }
+        tokio::time::sleep(HEARTBEAT_INTERVAL).await;
+    }
 }
 
 /// Replaces the link report the world reads.
@@ -356,15 +520,24 @@ impl LinkError {
     }
 }
 
-/// Pairs with the primary if the operator gave a PIN, then keeps the backup's copy of the show
-/// in step with the primary's revisions. Returns only when the PIN was rejected; the caller then
-/// waits for a new target.
+/// Sends the primary heartbeats while pairing with it and keeping the backup's copy of its show
+/// in step. Returns only when the PIN was rejected; the caller then waits for a new target.
 async fn follow(target: &LinkTarget, shared: &Mutex<LinkShared>) {
-    let client = match reqwest::Client::builder()
-        .no_proxy()
-        .timeout(REQUEST_TIMEOUT)
-        .build()
-    {
+    let base = format!("http://{}", target.address);
+    tokio::select! {
+        () = follow_heartbeat(&base, shared) => {}
+        () = follow_with_pairing(target, &base, shared) => {}
+    }
+    // A rejected PIN ends the heartbeat too, so its last answer cannot age into a takeover.
+    if let Ok(mut shared) = shared.lock() {
+        shared.heartbeat = None;
+    }
+}
+
+/// Pairs with the primary if the operator gave a PIN, then follows its show, checkpoints and
+/// commands. Returns only when the PIN was rejected.
+async fn follow_with_pairing(target: &LinkTarget, base: &str, shared: &Mutex<LinkShared>) {
+    let client = match host_client(REQUEST_TIMEOUT) {
         Ok(client) => client,
         Err(error) => {
             set_report(
@@ -378,7 +551,6 @@ async fn follow(target: &LinkTarget, shared: &Mutex<LinkShared>) {
             return std::future::pending().await;
         }
     };
-    let base = format!("http://{}", target.address);
     set_report(
         shared,
         LinkReport {
@@ -390,7 +562,7 @@ async fn follow(target: &LinkTarget, shared: &Mutex<LinkShared>) {
     let mut token = target.token.clone();
     if let Some(pin) = &target.pin {
         loop {
-            match pair(&client, &base, &target.address, pin).await {
+            match pair(&client, base, &target.address, pin).await {
                 Ok(paired) => {
                     store_token(&target.address, &paired);
                     token = Some(paired);
@@ -421,8 +593,8 @@ async fn follow(target: &LinkTarget, shared: &Mutex<LinkShared>) {
 
     let cookie = token.map(|token| format!("{}={token}", pairing_cookie_name(&target.address)));
     tokio::join!(
-        follow_show_and_checkpoints(&client, &base, cookie.as_deref(), shared),
-        follow_commands(&client, &base, cookie.as_deref(), shared),
+        follow_show_and_checkpoints(&client, base, cookie.as_deref(), shared),
+        follow_commands(&client, base, cookie.as_deref(), shared),
     );
 }
 
@@ -627,6 +799,9 @@ async fn fetch_live_state(
     cookie: Option<&str>,
 ) -> Result<(LiveStateSnapshot, Duration), LinkError> {
     let mut request = client.get(format!("{base}{LIVE_STATE_PATH}"));
+    if let Some(port) = failover::own_port() {
+        request = request.header(BACKUP_PORT_HEADER, port);
+    }
     if let Some(cookie) = cookie {
         request = request.header(header::COOKIE, cookie);
     }
@@ -736,13 +911,12 @@ fn cookie_value(set_cookie: &str, name: &str) -> Option<String> {
 
 /// Saves a fresh pairing token, unless the operator changed primaries in the meantime.
 fn store_token(address: &str, token: &str) {
-    let path = preferences::preferences_path();
-    let (mut stored, _) = preferences::load(path.as_deref());
-    if stored.primary_address.as_deref() != Some(address) {
-        return;
-    }
-    stored.pairing_token = Some(token.to_string());
-    if let Err(error) = preferences::save(path.as_deref(), &stored) {
+    let (_, error) = preferences::update(preferences::preferences_path().as_deref(), |stored| {
+        if stored.primary_address.as_deref() == Some(address) {
+            stored.pairing_token = Some(token.to_string());
+        }
+    });
+    if let Some(error) = error {
         tracing::warn!(%error, "Could not save the backup pairing token");
     }
 }
@@ -897,7 +1071,7 @@ pub(crate) fn unpack_show(archive: &Path) -> Result<(tempfile::TempDir, PathBuf)
 }
 
 /// Returns the current Unix time in milliseconds.
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_millis() as u64)

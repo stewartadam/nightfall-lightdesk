@@ -44,6 +44,36 @@ pub struct SacnOutputIdentity {
     pub cid: Option<[u8; 16]>,
 }
 
+/// When each sACN source was last heard, by CID, across every world of the process.
+static SACN_SOURCES_HEARD: Mutex<Option<HashMap<[u8; 16], Instant>>> = Mutex::new(None);
+
+/// Records that sACN frames from the sources in `cids` just arrived.
+///
+/// The sACN input worker calls this for every batch it receives, so a backup can tell whether
+/// its primary still transmits even when it cannot reach the primary over the network.
+pub fn note_sacn_sources_heard(cids: impl IntoIterator<Item = [u8; 16]>) {
+    let now = Instant::now();
+    let mut heard = SACN_SOURCES_HEARD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let heard = heard.get_or_insert_with(HashMap::new);
+    for cid in cids {
+        heard.insert(cid, now);
+    }
+}
+
+/// Returns whether sACN from the source `cid` arrived within the last `within`.
+///
+/// Only universes this computer receives count, so a source on other universes reads as silent.
+pub fn sacn_source_heard_within(cid: [u8; 16], within: Duration) -> bool {
+    SACN_SOURCES_HEARD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .and_then(|heard| heard.get(&cid))
+        .is_some_and(|heard_at| heard_at.elapsed() <= within)
+}
+
 /// Fingerprints of recently transmitted local Art-Net frames, used to filter loopback input.
 ///
 /// Clones share one tracker, so the output worker thread records each frame before it reaches

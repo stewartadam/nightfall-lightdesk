@@ -9,12 +9,15 @@
 //! Loads each show a backup copies from its primary, and reports this host's own live show
 //! revision to any backup following it.
 
-use std::sync::{Mutex, OnceLock, mpsc};
+use std::{
+    net::SocketAddr,
+    sync::{Mutex, OnceLock, mpsc},
+};
 
 use axum::{
     Json,
-    extract::Query,
-    http::StatusCode,
+    extract::{ConnectInfo, Query},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
 };
@@ -66,8 +69,12 @@ pub(crate) fn load_mirrored_showfiles(
 }
 
 /// Registers the routes a backup polls: the revision of this host's live show, checkpoints of
-/// its live state and the commands it forwards.
+/// its live state, the commands it forwards, and the public status a backup sends heartbeats to.
 pub(crate) fn register_backup_http_routes(registry: &mut HttpRouteRegistry) {
+    registry.register(
+        nightfall_backup::failover::HOST_STATUS_PATH,
+        get(|| async { Json(nightfall_backup::failover::host_status()) }),
+    );
     registry.register(
         nightfall_backup::SHOWFILE_REVISION_PATH,
         get(current_showfile_revision),
@@ -142,10 +149,16 @@ pub(crate) fn respond_to_live_state_requests(
     }
 }
 
-/// Answers with a checkpoint of this host's live state.
-async fn current_live_state() -> Response {
+/// Answers with a checkpoint of this host's live state, and remembers the backup asking for it.
+///
+/// Pairing already admitted the request, so the backup it names can be trusted to take over.
+async fn current_live_state(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Response {
     // A backup asking for checkpoints will read forwarded commands next, so start recording.
     forward_journal().note_reader();
+    nightfall_backup::failover::note_backup_peer(peer.ip(), &headers);
     let sender = LIVE_STATE_REQUESTS
         .get()
         .and_then(|lock| lock.lock().ok()?.clone());
