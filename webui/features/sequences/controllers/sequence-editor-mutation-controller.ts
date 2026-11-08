@@ -82,7 +82,7 @@ export function createSequenceEditorMutationController(
       SequenceReorderRenumberPolicy.Preserve;
     if (shouldRenumberAfterReorder(policy)) {
       for (const [index, cueUid] of nextSteps.entries()) {
-        const cue = source.cueMap()[cueUid];
+        const cue = source.cue(cueUid);
         const nextCueId = index + 1;
         if (!cue || cue.identifiers.id === nextCueId) continue;
         sendCueUpdate({
@@ -177,7 +177,7 @@ export function createSequenceEditorMutationController(
       preview.stopPreviewSession();
       return;
     }
-    const nextCue = source.cueMap()[nextSelectedUid];
+    const nextCue = source.cue(nextSelectedUid);
     if (nextCue) preview.publishPreviewCue(nextCue);
   };
 

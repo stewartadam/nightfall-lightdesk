@@ -8,6 +8,10 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal } from "solid-js";
+import {
+  cueWithPendingEdit,
+  sequenceWithPendingEdit,
+} from "../../../lib/cue-service";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
   cues,
@@ -29,9 +33,20 @@ export function createSequenceEditorSourceController(sequenceUid: string) {
   const settings = useStore($settings);
   const [selectedCueUid, setSelectedCueUid] = createSignal<string>();
 
+  /**
+   * Returns a step cue as this editor shows and edits it, preferring an edit sent to the engine
+   * but not yet confirmed over the store definition.
+   */
+  const cue = (cueUid: string): types.Cue | undefined =>
+    cueWithPendingEdit(cueUid, cueMap()[cueUid]);
+
+  /** Resolves the edited sequence, including any of its unconfirmed edits, or why it is absent. */
   const loadingState = createMemo((): SequenceEditorLoadingState => {
     if (!definitionsLoaded()) return { status: "loading" };
-    const sequence = sequenceMap()[sequenceUid];
+    const sequence = sequenceWithPendingEdit(
+      sequenceUid,
+      sequenceMap()[sequenceUid],
+    );
     return sequence
       ? { status: "loaded", sequence }
       : { status: "not_found", sequenceUid };
@@ -47,12 +62,12 @@ export function createSequenceEditorSourceController(sequenceUid: string) {
     if (!currentSequence) return [];
     const stepRows: SequenceCueRow[] = currentSequence.steps.map(
       (cueUid, index) => {
-        const cue = cueMap()[cueUid];
+        const stepCue = cue(cueUid);
         return {
           index,
           cueUid,
-          cue,
-          isMissing: cue === undefined,
+          cue: stepCue,
+          isMissing: stepCue === undefined,
         } satisfies SequenceCueRow;
       },
     );
@@ -85,7 +100,7 @@ export function createSequenceEditorSourceController(sequenceUid: string) {
     if (currentSequence?.release_cue.identifiers.uid === cueUid) {
       return currentSequence.release_cue;
     }
-    return cueMap()[cueUid];
+    return cue(cueUid);
   });
 
   const label = createMemo(() => {
@@ -121,6 +136,7 @@ export function createSequenceEditorSourceController(sequenceUid: string) {
   return {
     sequenceUid,
     cueMap,
+    cue,
     settings,
     loadingState,
     sequence,

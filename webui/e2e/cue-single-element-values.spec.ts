@@ -268,6 +268,28 @@ async function verifySingleElementValues(
       .toBe(Number.parseFloat(value));
     await expect(cell).toContainText("%");
   }
+  // Both quick edits must reach the engine; a reply to the first must not undo the second.
+  await expect
+    .poll(() =>
+      page.evaluate((cueUid) => {
+        const values = (window as any).appStores.cues.get()[cueUid]
+          .instructions[0].assertions.values;
+        return {
+          intensity: values.Intensity?.data?.values?.[0],
+          blue: values.Blue?.data?.values?.[5],
+        };
+      }, cueUid),
+    )
+    .toEqual({
+      intensity: {
+        type: "AbsolutePercent",
+        data: { value: expect.closeTo(0.6, 5) },
+      },
+      blue: {
+        type: "AbsolutePercent",
+        data: { value: expect.closeTo(0.8, 5) },
+      },
+    });
   await panel.screenshot({
     path: testInfo.outputPath("single-element-edited.png"),
   });
