@@ -456,6 +456,14 @@ fn build_catalog() -> Vec<CompletionGroupSpec> {
             vis(&[], &[SlotId::QualifierKeyword]),
         ),
         completion_group(
+            CompletionGroupId::ParkValue,
+            "Value",
+            809,
+            &[SlotId::ParkValue],
+            &[pred(&[ClauseId::Park], Some(SlotId::ParkValue), None)],
+            vis(&[], &[]),
+        ),
+        completion_group(
             CompletionGroupId::ParkTarget,
             "Fixtures",
             807,

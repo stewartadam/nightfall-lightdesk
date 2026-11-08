@@ -210,6 +210,39 @@ async fn parked_parameters_hold_output_until_unparked_and_undo() {
     assert_eq!(harness.white(), 0.0);
 }
 
+/// `park … @ value` holds parameters at that value, read as a percentage like a programmer
+/// value, rather than at their current output.
+#[tokio::test]
+async fn park_at_a_value_holds_that_value() {
+    let mut harness = ParkHarness::new();
+    assert_eq!(
+        harness.eval("fix 601 white @ 100 int @ 100"),
+        CommandOutcome::succeeded()
+    );
+    assert_eq!(
+        harness.eval("park fixture 601.4 white @ 50"),
+        CommandOutcome::succeeded()
+    );
+    assert_eq!(harness.parked_count(), 1);
+    assert_eq!(
+        harness.white(),
+        127.5,
+        "white holds at 50%, not its 100% output"
+    );
+
+    assert_eq!(
+        harness.eval("fix 601 white @ 0"),
+        CommandOutcome::succeeded()
+    );
+    assert_eq!(harness.white(), 127.5);
+
+    let outcome = harness.eval("unpark fixture 601 @ 50");
+    assert!(
+        matches!(outcome, CommandOutcome::Failed(_)),
+        "unpark rejects a value, got {outcome:?}"
+    );
+}
+
 /// Parking with an empty selection fails with a clear message instead of silently doing nothing.
 #[tokio::test]
 async fn park_without_a_selection_fails() {

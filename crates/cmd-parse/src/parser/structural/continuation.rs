@@ -410,7 +410,7 @@ pub(in crate::parser) fn slot_requires_followup_value(
             )
         });
     }
-    if slot == SlotId::ChannelOverrideValue {
+    if matches!(slot, SlotId::ChannelOverrideValue | SlotId::ParkValue) {
         return fills
             .last()
             .is_some_and(|item| token_id_for_text(item.surface.as_str()) == Some(TokenId::AtSign));

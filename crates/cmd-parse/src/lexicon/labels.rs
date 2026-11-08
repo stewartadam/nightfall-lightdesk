@@ -27,6 +27,7 @@ pub fn slot_label(slot_id: SlotId) -> Option<&'static str> {
         SlotId::SetAttrValue | SlotId::StoreFixtureOffsetValue => Some("Value"),
         SlotId::ReleaseChannelExpr => Some("DMX Expression"),
         SlotId::ParkTargetExpr => Some("Fixtures"),
+        SlotId::ParkValue => Some("Value"),
         SlotId::ChannelOverrideValue => Some("DMX Value"),
         _ => None,
     }

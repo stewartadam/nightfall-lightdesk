@@ -10,6 +10,7 @@
 
 use nightfall::prelude::SpatialSelection;
 use nightfall_cmd_parse::{ast, conv};
+use nightfall_dmx::prelude::Attribute;
 use nightfall_engine::prelude::*;
 
 use crate::command::ParkCommand;
@@ -19,7 +20,8 @@ pub struct ParkAstConverter;
 
 impl AstConvert for ParkAstConverter {
     /// Converts a `park` or `unpark` command to its park command, with no selection when the
-    /// command names no fixtures and no attributes when it names none.
+    /// command names no fixtures and no attributes when it names none. `@ value` is read as a
+    /// percentage like a programmer value, and parks intensity when no attribute is named.
     fn convert(ast: &ast::CommandAst) -> Result<Vec<DynEnginePayload>, DispatchError> {
         let ast::CommandAst::Park(park_ast) = ast else {
             return Err(DispatchError::NotApplicable);
@@ -35,7 +37,7 @@ impl AstConvert for ParkAstConverter {
                     })
             })
             .transpose()?;
-        let attributes = park_ast
+        let attributes: Vec<Attribute> = park_ast
             .attributes
             .as_ref()
             .map(|qualifier| {
@@ -46,11 +48,31 @@ impl AstConvert for ParkAstConverter {
                     .collect()
             })
             .unwrap_or_default();
+        let value = park_ast
+            .value
+            .as_ref()
+            .map(|value| {
+                conv::parameter_value_from_ast(value).map_err(|error| {
+                    DispatchError::ConversionFailed(format!("value conversion: {error}"))
+                })
+            })
+            .transpose()?;
         let command = match park_ast.action {
             ast::ParkActionAst::Park => ParkCommand::Park {
                 selection,
-                attributes,
+                // A bare `@ value` sets intensity, as it does in the programmer.
+                attributes: if value.is_some() && attributes.is_empty() {
+                    vec![Attribute::Intensity]
+                } else {
+                    attributes
+                },
+                value,
             },
+            ast::ParkActionAst::Unpark if value.is_some() => {
+                return Err(DispatchError::ConversionFailed(
+                    "unpark doesn't take a value".to_string(),
+                ));
+            }
             ast::ParkActionAst::Unpark => ParkCommand::Unpark {
                 selection,
                 attributes,

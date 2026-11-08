@@ -67,6 +67,7 @@ completion_group_ids! {
     ReleaseChannel => "release/channel",
     ParkTarget => "park/target",
     ParkAttributes => "park/attributes",
+    ParkValue => "park/value",
     RmObjectType => "rm/object_type",
     RmObjectIdentifier => "rm/object_identifier",
     StoreObjectType => "store/object_type",

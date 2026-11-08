@@ -401,6 +401,13 @@ pub fn slot_spec(slot_id: SlotId) -> SlotSpec {
             NONE_SUPPRESS,
             false,
         ),
+        SlotId::ParkValue => slot(
+            slot_id,
+            &[TokenId::AtSign],
+            Some(ValueKind::NumericDigit),
+            NONE_SUPPRESS,
+            false,
+        ),
         SlotId::ParkTargetExpr => slot(
             slot_id,
             &[

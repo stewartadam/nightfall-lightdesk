@@ -97,6 +97,7 @@ const RELEASE_GROUPS: &[CompletionGroupId] = &[
 const PARK_GROUPS: &[CompletionGroupId] = &[
     CompletionGroupId::ParkAttributes,
     CompletionGroupId::ParkTarget,
+    CompletionGroupId::ParkValue,
 ];
 const CLEAR_GROUPS: &[CompletionGroupId] =
     &[CompletionGroupId::Clear, CompletionGroupId::ClearAttributes];

@@ -228,7 +228,7 @@ pub(in crate::parser) fn consume_slot<'i>(
             return None;
         }
     }
-    if slot_id == SlotId::ChannelOverrideValue
+    if matches!(slot_id, SlotId::ChannelOverrideValue | SlotId::ParkValue)
         && ((existing_fills == 0 && token_id != Some(TokenId::AtSign))
             || (existing_fills > 0 && !slot_requires_followup_value(slot_id, &slot_fills)))
     {

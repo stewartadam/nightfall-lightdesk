@@ -7,8 +7,8 @@
  */
 
 use super::branch_view::{
-    merged_slot_span, merged_slot_span_without_prefix_tokens, shifted_range, slot_spans,
-    slot_tokens, tokens_for_spans, tokens_in_span,
+    last_slot_span_matching, merged_slot_span, merged_slot_span_without_prefix_tokens,
+    shifted_range, slot_spans, slot_tokens, tokens_for_spans, tokens_in_span,
 };
 use super::context::StrictBranchContext;
 use super::*;
@@ -645,7 +645,8 @@ pub(super) fn materialize_release_ast<'i>(
     )))
 }
 
-/// Builds a `park` or `unpark` command from its optional fixture target and attribute list.
+/// Builds a `park` or `unpark` command from its optional fixture target, attribute list and
+/// `@ value`.
 pub(super) fn materialize_park_ast<'i>(ctx: StrictBranchContext<'i, '_>) -> Option<CommandAst<'i>> {
     let head = significant_tokens(ctx.tokens).first().copied()?;
     let action = match token_id_for_text(head.text.as_str())? {
@@ -653,15 +654,13 @@ pub(super) fn materialize_park_ast<'i>(ctx: StrictBranchContext<'i, '_>) -> Opti
         TokenId::Unpark => ParkActionAst::Unpark,
         _ => return None,
     };
-    let committed = ctx.branch.committed_clause_path();
-    let attributes = if committed
-        .iter()
-        .any(|clause| clause.clause == ClauseId::ParkAttributes)
-    {
-        let attribute_spans = slot_spans(
-            ctx.branch,
-            crate::slots::contracts::SlotId::QualifierAttributeList,
-        );
+    let attribute_spans = slot_spans(
+        ctx.branch,
+        crate::slots::contracts::SlotId::QualifierAttributeList,
+    );
+    let attributes = if attribute_spans.is_empty() {
+        None
+    } else {
         let attributes = parse_attribute_types_from_tokens(
             ctx.command_str,
             &tokens_for_spans(ctx.tokens, &attribute_spans),
@@ -674,8 +673,6 @@ pub(super) fn materialize_park_ast<'i>(ctx: StrictBranchContext<'i, '_>) -> Opti
             _attr: AttributeKeyword,
             attributes,
         })
-    } else {
-        None
     };
     let selection =
         match merged_slot_span(ctx.branch, crate::slots::contracts::SlotId::ParkTargetExpr) {
@@ -685,10 +682,27 @@ pub(super) fn materialize_park_ast<'i>(ctx: StrictBranchContext<'i, '_>) -> Opti
             )?),
             None => None,
         };
+    let value = match last_slot_span_matching(
+        ctx.branch,
+        crate::slots::contracts::SlotId::ParkValue,
+        |item| item.surface.trim() != "@",
+    ) {
+        Some(value_span) => Some(parse_decimal_value_from_tokens(
+            ctx.command_str,
+            &tokens_in_span(ctx.tokens, value_span),
+        )?),
+        None if merged_slot_span(ctx.branch, crate::slots::contracts::SlotId::ParkValue)
+            .is_some() =>
+        {
+            return None;
+        }
+        None => None,
+    };
     Some(CommandAst::Park(ParkCommandAst {
         action,
         selection,
         attributes,
+        value,
     }))
 }
 

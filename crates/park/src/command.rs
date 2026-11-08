@@ -12,7 +12,7 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use moonshine_kind::Instance;
 use nightfall::prelude::*;
-use nightfall_dmx::prelude::Attribute;
+use nightfall_dmx::prelude::{Attribute, ParameterDmxValue, ParameterValue};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_programming::prelude::Programmer;
@@ -27,12 +27,16 @@ use crate::state::{ParameterKey, ParkedParameter, ParkedParameters};
 #[serde(tag = "type", content = "data")]
 #[serde(deny_unknown_fields)]
 pub enum ParkCommand {
-    /// Park the selected parameters at the value each one outputs right now.
+    /// Park the selected parameters at a value, or at the value each one outputs right now.
     Park {
         /// Fixtures to park, or `None` for the programmer's active selection.
         selection: Option<SpatialSelection>,
         /// Attributes to park on those fixtures, or empty for every parameter.
         attributes: Vec<Attribute>,
+        /// Value to park at, resolved per parameter like a programmer value, or `None` to park
+        /// at the current output.
+        #[serde(default)]
+        value: Option<ParameterValue>,
     },
     /// Unpark the selected parameters so they follow playback again.
     Unpark {
@@ -120,12 +124,22 @@ impl ParkTargetResolver<'_, '_> {
         Ok(targets)
     }
 
-    /// Returns the logical value a parameter outputs now, after every output stage.
-    fn current_output(&self, parameter: Instance<Parameter>) -> Option<f32> {
-        self.parameters
-            .get(parameter.entity())
-            .ok()
-            .map(|parameter| parameter.values.current_value)
+    /// Returns the logical value to park a parameter at: `value` resolved against the
+    /// parameter's range and clamped to it, or the value the parameter outputs now, after every
+    /// output stage.
+    fn park_value(
+        &self,
+        parameter: Instance<Parameter>,
+        value: Option<&ParameterValue>,
+    ) -> Option<ParameterDmxValue> {
+        let parameter = self.parameters.get(parameter.entity()).ok()?;
+        Some(match value {
+            Some(value) => parameter.resolve_value(value).clamp(
+                parameter.metadata.logical_min(),
+                parameter.metadata.logical_max(),
+            ),
+            None => parameter.values.current_value,
+        })
     }
 }
 
@@ -160,6 +174,7 @@ fn apply_park_command(
         ParkCommand::Park {
             selection,
             attributes,
+            value,
         } => {
             let targets = resolver.parameters(selection.as_ref(), attributes)?;
             if targets.is_empty() {
@@ -169,7 +184,7 @@ fn apply_park_command(
                 ));
             }
             for (key, parameter) in targets {
-                if let Some(value) = resolver.current_output(parameter) {
+                if let Some(value) = resolver.park_value(parameter, value.as_ref()) {
                     parked.park(key, value);
                 }
             }

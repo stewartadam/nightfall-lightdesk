@@ -814,6 +814,7 @@ fn completion_group_anchor_clauses(group_id: CompletionGroupId) -> &'static [Cla
         CompletionGroupId::ReleaseChannel => &[ClauseId::ReleaseChannel],
         CompletionGroupId::ParkTarget => &[ClauseId::ParkTarget],
         CompletionGroupId::ParkAttributes => &[ClauseId::ParkAttributes],
+        CompletionGroupId::ParkValue => &[ClauseId::ParkValue],
         CompletionGroupId::RmObjectType | CompletionGroupId::RmObjectIdentifier => &[ClauseId::Rm],
         CompletionGroupId::StoreObjectType
         | CompletionGroupId::StoreObjectIdentifier
@@ -872,7 +873,9 @@ fn completion_group_matches_command_head(group_id: CompletionGroupId, head: Toke
         CompletionGroupId::ReleaseAttributes | CompletionGroupId::ReleaseChannel => {
             head == TokenId::Release
         }
-        CompletionGroupId::ParkTarget | CompletionGroupId::ParkAttributes => {
+        CompletionGroupId::ParkTarget
+        | CompletionGroupId::ParkAttributes
+        | CompletionGroupId::ParkValue => {
             matches!(head, TokenId::Park | TokenId::Unpark)
         }
         CompletionGroupId::RmObjectType | CompletionGroupId::RmObjectIdentifier => {

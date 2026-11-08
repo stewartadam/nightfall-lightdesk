@@ -84,6 +84,7 @@ pub enum SlotId {
     ChannelOverrideValue,
     ReleaseChannelExpr,
     ParkTargetExpr,
+    ParkValue,
     RmObjectType,
     RmObjectIdentifier,
     StoreObjectType,
@@ -180,6 +181,7 @@ pub enum ClauseId {
     Park,
     ParkTarget,
     ParkAttributes,
+    ParkValue,
     Clear,
     ClearAttributes,
     Flow,
@@ -481,7 +483,15 @@ const PARK_RULES: &ClauseRules = &ClauseRules {
         ),
         child_when(
             ClauseId::ParkAttributes,
-            ClauseCondition::Not(&has(ClauseId::ParkAttributes)),
+            ClauseCondition::Not(&ClauseCondition::Any(&[
+                has(ClauseId::ParkAttributes),
+                has(ClauseId::ParkValue),
+            ])),
+        ),
+        // The value comes last, once.
+        child_when(
+            ClauseId::ParkValue,
+            ClauseCondition::Not(&has(ClauseId::ParkValue)),
         ),
     ],
     ..DEFAULT_RULES
@@ -1223,7 +1233,15 @@ const PARK_CHILDREN: &[ClauseChildSpec] = &[
         clause: ClauseId::ParkAttributes,
         cardinality: ClauseCardinality::Optional,
     },
+    ClauseChildSpec {
+        clause: ClauseId::ParkValue,
+        cardinality: ClauseCardinality::Optional,
+    },
 ];
+const PARK_VALUE_SLOTS: &[ClauseSlotSpec] = &[ClauseSlotSpec {
+    slot: SlotId::ParkValue,
+    cardinality: SlotCardinality::Required,
+}];
 const PARK_TARGET_SLOTS: &[ClauseSlotSpec] = &[ClauseSlotSpec {
     slot: SlotId::ParkTargetExpr,
     cardinality: SlotCardinality::Required,
@@ -1935,6 +1953,15 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         children: EMPTY_CHILDREN,
         slots: RELEASE_ATTRIBUTES_SLOTS,
         rules: QUALIFIER_RULES,
+        entry: ClauseEntryKind::Structural,
+    },
+    ClauseSchema {
+        id: ClauseId::ParkValue,
+        label: "Value",
+        parent: Some(ClauseId::Park),
+        children: EMPTY_CHILDREN,
+        slots: PARK_VALUE_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {

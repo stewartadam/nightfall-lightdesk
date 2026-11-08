@@ -1594,4 +1594,15 @@ fn strict_parses_park_and_unpark_targets() {
     assert_eq!(attribute_count(&selection_attributes), 1);
 
     assert!(parse("park ch 1.1").is_none());
+
+    let valued = parse("park fixture 5 intensity @ 80").expect("park at a value parses");
+    assert_eq!(attribute_count(&valued), 1);
+    assert_eq!(valued.value.map(|value| value.0), Some("80"));
+
+    let bare_valued = parse("park @ 50").expect("park the selection at a value parses");
+    assert!(bare_valued.selection.is_none() && bare_valued.attributes.is_none());
+    assert_eq!(bare_valued.value.map(|value| value.0), Some("50"));
+
+    assert!(fixtures.value.is_none());
+    assert!(parse("park fixture 5 @").is_none());
 }

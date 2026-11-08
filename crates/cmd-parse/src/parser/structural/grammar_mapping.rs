@@ -173,7 +173,9 @@ pub(in crate::parser) fn grammar_rule_for_slot(
         | SlotId::RecallCueRef
         | SlotId::RecallBlueprintIdentifier => GrammarRuleId::SimpleIdentifierExpression,
         SlotId::StoreFixtureIdentifier => GrammarRuleId::IdentifierExpression,
-        SlotId::ChannelOverrideValue | SlotId::StoreFixtureOffsetValue => GrammarRuleId::ValueRange,
+        SlotId::ChannelOverrideValue | SlotId::ParkValue | SlotId::StoreFixtureOffsetValue => {
+            GrammarRuleId::ValueRange
+        }
         SlotId::PatchSourceEndpoint | SlotId::PatchTargetEndpoint => GrammarRuleId::TransportName,
         SlotId::ClipAction => GrammarRuleId::PlaybackActions,
         SlotId::FlowAction => GrammarRuleId::FlowActions,

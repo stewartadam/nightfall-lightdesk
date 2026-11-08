@@ -144,7 +144,7 @@ pub(in crate::parser) fn filled_value_for_slot(
             normalized_value_for_fill(slot, &value, &token.text),
         ));
     }
-    if slot == SlotId::ChannelOverrideValue
+    if matches!(slot, SlotId::ChannelOverrideValue | SlotId::ParkValue)
         && token_id_for_text(token.text.as_str()) == Some(TokenId::AtSign)
     {
         let value = FilledValue::Token(TokenId::AtSign);

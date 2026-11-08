@@ -854,6 +854,8 @@ pub struct ParkCommandAst<'i> {
     pub action: ParkActionAst,
     pub selection: Option<SelectionAst>,
     pub attributes: Option<AttributeQualifierAst<'i>>,
+    /// Value to park at, from `@ value`, or `None` to park at the current output.
+    pub value: Option<ValueAst<'i>>,
 }
 
 /// Command that updates the engine frame rate.
