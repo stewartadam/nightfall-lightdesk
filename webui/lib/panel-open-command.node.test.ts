@@ -11,6 +11,7 @@ import test from "node:test";
 import { COMMAND_LINE_PANEL_SHORTCUT } from "../features/command-line/panels/command-line.definition";
 import { panelDefinitionByName } from "./panel-definitions";
 import {
+  focusOrAddPanel,
   getPanelOpenShortcut,
   openOrFocusPanel,
   openOrFocusPanelDefinition,
@@ -141,6 +142,59 @@ test("openOrFocusPanel focuses existing panel when present", () => {
   assert.equal(result, "focused");
   assert.equal(focusCalls, 1);
   assert.equal(addCalls, 0);
+});
+
+/** Verifies an open edge panel is expanded before focus, without adding a second copy. */
+test("focusOrAddPanel expands the edge of an open panel before focusing it", () => {
+  const calls: string[] = [];
+  const api = createDockApi({
+    getPanel: (id) => ({
+      id,
+      api: { location: { position: "bottom", type: "edge" } },
+      focus: () => calls.push("focus"),
+    }),
+    getEdgeGroup: () => ({ expand: () => calls.push("expand") }),
+    addPanel: () => calls.push("add"),
+  });
+
+  focusOrAddPanel(api, {
+    id: "panel-PatchEditor",
+    component: "PatchEditor",
+    title: "Patch",
+    params: {},
+  });
+
+  assert.deepEqual(calls, ["expand", "focus"]);
+});
+
+/** Verifies a new panel joining a collapsed edge is revealed and keeps the caller's options. */
+test("focusOrAddPanel adds a closed panel and expands the edge it lands in", () => {
+  const calls: string[] = [];
+  const added: unknown[] = [];
+  const params = {
+    id: "panel-New",
+    component: "New",
+    title: "New",
+    params: {},
+    renderer: "onlyWhenVisible" as const,
+  };
+  const api = createDockApi({
+    getPanel: () => undefined,
+    getEdgeGroup: () => ({ expand: () => calls.push("expand") }),
+    addPanel: (options) => {
+      added.push(options);
+      return {
+        id: options.id,
+        api: { location: { position: "right", type: "edge" } },
+        focus: () => {},
+      };
+    },
+  });
+
+  focusOrAddPanel(api, params);
+
+  assert.deepEqual(added, [params]);
+  assert.deepEqual(calls, ["expand"]);
 });
 
 /** Verifies edge-docked singleton panels are revealed before focus returns. */

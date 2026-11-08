@@ -33,7 +33,11 @@ Ensure the `KeyboardShortcutsProvider` is included near the top of your componen
 import KeyboardShortcutsProvider from "./components/solid/KeyboardShortcutsProvider";
 
 export function App() {
-    return <KeyboardShortcutsProvider>{/* Your application components */}</KeyboardShortcutsProvider>;
+  return (
+    <KeyboardShortcutsProvider>
+      {/* Your application components */}
+    </KeyboardShortcutsProvider>
+  );
 }
 ```
 
@@ -46,16 +50,16 @@ import { registerComponentFocus } from "../lib/keyboardShortcuts";
 import { onMount } from "solid-js";
 
 function MyEditorComponent() {
-    const COMPONENT_ID = "my-editor";
-    let containerRef: HTMLDivElement | undefined;
+  const COMPONENT_ID = "my-editor";
+  let containerRef: HTMLDivElement | undefined;
 
-    onMount(() => {
-        if (containerRef) {
-            return registerComponentFocus(COMPONENT_ID, containerRef);
-        }
-    });
+  onMount(() => {
+    if (containerRef) {
+      return registerComponentFocus(COMPONENT_ID, containerRef);
+    }
+  });
 
-    return <div ref={containerRef}>{/* Editor content */}</div>;
+  return <div ref={containerRef}>{/* Editor content */}</div>;
 }
 ```
 
@@ -67,20 +71,20 @@ Register shortcuts using the `useKeyboardShortcut` hook in your components:
 import { useKeyboardShortcut } from "../lib/keyboardShortcuts";
 
 function MyComponent() {
-    // Register a global shortcut
-    useKeyboardShortcut({
-        key: "?",
-        handler: () => console.log("Help requested"),
-        description: "Show help",
-    });
+  // Register a global shortcut
+  useKeyboardShortcut({
+    key: "?",
+    handler: () => console.log("Help requested"),
+    description: "Show help",
+  });
 
-    // Register a component-specific shortcut
-    useKeyboardShortcut({
-        key: "Space",
-        handler: () => console.log("Component-specific action"),
-        description: "Do something in this component",
-        componentId: "my-editor",
-    });
+  // Register a component-specific shortcut
+  useKeyboardShortcut({
+    key: "Space",
+    handler: () => console.log("Component-specific action"),
+    description: "Do something in this component",
+    componentId: "my-editor",
+  });
 }
 ```
 
@@ -89,31 +93,34 @@ function MyComponent() {
 The command line panel uses component focus to ensure its shortcuts work even when not the active dockview panel:
 
 ```tsx
-import { registerComponentFocus, useKeyboardShortcut } from "../lib/keyboardShortcuts";
+import {
+  registerComponentFocus,
+  useKeyboardShortcut,
+} from "../lib/keyboardShortcuts";
 import { onMount } from "solid-js";
 
 function CommandLinePanel() {
-    const COMPONENT_ID = "command-line";
-    let containerRef: HTMLDivElement | undefined;
+  const COMPONENT_ID = "command-line";
+  let containerRef: HTMLDivElement | undefined;
 
-    onMount(() => {
-        if (containerRef) {
-            return registerComponentFocus(COMPONENT_ID, containerRef);
-        }
-    });
+  onMount(() => {
+    if (containerRef) {
+      return registerComponentFocus(COMPONENT_ID, containerRef);
+    }
+  });
 
-    useKeyboardShortcut({
-        key: "ArrowUp",
-        handler: () => navigateHistory("prev"),
-        description: "Previous command in history",
-        componentId: COMPONENT_ID,
-    });
+  useKeyboardShortcut({
+    key: "ArrowUp",
+    handler: () => navigateHistory("prev"),
+    description: "Previous command in history",
+    componentId: COMPONENT_ID,
+  });
 
-    return (
-        <form ref={containerRef} onSubmit={handleSubmit}>
-            <input id="cmdline" placeholder="Enter command..." />
-        </form>
-    );
+  return (
+    <form ref={containerRef} onSubmit={handleSubmit}>
+      <input id="cmdline" placeholder="Enter command..." />
+    </form>
+  );
 }
 ```
 
@@ -129,15 +136,15 @@ Registers a keyboard shortcut within a component.
 
 ```tsx
 interface KeyboardShortcut {
-    key: string;                    // Keybinding string (e.g., "Space", "Ctrl+S")
-    handler: () => void;            // Function called when shortcut is triggered
-    description: string;            // Human-readable description
-    componentId?: string;           // Optional component ID for component-specific shortcuts
+  key: string; // Keybinding string (e.g., "Space", "Ctrl+S")
+  handler: () => void; // Function called when shortcut is triggered
+  description: string; // Human-readable description
+  componentId?: string; // Optional component ID for component-specific shortcuts
 }
 
 interface KeyboardShortcutOptions {
-    global?: boolean;               // If true, makes shortcut global
-    overwrite?: boolean;            // If true, overwrites conflicting shortcuts
+  global?: boolean; // If true, makes shortcut global
+  overwrite?: boolean; // If true, overwrites conflicting shortcuts
 }
 ```
 
@@ -170,4 +177,3 @@ For combinations, use `+`:
 3. **Consistency**: Follow platform conventions (e.g., Cmd+S/Ctrl+S for save)
 4. **Avoid Conflicts**: Don't override browser defaults
 5. **Documentation**: Keep the shortcut help panel accessible
-

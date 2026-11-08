@@ -16,6 +16,7 @@ import CrudLabelProperties from "../../../components/widgets/crud/crud-label-pro
 import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
 import { deleteCue, sendCueUpdate } from "../../../lib/cue-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
+import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import {
   serializeTimelineInsertDragPayload,
   TIMELINE_INSERT_DRAG_MIME,
@@ -120,11 +121,7 @@ export function createCueListController(props: CueListControllerProps) {
     const panelId = `cue-list-panel-${cueUid}`; // FIXME: find way to avoid hardcoded panel name string
 
     // Focus an existing panel if its already open, or open it if not
-    const panel = api.getPanel(panelId);
-    if (panel) {
-      return panel.focus();
-    }
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: panelId,
       component: "CueEditor",
       title: formatCueEditorTitle({

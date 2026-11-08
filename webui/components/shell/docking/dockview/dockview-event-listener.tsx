@@ -85,15 +85,29 @@ function isEditableFocusTarget(target: Element | null): boolean {
   );
 }
 
-/** Focuses the docked command input only when activation would otherwise have no editor target. */
-function focusCommandLinePanelInputIfNeeded(): void {
-  if (isEditableFocusTarget(document.activeElement)) {
-    return;
-  }
+/** How long to retry command input focus while a dialog closes and an edge reveals the input. */
+const COMMAND_LINE_FOCUS_TIMEOUT_MS = 1000;
 
-  document
-    .querySelector<HTMLElement>('[data-workspace-active="true"] #cmdline')
-    ?.focus();
+/**
+ * Focuses the docked command input only when activation would otherwise have no editor target.
+ * Retries while the input cannot take focus: a modal dialog such as the command palette still
+ * holds it and makes the page inert, or Dockview has not yet shown a panel from a collapsed edge.
+ */
+function focusCommandLinePanelInputIfNeeded(api: DockviewApi): void {
+  const deadline = performance.now() + COMMAND_LINE_FOCUS_TIMEOUT_MS;
+  /** Attempts focus, then waits a frame unless the panel lost activation or an editor holds focus. */
+  const focusInput = () => {
+    if (api.activePanel?.id !== "panel-CommandLine") return;
+    if (!document.querySelector("dialog:modal")) {
+      if (isEditableFocusTarget(document.activeElement)) return;
+      document
+        .querySelector<HTMLElement>('[data-workspace-active="true"] #cmdline')
+        ?.focus();
+      if (isEditableFocusTarget(document.activeElement)) return;
+    }
+    if (performance.now() < deadline) requestAnimationFrame(focusInput);
+  };
+  focusInput();
 }
 
 /**
@@ -372,7 +386,7 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
     const disposeFocusChange = api.onDidActivePanelChange((event) => {
       // TODO: ideally we would pass on this notification to the underlying component
       if (event.panel?.id === "panel-CommandLine") {
-        focusCommandLinePanelInputIfNeeded();
+        focusCommandLinePanelInputIfNeeded(api);
       }
     });
     onCleanup(() => disposeFocusChange.dispose());

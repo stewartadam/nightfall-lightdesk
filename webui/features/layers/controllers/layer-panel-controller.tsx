@@ -9,6 +9,7 @@
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
+import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
 import { normalizeFixtureUid } from "../../../lib/route-utils";
@@ -260,13 +261,7 @@ export function LayerPanelController(props: BasePanelComponentProps) {
     const api = $dockApi();
     if (!api) return;
 
-    const panel = api.getPanel(id);
-    if (panel) {
-      panel.focus();
-      return;
-    }
-
-    api.addPanel({
+    focusOrAddPanel(api, {
       id,
       component,
       title,

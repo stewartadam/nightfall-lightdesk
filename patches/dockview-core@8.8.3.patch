@@ -1,8 +1,8 @@
 diff --git a/dist/package/main.cjs.js b/dist/package/main.cjs.js
-index 7853d342fb26ef44bab8b59c46b92e3e60b9474e..5e56dbdb5626788003e5c572e43793c3e5cf19c8 100644
+index 7a02322dc06ce250275cd99c22eb539331b5bc0b..c2518ec54de67edfc630734cd3fc158afaea70b1 100644
 --- a/dist/package/main.cjs.js
 +++ b/dist/package/main.cjs.js
-@@ -11426,14 +11426,34 @@ var DockviewGroupPanelModel = class extends CompositeDisposable {
+@@ -11562,14 +11562,34 @@ var DockviewGroupPanelModel = class extends CompositeDisposable {
  	}
  	invalidateHeaderSize() {
  		this._cachedHeaderSize = void 0;
@@ -40,10 +40,10 @@ index 7853d342fb26ef44bab8b59c46b92e3e60b9474e..5e56dbdb5626788003e5c572e43793c3
  	}
  	_removePanel(panel, options) {
 diff --git a/dist/package/main.esm.mjs b/dist/package/main.esm.mjs
-index eb848d19070e131c6979b0809f2ce925ea8d6b3a..849c7f388a7cbaf458bf6d0e23e9c7a03986b861 100644
+index 7da3ab2db8120c6bc02bb8e624dfd2b9b272798f..06fb38f51267d6aba7ea09612aa6151ed6d7c309 100644
 --- a/dist/package/main.esm.mjs
 +++ b/dist/package/main.esm.mjs
-@@ -11424,14 +11424,34 @@ var DockviewGroupPanelModel = class extends CompositeDisposable {
+@@ -11560,14 +11560,34 @@ var DockviewGroupPanelModel = class extends CompositeDisposable {
  	}
  	invalidateHeaderSize() {
  		this._cachedHeaderSize = void 0;
