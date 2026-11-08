@@ -177,6 +177,12 @@ impl FixtureLibraryManager {
         Ok(())
     }
 
+    /// Returns the show package folder whose `fixtures` subfolder overlays the library, if
+    /// one is selected.
+    pub fn showfile_directory(&self) -> Option<&Path> {
+        self.showfile_directory.as_deref()
+    }
+
     /// Get the platform-specific library path
     pub fn get_library_path() -> Result<PathBuf> {
         let data_dir = nightfall::nightfall_data_dir().ok_or_else(|| {

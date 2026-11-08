@@ -37,6 +37,7 @@ nightfall-fx = { path = "../fx" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-io = { path = "../io", features = ["native-network-watch"] }
 nightfall-fixture-library = { path = "../fixture-library", optional = true }
+nightfall-rig-import = { path = "../rig-import", optional = true }
 nightfall-gdtf-share = { path = "../gdtf-share", optional = true }
 nightfall-object-library = { path = "../object-library", optional = true }
 nightfall-flow = { path = "../flow" }
@@ -93,7 +94,7 @@ osc = ["dep:nightfall-input-osc", "nightfall-showfile/osc"]
 artnet = ["dep:nightfall-input-artnet", "dep:nightfall-output-artnet"]
 sacn = ["dep:nightfall-input-sacn", "dep:nightfall-output-sacn"]
 usb = ["dep:nightfall-output-usb"]
-fixture-library = ["dep:nightfall-fixture-library"]
+fixture-library = ["dep:nightfall-fixture-library", "dep:nightfall-rig-import"]
 gdtf-share = ["dep:nightfall-gdtf-share", "fixture-library"]
 object-library = ["dep:nightfall-object-library"]
 debug = ["nightfall-engine/debug"]

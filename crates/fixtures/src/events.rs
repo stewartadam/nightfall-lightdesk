@@ -66,58 +66,20 @@ pub fn handle_restore_fixture_snapshot(
 ) {
     for event in events.read() {
         let snapshot = &event.operation.0;
-        let fixture = snapshot.fixture.clone();
-        let fixture_uid = fixture.identifiers.uid;
         tracing::debug!(
             "Restoring fixture snapshot for fixture {}",
-            fixture.identifiers.id
+            snapshot.fixture.identifiers.id
         );
 
-        if let Ok((_fixture, parameter_entities)) = data_provider.remove_fixture(&fixture_uid) {
-            for parameter_entity in parameter_entities {
-                commands.entity(parameter_entity.entity()).despawn();
-            }
-        }
-
-        if let Err(err) = data_provider.inner.add(fixture) {
+        if let Err(err) = restore_fixture(&mut commands, &mut data_provider, snapshot) {
             tracing::warn!("Failed to restore fixture snapshot: {}", err);
             fail_action(
                 &mut responder,
                 event.command_id,
                 "fixtures.restore_fixture_failed",
-                err.to_string(),
+                err,
             );
             continue;
-        }
-
-        for parameter_snapshot in &snapshot.parameters {
-            let element_ref = FixtureRef {
-                fixture_uid,
-                index: Some(parameter_snapshot.element_index),
-            };
-            let parameter_cmds = commands.spawn_instance(Parameter {
-                metadata: parameter_snapshot.metadata.clone(),
-                values: parameter_snapshot.values.clone(),
-            });
-            let parameter_entity = parameter_cmds.instance();
-
-            tracing::trace!(
-                ?parameter_entity,
-                ?element_ref,
-                attribute = ?parameter_snapshot.metadata.attribute,
-                "Spawning restored parameter entity"
-            );
-
-            data_provider.add_parameter(
-                element_ref,
-                parameter_snapshot.metadata.attribute.clone(),
-                parameter_entity,
-            );
-        }
-
-        for default in &snapshot.color_path_defaults {
-            data_provider
-                .set_color_path_default(default.fixture.clone(), Some(default.color_path_id));
         }
         if let Some(routes) = &snapshot.routes {
             input_routes.routes = routes.input_routes.clone();
@@ -125,6 +87,105 @@ pub fn handle_restore_fixture_snapshot(
             disabled_routes.routes = routes.disabled_routes.clone();
         }
         succeed_action(&mut responder, event.command_id);
+    }
+}
+
+/// Replaces any fixture with the snapshot's UID by the snapshot, respawning its parameter
+/// entities with their saved values and putting back its color path defaults.
+fn restore_fixture(
+    commands: &mut Commands,
+    data_provider: &mut FixtureDataProviderExt,
+    snapshot: &crate::undo::FixtureSnapshot,
+) -> Result<(), String> {
+    let fixture = snapshot.fixture.clone();
+    let fixture_uid = fixture.identifiers.uid;
+    remove_fixture(commands, data_provider, fixture_uid);
+    data_provider
+        .inner
+        .add(fixture)
+        .map_err(|error| error.to_string())?;
+
+    for parameter_snapshot in &snapshot.parameters {
+        let element_ref = FixtureRef {
+            fixture_uid,
+            index: Some(parameter_snapshot.element_index),
+        };
+        let parameter_cmds = commands.spawn_instance(Parameter {
+            metadata: parameter_snapshot.metadata.clone(),
+            values: parameter_snapshot.values.clone(),
+        });
+        let parameter_entity = parameter_cmds.instance();
+
+        tracing::trace!(
+            ?parameter_entity,
+            ?element_ref,
+            attribute = ?parameter_snapshot.metadata.attribute,
+            "Spawning restored parameter entity"
+        );
+
+        data_provider.add_parameter(
+            element_ref,
+            parameter_snapshot.metadata.attribute.clone(),
+            parameter_entity,
+        );
+    }
+
+    for default in &snapshot.color_path_defaults {
+        data_provider.set_color_path_default(default.fixture.clone(), Some(default.color_path_id));
+    }
+    Ok(())
+}
+
+/// Removes a fixture, if present, and despawns its parameter entities.
+fn remove_fixture(
+    commands: &mut Commands,
+    data_provider: &mut FixtureDataProviderExt,
+    fixture_uid: uuid::Uuid,
+) {
+    if let Ok((_fixture, parameter_entities)) = data_provider.remove_fixture(&fixture_uid) {
+        for parameter_entity in parameter_entities {
+            commands.entity(parameter_entity.entity()).despawn();
+        }
+    }
+}
+
+/// Handle RestorePatchedFixtures operations: remove the batch's fixtures, bring back the
+/// snapshotted ones and put the DMX routes back as they were.
+pub fn handle_restore_patched_fixtures(
+    mut commands: Commands,
+    mut events: MessageReader<EngineOperationEnvelope<crate::undo::RestorePatchedFixtures>>,
+    mut data_provider: ResMut<FixtureDataProviderExt>,
+    mut input_routes: ResMut<InputRoutes>,
+    mut output_routes: ResMut<OutputRoutes>,
+    mut disabled_routes: ResMut<DisabledRoutes>,
+    mut responder: CommandResponder,
+) {
+    for event in events.read() {
+        let snapshot = &event.operation.0;
+        for uid in &snapshot.remove {
+            remove_fixture(&mut commands, &mut data_provider, *uid);
+        }
+        let mut failure = None;
+        for fixture in &snapshot.restore {
+            if let Err(error) = restore_fixture(&mut commands, &mut data_provider, fixture) {
+                failure.get_or_insert(error);
+            }
+        }
+        input_routes.routes = snapshot.routes.input_routes.clone();
+        output_routes.routes = snapshot.routes.output_routes.clone();
+        disabled_routes.routes = snapshot.routes.disabled_routes.clone();
+        match failure {
+            None => succeed_action(&mut responder, event.command_id),
+            Some(error) => {
+                tracing::warn!("Failed to restore patched fixtures: {}", error);
+                fail_action(
+                    &mut responder,
+                    event.command_id,
+                    "fixtures.restore_fixture_failed",
+                    error,
+                );
+            }
+        }
     }
 }
 

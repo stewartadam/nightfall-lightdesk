@@ -290,6 +290,7 @@ dependencies = [
  "nightfall-park",
  "nightfall-programming",
  "nightfall-references",
+ "nightfall-rig-import",
  "nightfall-scene-objects",
  "nightfall-selection-runtime",
  "nightfall-service-host",
@@ -6232,6 +6233,35 @@ dependencies = [
  "tracing",
  "typeshare",
  "uuid",
+]
+
+[[package]]
+name = "nightfall-rig-import"
+version = "0.1.0-alpha.5"
+dependencies = [
+ "async-channel",
+ "axum",
+ "bevy_app",
+ "bevy_ecs",
+ "futures-util",
+ "nightfall",
+ "nightfall-engine",
+ "nightfall-fixture-library",
+ "nightfall-fixture-model",
+ "nightfall-fixtures",
+ "nightfall-io",
+ "nightfall-mvr",
+ "nightfall-websocket",
+ "nightfall-workspace-hack",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "typeshare",
+ "uuid",
+ "zip",
 ]
 
 [[package]]

@@ -35,7 +35,8 @@ use nightfall_output_usb::prelude::*;
 pub trait FeatureIntegrationExt {
     /// Inserts the audio engine right after `EnginePlugin` when the `audio` feature is on.
     fn maybe_core_audio(self) -> Self;
-    /// Inserts the fixture library right after `MacrosPlugin` when its feature is on.
+    /// Inserts the fixture library right after `MacrosPlugin`, followed by MVR rig import,
+    /// when its feature is on.
     fn maybe_fixture_library(self) -> Self;
     /// Inserts the object library after the fixture library (or after `MacrosPlugin` without
     /// one) when its feature is on. Call it after [`Self::maybe_fixture_library`].
@@ -61,9 +62,11 @@ impl FeatureIntegrationExt for PluginGroupBuilder {
         self
     }
 
+    /// Adds the fixture library and MVR rig import, which builds fixtures from it.
     #[cfg(feature = "fixture-library")]
     fn maybe_fixture_library(self) -> Self {
         self.add_after::<nightfall_macros::prelude::MacrosPlugin>(FixtureLibraryPlugin)
+            .add_after::<FixtureLibraryPlugin>(nightfall_rig_import::RigImportPlugin)
     }
 
     #[cfg(not(feature = "fixture-library"))]
