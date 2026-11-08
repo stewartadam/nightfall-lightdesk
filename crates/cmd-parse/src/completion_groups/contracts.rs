@@ -65,6 +65,8 @@ completion_group_ids! {
     ChannelOverrideValue => "channel_override/value",
     ReleaseAttributes => "release/attributes",
     ReleaseChannel => "release/channel",
+    ParkTarget => "park/target",
+    ParkAttributes => "park/attributes",
     RmObjectType => "rm/object_type",
     RmObjectIdentifier => "rm/object_identifier",
     StoreObjectType => "store/object_type",

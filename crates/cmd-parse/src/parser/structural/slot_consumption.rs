@@ -50,7 +50,7 @@ pub(in crate::parser) fn consume_slot<'i>(
         if !dmx_channel_token_allowed(channel_fills, token) {
             return None;
         }
-    } else if slot_id == SlotId::ReleaseChannelExpr
+    } else if matches!(slot_id, SlotId::ReleaseChannelExpr | SlotId::ParkTargetExpr)
         && token.kind == LexerTokenKind::Word
         && token_id.is_none_or(|token_id| !slot_accepts_token(slot_id, token_id))
     {

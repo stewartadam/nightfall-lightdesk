@@ -1550,3 +1550,48 @@ fn strict_structural_dispatch_matches_dedicated_parsers() {
         "structural dispatch differs from the dedicated parser for {mismatches:?}"
     );
 }
+
+/// `park` and `unpark` accept no target, a fixture or group target, and an optional attribute
+/// list, and keep which of the two heads was typed.
+#[test]
+fn strict_parses_park_and_unpark_targets() {
+    use crate::ast::{ParkActionAst, ParkCommandAst};
+
+    let parse = |input| match parse_strict(input) {
+        Ok(CommandAst::Park(command)) => Some(command),
+        _ => None,
+    };
+    let attribute_count = |command: &ParkCommandAst| {
+        command
+            .attributes
+            .as_ref()
+            .map_or(0, |attributes| attributes.attributes.len())
+    };
+
+    let bare = parse("park").expect("bare park parses");
+    assert_eq!(bare.action, ParkActionAst::Park);
+    assert!(bare.selection.is_none() && bare.attributes.is_none());
+
+    let fixtures = parse("park fixture 1>4").expect("park with fixtures parses");
+    assert!(matches!(
+        fixtures.selection,
+        Some(ref selection) if selection.selection_type == SelectionTypeAst::Fixture
+    ));
+    assert!(fixtures.attributes.is_none());
+
+    let attributes = parse("park fix 5 attr pan tilt").expect("park with attributes parses");
+    assert_eq!(attribute_count(&attributes), 2);
+
+    let group = parse("unpark group 2").expect("unpark with a group parses");
+    assert_eq!(group.action, ParkActionAst::Unpark);
+    assert!(matches!(
+        group.selection,
+        Some(ref selection) if selection.selection_type == SelectionTypeAst::Group
+    ));
+
+    let selection_attributes = parse("unpark attr red").expect("unpark attributes parses");
+    assert!(selection_attributes.selection.is_none());
+    assert_eq!(attribute_count(&selection_attributes), 1);
+
+    assert!(parse("park ch 1.1").is_none());
+}

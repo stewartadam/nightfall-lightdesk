@@ -51,6 +51,11 @@ import {
   getFixtureElementAttributeNames,
 } from "../../../lib/fixture-attributes";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import {
+  applyParkedIndicator,
+  buildParkedParameterLookup,
+  parkedEntriesForCell,
+} from "../../../lib/parked-parameters";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
 import { recordExternalPerformanceMeasure } from "../../../lib/performance-measure-collector";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
@@ -62,6 +67,7 @@ import {
   layerStack,
   type ParameterMap,
   parameters,
+  parkedParameters,
   programmerSelection,
 } from "../../../state/appStores";
 import { usePropertiesInspector } from "../../property-inspector";
@@ -130,6 +136,11 @@ export default function FixturesPanel(props: FixturesPanelProps) {
   const $showOnlyWithAttributes = useStore(fixturesShowOnlyWithAttributes);
   const $expandedFixtures = useStore(fixturesExpandedSet);
   const $showReleasedOutput = useStore(fixturesShowReleasedOutput);
+  const $parkedParameters = useStore(parkedParameters);
+  /** Indexes parked parameters so each value cell can find its parked entries. */
+  const parkedLookup = createMemo(() =>
+    buildParkedParameterLookup($parkedParameters()),
+  );
   const panelId = props.initialPanelId ?? props.id;
   const [selection, setSelection] = createSignal<GridSelection>(
     emptyGridSelection(),
@@ -467,6 +478,7 @@ export default function FixturesPanel(props: FixturesPanelProps) {
     const showReleasedOutput = $showReleasedOutput();
     const layerStackSnapshot = displayedLayerStack();
     const fixtureList = $fixtures();
+    const parked = parkedLookup();
     return createKeyedDataGridCellProvider({
       rows: providerRows,
       columns: providerColumns,
@@ -534,6 +546,12 @@ export default function FixturesPanel(props: FixturesPanelProps) {
         const fixtureUid = item.type === "parent" ? item.uid : item.fixtureUid;
         const elementIndex =
           item.type === "element" ? item.elementIndex : undefined;
+        const parkedEntries = parkedEntriesForCell(
+          parked,
+          fixtureUid,
+          elementIndex,
+          attribute,
+        );
         const displayAttributes = resolvedFixtureValueAttributes(
           layerStackSnapshot,
           fixtureList[fixtureUid],
@@ -565,9 +583,12 @@ export default function FixturesPanel(props: FixturesPanelProps) {
           (rowValueState?.conflicts?.has(attribute) || childValuesVary);
         if (isConflicted) {
           return applyElementBackground(
-            applyAggregateConflictStyling(cell, true, undefined, {
-              preserveValue: cellHasDisplayValue(cell),
-            }),
+            applyParkedIndicator(
+              applyAggregateConflictStyling(cell, true, undefined, {
+                preserveValue: cellHasDisplayValue(cell),
+              }),
+              parkedEntries,
+            ),
             isElement,
           );
         }
@@ -615,7 +636,11 @@ export default function FixturesPanel(props: FixturesPanelProps) {
           elementIndex,
           attribute,
         );
-        return applyFixtureAttributeValueStyling(cellWithVirtualDimmerBadge, {
+        const cellWithParkedIndicator = applyParkedIndicator(
+          cellWithVirtualDimmerBadge,
+          parkedEntries,
+        );
+        return applyFixtureAttributeValueStyling(cellWithParkedIndicator, {
           sourceState,
           sourceStateEnabled: hasDisplayValue,
           isTransitioning: !!isTransitioning,
@@ -631,6 +656,7 @@ export default function FixturesPanel(props: FixturesPanelProps) {
     columns,
     layerStack: $layerStack,
     showReleasedOutput: $showReleasedOutput,
+    parkedLookup,
     setTableFilters,
     setSelection,
     setScrollRequest,

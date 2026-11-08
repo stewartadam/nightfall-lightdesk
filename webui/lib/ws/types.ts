@@ -110,6 +110,7 @@ export type AnyCommand =
   | types.IoSettingsCommand
   | types.MacroCommand
   | types.PanelLayoutCommand
+  | types.ParkCommand
   | types.ParameterStreamSettingsCommand
   | types.ProgrammerCommand
   | types.ProgrammingSettingsCommand
@@ -136,6 +137,7 @@ export type AnyWsMessage =
   | types.ExternalControlWsMessage
   | types.IoWsMessage
   | types.MacroWsMessage
+  | types.ParkWsMessage
   | Exclude<types.FixtureWsMessage, { type: "ParameterState" }>
   | ParameterStateWsMessage
   | types.FixtureLibraryWsMessage

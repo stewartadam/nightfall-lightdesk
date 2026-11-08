@@ -3169,6 +3169,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
             clips: vec![],
             boards: vec![],
             macros: vec![],
+            parked: vec![],
             settings: Default::default(),
             tempo: Default::default(),
         },
@@ -3251,6 +3252,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             clips: vec![],
             boards: vec![],
             macros: vec![],
+            parked: vec![],
             settings: Default::default(),
             tempo: Default::default(),
         },
@@ -3321,6 +3323,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             clips: vec![],
             boards: vec![],
             macros: vec![],
+            parked: vec![],
             settings: Default::default(),
             tempo: Default::default(),
         },
@@ -4101,6 +4104,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         clips: vec![],
         boards: vec![],
         macros: vec![],
+        parked: vec![],
         settings: Default::default(),
         tempo: Default::default(),
     };
@@ -4186,6 +4190,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             clips: vec![],
             boards: vec![],
             macros: vec![],
+            parked: vec![],
         },
     );
 
@@ -4285,6 +4290,7 @@ fn load_materializes_timecodes_and_timelines() {
             clips: vec![],
             boards: vec![],
             macros: vec![],
+            parked: vec![],
         },
     );
 

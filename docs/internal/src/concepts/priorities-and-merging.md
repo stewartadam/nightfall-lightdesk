@@ -96,6 +96,10 @@ Two kinds of control scale intensity, at different points:
 - A playback's own level, such as a clip fader, scales the intensity values in that playback's layer before the merge. It only affects that playback's contribution.
 - An intensity master scales the merged output of the fixtures it targets, after the merge. It affects those fixtures whichever layer set them, including the programmer.
 
+## Park overrides everything
+
+Park is not a layer and has no priority. A parked parameter outputs its parked value after the merge, masters, virtual dimmers and virtual relations, so nothing else can change it. A parked virtual intensity is written before virtual dimmers scale the color attributes, so the element still dims by the parked level. Park survives `clear` and is saved with the show.
+
 ## Inspect the stack in the app
 
 The **Layers** panel lists the active layers and the values each one sets. The **Fixtures** panel shows the merged result. When an output doesn't match what you expect, compare the two to find which layer wins.
@@ -112,6 +116,7 @@ The **Layers** panel lists the active layers and the values each one sets. The *
 | Clip priority | `crates/clips/src/model.rs` |
 | Per-playback intensity level | `crates/controls/src/playback_intensity.rs` |
 | Intensity and rate masters | `crates/controls/src/masters.rs` |
+| Park, applied after masters and virtual dimmers | `crates/park/src/output.rs` |
 | Merge rule per attribute | `MergeStrategy` in `crates/fixture-model/src/parameter.rs`, set by the importers in `crates/fixture-library/src/converters/` |
 
 ## Related topics

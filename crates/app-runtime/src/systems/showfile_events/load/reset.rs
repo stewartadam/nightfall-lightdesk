@@ -33,6 +33,9 @@ pub(super) fn reset_showfile_state(state: &mut ShowfileLoadState<'_, '_>, comman
                 timeline_data_provider,
                 board_data_provider,
                 macro_data_provider,
+                // The park load step replaces the parked set, so an import that keeps it
+                // unchanged doesn't warn about parked parameters again.
+                parked: _,
                 input_routes,
                 output_routes,
                 disabled_routes,

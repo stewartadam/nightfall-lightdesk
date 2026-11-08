@@ -103,6 +103,7 @@ telemetry = ["dep:sentry", "dep:reqwest", "dep:sysinfo"]
 async-channel.workspace = true
 criterion.workspace = true
 nightfall-fixture-library = { path = "../fixture-library", features = ["test-support"] }
+nightfall-park = { path = "../park" }
 nightfall-tempo = { path = "../tempo" }
 
 [[bench]]

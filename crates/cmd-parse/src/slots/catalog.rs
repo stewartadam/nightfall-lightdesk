@@ -401,6 +401,23 @@ pub fn slot_spec(slot_id: SlotId) -> SlotSpec {
             NONE_SUPPRESS,
             false,
         ),
+        SlotId::ParkTargetExpr => slot(
+            slot_id,
+            &[
+                TokenId::Fixture,
+                TokenId::Group,
+                TokenId::Parameter,
+                TokenId::LeftParen,
+                TokenId::RightParen,
+                TokenId::Dot,
+                TokenId::Plus,
+                TokenId::Minus,
+                TokenId::GreaterThan,
+            ],
+            Some(ValueKind::NumericDigit),
+            NONE_SUPPRESS,
+            false,
+        ),
         SlotId::ReleaseChannelExpr => slot(
             slot_id,
             &[
@@ -733,6 +750,8 @@ fn command_heads() -> &'static [TokenId] {
         TokenId::Rename,
         TokenId::Clear,
         TokenId::Release,
+        TokenId::Park,
+        TokenId::Unpark,
         TokenId::Debug,
         TokenId::Log,
         TokenId::Sleep,

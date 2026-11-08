@@ -21,6 +21,7 @@ import {
   type WsMessageHandlerRegistry,
 } from "./message-registry";
 import { registerOutputHandlers } from "./output-handlers";
+import { registerParkHandlers } from "./park-handlers";
 import { registerProgrammerHandlers } from "./programmer-handlers";
 import { registerReferenceHandlers } from "./reference-handlers";
 import { registerRuntimeSnapshotHandlers } from "./runtime-snapshot-handlers";
@@ -54,6 +55,7 @@ export function createMainThreadMessageHandlerRegistry(
   registerCueHandlers(registry);
   registerBoardHandlers(registry);
   registerMacroHandlers(registry);
+  registerParkHandlers(registry);
   registerFxHandlers(registry);
   registerFlowHandlers(registry);
   registerClipHandlers(registry);

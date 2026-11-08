@@ -20,6 +20,7 @@ nightfall-fx = { path = "../fx" }
 nightfall-input-midi = { path = "../input_midi", optional = true }
 nightfall-input-osc = { path = "../input_osc", optional = true }
 nightfall-io = { path = "../io" }
+nightfall-park = { path = "../park" }
 nightfall-scene-objects = { path = "../scene-objects" }
 nightfall-selection = { path = "../selection" }
 nightfall-tempo = { path = "../tempo" }

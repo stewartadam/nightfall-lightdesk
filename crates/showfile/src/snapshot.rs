@@ -23,6 +23,7 @@ use nightfall_fx::prelude::*;
 use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
+use nightfall_park::prelude::ParkedParameter;
 use nightfall_scene_objects::prelude::*;
 use nightfall_selection::ReferenceSource;
 use nightfall_tempo::prelude::*;
@@ -118,6 +119,9 @@ pub struct ShowfileSnapshot {
     /// Command-line macros.
     #[serde(default)]
     pub macros: Vec<Macro>,
+    /// Fixture parameters held at fixed values over all other output.
+    #[serde(default)]
+    pub parked: Vec<ParkedParameter>,
 }
 
 impl ShowfileSnapshot {

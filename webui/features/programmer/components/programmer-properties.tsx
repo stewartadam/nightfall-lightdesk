@@ -23,6 +23,7 @@ import { normalizeAttributeName } from "../../../lib/utils";
 import { fixtures, programmerSelection } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { ParameterValuePolarity } from "../../../types";
+import { ParkedParametersSection } from "../../park";
 
 const humanizeAttributeName = (attr: string): string => {
   if (attr.includes(" ")) return attr;
@@ -208,6 +209,7 @@ export default function ProgrammerProperties() {
           </div>
         </Show>
       </Show>
+      <ParkedParametersSection selectedFixtureUids={$selection()} />
     </div>
   );
 }

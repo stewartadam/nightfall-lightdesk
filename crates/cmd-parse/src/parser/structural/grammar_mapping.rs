@@ -90,6 +90,7 @@ pub(in crate::parser) fn root_rule_for_clause(clause: ClauseId) -> GrammarRuleId
         ClauseId::Clip => GrammarRuleId::GeneralCommand,
         ClauseId::ChannelOverride => GrammarRuleId::DmxChannelExpression,
         ClauseId::Release => GrammarRuleId::ReleaseCommand,
+        ClauseId::Park => GrammarRuleId::ParkCommand,
         ClauseId::Clear => GrammarRuleId::ReleaseCommand,
         ClauseId::Flow => GrammarRuleId::FlowCommand,
         ClauseId::Timecode => GrammarRuleId::TimecodeCommand,

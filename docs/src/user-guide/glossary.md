@@ -23,6 +23,7 @@
 | Layer | One contribution to the composed fixture output. |
 | LTP | Latest takes precedence: the most recently asserted applicable value wins a merge. |
 | Master | A control that scales intensity or playback speed for a defined scope. |
+| Park | Holding a parameter at a fixed value over all playback, the programmer and masters until it is unparked. See [Park](commands.md#park). |
 | Programmer | The working selection and live instructions used to create looks. |
 | Release | Removal of a playback's contribution, potentially with a transition. |
 | Sequence | Ordered cues with timing, tracking, setup, and release behavior. |

@@ -94,6 +94,7 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "OscMappings",
   "OscSources",
   "ParameterState",
+  "ParkedParameters",
   "ProgrammerSelection",
   "ProgrammerSpatialSelection",
   "ProgrammerState",

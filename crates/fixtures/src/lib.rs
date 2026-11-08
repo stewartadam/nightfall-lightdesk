@@ -166,7 +166,8 @@ pub mod prelude {
     pub use crate::{
         DmxOperation, FixtureCommand, FixturePlacementPositionUpdate,
         FixturePlacementRotationUpdate, FixturePlugin, HeldTransportDmxChannelState,
-        ManualDmxChannelState, RouteEndpoint, VirtualIntensity,
+        ManualDmxChannelState, ParkedOutput, ParkedVirtualIntensity, RouteEndpoint,
+        VirtualIntensity,
     };
 }
 
@@ -177,6 +178,20 @@ pub mod prelude {
 /// themselves before this set.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VirtualIntensity;
+
+/// `Render` system set, inside [`VdimProcessing`] and just before [`VirtualIntensity`], in which
+/// parked virtual intensity values replace the composited ones.
+///
+/// Virtual dimmers then scale their color parameters by the parked level. Inhibit masters order
+/// themselves before this set, so they never scale a parked value.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ParkedVirtualIntensity;
+
+/// `Render` system set, last in [`VdimProcessing`], in which parked parameters replace whatever
+/// compositing, masters, virtual dimmers and relations produced, so a parked value is exactly the
+/// value that goes out.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ParkedOutput;
 
 /// Plugin for fixtures
 pub struct FixturePlugin;
@@ -292,6 +307,15 @@ impl Plugin for FixturePlugin {
                 .in_set(EventHandling),
         );
 
+        app.configure_sets(
+            Render,
+            (
+                ParkedVirtualIntensity
+                    .in_set(VdimProcessing)
+                    .before(VirtualIntensity),
+                ParkedOutput.in_set(VdimProcessing).after(VirtualIntensity),
+            ),
+        );
         // Virtual dimmers and virtual relation masters scale the composited values before output.
         app.add_systems(
             Render,

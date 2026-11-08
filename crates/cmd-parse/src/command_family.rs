@@ -40,6 +40,7 @@ pub enum StructuralAstDispatchKind {
     Clip,
     ChannelOverride,
     Release,
+    Park,
     Clear,
     Flow,
     Timecode,
@@ -92,6 +93,10 @@ const CHANNEL_GROUPS: &[CompletionGroupId] = &[
 const RELEASE_GROUPS: &[CompletionGroupId] = &[
     CompletionGroupId::ReleaseAttributes,
     CompletionGroupId::ReleaseChannel,
+];
+const PARK_GROUPS: &[CompletionGroupId] = &[
+    CompletionGroupId::ParkAttributes,
+    CompletionGroupId::ParkTarget,
 ];
 const CLEAR_GROUPS: &[CompletionGroupId] =
     &[CompletionGroupId::Clear, CompletionGroupId::ClearAttributes];
@@ -249,6 +254,13 @@ const COMMAND_FAMILY_SPECS: &[CommandFamilySpec] = &[
         single_token_head_policy: SingleTokenHeadPolicy::Replace(RELEASE_SINGLE_TOKEN_OVERRIDE),
         hidden_exact_head_groups: &[],
         structural_ast_dispatch: StructuralAstDispatchKind::Release,
+    },
+    CommandFamilySpec {
+        root_clause: ClauseId::Park,
+        completion_groups: PARK_GROUPS,
+        single_token_head_policy: SingleTokenHeadPolicy::None,
+        hidden_exact_head_groups: &[],
+        structural_ast_dispatch: StructuralAstDispatchKind::Park,
     },
     CommandFamilySpec {
         root_clause: ClauseId::Clear,

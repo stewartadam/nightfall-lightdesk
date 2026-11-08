@@ -294,7 +294,7 @@ export function makeNotApplicableCell(): GridCell {
 
 /// Formats a data grid value as either a raw value or percentage, with up to
 /// a single decimal point of precision.
-const formatDataGridNumber = (
+export const formatDataGridNumber = (
   num: number | string | undefined,
   is_percentage: boolean,
 ): string => {

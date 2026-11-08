@@ -195,6 +195,8 @@ pub(super) fn merge_showfile_snapshots(
         clips: merge_identified_vec("clips", current.clips, incoming.clips, options.clips)?,
         boards: merge_identified_vec("boards", current.boards, incoming.boards, options.boards)?,
         macros: merge_identified_vec("macros", current.macros, incoming.macros, options.macros)?,
+        // Park is live rig state of the open show, so an import keeps what is parked now.
+        parked: current.parked,
     };
     for warning in stabilize_showfile_group_refs(&mut merged) {
         tracing::warn!("{}", warning);

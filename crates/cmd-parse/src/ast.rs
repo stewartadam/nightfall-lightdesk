@@ -83,6 +83,7 @@ pub enum CommandAst<'i> {
     Timecode(TimecodeCommandAst),
     Timeline(TimelineCommandAst),
     Macro(MacroCommandAst),
+    Park(ParkCommandAst<'i>),
     Tempo(TempoCommandAst<'i>),
     Channel(ChannelCommandAst<'i>),
     PatchAdd(PatchAddCommandAst<'i>),
@@ -835,6 +836,24 @@ pub enum ReleaseTargetAst<'i> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReleaseCommandAst<'i> {
     pub target: Option<ReleaseTargetAst<'i>>,
+}
+
+/// Whether a park command holds its targets or lets them go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParkActionAst {
+    /// `park`: hold the targets at their current output.
+    Park,
+    /// `unpark`: return the targets to playback.
+    Unpark,
+}
+
+/// `park` or `unpark` command. No selection means the active selection, and no attributes
+/// means every parameter of the selected fixtures.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParkCommandAst<'i> {
+    pub action: ParkActionAst,
+    pub selection: Option<SelectionAst>,
+    pub attributes: Option<AttributeQualifierAst<'i>>,
 }
 
 /// Command that updates the engine frame rate.

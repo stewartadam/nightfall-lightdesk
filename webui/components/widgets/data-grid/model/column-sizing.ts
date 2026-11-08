@@ -118,6 +118,8 @@ function stateIndicatorText(
     case "error":
     case "warning":
       return "!";
+    case "parked":
+      return "P";
   }
 }
 

@@ -16,30 +16,6 @@ fn concrete_fixture_ref_matches_filter(fixture: &FixtureRef, filter: &FixtureRef
         && (filter.index.is_none() || fixture.index == filter.index)
 }
 
-/// Expands a whole-fixture row into one ref per element when fixture metadata is available.
-fn fixture_element_refs_for_release(
-    fixture: &FixtureRef,
-    fixture_data: &FixtureDataProviderExt,
-) -> Option<Vec<FixtureRef>> {
-    if fixture.index.is_some() {
-        return Some(vec![fixture.clone()]);
-    }
-
-    let element_count = fixture_data.element_count(fixture.fixture_uid)?;
-    let element_count = element_count.max(1);
-    let Ok(element_count) = u32::try_from(element_count) else {
-        return None;
-    };
-    Some(
-        (1..=element_count)
-            .map(|index| FixtureRef {
-                fixture_uid: fixture.fixture_uid,
-                index: Some(index),
-            })
-            .collect(),
-    )
-}
-
 /// Splits one resolved instruction target into release-matched and preserved fixture refs.
 pub(super) fn partition_fixture_ref_for_release(
     fixture: &FixtureRef,
@@ -61,7 +37,7 @@ pub(super) fn partition_fixture_ref_for_release(
         return (Vec::new(), vec![fixture.clone()]);
     }
 
-    let Some(element_refs) = fixture_element_refs_for_release(fixture, fixture_data) else {
+    let Some(element_refs) = fixture_data.element_refs(fixture) else {
         return (Vec::new(), vec![fixture.clone()]);
     };
 

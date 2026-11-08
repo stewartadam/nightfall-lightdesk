@@ -22,6 +22,7 @@ use nightfall_fx::prelude::*;
 use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
+use nightfall_park::prelude::ParkedParameters;
 use nightfall_scene_objects::prelude::*;
 use nightfall_tempo::prelude::*;
 use nightfall_timecode::prelude::*;
@@ -32,7 +33,7 @@ use crate::{
     contributors::{
         BoardsSaveContributor, ClipsSaveContributor, ColorPathsSaveContributor,
         CueStructureSaveContributor, DeskStateSaveContributor, FixturesPatchSaveContributor,
-        FlowsSaveContributor, FxSaveContributor, MacrosSaveContributor,
+        FlowsSaveContributor, FxSaveContributor, MacrosSaveContributor, ParkSaveContributor,
         SceneObjectsSaveContributor, ShowfileSaveContributor, TimecodesTimelinesSaveContributor,
         collect_save_contributions,
     },
@@ -57,6 +58,7 @@ pub struct ShowfileSaveState<'w, 's> {
     timeline_data_provider: Res<'w, DataProvider<Timeline>>,
     board_data_provider: Res<'w, DataProvider<Board>>,
     macro_data_provider: Res<'w, DataProvider<Macro>>,
+    parked: Option<Res<'w, ParkedParameters>>,
     input_routes: Res<'w, InputRoutes>,
     output_routes: Res<'w, OutputRoutes>,
     disabled_routes: Res<'w, DisabledRoutes>,
@@ -119,6 +121,10 @@ pub fn snapshot_from_save_state(
     );
     let boards_contributor = BoardsSaveContributor::new(&showfile_save_state.board_data_provider);
     let macros_contributor = MacrosSaveContributor::new(&showfile_save_state.macro_data_provider);
+    let park_contributor = ParkSaveContributor::new(
+        showfile_save_state.parked.as_deref(),
+        &showfile_save_state.fixture_data_provider,
+    );
 
     collect_save_contributions(&[
         &desk_state_contributor as &dyn ShowfileSaveContributor,
@@ -132,6 +138,7 @@ pub fn snapshot_from_save_state(
         &timecodes_timelines_contributor,
         &boards_contributor,
         &macros_contributor,
+        &park_contributor,
     ])
 }
 

@@ -440,6 +440,30 @@ fn build_catalog() -> Vec<CompletionGroupSpec> {
             vis(&[], &[]),
         ),
         completion_group(
+            CompletionGroupId::ParkAttributes,
+            "Attributes",
+            808,
+            &[SlotId::QualifierKeyword, SlotId::QualifierAttributeList],
+            &[
+                pred(&[ClauseId::Park], Some(SlotId::QualifierKeyword), None),
+                pred(
+                    &[ClauseId::Park],
+                    Some(SlotId::QualifierAttributeList),
+                    None,
+                ),
+                pred(&[ClauseId::Park], None, Some(ClauseId::ParkAttributes)),
+            ],
+            vis(&[], &[SlotId::QualifierKeyword]),
+        ),
+        completion_group(
+            CompletionGroupId::ParkTarget,
+            "Fixtures",
+            807,
+            &[SlotId::ParkTargetExpr],
+            &[pred(&[ClauseId::Park], Some(SlotId::ParkTargetExpr), None)],
+            vis(&[], &[]),
+        ),
+        completion_group(
             CompletionGroupId::RmObjectType,
             "Object Type",
             800,

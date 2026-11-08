@@ -1142,6 +1142,7 @@ pub(in crate::parser) fn is_identifier_slot(slot: SlotId) -> bool {
             | SlotId::ClipIdentifier
             | SlotId::ChannelOverrideIdentifier
             | SlotId::ReleaseChannelExpr
+            | SlotId::ParkTargetExpr
             | SlotId::RmObjectIdentifier
             | SlotId::StoreCueRef
             | SlotId::StoreObjectIdentifier
