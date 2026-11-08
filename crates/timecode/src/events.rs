@@ -222,7 +222,7 @@ pub fn crud_events(
                             {
                                 commands.entity(entity).despawn();
                             }
-                            timecode_events.write(TimecodeEvent::Deleted(*id));
+                            timecode_events.write(TimecodeEvent::Deleted { id: *id, uid });
                             Some(Ok(()))
                         }
                         Err(error) => Some(Err(CommandError::new(

@@ -9,7 +9,7 @@
 //! Timeline reconstruction request collection and explicit seek precedence.
 
 use super::*;
-use crate::timeline_events::TimelineActionsChanged;
+use crate::timeline_events::{TimelineActionsChanged, TimelinePlayheadJumped};
 
 /// Internal reason for rebuilding timeline-owned playback at a target position.
 #[derive(Clone, Copy, Debug)]
@@ -42,6 +42,8 @@ pub struct TimelineReconstructionEvents<'w, 's> {
     pub(super) timecode_events: MessageReader<'w, 's, TimecodeEvent>,
     /// Timeline action mutation notifications.
     pub(super) action_events: Option<MessageReader<'w, 's, TimelineActionsChanged>>,
+    /// Loop wraps and external relocations of active timelines.
+    pub(super) playhead_jumps: Option<MessageReader<'w, 's, TimelinePlayheadJumped>>,
 }
 
 /// Returns whether the reconstruction command buffer should be flushed before replay handlers.
@@ -71,8 +73,12 @@ pub fn mark_timeline_reconstruction_deferred_flush(
         .action_events
         .as_mut()
         .is_some_and(|events| events.read().next().is_some());
+    let playhead_jumped = reconstruction_events
+        .playhead_jumps
+        .as_mut()
+        .is_some_and(|events| events.read().next().is_some());
 
-    flag.requested = seek_requested || actions_changed;
+    flag.requested = seek_requested || actions_changed || playhead_jumped;
 }
 
 /// Queues a timeline reconstruction request while preserving explicit seek precedence.
@@ -155,6 +161,26 @@ pub(super) fn collect_timeline_reconstruction_requests(
                     timeline_entity,
                     TimelineReconstructionRequest {
                         timecode_position: *position,
+                        reason: TimelineReconstructionReason::Seek,
+                    },
+                    true,
+                );
+            }
+        }
+    }
+
+    if let Some(playhead_jumps) = reconstruction_events.playhead_jumps.as_mut() {
+        for jump in playhead_jumps.read() {
+            if timeline_query
+                .get(jump.timeline)
+                .is_ok_and(|(_, timeline)| timeline.is_active)
+            {
+                queue_timeline_reconstruction_request(
+                    &mut latest_request_by_timeline,
+                    &mut ordered_reconstruction_timeline_entities,
+                    jump.timeline,
+                    TimelineReconstructionRequest {
+                        timecode_position: jump.timecode_position,
                         reason: TimelineReconstructionReason::Seek,
                     },
                     true,

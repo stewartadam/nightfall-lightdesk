@@ -59,7 +59,10 @@ pub mod prelude {
     pub use crate::TimelinePlugin;
     pub use crate::beatgrid_detection::{BeatgridDetector, DetectedBeat, DetectedBeatgrid};
     pub use crate::browser_audio::{TimelineAudioDirective, TimelineAudioLoopRange};
-    pub use crate::components::{MaterializedTimeline, SpawnedEntityType, TimelineActionCursor};
+    pub use crate::components::{
+        ActionRangeStart, MaterializedTimeline, SpawnedEntityType, TimecodeTransport,
+        TimelineActionCursor,
+    };
     pub use crate::recording::{
         TimelineRecordingPreview, TimelineRecordingState, TimelineRecordingStates,
     };
@@ -164,6 +167,7 @@ impl Plugin for TimelinePlugin {
         diagnostics::register_timeline_diagnostics(app);
         app.add_message::<DomainInstanceReconstructionRequest>();
         app.add_message::<timeline_events::TimelineActionsChanged>();
+        app.add_message::<timeline_events::TimelinePlayheadJumped>();
 
         // Register undoable commands
         app.world_mut()
@@ -184,6 +188,7 @@ impl Plugin for TimelinePlugin {
         }
         audio_integration::add_event_handling_systems(app);
         if self.browser_audio_enabled {
+            app.init_resource::<browser_audio::BrowserTimelineAudio>();
             app.add_systems(
                 Render,
                 browser_audio::emit_browser_audio_directives

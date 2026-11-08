@@ -96,20 +96,6 @@ fn start_missing_timeline_returns_failure() {
     assert!(error.message.contains("404"));
 }
 
-/// Wraps a timecode command with detached lifecycle context for event tests.
-fn timecode_command(command: TimecodeCommand) -> TimecodeEvent {
-    match command {
-        TimecodeCommand::StartTimecode(id) => TimecodeEvent::Started(id),
-        TimecodeCommand::PauseTimecode(id) => TimecodeEvent::Paused(id),
-        TimecodeCommand::StopTimecode(id) => TimecodeEvent::Stopped(id),
-        TimecodeCommand::SeekTimecode { id, position } => TimecodeEvent::Seeked { id, position },
-        TimecodeCommand::DeleteTimecode(id) => TimecodeEvent::Deleted(id),
-        TimecodeCommand::StoreTimecode(_) | TimecodeCommand::RenameTimecode { .. } => {
-            panic!("CRUD commands are not runtime timecode events")
-        }
-    }
-}
-
 /// Records timeline actions emitted during a test schedule.
 fn record_timeline_actions(
     mut events: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
@@ -795,13 +781,15 @@ fn delete_timecode_stops_associated_timelines() {
             TimelineTriggerMode::FollowTimecode,
         ))
         .id();
-    app.world_mut()
-        .spawn(TimecodeGenerator::new(deleted_timecode));
+    // The timecode crate despawns the generator before the deletion event is read.
+    let _ = deleted_timecode;
     app.world_mut()
         .spawn(TimecodeGenerator::new(other_timecode));
 
-    app.world_mut()
-        .write_message(timecode_command(TimecodeCommand::DeleteTimecode(42)));
+    app.world_mut().write_message(TimecodeEvent::Deleted {
+        id: 42,
+        uid: deleted_timecode_uid,
+    });
     app.update();
 
     let observed = &app.world().resource::<ObservedTimelineActions>().0;

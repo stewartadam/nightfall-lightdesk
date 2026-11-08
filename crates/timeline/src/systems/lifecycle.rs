@@ -230,23 +230,28 @@ fn timeline_matches_stop_signal(
         || stopped_timeline_ids.contains(&timeline.timeline.identifiers.id)
 }
 
+/// Clears the action triggers of timelines that stopped with the reset stop behavior, and
+/// rewinds their action cursor, so the next play fires their actions again from the start.
 pub fn reset_timeline_triggers_system(
     mut timecode_events: MessageReader<TimecodeEvent>,
     mut timeline_events: MessageReader<CommandEnvelope<TimelineCommand>>,
     mut timeline_actions: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
     timecode_query: Query<(Entity, &TimecodeGenerator)>,
-    mut timeline_query: Query<(Entity, &mut MaterializedTimeline)>,
+    mut timeline_query: Query<(&mut MaterializedTimeline, &mut TimelineActionCursor)>,
 ) {
     let timecode_uid_by_id = timecode_uid_by_id(&timecode_query);
     let stopped_timecode_uids =
         stopped_timecode_uids_from_timecode_events(&mut timecode_events, &timecode_uid_by_id);
     let mut stopped_timeline_ids = stopped_timeline_ids_from_timeline_events(&mut timeline_events);
     stopped_timeline_ids.extend(stopped_timeline_ids_from_actions(&mut timeline_actions));
-    for (_, mut timeline) in timeline_query.iter_mut() {
+    for (mut timeline, mut cursor) in timeline_query.iter_mut() {
         if timeline_matches_stop_signal(&timeline, &stopped_timecode_uids, &stopped_timeline_ids)
             && timeline.timeline.stop_behavior == TimelineStopBehavior::ResetAndReleaseOwnedActions
         {
+            // The next play starts from the beginning again, so its first scan must include
+            // actions at the start instead of resuming after where playback stopped.
             timeline.reset_action_triggers();
+            cursor.rewind();
             tracing::debug!(
                 "Reset action triggers for timeline {}",
                 timeline.timeline.identifiers.id
