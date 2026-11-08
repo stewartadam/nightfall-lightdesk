@@ -474,26 +474,48 @@ impl SelectionResolver<'_> {
         visited_groups: &mut HashSet<Uuid>,
         warnings: &mut Vec<String>,
     ) -> Vec<FixtureRef> {
+        Self::resolve_group_ref_expr_spans(group_ref_expr, data_source, visited_groups, warnings)
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
+    /// Resolves a group reference expression into iterator spans, in add, subtract and range
+    /// order.
+    ///
+    /// Each group with a spatial pipeline contributes the spans its clauses produce (rows of
+    /// a grid, blocks, wings); a group that is only a source contributes one span per fixture.
+    /// `Span` merges everything inside it into one span.
+    pub(super) fn resolve_group_ref_expr_spans(
+        group_ref_expr: &GroupRefExpr,
+        data_source: &dyn SelectionDataSource,
+        visited_groups: &mut HashSet<Uuid>,
+        warnings: &mut Vec<String>,
+    ) -> Vec<Vec<FixtureRef>> {
         match group_ref_expr {
             GroupRefExpr::ByUid { uid } => match data_source.group_by_uid(*uid) {
-                Some(group) => Self::resolve_group(&group, data_source, visited_groups, warnings),
+                Some(group) => {
+                    Self::resolve_group_spans(&group, data_source, visited_groups, warnings)
+                }
                 None => {
                     warnings.push(format!("Could not find group {}", uid));
                     Vec::new()
                 }
             },
             GroupRefExpr::ById(group_id) => match data_source.group_by_id(*group_id) {
-                Some(group) => Self::resolve_group(&group, data_source, visited_groups, warnings),
+                Some(group) => {
+                    Self::resolve_group_spans(&group, data_source, visited_groups, warnings)
+                }
                 None => {
                     warnings.push(format!("Could not find group {}", group_id));
                     Vec::new()
                 }
             },
             GroupRefExpr::ByLabel(label) => {
-                Self::resolve_group_label(label, data_source, visited_groups, warnings)
+                Self::resolve_group_label_spans(label, data_source, visited_groups, warnings)
             }
             GroupRefExpr::RangeById { start, end } => {
-                Self::resolve_group_range(*start, *end, data_source, visited_groups, warnings)
+                Self::resolve_group_range_spans(*start, *end, data_source, visited_groups, warnings)
             }
             GroupRefExpr::MissingById(group_id) => {
                 warnings.push(format!("Could not find group {}", group_id));
@@ -505,8 +527,8 @@ impl SelectionResolver<'_> {
             }
             GroupRefExpr::Add { lhs, rhs } => {
                 let mut out =
-                    Self::resolve_group_ref_expr(lhs, data_source, visited_groups, warnings);
-                out.extend(Self::resolve_group_ref_expr(
+                    Self::resolve_group_ref_expr_spans(lhs, data_source, visited_groups, warnings);
+                out.extend(Self::resolve_group_ref_expr_spans(
                     rhs,
                     data_source,
                     visited_groups,
@@ -515,26 +537,46 @@ impl SelectionResolver<'_> {
                 out
             }
             GroupRefExpr::Sub { lhs, rhs } => {
-                let mut out =
-                    Self::resolve_group_ref_expr(lhs, data_source, visited_groups, warnings);
                 let remove =
                     Self::resolve_group_ref_expr(rhs, data_source, visited_groups, warnings);
-                out.retain(|r| !remove.contains(r));
-                out
+                Self::resolve_group_ref_expr_spans(lhs, data_source, visited_groups, warnings)
+                    .into_iter()
+                    .filter_map(|span| {
+                        let retained = span
+                            .into_iter()
+                            .filter(|fixture| !remove.contains(fixture))
+                            .collect::<Vec<_>>();
+                        (!retained.is_empty()).then_some(retained)
+                    })
+                    .collect()
             }
             GroupRefExpr::Span(inner) => {
-                Self::resolve_group_ref_expr(inner, data_source, visited_groups, warnings)
+                let merged = Self::resolve_group_ref_expr_spans(
+                    inner,
+                    data_source,
+                    visited_groups,
+                    warnings,
+                )
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+                if merged.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![merged]
+                }
             }
         }
     }
 
-    /// Resolve a group by exact label match, warning when no matching group exists.
-    pub(super) fn resolve_group_label(
+    /// Resolves a group found by exact label into iterator spans, warning when no group
+    /// matches.
+    fn resolve_group_label_spans(
         label: &str,
         data_source: &dyn SelectionDataSource,
         visited_groups: &mut HashSet<Uuid>,
         warnings: &mut Vec<String>,
-    ) -> Vec<FixtureRef> {
+    ) -> Vec<Vec<FixtureRef>> {
         if !data_source.groups_available() {
             warnings.push(
                 "Group label resolution attempted but group data provider not available"
@@ -548,16 +590,22 @@ impl SelectionResolver<'_> {
             return vec![];
         };
 
-        Self::resolve_group(&group, data_source, visited_groups, warnings)
+        Self::resolve_group_spans(&group, data_source, visited_groups, warnings)
     }
 
-    /// Lower one stored group selection while detecting unavailable data and recursive references.
-    pub(super) fn resolve_group(
+    /// Resolves one stored group into iterator spans, detecting unavailable data and
+    /// recursive references.
+    ///
+    /// A group with spatial clauses or union branches resolves through the full spatial
+    /// pipeline, so a plain reference keeps the order, mirroring, spans and extra branches it
+    /// was stored with. A group that is only a source resolves that source, one span per
+    /// fixture, which leaves whole-fixture refs unexpanded.
+    fn resolve_group_spans(
         group: &SelectionGroup,
         data_source: &dyn SelectionDataSource,
         visited_groups: &mut HashSet<Uuid>,
         warnings: &mut Vec<String>,
-    ) -> Vec<FixtureRef> {
+    ) -> Vec<Vec<FixtureRef>> {
         if !data_source.groups_available() {
             warnings.push(
                 "Group resolution attempted but group data provider not available".to_string(),
@@ -570,98 +618,59 @@ impl SelectionResolver<'_> {
             return vec![];
         }
 
-        if Self::group_has_spatial_pipeline(group) {
-            return Self::resolve_group_structure_fixtures(
-                group,
+        visited_groups.insert(group.uid);
+        let spans = if Self::group_has_spatial_pipeline(group) {
+            Self::resolve_spatial_to_resolved(
+                &group.selection,
                 data_source,
                 visited_groups,
                 warnings,
-            );
-        }
-
-        visited_groups.insert(group.uid);
-        let result = Self::resolve(
-            &group.selection.source,
-            data_source,
-            visited_groups,
-            warnings,
-        );
-        visited_groups.remove(&group.uid);
-        result
-    }
-
-    /// Returns whether a stored group carries spatial clauses or union branches.
-    ///
-    /// Such groups must resolve through the full spatial pipeline so a plain reference
-    /// keeps the order, mirroring and extra branches it was stored with. Groups that are
-    /// only a source keep the cheaper source resolution, which leaves whole-fixture refs
-    /// unexpanded.
-    pub(super) fn group_has_spatial_pipeline(group: &SelectionGroup) -> bool {
-        !group.selection.clauses.is_empty() || !group.selection.union.is_empty()
-    }
-
-    /// Resolves a group reference into iterator spans.
-    ///
-    /// A single group with a spatial pipeline keeps the spans its clauses produce (rows of a
-    /// grid, blocks, wings). Plain groups and combined group expressions yield one span per
-    /// fixture, in resolved order.
-    pub(super) fn resolve_group_ref_expr_spans(
-        group_ref_expr: &GroupRefExpr,
-        data_source: &dyn SelectionDataSource,
-        visited_groups: &mut HashSet<Uuid>,
-        warnings: &mut Vec<String>,
-    ) -> Vec<Vec<FixtureRef>> {
-        let single_group = match group_ref_expr {
-            GroupRefExpr::ByUid { uid } => data_source.group_by_uid(*uid),
-            GroupRefExpr::ById(group_id) => data_source.group_by_id(*group_id),
-            GroupRefExpr::ByLabel(label) if data_source.groups_available() => {
-                data_source.group_by_label(label)
-            }
-            _ => None,
-        };
-        if let Some(group) = single_group.filter(Self::group_has_spatial_pipeline) {
-            return Self::resolve_group_structure_buckets(
-                &group,
+            )
+            .to_spanned_selection()
+            .spans()
+            .map(|span| span.to_vec())
+            .filter(|span| !span.is_empty())
+            .collect()
+        } else {
+            Self::resolve(
+                &group.selection.source,
                 data_source,
                 visited_groups,
                 warnings,
             )
             .into_iter()
-            .map(|bucket| {
-                bucket
-                    .into_iter()
-                    .filter_map(|item| match item {
-                        SelectionStructureItem::Fixture(fixture_ref) => Some(fixture_ref),
-                        SelectionStructureItem::Group(_) => None,
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .filter(|span| !span.is_empty())
-            .collect();
-        }
-        Self::resolve_group_ref_expr(group_ref_expr, data_source, visited_groups, warnings)
-            .into_iter()
             .map(|fixture| vec![fixture])
             .collect()
+        };
+        visited_groups.remove(&group.uid);
+        spans
     }
 
-    /// Resolve an inclusive group range and retain the direction requested by the expression.
-    pub(super) fn resolve_group_range(
+    /// Returns whether a stored group carries spatial clauses or union branches.
+    pub(super) fn group_has_spatial_pipeline(group: &SelectionGroup) -> bool {
+        !group.selection.clauses.is_empty() || !group.selection.union.is_empty()
+    }
+
+    /// Resolves an inclusive group range into iterator spans. A descending range reverses
+    /// both the span order and the fixtures within each span.
+    fn resolve_group_range_spans(
         start: u32,
         end: u32,
         data_source: &dyn SelectionDataSource,
         visited_groups: &mut HashSet<Uuid>,
         warnings: &mut Vec<String>,
-    ) -> Vec<FixtureRef> {
+    ) -> Vec<Vec<FixtureRef>> {
         let (lower, upper) = if start <= end {
             (start, end)
         } else {
             (end, start)
         };
 
-        let mut result: Vec<FixtureRef> = (lower..=upper)
+        let mut spans: Vec<Vec<FixtureRef>> = (lower..=upper)
             .flat_map(|group_id| match data_source.group_by_id(group_id) {
-                Some(group) => Self::resolve_group(&group, data_source, visited_groups, warnings),
+                Some(group) => {
+                    Self::resolve_group_spans(&group, data_source, visited_groups, warnings)
+                }
                 None => {
                     warnings.push(format!("Could not find group {}", group_id));
                     Vec::new()
@@ -670,8 +679,11 @@ impl SelectionResolver<'_> {
             .collect();
 
         if start > end {
-            result.reverse();
+            spans.reverse();
+            for span in &mut spans {
+                span.reverse();
+            }
         }
-        result
+        spans
     }
 }

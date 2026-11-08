@@ -552,6 +552,97 @@ fn plain_group_without_clauses_keeps_whole_fixture_refs() {
     assert_eq!(spans, vec![vec![fref(1)], vec![fref(2)], vec![fref(3)]]);
 }
 
+/// Returns each span's fixture IDs.
+fn span_fixture_ids(spans: &[Vec<FixtureRef>]) -> Vec<Vec<u32>> {
+    spans
+        .iter()
+        .map(|span| {
+            span.iter()
+                .map(|fixture| fixture.fixture_uid.as_u128() as u32)
+                .collect()
+        })
+        .collect()
+}
+
+/// Groups with block clauses keep their blocks as spans, also when combined with another
+/// group, and a descending group range reverses both the spans and their members.
+#[test]
+fn combined_group_references_keep_each_groups_spans() {
+    let provider = make_data_source(1..=6);
+    let mut groups = TestGroupProvider::default();
+    let blocks = |amount| SpatialClause::Blocks {
+        axis: Axis::X,
+        amount,
+    };
+    let _ = groups.add(make_group_with_clauses(1, 1, 4, vec![blocks(2)]));
+    let _ = groups.add(make_group_with_clauses(2, 5, 6, vec![blocks(2)]));
+    let provider = provider.with_groups(&groups);
+
+    let added = resolve_spans(
+        &SelectionExpr::Group(GroupRefExpr::Add {
+            lhs: Box::new(GroupRefExpr::ById(1)),
+            rhs: Box::new(GroupRefExpr::ById(2)),
+        }),
+        &provider,
+    );
+    assert_eq!(
+        span_fixture_ids(&added),
+        vec![vec![1, 2], vec![3, 4], vec![5, 6]]
+    );
+
+    let descending = resolve_spans(
+        &SelectionExpr::Group(GroupRefExpr::RangeById { start: 2, end: 1 }),
+        &provider,
+    );
+    assert_eq!(
+        span_fixture_ids(&descending),
+        vec![vec![6, 5], vec![4, 3], vec![2, 1]]
+    );
+}
+
+/// A bare spatial reference to a group whose clauses invert members keeps that inversion.
+#[test]
+fn plain_group_selection_keeps_stored_inversion() {
+    let provider = make_data_source(1..=8);
+    let mut groups = TestGroupProvider::default();
+    let _ = groups.add(make_group_with_clauses(
+        1,
+        1,
+        8,
+        vec![
+            SpatialClause::Blocks {
+                axis: Axis::X,
+                amount: 2,
+            },
+            SpatialClause::Invert {
+                mode: InvertMode::Block,
+                attrs: None,
+            },
+        ],
+    ));
+    let provider = provider.with_groups(&groups);
+    let mut visited = HashSet::new();
+    let mut warnings = Vec::new();
+
+    let resolved = SelectionResolver::resolve_spatial_to_resolved(
+        &SpatialSelection::pipeline(SelectionExpr::Group(GroupRefExpr::ById(1)), Vec::new()),
+        &provider,
+        &mut visited,
+        &mut warnings,
+    );
+
+    assert_eq!(
+        index_fixture_ids(&resolved),
+        vec![
+            (false, vec![1, 2]),
+            (true, vec![3, 4]),
+            (false, vec![5, 6]),
+            (true, vec![7, 8]),
+        ]
+    );
+    assert!(visited.is_empty());
+}
+
 /// Subtracting from a stored group preserves its spatial clauses before filtering.
 #[test]
 fn initial_split_subtracts_from_transformed_group_contents() {
