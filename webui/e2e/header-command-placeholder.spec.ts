@@ -20,22 +20,21 @@ test("header alignment stays fixed across edge rail states", async ({
   /** Measures viewport anchoring and control positions independently of the workspace. */
   const measureHeader = () =>
     header.evaluate((element) => {
-      const nav = element.querySelector("nav")!.getBoundingClientRect();
+      const navElement = element.querySelector("nav")!;
+      const nav = navElement.getBoundingClientRect();
       const command = element
         .querySelector(".nf-header-command-group")!
         .getBoundingClientRect();
-      const brand = element
-        .querySelector('img[alt="logo"]')!
-        .parentElement!.getBoundingClientRect();
+      const logo = navElement.firstElementChild!.getBoundingClientRect();
       const actions = element
         .querySelector('[aria-label="Open command palette"]')!
         .parentElement!.getBoundingClientRect();
       return {
         leftInset: nav.left,
         rightInset: window.innerWidth - nav.right,
+        logoLeft: logo.left,
         commandLeft: command.left,
-        brandCenter: brand.left + brand.width / 2,
-        viewportCenter: window.innerWidth / 2,
+        commandRight: command.right,
         actionsLeft: actions.left,
         actionsRight: actions.right,
       };
@@ -43,10 +42,9 @@ test("header alignment stays fixed across edge rail states", async ({
   const initial = await measureHeader();
   expect(initial.leftInset).toBe(16);
   expect(initial.rightInset).toBe(16);
-  expect(initial.commandLeft).toBe(16);
-  expect(Math.abs(initial.brandCenter - initial.viewportCenter)).toBeLessThan(
-    1,
-  );
+  // The logo anchors the left edge; the command input sits before the actions on the right.
+  expect(initial.logoLeft).toBe(16);
+  expect(initial.commandRight).toBeLessThanOrEqual(initial.actionsLeft);
 
   for (const [left, right] of [
     [true, true],
@@ -114,17 +112,10 @@ for (const { platform, modifier, label } of [
     await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
     await waitForDockviewApp(page);
     await resetToDefaultLayout(page);
-    await expect
-      .poll(() =>
-        page.evaluate(() => {
-          const logo = document.querySelector<HTMLImageElement>(
-            '.nf-app-header img[alt="logo"]',
-          )!;
-          const brand = logo.parentElement!.getBoundingClientRect();
-          return Math.abs(brand.left + brand.width / 2 - window.innerWidth / 2);
-        }),
-      )
-      .toBeLessThan(1);
+    const logo = page
+      .getByRole("navigation", { name: "Global" })
+      .getByRole("img", { name: "nightfall demo", exact: true });
+    await expect(logo).toBeVisible();
     const input = page.getByRole("textbox", {
       name: "Command input",
       exact: true,
@@ -136,14 +127,11 @@ for (const { platform, modifier, label } of [
     await page
       .getByRole("navigation", { name: "Global" })
       .screenshot({ path: testInfo.outputPath("command-shortcut-hint.png") });
-    await page.screenshot({ path: testInfo.outputPath("centered-header.png") });
+    await page.screenshot({ path: testInfo.outputPath("header.png") });
     await page.keyboard.press(`${modifier}+l`);
     await expect(input).toBeFocused();
     await input.fill("fixture 1");
-    await page
-      .getByRole("navigation", { name: "Global" })
-      .getByRole("img", { name: "logo" })
-      .click();
+    await logo.click();
     await page.keyboard.press(`${modifier}+l`);
     await expect(input).toBeFocused();
     expect(

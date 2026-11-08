@@ -7,9 +7,13 @@
  */
 
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
-import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
+import {
+  enterCompactShell,
+  resetToDefaultLayout,
+  waitForDockviewApp,
+} from "./showfile-startup";
 
-/** Exercises saved Patch views and grouping, keyboard selection, and wrapping toolbar geometry. */
+/** Exercises saved Patch views and grouping, keyboard selection, and the sideways-scrolling compact toolbar. */
 test("Patch segmented tabs switch views and preserve grouping", async ({
   page,
 }, testInfo) => {
@@ -72,12 +76,17 @@ test("Patch segmented tabs switch views and preserve grouping", async ({
     )
     .toBe("universe");
 
-  await page.setViewportSize({ width: 390, height: 780 });
-  await expect(dmx).toBeInViewport({ ratio: 1 });
-  await expect(universe).toBeInViewport({ ratio: 1 });
-  await expect(
+  await enterCompactShell(page, { width: 390, height: 780 });
+  // The compact shell scrolls a long toolbar sideways; every control stays reachable.
+  // Scroll offsets land on sub-pixel positions, so allow a sliver of edge clipping.
+  for (const control of [
+    dmx,
+    universe,
     panel.getByRole("button", { name: "Column visibility" }),
-  ).toBeInViewport({ ratio: 1 });
+  ]) {
+    await control.scrollIntoViewIfNeeded();
+    await expect(control).toBeInViewport({ ratio: 0.95 });
+  }
   await page.screenshot({
     path: testInfo.outputPath("patch-segmented-narrow.png"),
   });

@@ -65,11 +65,11 @@ test("status bar left icons match undo and redo sizing and spacing", async ({
   await expect(bar.getByTestId("status-showfile-name")).not.toHaveText("");
   await menu.click();
   await expect(
-    page.getByRole("button", { name: /Open Showfile/ }),
+    page.getByRole("button", { name: "About", exact: true }),
   ).toBeVisible();
   await menu.click();
   await expect(
-    page.getByRole("button", { name: /Open Showfile/ }),
+    page.getByRole("button", { name: "About", exact: true }),
   ).toBeHidden();
   await connection.focus();
   await expect(

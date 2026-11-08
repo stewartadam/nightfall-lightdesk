@@ -13,6 +13,7 @@ import {
 } from "./playwright-fixtures";
 import {
   dockFixturesInMainGrid,
+  enterCompactShell,
   resetToDefaultLayout,
   waitForDockviewApp,
 } from "./showfile-startup";
@@ -118,7 +119,15 @@ test("shared dialog presentation covers lab, store and creation forms", async ({
     exact: true,
   });
   expect(await presentation(objectDialog)).toEqual(style);
-  await page.setViewportSize({ width: 390, height: 700 });
+  await objectDialog
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await expect(objectDialog).toBeHidden();
+  // The compact shell remounts its panels, so reopen the dialog from the narrow layout.
+  await enterCompactShell(page, { width: 390, height: 700 });
+  await page
+    .getByRole("button", { name: "Create object", exact: true })
+    .click();
   await objectDialog
     .getByRole("button", { name: "Create Object", exact: true })
     .click();

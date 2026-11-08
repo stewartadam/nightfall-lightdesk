@@ -138,12 +138,28 @@ export default function AppShell() {
   onMount(() => {
     const root = document.documentElement;
     const header = viewport.querySelector<HTMLElement>(".nf-app-header");
+    /** Drops the shared bounds so overlays fall back to sizing against the window. */
+    const clear = () => {
+      for (const property of [
+        "--app-header-bottom",
+        "--app-viewport-right",
+        "--app-viewport-bottom",
+        "--app-viewport-height",
+      ])
+        root.style.removeProperty(property);
+    };
     /**
      * Keeps overlay sizing aligned with the complete app, including its header and footer, and
      * records where the header ends so notifications stack below it instead of covering it.
+     * While the shell is hidden (such as behind the startup picker after a reconnect) it has no
+     * box, so overlays size against the window rather than collapsing to zero height.
      */
     const measure = () => {
       const bounds = viewport.getBoundingClientRect();
+      if (bounds.width === 0 && bounds.height === 0) {
+        clear();
+        return;
+      }
       root.style.setProperty(
         "--app-header-bottom",
         `${header?.getBoundingClientRect().bottom ?? bounds.top}px`,
@@ -166,13 +182,7 @@ export default function AppShell() {
     onCleanup(() => {
       observer.disconnect();
       window.removeEventListener("resize", measure);
-      for (const property of [
-        "--app-header-bottom",
-        "--app-viewport-right",
-        "--app-viewport-bottom",
-        "--app-viewport-height",
-      ])
-        root.style.removeProperty(property);
+      clear();
     });
   });
   return (
