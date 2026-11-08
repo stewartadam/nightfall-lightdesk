@@ -292,6 +292,8 @@ export const fixtureGeometries = deepMap<FixtureGeometryMap>({});
 export const fixtureLibrary = atom<types.AvailableFixtureInfo[]>([]);
 /** Definition files in the fixture library folders that failed to load. */
 export const unloadableFixtureFiles = atom<types.UnloadableFixtureFile[]>([]);
+/** Fixture-editor drafts open on the backend, shared by every client, in draft id order. */
+export const fixtureDrafts = atom<types.FixtureDraftView[]>([]);
 
 /** Canonical backend-provided attribute presentation metadata. */
 export const attributeMetadata = atom<types.AttributeMetadata[]>([]);
@@ -1104,6 +1106,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     sceneObjects,
     fixtureLibrary,
     unloadableFixtureFiles,
+    fixtureDrafts,
     attributeMetadata,
     fixtureGeometries,
     objectLibrary,

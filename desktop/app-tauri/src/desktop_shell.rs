@@ -662,9 +662,13 @@ pub(super) fn emit_menu_action_to_focused_window<R: Runtime>(
     app: &tauri::AppHandle<R>,
     action_id: &str,
 ) -> tauri::Result<()> {
-    let Some(window) = target_webview_window(app) else {
+    let Some(window) = workspace_webview_window(app) else {
         return Ok(());
     };
+    if !window.is_focused().unwrap_or(false) {
+        // The action came from the fixture editor; bring up the workspace that runs it.
+        window.set_focus()?;
+    }
 
     app.emit_to(
         EventTarget::webview_window(window.label()),
@@ -685,6 +689,26 @@ pub(super) fn target_webview_window<R: Runtime>(
         .cloned()
         .or_else(|| webview_windows.get("main").cloned())
         .or_else(|| webview_windows.values().next().cloned())
+}
+
+/// Select the window that runs menu actions handled by the web UI's workspace.
+///
+/// The fixture editor window has no workspace and listens for no menu
+/// actions, so while it is focused the focused workspace window is replaced by
+/// the main window, then by any other workspace window.
+fn workspace_webview_window<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<WebviewWindow<R>> {
+    let webview_windows = app.webview_windows();
+    let workspaces = || {
+        webview_windows
+            .values()
+            .filter(|window| window.label() != FIXTURE_EDITOR_WINDOW_LABEL)
+    };
+
+    workspaces()
+        .find(|window| window.is_focused().unwrap_or(false))
+        .cloned()
+        .or_else(|| webview_windows.get("main").cloned())
+        .or_else(|| workspaces().next().cloned())
 }
 
 /// Close the currently targeted webview window when one is available.
@@ -773,6 +797,55 @@ pub(super) fn create_new_window<R: Runtime>(app: &tauri::AppHandle<R>) -> Result
         .map_err(|error| format!("failed to focus new window: {error}"))?;
 
     Ok(())
+}
+
+/// Label of the single desktop window that hosts the fixture editor.
+const FIXTURE_EDITOR_WINDOW_LABEL: &str = "fixture-editor";
+
+/// Page the fixture editor window loads: the web UI with its editor root selected.
+const FIXTURE_EDITOR_WINDOW_URL: &str = "index.html?window=fixture-editor";
+
+/// Returns the window config of the fixture editor, built from the app window template.
+fn fixture_editor_window_config(
+    mut config: tauri::utils::config::WindowConfig,
+) -> tauri::utils::config::WindowConfig {
+    config.label = FIXTURE_EDITOR_WINDOW_LABEL.to_string();
+    config.title = "Fixture Editor".to_string();
+    config.url = tauri::WebviewUrl::App(FIXTURE_EDITOR_WINDOW_URL.into());
+    config.width = 1100.0;
+    config.height = 760.0;
+    config
+}
+
+#[tauri::command]
+/// Focuses the fixture editor window, opening it first when it is not open.
+///
+/// The command is async because creating a window from a synchronous command
+/// deadlocks on Windows.
+pub(super) async fn open_fixture_editor<R: Runtime>(
+    app: tauri::AppHandle<R>,
+) -> Result<(), String> {
+    let window = match app.get_webview_window(FIXTURE_EDITOR_WINDOW_LABEL) {
+        Some(window) => {
+            window
+                .unminimize()
+                .map_err(|error| format!("failed to restore the fixture editor: {error}"))?;
+            window
+        }
+        None => match build_app_window(
+            &app,
+            &fixture_editor_window_config(template_window_config(&app)?),
+        ) {
+            Ok(window) => window,
+            // A second request racing this one may have created the window first.
+            Err(error) => app
+                .get_webview_window(FIXTURE_EDITOR_WINDOW_LABEL)
+                .ok_or(error)?,
+        },
+    };
+    window
+        .set_focus()
+        .map_err(|error| format!("failed to focus the fixture editor: {error}"))
 }
 
 /// Schedule creation of a new desktop window on Tauri's asynchronous runtime.
@@ -903,6 +976,7 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
             open_data_dir,
             perform_menu_action,
             set_view_menu,
+            open_fixture_editor,
             export_diagnostics,
             export_showfile,
             open_bug_report,
@@ -1021,6 +1095,27 @@ mod diagnostics_tests {
         assert!(!external("file:///etc/passwd"));
         assert!(!external("javascript:alert(1)"));
         assert!(!external("tauri://localhost/index.html"));
+    }
+
+    /// The editor window gets its own label, which the capability file grants, and loads the editor root.
+    #[test]
+    fn fixture_editor_window_loads_the_editor_route() {
+        let config = super::fixture_editor_window_config(Default::default());
+        assert_eq!(config.label, "fixture-editor");
+        assert_eq!(
+            config.url,
+            tauri::WebviewUrl::App("index.html?window=fixture-editor".into())
+        );
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert!(
+            capability["windows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|window| window == "fixture-editor"),
+            "the capability file must grant the editor window"
+        );
     }
 }
 

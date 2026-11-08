@@ -139,6 +139,7 @@ export type AnyWsMessage =
   | Exclude<types.FixtureWsMessage, { type: "ParameterState" }>
   | ParameterStateWsMessage
   | types.FixtureLibraryWsMessage
+  | types.FixtureEditorWsMessage
   | types.ObjectLibraryWsMessage
   | flowTypes.FlowWsMessage
   | types.PlaybackWsMessage
