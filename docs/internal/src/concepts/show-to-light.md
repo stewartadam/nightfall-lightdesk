@@ -35,7 +35,7 @@ Groups, blueprints, FX, flows, timelines, and boards are also stored show object
 
 ## Playbacks bring show objects to life
 
-When you start a clip, Nightfall creates a running **playback** for it, also called an instance. The playback has its own clock, so it knows how far into a fade it is and when the next cue is due. Several playbacks can run at once, and each one keeps its own position.
+When you start a clip, Nightfall creates a running **playback** for it, also called an instance. The playback has its own clock, so it knows how far into a fade it is and when the next cue is due. The clock counts seconds, or beats of the show tempo when the sequence or effect is beat-timed. Several playbacks can run at once, and each one keeps its own position.
 
 Many things can start or control a playback:
 
@@ -66,7 +66,7 @@ flowchart TB
 
 A layer only contains the attributes its playback controls. The `First playback` layer says nothing about pan or green, so it leaves those attributes to lower layers, or to the fixture's default value when nothing controls them.
 
-Timing happens inside the layer. During a fade, the layer's value moves from the value underneath it toward the cue's target, so a fade always starts from what the fixture is actually doing. When you press Go on `First playback`, its layer fades red down and blue up over the `Blue` cue's fade time.
+Timing happens inside the layer. During a fade, the layer's value moves from the value the earlier cues in the sequence left toward the new cue's target. When you press Go on `First playback`, its layer fades red down and blue up over the `Blue` cue's fade time.
 
 Each playback also has its own level, such as a clip's fader. The level scales the intensity values in that playback's layer before the layers merge. Pulling `First playback` to 50% halves its intensity contribution without affecting the programmer or other clips.
 
@@ -97,21 +97,21 @@ After the merge, Nightfall applies adjustments that act on the whole stage rathe
 - **Virtual dimmers** give fixtures without an intensity channel a usable intensity. For a color-only light, Nightfall scales the color attributes, such as red, green, blue, and white, by the virtual intensity, with a gamma curve so dimming looks even.
 - **Virtual relations** apply other profile rules that involve virtual attributes.
 
-Rate masters are different. They change how fast the targeted playbacks run, so they act on the playbacks' clocks rather than on the merged values.
+Speed masters are different. They change how fast the targeted playbacks run, so they act on the playbacks' clocks rather than on the merged values.
 
 ## Values become DMX
 
 Each fixture's profile converts its final attribute values into DMX channel values at the fixture's patched address. `Par 1` is patched at console universe 1, address 1, so its intensity, red, green, and blue land in channels 1 to 4 of console universe 1.
 
-Console universes are Nightfall's internal address space. Patch bindings route them to output transports, which send DMX to hardware: Art-Net or sACN network gateways, or a USB DMX interface. Until a binding routes a console universe to a transport, nothing leaves the computer. This is why the tutorial can run without hardware.
+Console universes are Nightfall's internal address space. DMX routes send them to output transports, which send DMX to hardware: Art-Net or sACN network gateways, or a USB DMX interface. Until a DMX route sends a console universe to a transport, nothing leaves the computer. This is why the tutorial can run without hardware.
 
 ```mermaid
 flowchart LR
   accTitle: From attribute values to the network
-  accDescr: The fixture profile writes channel values into a console universe. Patch bindings route the console universe to output transports, which send DMX on the network or over USB.
+  accDescr: The fixture profile writes channel values into a console universe. DMX routes send the console universe to output transports, which send DMX on the network or over USB.
   values[Final attribute values] --> profile[[Fixture profile]]
   profile --> console[(Console universe 1)]
-  console -- patch binding --> transport([Art-Net / sACN / USB])
+  console -- DMX route --> transport([Art-Net / sACN / USB])
 ```
 
 Nightfall can also receive DMX from another console. Incoming DMX can drive fixtures through a layer at the lowest priority, or pass straight through to an output.

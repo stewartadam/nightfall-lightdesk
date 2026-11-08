@@ -19,8 +19,14 @@ const DIAGRAM_PAGES = [
   { path: "architecture/client-protocol.html", diagrams: 4 },
   { path: "architecture/web-ui.html", diagrams: 5 },
   { path: "architecture/crate-map.html", diagrams: 1 },
+  { path: "architecture/showfiles.html", diagrams: 3 },
   { path: "engine/frame-loop.html", diagrams: 4 },
   { path: "engine/command-path.html", diagrams: 2 },
+  { path: "domains/fixtures-and-output.html", diagrams: 6 },
+  { path: "domains/programmer.html", diagrams: 4 },
+  { path: "domains/cues-and-sequences.html", diagrams: 4 },
+  { path: "domains/timing.html", diagrams: 1 },
+  { path: "contributing/testing.html", diagrams: 1 },
   { path: "contributing/writing-style.html", diagrams: 1 },
 ];
 
@@ -39,41 +45,52 @@ async function firstNodeFill(page: Page): Promise<string> {
     .evaluate((shape) => getComputedStyle(shape).fill);
 }
 
-/**
- * Checks that the built Developer Guide renders every Mermaid block as an SVG diagram in the
- * light and navy themes, and captures each page and each diagram for visual review. Requires
- * `mdbook build docs/internal` and network access to the Mermaid CDN.
- */
-test("developer guide renders Mermaid diagrams in light and dark themes", async ({
-  browser,
-}, testInfo) => {
-  for (const theme of ["light", "navy"]) {
-    const context = await browser.newContext();
-    await context.addInitScript((value) => {
-      localStorage.setItem("mdbook-theme", value);
-    }, theme);
-    const page = await context.newPage();
-    for (const { path, diagrams } of DIAGRAM_PAGES) {
-      await page.goto(guideUrl(path));
-      await expect(page.locator(".mermaid-diagram svg")).toHaveCount(diagrams);
-      await expect(page.locator("code.language-mermaid")).toHaveCount(0);
-      const name = path.replace(/\W+/g, "-");
-      await page.screenshot({
-        path: testInfo.outputPath(`${name}-${theme}.png`),
-        fullPage: true,
-      });
-      const rendered = page.locator(".mermaid-diagram");
-      for (let index = 0; index < diagrams; index += 1) {
-        await rendered.nth(index).screenshot({
-          path: testInfo.outputPath(
-            `${name}-diagram-${index + 1}-${theme}.png`,
-          ),
+for (const { path, diagrams } of DIAGRAM_PAGES) {
+  /**
+   * Checks that one Developer Guide page renders every Mermaid block as an SVG diagram in the
+   * light and navy themes, and captures the page and each diagram for visual review. Requires
+   * `mdbook build docs/internal` and network access to the Mermaid CDN.
+   */
+  test(`developer guide renders Mermaid diagrams on ${path}`, async ({
+    browser,
+  }, testInfo) => {
+    const name = path.replace(/\W+/g, "-");
+    for (const [theme, mermaidTheme] of [
+      ["light", "default"],
+      ["navy", "dark"],
+    ]) {
+      const context = await browser.newContext();
+      try {
+        await context.addInitScript((value) => {
+          localStorage.setItem("mdbook-theme", value);
+        }, theme);
+        const page = await context.newPage();
+        await page.goto(guideUrl(path));
+        await expect(
+          page.locator(`.mermaid-diagram[data-rendered="${mermaidTheme}"] svg`),
+        ).toHaveCount(diagrams);
+        await expect(page.locator("code.language-mermaid")).toHaveCount(0);
+        await expect(
+          page.locator(".mermaid-diagram svg .error-icon"),
+        ).toHaveCount(0);
+        await page.screenshot({
+          path: testInfo.outputPath(`${name}-${theme}.png`),
+          fullPage: true,
         });
+        const rendered = page.locator(".mermaid-diagram");
+        for (let index = 0; index < diagrams; index += 1) {
+          await rendered.nth(index).screenshot({
+            path: testInfo.outputPath(
+              `${name}-diagram-${index + 1}-${theme}.png`,
+            ),
+          });
+        }
+      } finally {
+        await context.close();
       }
     }
-    await context.close();
-  }
-});
+  });
+}
 
 /**
  * Checks that switching the book theme re-renders diagrams with the matching Mermaid theme, so
@@ -81,14 +98,19 @@ test("developer guide renders Mermaid diagrams in light and dark themes", async 
  */
 test("developer guide diagrams follow book theme changes", async ({ page }) => {
   await page.goto(guideUrl("concepts/show-to-light.html"));
-  await expect(page.locator(".mermaid-diagram svg")).toHaveCount(3);
+  await expect(
+    page.locator('.mermaid-diagram[data-rendered="default"] svg'),
+  ).toHaveCount(3);
   const lightFill = await firstNodeFill(page);
 
   await page.evaluate(() => {
     document.documentElement.classList.remove("light");
     document.documentElement.classList.add("navy");
   });
-  await expect.poll(() => firstNodeFill(page)).not.toBe(lightFill);
+  await expect(
+    page.locator('.mermaid-diagram[data-rendered="dark"] svg'),
+  ).toHaveCount(3);
+  expect(await firstNodeFill(page)).not.toBe(lightFill);
 });
 
 /**
