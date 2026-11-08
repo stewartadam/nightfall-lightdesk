@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { BookOpenIcon } from "@squidlab/phosphor-solid/book-open";
+import { CloudArrowUpIcon } from "@squidlab/phosphor-solid/cloud-arrow-up";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
 import { FilePlusIcon } from "@squidlab/phosphor-solid/file-plus";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
@@ -17,6 +18,7 @@ import { GraduationCapIcon } from "@squidlab/phosphor-solid/graduation-cap";
 import { InfoIcon } from "@squidlab/phosphor-solid/info";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { type JSX, Show } from "solid-js";
+import { openRigImportDialog } from "../../../features/rig-import";
 import { openWelcomeGuide } from "../../../features/welcome-guide";
 import { hasDiskStorage } from "../../../lib/disk-storage";
 import { openDocumentation, openFeedbackPage } from "../../../lib/feedback";
@@ -139,6 +141,9 @@ export default function AppMenu(props: {
           onClick={showShowfileImportModal}
         >
           Import Showfile
+        </DropdownMenuItem>
+        <DropdownMenuItem icon={CloudArrowUpIcon} onClick={openRigImportDialog}>
+          Import Rig from MVR
         </DropdownMenuItem>
         <DropdownMenuItem
           icon={FileArrowDownIcon}
