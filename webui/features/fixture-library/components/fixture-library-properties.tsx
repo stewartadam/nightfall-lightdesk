@@ -30,12 +30,17 @@ import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import { fetchFixtureProfile } from "../../../lib/fixture-service";
 import { fixtureProfile } from "../../../state/appStores";
 import type * as types from "../../../types";
+import { GdtfShareUpdateDetails } from "../../gdtf-share";
 import LibraryFixturePreview from "./library-fixture-preview";
 
 interface FixtureLibraryPropertiesProps {
   selectedFixture: Accessor<types.AvailableFixtureInfo | null>;
   /** The selected library file that failed to load, shown with its error instead of a profile. */
   unloadableFile: Accessor<types.UnloadableFixtureFile | null>;
+  /** A newer GDTF Share revision of the selected fixture's file, if one was found. */
+  update: Accessor<types.GdtfShareUpdate | undefined>;
+  /** Selects another library entry, such as an installed update. */
+  onShowFixture: (fixture: types.AvailableFixtureInfo) => void;
 }
 
 type ParameterDisplayRow = {
@@ -339,6 +344,23 @@ export default function FixtureLibraryProperties(
                 </div>
               </div>
             </div>
+
+            {/* Keyed by file, so an install under way never carries over to another fixture. */}
+            <Show when={props.update()?.asset_etag} keyed>
+              {(_etag: string) => (
+                <Show when={props.update()}>
+                  {(update) => (
+                    <>
+                      <div class="border-t border-neutral-700" />
+                      <GdtfShareUpdateDetails
+                        update={update()}
+                        onShow={props.onShowFixture}
+                      />
+                    </>
+                  )}
+                </Show>
+              )}
+            </Show>
 
             <div class="border-t border-neutral-700" />
 

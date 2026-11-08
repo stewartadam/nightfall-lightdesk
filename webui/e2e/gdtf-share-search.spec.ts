@@ -459,3 +459,156 @@ test("shows why an installed fixture can't be read", async ({
     ),
   ).toBe(false);
 });
+
+/** A newer manufacturer revision of {@link WASH}, which the update test offers. */
+const WASH_UPDATE: GdtfShareFixture = {
+  ...WASH,
+  rid: 105,
+  revision: "Release 2.0",
+  last_modified: WASH.last_modified + 86_400,
+};
+
+/** Library file name the engine gives an install of `fixture`. */
+function installFileName(fixture: GdtfShareFixture): string {
+  return `Nightfall_Test@${fixture.fixture.replace(/ /g, "_")}@${fixture.revision.replace(/ /g, "_")}@${fixture.rid}.gdtf`;
+}
+
+/** Generated archive of `fixture`, carrying its revision text as the engine reads it. */
+function revisionArchive(fixture: GdtfShareFixture): Buffer {
+  return testGdtfArchive({
+    manufacturer: fixture.manufacturer,
+    model: fixture.fixture,
+    fixtureTypeId: fixture.fixture_type_id ?? "",
+    revision: fixture.revision,
+  });
+}
+
+/**
+ * The Fixture Library flags a GDTF file with a newer GDTF Share revision, Properties names
+ * both revisions, and installing the update adds it next to the old file and selects it.
+ * The old file then points at the library copy instead of offering another install. The
+ * update check is answered by a stand-in that records what the panel sent, so the test also
+ * shows the library reports each file's fixture type and revision text.
+ */
+test("offers newer GDTF Share revisions of library fixtures", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const libraryDir = join(backendSlot.dataDir, "fixtures");
+  await mkdir(libraryDir, { recursive: true });
+  const installedArchive = revisionArchive(WASH);
+  await writeFile(join(libraryDir, installFileName(WASH)), installedArchive);
+  const installedEtag = libraryAssetEtag(installedArchive);
+  const updateArchive = revisionArchive(WASH_UPDATE);
+  const updateEtag = libraryAssetEtag(updateArchive);
+
+  await standInForGdtfShare(page, { user: "lighting@example.com", libraryDir });
+  const checked: unknown[] = [];
+  await page.route("**/api/gdtf-share/updates", (route) => {
+    const body = route.request().postDataJSON() as {
+      fixtures: { asset_etag: string; revision?: string }[];
+    };
+    checked.push(...body.fixtures);
+    const hasOld = body.fixtures.some((f) => f.asset_etag === installedEtag);
+    const hasNew = body.fixtures.some((f) => f.asset_etag === updateEtag);
+    return route.fulfill({
+      json: {
+        updates: hasOld
+          ? [
+              {
+                asset_etag: installedEtag,
+                installed: WASH,
+                latest: WASH_UPDATE,
+                library_copy: hasNew ? updateEtag : undefined,
+              },
+            ]
+          : [],
+      },
+    });
+  });
+  await page.route(
+    (url) =>
+      url.pathname === `/api/gdtf-share/fixtures/${WASH_UPDATE.rid}/install`,
+    async (route) => {
+      const partial = join(libraryDir, ".update.partial");
+      await writeFile(partial, updateArchive);
+      await rename(partial, join(libraryDir, installFileName(WASH_UPDATE)));
+      return route.fulfill({
+        contentType: "application/x-ndjson",
+        body: `${JSON.stringify({
+          type: "Installed",
+          data: {
+            file_name: installFileName(WASH_UPDATE),
+            fixture_type_id: WASH_UPDATE.fixture_type_id,
+            asset_etag: updateEtag,
+          },
+        })}\n`,
+      });
+    },
+  );
+
+  await openApp(page);
+  const library = await addPanel(
+    page,
+    LIBRARY_PANEL_ID,
+    "FixtureLibrary",
+    "Fixture Library",
+  );
+  await addPanel(
+    page,
+    PROPERTIES_PANEL_ID,
+    "PropertiesInspector",
+    "Properties",
+    "right",
+  );
+  // Leaves only the library and Properties open, so both have room for the screenshots.
+  await page.evaluate(
+    (keep) => {
+      const api = (window as any).appStores.dockApi.get();
+      for (const panel of [...api.panels]) {
+        if (!keep.includes(panel.id)) panel.api.close();
+      }
+      api.getPanel(keep[0])?.focus();
+    },
+    [LIBRARY_PANEL_ID, PROPERTIES_PANEL_ID],
+  );
+  const rows = library.getByRole("row").filter({ hasText: "E2E Wash" });
+  await expect(rows).toHaveCount(1, { timeout: 30_000 });
+  await expect(rows.first()).toContainText("Update available", {
+    timeout: 20_000,
+  });
+  expect(checked).toContainEqual({
+    asset_etag: installedEtag,
+    fixture_type_id: WASH.fixture_type_id,
+    revision: "Release 1.0",
+  });
+  await page.screenshot({
+    path: testInfo.outputPath("10-update-available.png"),
+  });
+
+  await rows.first().click();
+  const details = page.getByTestId("gdtf-share-update");
+  await expect(details).toContainText("Newest: Release 2.0");
+  await expect(details).toContainText("This file: Release 1.0");
+  await page.screenshot({
+    path: testInfo.outputPath("11-update-properties.png"),
+  });
+
+  await details.getByTestId("gdtf-share-install-update").click();
+  await expect(rows).toHaveCount(2, { timeout: 20_000 });
+  await expect(details).toHaveCount(0);
+  const oldRow = library
+    .getByRole("row")
+    .filter({ hasText: "Newer copy in library" });
+  await expect(oldRow).toHaveCount(1, { timeout: 20_000 });
+  await page.screenshot({
+    path: testInfo.outputPath("12-update-installed.png"),
+  });
+
+  await oldRow.click();
+  await expect(details.getByTestId("gdtf-share-show-update")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("13-library-copy.png"),
+  });
+});

@@ -322,6 +322,10 @@ fn available_fixture_info(profile: &FixtureProfile) -> AvailableFixtureInfo {
             FixtureSource::Gdtf(metadata) => metadata.fixture_type_id.clone(),
             FixtureSource::Ofl(_) | FixtureSource::BuiltIn { .. } => None,
         },
+        gdtf_revision: match &profile.source {
+            FixtureSource::Gdtf(metadata) => metadata.revision.clone(),
+            FixtureSource::Ofl(_) | FixtureSource::BuiltIn { .. } => None,
+        },
     }
 }
 

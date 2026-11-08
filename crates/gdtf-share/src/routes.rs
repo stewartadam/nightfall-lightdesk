@@ -18,8 +18,9 @@
 //! `GET /api/gdtf-share/fixtures?query=` searches the saved fixture list,
 //! `POST /api/gdtf-share/fixtures/refresh` fetches it again, and
 //! `POST /api/gdtf-share/fixtures/{rid}/install` downloads a revision into the fixture
-//! library, streaming its progress. Any paired device may search and install, as it may
-//! upload fixtures.
+//! library, streaming its progress. `POST /api/gdtf-share/updates` lists newer revisions
+//! of the library files a client names. Any paired device may search, install and check
+//! for updates, as it may upload fixtures.
 
 use std::{
     convert::Infallible,
@@ -50,6 +51,9 @@ use crate::credentials::Credentials;
 use crate::install::{
     GdtfShareDownloadProgress, GdtfShareInstallEvent, GdtfShareInstallFailure, install,
 };
+use crate::updates::{
+    GdtfShareUpdateCheck, GdtfShareUpdates, INSTALLS_FILE_NAME, InstalledRevisions, find_updates,
+};
 
 /// Path of the account resource; `GET` reads it and `POST` signs in.
 const ACCOUNT_PATH: &str = "/api/gdtf-share/account";
@@ -61,6 +65,8 @@ const FIXTURES_PATH: &str = "/api/gdtf-share/fixtures";
 const REFRESH_PATH: &str = "/api/gdtf-share/fixtures/refresh";
 /// Path that installs one revision into the fixture library.
 const INSTALL_PATH: &str = "/api/gdtf-share/fixtures/{rid}/install";
+/// Path that lists newer revisions of library files.
+const UPDATES_PATH: &str = "/api/gdtf-share/updates";
 
 /// A failed request: its status code and a message the UI shows as is.
 type RouteError = (StatusCode, String);
@@ -79,13 +85,21 @@ pub(crate) struct GdtfShare {
     pub(crate) account: Arc<GdtfShareAccount>,
     pub(crate) catalog: Arc<GdtfShareCatalog>,
     pub(crate) library_dir: Arc<PathBuf>,
+    pub(crate) installs: Arc<InstalledRevisions>,
 }
 
 impl GdtfShare {
     /// Assembles the route state around `account` and the folders in `folders`.
+    ///
+    /// The install record is saved next to the fixture list.
     pub(crate) fn new(account: GdtfShareAccount, folders: GdtfShareFolders) -> Self {
+        let installs_file = folders.catalog_file.with_file_name(INSTALLS_FILE_NAME);
         Self {
             account: Arc::new(account),
+            installs: Arc::new(InstalledRevisions::new(
+                installs_file,
+                folders.library_dir.clone(),
+            )),
             catalog: Arc::new(GdtfShareCatalog::new(folders.catalog_file)),
             library_dir: Arc::new(folders.library_dir),
         }
@@ -110,7 +124,7 @@ pub fn register_routes(
 }
 
 /// Builds every route around `share`, keyed by path.
-fn routes(share: GdtfShare) -> [(&'static str, axum::routing::MethodRouter); 5] {
+fn routes(share: GdtfShare) -> [(&'static str, axum::routing::MethodRouter); 6] {
     [
         (
             ACCOUNT_PATH,
@@ -119,7 +133,11 @@ fn routes(share: GdtfShare) -> [(&'static str, axum::routing::MethodRouter); 5] 
         (SIGN_OUT_PATH, post(sign_out).with_state(share.clone())),
         (FIXTURES_PATH, get(search).with_state(share.clone())),
         (REFRESH_PATH, post(refresh).with_state(share.clone())),
-        (INSTALL_PATH, post(install_fixture).with_state(share)),
+        (
+            INSTALL_PATH,
+            post(install_fixture).with_state(share.clone()),
+        ),
+        (UPDATES_PATH, post(check_updates).with_state(share)),
     ]
 }
 
@@ -282,7 +300,13 @@ async fn install_fixture(
             }
         };
         let outcome = match install(&share.account, &share.library_dir, &fixture, &report).await {
-            Ok(installed) => GdtfShareInstallEvent::Installed(installed),
+            Ok(installed) => {
+                share
+                    .installs
+                    .record(installed.asset_etag.clone(), rid)
+                    .await;
+                GdtfShareInstallEvent::Installed(installed)
+            }
             Err(error) => {
                 let (status, message) = route_error(error);
                 tracing::warn!(rid, message, "GDTF Share install failed");
@@ -306,6 +330,38 @@ async fn install_fixture(
         Body::from_stream(lines),
     )
         .into_response())
+}
+
+/// Lists newer GDTF Share revisions of the posted library files.
+///
+/// Checks against the saved list, fetching it first when there is none, and fetches a
+/// stale one again in the background, as searches do. Without a signed-in account there is
+/// nothing to install updates with, so none are listed.
+async fn check_updates(
+    State(share): State<GdtfShare>,
+    Json(check): Json<GdtfShareUpdateCheck>,
+) -> Result<Json<GdtfShareUpdates>, RouteError> {
+    if !share.account.is_signed_in().await {
+        return Ok(Json(GdtfShareUpdates {
+            updates: Vec::new(),
+        }));
+    }
+    let (catalog, stale) = share
+        .catalog
+        .for_search(&share.account)
+        .await
+        .map_err(route_error)?;
+    if stale {
+        share
+            .catalog
+            .refresh_in_background(share.account.clone(), catalog.fetched_at());
+    }
+    let installs = share.installs.rids().await;
+    let updates =
+        tokio::task::spawn_blocking(move || find_updates(&catalog, &installs, &check.fixtures))
+            .await
+            .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    Ok(Json(updates))
 }
 
 /// Wraps every route in a router, for tests that call them directly.

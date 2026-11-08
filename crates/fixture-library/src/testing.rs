@@ -515,6 +515,7 @@ pub struct GdtfBuilder {
     extra_files: Vec<(String, Vec<u8>)>,
     emitters: Vec<(String, [f64; 3])>,
     dmx_profiles: Vec<(String, Vec<[f64; 5]>)>,
+    revisions: Vec<String>,
 }
 
 impl GdtfBuilder {
@@ -531,7 +532,14 @@ impl GdtfBuilder {
             extra_files: Vec::new(),
             emitters: Vec::new(),
             dmx_profiles: Vec::new(),
+            revisions: Vec::new(),
         }
+    }
+
+    /// Appends a `Revision` entry with `text`, oldest first.
+    pub fn revision(mut self, text: &str) -> Self {
+        self.revisions.push(text.to_string());
+        self
     }
 
     /// Adds a DMX profile whose points are `[DMXPercentage, CFC0, CFC1, CFC2, CFC3]`.
@@ -638,7 +646,19 @@ impl GdtfBuilder {
         for mode in &self.modes {
             write_mode(&mut xml, mode);
         }
-        xml.push_str("</DMXModes>\n</FixtureType>\n</GDTF>\n");
+        xml.push_str("</DMXModes>\n");
+        if !self.revisions.is_empty() {
+            xml.push_str("<Revisions>\n");
+            for text in &self.revisions {
+                let _ = writeln!(
+                    xml,
+                    "<Revision Text=\"{}\" Date=\"2024-01-01T00:00:00\" UserID=\"0\"/>",
+                    escape(text)
+                );
+            }
+            xml.push_str("</Revisions>\n");
+        }
+        xml.push_str("</FixtureType>\n</GDTF>\n");
         xml
     }
 

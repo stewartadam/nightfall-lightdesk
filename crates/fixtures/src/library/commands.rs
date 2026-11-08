@@ -148,6 +148,9 @@ pub struct AvailableFixtureInfo {
     /// Lowercase GDTF `FixtureTypeID`, shared by every revision of a GDTF fixture type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gdtf_fixture_type_id: Option<String>,
+    /// Text of the GDTF archive's latest revision, which GDTF Share lists as the revision name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gdtf_revision: Option<String>,
 }
 
 /// Response for ListAvailableFixtures command

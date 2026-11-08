@@ -8,3 +8,5 @@
 
 export { GdtfShareBrowser } from "./gdtf-share-browser";
 export { GdtfShareSettings } from "./gdtf-share-settings";
+export { GdtfShareUpdateDetails } from "./gdtf-share-update-details";
+export { createGdtfShareUpdates } from "./updates";

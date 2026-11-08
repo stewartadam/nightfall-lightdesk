@@ -31,6 +31,10 @@ pub struct GdtfMetadata {
     /// the archive leaves it nil.
     #[serde(default)]
     pub fixture_type_id: Option<String>,
+    /// Text of the archive's latest `Revision` entry, which GDTF Share lists as the
+    /// revision's name; `None` when the archive records no revision text.
+    #[serde(default)]
+    pub revision: Option<String>,
     /// File path for on-demand re-parsing
     pub file_path: std::path::PathBuf,
 }
@@ -52,6 +56,7 @@ impl GdtfMetadata {
             model,
             modes,
             fixture_type_id: extract_fixture_type_id(&gdtf_file),
+            revision: extract_revision(&gdtf_file),
             file_path: path.to_path_buf(),
         })
     }
@@ -96,6 +101,19 @@ fn extract_fixture_type_id(gdtf: &gdtf::GdtfFile) -> Option<String> {
         .map(|id| id.to_string())
 }
 
+/// Extracts the text of the last `Revision` entry, the one written by whoever last edited
+/// or uploaded the archive, so a library copy can be matched to the GDTF Share revision
+/// it came from.
+fn extract_revision(gdtf: &gdtf::GdtfFile) -> Option<String> {
+    gdtf.description
+        .fixture_types
+        .first()?
+        .revisions
+        .last()
+        .map(|revision| revision.text.trim().to_string())
+        .filter(|text| !text.is_empty())
+}
+
 /// Extract DMX mode names from GDTF file
 fn extract_mode_names(gdtf: &gdtf::GdtfFile) -> Vec<String> {
     if let Some(fixture_type) = gdtf.description.fixture_types.first() {
@@ -137,5 +155,21 @@ mod tests {
             metadata.fixture_type_id.as_deref(),
             Some("00000000-0000-0000-0000-000000000001")
         );
+    }
+
+    /// Reports the last revision's text, which GDTF Share lists as the revision name, and
+    /// nothing for an archive without revisions.
+    #[test]
+    fn reads_the_latest_revision_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let builder = GdtfBuilder::new("Test", "Spot")
+            .geometry(GeometrySpec::generic("Body"))
+            .mode(ModeSpec::new("Mode", "Body"));
+        assert_eq!(builder.write_metadata(dir.path()).revision, None);
+        let metadata = builder
+            .revision("Created")
+            .revision("  added white channel ")
+            .write_metadata(dir.path());
+        assert_eq!(metadata.revision.as_deref(), Some("added white channel"));
     }
 }

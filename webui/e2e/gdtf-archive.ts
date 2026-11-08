@@ -58,6 +58,16 @@ export interface TestGdtfFixture {
   manufacturer: string;
   model: string;
   fixtureTypeId: string;
+  /** Text of the archive's one `Revision` entry; none is written when left out. */
+  revision?: string;
+}
+
+/** Escapes `text` for use inside a double-quoted XML attribute. */
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/"/g, "&quot;");
 }
 
 /**
@@ -75,7 +85,8 @@ export function libraryAssetEtag(bytes: Uint8Array): string {
 
 /**
  * Builds a minimal GDTF archive for `fixture`: a cube body with one wash beam and a single
- * one-channel dimmer mode named "Standard", enough for the library to list and preview it.
+ * one-channel dimmer mode named "Standard", enough for the library to list and preview it,
+ * plus a revision entry when `fixture.revision` names one.
  */
 export function testGdtfArchive(fixture: TestGdtfFixture): Buffer {
   const identity = `Name="${fixture.model}" ShortName="${fixture.model}" LongName="${fixture.model}" Manufacturer="${fixture.manufacturer}"`;
@@ -114,7 +125,7 @@ export function testGdtfArchive(fixture: TestGdtfFixture): Buffer {
 <FTMacros/>
 </DMXMode>
 </DMXModes>
-</FixtureType>
+${fixture.revision === undefined ? "" : `<Revisions><Revision Text="${escapeXml(fixture.revision)}" Date="2024-01-01T00:00:00" UserID="0"/></Revisions>\n`}</FixtureType>
 </GDTF>
 `;
   return storedZip("description.xml", Buffer.from(xml, "utf8"));
