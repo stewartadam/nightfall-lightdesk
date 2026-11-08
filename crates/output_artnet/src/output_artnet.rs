@@ -116,6 +116,7 @@ fn network_error_kind_label(kind: std::io::ErrorKind) -> &'static str {
         std::io::ErrorKind::NetworkUnreachable => "NetworkUnreachable",
         std::io::ErrorKind::ConnectionRefused => "ConnectionRefused",
         std::io::ErrorKind::TimedOut => "TimedOut",
+        std::io::ErrorKind::InvalidInput => "InvalidInput",
         _ => "SendFailed",
     }
 }
