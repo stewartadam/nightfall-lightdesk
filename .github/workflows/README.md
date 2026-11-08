@@ -172,7 +172,7 @@ for review, or gets new commits while ready, and is not part of a stack:
 1. A size and path check (`scripts/merge-policy.mjs`) rejects PRs over 20 files or 400 changed
    lines, PRs changing binary files, and PRs touching risky areas: CI, build and test tooling
    (which the required checks run from the PR itself), dependencies and toolchain, the showfile
-   format, the websocket protocol crate, the desktop app, licensing, agent instructions (any
+   format, the websocket protocol crate, the DMX/network/controller input and output crates, the desktop app, licensing, agent instructions (any
    `CLAUDE.md`, since the review would load it) and Git attributes. Those get a "needs a human"
    comment without spending a Claude review.
 2. Otherwise Claude reviews the PR against the rubric in `.github/claude-review.md`: no likely
@@ -180,7 +180,7 @@ for review, or gets new commits while ready, and is not part of a stack:
    notes, screenshots for visible changes, and the written conventions in `CLAUDE.md`. It can only
    read files: the default branch at the workspace root and the PR head in `pr-head/`.
 3. The verdict is posted as one comment that later runs update. On "ready to auto-merge", the PR
-   gets the `auto-merge` label and GitHub auto-merge, so it merges only once the required checks
+   gets the `low-risk` label and GitHub auto-merge, so it merges only once the required checks
    pass. Any reported bug overrides an auto-merge verdict.
 
 Pushing to a cleared PR, reopening it or converting it to draft disables its auto-merge, removes

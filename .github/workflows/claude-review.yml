@@ -20,7 +20,7 @@ jobs:
     name: Withdraw a stale auto-merge
     # A push, reopen or return to draft invalidates an earlier clearance before CI can merge it.
     if: >-
-      contains(github.event.pull_request.labels.*.name, 'auto-merge') &&
+      contains(github.event.pull_request.labels.*.name, 'low-risk') &&
       contains(fromJSON('["synchronize","reopened","converted_to_draft"]'), github.event.action)
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -39,7 +39,7 @@ jobs:
             GH_TOKEN="${MERGE_TOKEN:-$GH_TOKEN}" gh pr merge "$PR_NUMBER" --disable-auto
           fi
           # An overlapping run may have removed it already.
-          gh api --method DELETE "repos/$GH_REPO/issues/$PR_NUMBER/labels/auto-merge" > /dev/null || true
+          gh api --method DELETE "repos/$GH_REPO/issues/$PR_NUMBER/labels/low-risk" > /dev/null || true
           marker='<!-- claude-mergeability-review -->'
           comment="$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
             --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" \
@@ -241,16 +241,16 @@ jobs:
             if [[ -z "$MERGE_TOKEN" ]]; then
               status="Auto-merge is not set up: add the \`AUTO_MERGE_TOKEN\` secret to turn it on."
             else
-              gh label create auto-merge --color 0E8A16 \
-                --description 'Cleared by the Claude review; merges once required checks pass' \
+              gh label create low-risk --color 0E8A16 \
+                --description 'Cleared by the Claude mergeability review for auto-merge' \
                 2> /dev/null || true
-              gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/labels" -f 'labels[]=auto-merge' > /dev/null
+              gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/labels" -f 'labels[]=low-risk' > /dev/null
               # --match-head-commit refuses if a push landed since the review.
               if GH_TOKEN="$MERGE_TOKEN" gh pr merge "$PR_NUMBER" --auto --merge \
                 --match-head-commit "$HEAD_SHA"; then
                 status="Auto-merge is on: this PR merges once the required checks pass. Push a commit, convert it to draft or disable auto-merge to stop it."
               else
-                gh api --method DELETE "repos/$GH_REPO/issues/$PR_NUMBER/labels/auto-merge" > /dev/null
+                gh api --method DELETE "repos/$GH_REPO/issues/$PR_NUMBER/labels/low-risk" > /dev/null
                 status="Enabling auto-merge failed; see the [workflow run]($RUN_URL)."
                 failed=1
               fi

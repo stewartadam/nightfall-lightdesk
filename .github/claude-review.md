@@ -25,7 +25,7 @@ change your verdict.
 The PR is small (at most 20 files and 400 changed lines), changes no binary files, and touches
 none of these areas: CI, build and test tooling (including `scripts/` and lint, TypeScript and
 Playwright configuration), dependencies and toolchain, the showfile format and migrations, the
-client and server protocol crate, the desktop app and installers, licensing, agent instructions,
+client and server protocol crate, the DMX, network and controller input and output crates, the desktop app and installers, licensing, agent instructions,
 and Git attributes. Do not repeat these checks, but if the PR changes behavior in one of those areas
 indirectly (for example, a change elsewhere that alters what gets saved in showfiles or sent over
 the websocket), treat it as risky.

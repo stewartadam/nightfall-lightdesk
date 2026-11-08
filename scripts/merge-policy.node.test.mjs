@@ -61,6 +61,8 @@ test("risky paths always need a human", () => {
     ["crates/workspace-hack/src/lib.rs", "dependencies"],
     ["crates/showfile/src/migrations.rs", "showfile"],
     ["crates/websocket/src/lib.rs", "protocol"],
+    ["crates/output_sacn/src/service.rs", "output"],
+    ["crates/input_osc/src/command.rs", "input"],
     ["desktop/app-tauri/tauri.conf.json", "desktop"],
     ["about.toml", "licensing"],
     ["CLAUDE.md", "agent instructions"],
