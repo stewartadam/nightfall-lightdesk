@@ -381,7 +381,7 @@ pub fn process_actions_system(
     for (_, timecode) in timecode_query.iter() {
         timecode_times.insert(
             timecode.timecode.identifiers.uid,
-            timecode.state.current_time,
+            (timecode.state.current_time, timecode.state.is_active),
         );
     }
 
@@ -390,10 +390,14 @@ pub fn process_actions_system(
             continue;
         }
 
-        let Some(timecode_time) = timecode_times.get(&timeline.timeline.timecode_uid).copied()
+        let Some((timecode_time, timecode_running)) =
+            timecode_times.get(&timeline.timeline.timecode_uid).copied()
         else {
             continue;
         };
+        if cursor.holds_scan(timecode_running) {
+            continue;
+        }
 
         let current_position = timeline.get_playback_position(timecode_time);
         let timeline_uid = timeline.timeline.identifiers.uid;

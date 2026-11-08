@@ -72,11 +72,11 @@ pub fn mark_timeline_reconstruction_deferred_flush(
     let actions_changed = reconstruction_events
         .action_events
         .as_mut()
-        .is_some_and(|events| events.read().next().is_some());
+        .is_some_and(|events| events.read().count() > 0);
     let playhead_jumped = reconstruction_events
         .playhead_jumps
         .as_mut()
-        .is_some_and(|events| events.read().next().is_some());
+        .is_some_and(|events| events.read().count() > 0);
 
     flag.requested = seek_requested || actions_changed || playhead_jumped;
 }

@@ -68,6 +68,8 @@ pub struct TimelineActionCursor {
     /// Skips the next live scan, so the render after a seek does not trigger actions that the
     /// seek reconstruction already applied.
     skip_next_scan: bool,
+    /// Holds scans until the timecode runs again, after a stop that reset the timeline.
+    wait_for_playback: bool,
 }
 
 impl TimelineActionCursor {
@@ -75,6 +77,7 @@ impl TimelineActionCursor {
     pub fn seek_to(&mut self, position: Duration) {
         self.position = ActionRangeStart::After(position);
         self.skip_next_scan = true;
+        self.wait_for_playback = false;
     }
 
     /// Moves the cursor to the timeline start, so the next scan re-evaluates every action up to
@@ -82,6 +85,23 @@ impl TimelineActionCursor {
     pub fn rewind(&mut self) {
         self.position = ActionRangeStart::Beginning;
         self.skip_next_scan = false;
+        self.wait_for_playback = false;
+    }
+
+    /// Rewinds the cursor after a reset stop and holds scans until the timecode runs again,
+    /// so a timeline that stays active does not replay its opening actions while stopped.
+    pub fn rewind_for_next_play(&mut self) {
+        self.rewind();
+        self.wait_for_playback = true;
+    }
+
+    /// Returns whether scanning should wait, given whether the timecode is running. Releases
+    /// the hold once it runs.
+    pub fn holds_scan(&mut self, timecode_running: bool) -> bool {
+        if timecode_running {
+            self.wait_for_playback = false;
+        }
+        self.wait_for_playback
     }
 
     /// Returns whether a seek is waiting for the next scan to be skipped.
@@ -175,7 +195,8 @@ fn release_timeline_audio(mut world: DeferredWorld, context: HookContext) {
         return;
     };
     let timeline_uid = timeline.timeline.identifiers.uid;
-    let was_active = timeline.is_active;
+    // A timeline stopped earlier in the same frame has not sent its stop to browsers yet.
+    let release_browser = timeline.is_active || timeline.audio_needs_sync;
     #[cfg(feature = "audio")]
     let sink_id = timeline.audio_sink_id;
     #[cfg(feature = "audio")]
@@ -185,7 +206,7 @@ fn release_timeline_audio(mut world: DeferredWorld, context: HookContext) {
         audio.stop(sink_id);
         audio.destroy_sink(sink_id);
     }
-    if was_active {
+    if release_browser {
         crate::browser_audio::release_browser_audio(&mut world, timeline_uid);
     }
 }
@@ -225,13 +246,19 @@ impl MaterializedTimeline {
             return false;
         }
         let mut relocated = false;
+        let mut recorded = observed;
         if let Some(previous) = self.observed_transport {
             if observed.changed_from(&previous) && (previous.external || observed.external) {
                 self.audio_needs_sync = true;
             }
             relocated = observed.relocated_from(&previous);
+            // While stopped, keep the position playback stopped at, so a locate made before
+            // play resumes still reads as a relocation when it does.
+            if !previous.running && !observed.running {
+                recorded.position = previous.position;
+            }
         }
-        self.observed_transport = Some(observed);
+        self.observed_transport = Some(recorded);
         relocated
     }
 
@@ -551,6 +578,13 @@ mod tests {
         assert!(
             !timeline.follow_timecode_transport(at(true, true, 1, 61)),
             "resuming where the sender stopped is not a locate"
+        );
+        assert!(!timeline.follow_timecode_transport(at(true, false, 1, 62)));
+        assert!(!timeline.follow_timecode_transport(at(true, false, 1, 900)));
+        assert!(!timeline.follow_timecode_transport(at(true, false, 1, 900)));
+        assert!(
+            timeline.follow_timecode_transport(at(true, true, 1, 900)),
+            "a locate made while stopped is a locate when play resumes"
         );
         assert!(!timeline.follow_timecode_transport(at(false, false, 1, 0)));
         assert!(!timeline.follow_timecode_transport(at(false, true, 1, 30)));

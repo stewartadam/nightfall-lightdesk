@@ -743,8 +743,9 @@ fn delete_timecode_stops_associated_timelines() {
         )
             .chain(),
     );
-    let deleted_timecode = timecode(42, 0x420, "Deleted Timecode");
-    let deleted_timecode_uid = deleted_timecode.identifiers.uid;
+    // The timecode crate despawns the generator before the deletion event is read, so only
+    // its uid remains.
+    let deleted_timecode_uid = timecode(42, 0x420, "Deleted Timecode").identifiers.uid;
     let other_timecode = timecode(43, 0x430, "Other Timecode");
     let other_timecode_uid = other_timecode.identifiers.uid;
     let timeline_spawned_cue = app.world_mut().spawn_empty().id();
@@ -781,8 +782,6 @@ fn delete_timecode_stops_associated_timelines() {
             TimelineTriggerMode::FollowTimecode,
         ))
         .id();
-    // The timecode crate despawns the generator before the deletion event is read.
-    let _ = deleted_timecode;
     app.world_mut()
         .spawn(TimecodeGenerator::new(other_timecode));
 

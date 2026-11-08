@@ -122,6 +122,9 @@ pub fn handle_timeline_seek_system(
             if matches!(request.reason, TimelineReconstructionReason::Seek)
                 && seek_behavior == TimelineSeekBehavior::MovePlayheadOnly
             {
+                // Nothing is reconstructed, but actions after the new playhead fire again as
+                // playback reaches them, such as on every pass of a loop.
+                tracking::reset_timeline_reconstruction_tracking(&mut timeline);
                 continue;
             }
             // Calculate the timeline seek position (offset by timecode start)

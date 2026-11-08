@@ -251,7 +251,7 @@ pub fn reset_timeline_triggers_system(
             // The next play starts from the beginning again, so its first scan must include
             // actions at the start instead of resuming after where playback stopped.
             timeline.reset_action_triggers();
-            cursor.rewind();
+            cursor.rewind_for_next_play();
             tracing::debug!(
                 "Reset action triggers for timeline {}",
                 timeline.timeline.identifiers.id
