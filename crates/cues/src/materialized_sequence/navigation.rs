@@ -265,6 +265,15 @@ impl MaterializedSequence {
         position: u32,
         playback_position: Duration,
     ) {
+        if !self.can_set_position(position) {
+            tracing::warn!(
+                uid = %self.identifiers().uid,
+                position,
+                materialized = self.mcues.len(),
+                "Ignoring a reconstruction at a cue position that is not materialized"
+            );
+            return;
+        }
         self.set_position_resetting_order(position, Some(playback_position));
         self.reconstruct_prefix_activation_positions();
     }
@@ -313,9 +322,6 @@ impl MaterializedSequence {
             position
         );
 
-        self.release_layer = None;
-        self.invalidate_render_prefix_cache();
-
         if !self.can_set_position(position) {
             tracing::warn!(
                 uid = %self.identifiers().uid,
@@ -325,6 +331,9 @@ impl MaterializedSequence {
             );
             return;
         }
+
+        self.release_layer = None;
+        self.invalidate_render_prefix_cache();
 
         let activation_time = Instant::now();
         let activation_position = playback_position.unwrap_or(self.last_activation_position);

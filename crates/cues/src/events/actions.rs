@@ -264,8 +264,11 @@ pub fn cue_action_events(
     mut cue_definition_changes: MessageWriter<CueDefinitionChange>,
     mut sequence_definition_changes: MessageWriter<SequenceDefinitionChange>,
     selection_resolver: SpatialSelectionResolver,
+    mut sequence_lookahead_dirty: Option<ResMut<SequenceLookaheadStateDirty>>,
 ) {
     for event in actions.read() {
+        // Every cue operation edits cue or sequence definitions, including undo replays.
+        mark_sequence_lookahead_state_dirty(&mut sequence_lookahead_dirty);
         let correlation_id = event
             .command_id
             .map(uuid::Uuid::from)
