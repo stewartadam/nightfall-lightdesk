@@ -83,7 +83,7 @@ export const appIndependent = [
   /^\.github\/claude-review\.md$/,
   /^\.github\/workflows\/(README\.md|(claude-review|desktop-updates|playwright-full|pr-commands|release-notes)\.yml)$/,
   /^scripts\/(?!ci-scope)[^/]+\.node\.test\.mjs$/,
-  /^scripts\/(check-commit-signoff|claude-worktree-hook|fetch-gdtf-bench|gdtf-env|generate-app-icons|install-fx-module|merge-policy|release-notes|run-gdtf-tests|seed-data-dir-from-main)\.mjs$/,
+  /^scripts\/(check-commit-signoff|claude-worktree-hook|fetch-gdtf-bench|gdtf-env|generate-app-icons|install-fx-module|merge-policy|mvr-samples|release-notes|run-gdtf-tests|seed-data-dir-from-main)\.mjs$/,
   /^scripts\/(profile-perf|test-desktop-updater|update-deps|verify_showfile_roundtrip)\.sh$/,
 ];
 // The worktree dashboard: a developer tool whose service and page nothing in the native backend

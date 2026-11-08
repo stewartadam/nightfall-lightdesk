@@ -25,6 +25,7 @@
     "gdtf:bench": "node scripts/run-gdtf-tests.mjs bench",
     "gdtf:corpus": "node scripts/run-gdtf-tests.mjs corpus",
     "gdtf:fetch": "node scripts/fetch-gdtf-bench.mjs",
+    "mvr:samples": "node scripts/mvr-samples.mjs",
     "icons:generate": "node scripts/generate-app-icons.mjs",
     "knip": "knip",
     "lint": "biome check webui/ --formatter-enabled=false",
