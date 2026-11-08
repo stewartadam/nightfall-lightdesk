@@ -62,6 +62,18 @@ fn sync_sacn_output_binding(
     );
 }
 
+/// Stops the sACN output worker once the app is exiting, while the process is still alive.
+///
+/// The output service lives in a process-wide static that is never dropped, so without this the
+/// process ends with the worker mid-tick and receivers never see the Stream_Terminated packets
+/// the sACN source sends when it closes. They then hold the last look until their 2.5 s
+/// data-loss timeout.
+fn stop_sacn_output_on_exit(mut app_exit: MessageReader<AppExit>) {
+    if app_exit.read().last().is_some() {
+        service::process_sacn_output_service().shutdown();
+    }
+}
+
 /// Plugin for adding SACN output to the app
 pub struct OutputSacnPlugin {
     /// Whether network output is enabled.
@@ -92,6 +104,7 @@ impl Plugin for OutputSacnPlugin {
         app.insert_resource(sacn_output_identity);
         app.add_systems(Update, sync_sacn_output_identity.in_set(InputHandling));
         app.add_systems(Update, sync_sacn_output_binding.after(EventHandling));
+        app.add_systems(Last, stop_sacn_output_on_exit);
         app.add_systems(
             Render,
             output_sacn::output
