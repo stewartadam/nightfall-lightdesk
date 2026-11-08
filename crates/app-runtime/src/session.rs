@@ -104,6 +104,9 @@ pub(super) fn run_world_swap_session_loop(initial_app: App, factory: WorldFactor
             .get_resource_mut::<PendingWorldSwapRequest>()
             .map(|mut pending| pending.take_requests())
             .unwrap_or_default();
+        if !pending_world_swap_requests.is_empty() {
+            save_outgoing_show_draft(orchestrator.active_app_mut());
+        }
         for request in pending_world_swap_requests {
             match orchestrator.stage_and_swap_with_before_commit(
                 &factory,
@@ -139,6 +142,47 @@ pub(super) fn run_world_swap_session_loop(initial_app: App, factory: WorldFactor
         }
 
         std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+/// Saves the open show's draft before a world swap drops its world.
+///
+/// Opening, recovering or creating a show replaces the world, and the periodic autosave may
+/// not have run since the last edit. Saving here, once per batch of swaps and after the
+/// frame's systems have run, keeps every edit, as quit, shutdown and last-client disconnect
+/// already do. A failed save is logged and the switch goes ahead, so a broken drafts folder
+/// never traps the operator in the current show.
+pub(super) fn save_outgoing_show_draft(bevy_app: &mut App) {
+    use bevy::ecs::system::RunSystemOnce;
+
+    /// Saves the draft of the current show when it differs from its clean snapshot.
+    fn save_draft(
+        mut showfile_save_state: systems::showfile_events::ShowfileSaveState,
+        current_showfile: bevy::prelude::Res<systems::showfile_events::CurrentShowfile>,
+        mut clean_snapshot_hash: bevy::prelude::ResMut<
+            systems::showfile_events::ShowfileCleanSnapshotHash,
+        >,
+    ) -> Result<systems::showfile_events::DraftSaveOutcome, String> {
+        systems::showfile_events::save_draft_showfile_if_dirty(
+            &mut showfile_save_state,
+            current_showfile.name(),
+            &mut clean_snapshot_hash,
+        )
+    }
+
+    match bevy_app.world_mut().run_system_once(save_draft) {
+        Ok(Ok(outcome)) => {
+            tracing::debug!(
+                ?outcome,
+                "Saved the outgoing show's draft before a world swap"
+            );
+        }
+        Ok(Err(error)) => {
+            tracing::warn!("Failed to save the outgoing show's draft before a world swap: {error}");
+        }
+        Err(error) => {
+            tracing::warn!("Could not run the draft save before a world swap: {error}");
+        }
     }
 }
 

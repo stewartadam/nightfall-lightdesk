@@ -22,29 +22,6 @@ pub(super) fn effective_save_showfile_name(
     }
 }
 
-/// Writes the open show's draft before another show replaces it.
-///
-/// Opening or creating a show drops the current world, and the periodic autosave may not
-/// have run since the last edit, so the draft is saved here like it is on quit. A failure
-/// fails the command, leaving the current show open with its edits rather than discarding
-/// them.
-fn preserve_draft_before_switch(
-    showfile_save_state: &mut ShowfileSaveState,
-    current_showfile: &CurrentShowfile,
-    clean_snapshot_hash: &mut ShowfileCleanSnapshotHash,
-) -> Result<(), String> {
-    save_draft_showfile_if_dirty(
-        showfile_save_state,
-        current_showfile.name(),
-        clean_snapshot_hash,
-    )
-    .map(|_| ())
-    .map_err(|error| {
-        tracing::error!("Failed to save the current show's draft before switching: {error}");
-        format!("Could not save the current show's draft before switching shows: {error}")
-    })
-}
-
 /// Routes showfile save/load commands and emits their terminal command results.
 pub fn handle_events(
     mut showfile_state: ParamSet<(ShowfileSaveState, ShowfileLoadState)>,
@@ -60,14 +37,6 @@ pub fn handle_events(
     for event in events.read() {
         match &event.command {
             ShowfileCommand::NewShowfile | ShowfileCommand::NewNamedShowfile(_) => {
-                if let Err(error) = preserve_draft_before_switch(
-                    &mut showfile_state.p0(),
-                    &current_showfile,
-                    &mut clean_snapshot_hash,
-                ) {
-                    fail_showfile_command(&mut responder, event.command_id, error);
-                    continue;
-                }
                 if let Some(pending_world_swap_request) = pending_world_swap_request.as_deref_mut()
                 {
                     let (showfile_name, include_sample_data) = match &event.command {
@@ -188,14 +157,6 @@ pub fn handle_events(
                         continue;
                     }
                 };
-                if let Err(error) = preserve_draft_before_switch(
-                    &mut showfile_state.p0(),
-                    &current_showfile,
-                    &mut clean_snapshot_hash,
-                ) {
-                    fail_showfile_command(&mut responder, event.command_id, error);
-                    continue;
-                }
                 if let Some(pending) = pending_world_swap_request.as_deref_mut() {
                     pending.request_load_showfile(
                         event.command_id.into(),
