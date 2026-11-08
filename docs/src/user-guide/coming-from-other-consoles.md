@@ -91,3 +91,5 @@ These features from other consoles don't exist in Nightfall yet:
 - [Glossary](glossary.md)
 - [Your first show](getting-started.md)
 - [Basic command syntax](commands.md)
+
+ETC, Eos, Augment3d, grandMA3, Obsidian, Onyx, and QLC+ are trademarks of their respective owners. Nightfall is not affiliated with or endorsed by them.
