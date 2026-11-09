@@ -389,8 +389,13 @@ impl Plugin for FixturePlugin {
             )
                 .in_set(ResyncHandling),
         );
-        app.add_client_feed::<websocket::FixturesFeed>()
-            .on_change(websocket::fixtures_changed);
+        // Geometry comes from the fixture library, which can change in the same frame as the
+        // fixtures it describes (a rig import adds both); republishing when the provider is
+        // replaced keeps new fixtures from staying without geometry.
+        app.add_client_feed::<websocket::FixturesFeed>().on_change(
+            websocket::fixtures_changed
+                .or_else(resource_exists_and_changed::<geometry::GeometryProviderResource>),
+        );
         app.add_client_feed::<websocket::RoutesFeed>()
             .resync_after(resync_client_feed::<websocket::FixturesFeed>)
             .on_change(websocket::routes_changed);

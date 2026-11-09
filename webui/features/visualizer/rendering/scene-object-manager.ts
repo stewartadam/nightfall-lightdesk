@@ -21,6 +21,7 @@ import {
   MathUtils,
   Mesh,
   MeshStandardMaterial,
+  type Object3D,
   type Scene,
   Vector3,
 } from "three/webgpu";
@@ -535,7 +536,9 @@ export class SceneObjectManager {
         const model = gltf.scene;
         model.scale.set(scale, scale, scale);
 
-        if (!keepModelOrigin) {
+        if (keepModelOrigin) {
+          drawOverStageFloor(model);
+        } else {
           const box = new Box3().setFromObject(model);
           const center = box.getCenter(new Vector3());
           model.position.sub(center);
@@ -618,4 +621,23 @@ export class SceneObjectManager {
       this.removeSceneObject(uid);
     }
   }
+}
+
+/**
+ * Biases a placed model's depth towards the camera so surfaces lying exactly on the stage
+ * floor, such as an imported venue floor, draw over the visualizer's own floor plane instead
+ * of flickering against it as the camera moves.
+ */
+function drawOverStageFloor(model: Object3D): void {
+  model.traverse((child) => {
+    if (!(child instanceof Mesh)) return;
+    const materials = Array.isArray(child.material)
+      ? child.material
+      : [child.material];
+    for (const material of materials) {
+      material.polygonOffset = true;
+      material.polygonOffsetFactor = -1;
+      material.polygonOffsetUnits = -4;
+    }
+  });
 }
