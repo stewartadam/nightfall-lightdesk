@@ -76,8 +76,19 @@ export class SceneObjectManager {
   // Track pending model loads to avoid duplicate requests
   private pendingModelLoads: Map<string, boolean> = new Map();
 
+  // Whether scene objects are drawn, applied to objects added later too
+  private visible = true;
+
   constructor(scene: Scene) {
     this.scene = scene;
+  }
+
+  /** Shows or hides every scene object, including ones added or rebuilt later. */
+  setVisible(visible: boolean): void {
+    this.visible = visible;
+    for (const instance of this.sceneObjectInstances.values()) {
+      instance.group.visible = visible;
+    }
   }
 
   /**
@@ -166,6 +177,7 @@ export class SceneObjectManager {
       propertiesHash: this.computePropertiesHash(sceneObject),
     };
 
+    group.visible = this.visible;
     this.scene.add(group);
     this.sceneObjectInstances.set(sceneObject.uid, instance);
 

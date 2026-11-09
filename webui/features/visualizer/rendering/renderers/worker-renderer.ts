@@ -357,6 +357,11 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
     this.liveApi?.setGridEnabled(enabled);
   }
 
+  /** Forwards scene object visibility to the rendering worker. */
+  setSceneObjectsVisible(visible: boolean): void {
+    this.liveApi?.setSceneObjectsVisible(visible);
+  }
+
   /** Forwards ambient visibility changes to the rendering worker. */
   setDarkness(darkness: number): void {
     this.liveApi?.setDarkness(darkness);
@@ -662,6 +667,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     await preparePostProcessing(this.postProcessing);
     // Create scene manager (handles fixtures, beams, selection)
     this.sceneManager = new SceneManager(this.scene, profile);
+    this.sceneManager.setSceneObjectsVisible(this.sceneObjectsVisible);
     // Create debug overlays (from base class)
     this.initDebugOverlays();
     setOutlineSelectedObjects(
@@ -1060,6 +1066,9 @@ const workerApi = {
     renderer.setEmitterDebugEnabled(enabled),
   toggleBeams: () => renderer.toggleBeams(),
   setGridEnabled: (enabled: boolean) => renderer.setGridEnabled(enabled),
+  /** Shows or hides every scene object in the worker's scene. */
+  setSceneObjectsVisible: (visible: boolean) =>
+    renderer.setSceneObjectsVisible(visible),
   /** Applies the main thread's persisted environment preference. */
   setDarkness: (darkness: number) => renderer.setDarkness(darkness),
   setOrbitTargetIndicatorEnabled: (enabled: boolean) =>

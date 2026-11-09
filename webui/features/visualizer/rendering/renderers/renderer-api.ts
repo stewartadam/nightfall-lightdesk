@@ -220,6 +220,8 @@ export interface IVisualizerRenderer {
    * Enable or disable ground-reference helpers (grid + axes).
    */
   setGridEnabled(enabled: boolean): void;
+  /** Shows or hides every scene object (trusses, set pieces, venue models). */
+  setSceneObjectsVisible(visible: boolean): void;
   /** Changes ambient rig visibility without changing fixture output. */
   setDarkness(darkness: number): void;
 
