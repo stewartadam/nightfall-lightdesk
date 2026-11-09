@@ -40,6 +40,9 @@ export { StartupController } from "./controller";
 
 const log = getLogger(import.meta.url);
 
+/** Longest the startup prompt waits for a followed primary's show to copy and load. */
+const BACKUP_SHOW_COPY_TIMEOUT_MS = 60_000;
+
 interface StartupOverlapsProps {
   /** Keeps the startup splash visible while the interactive shell finishes loading. */
   hold?: boolean;
@@ -232,6 +235,24 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
     }).finally(clearE2eAutoOpenStartupShowfileRequest);
   });
 
+  /** Reveals the app once a primary chosen at startup has been followed and its show loaded. */
+  const followFromStartup = async () => {
+    setStartupShowfilePickerOpen(false);
+    transitionAppLifecycle({ type: "loading-saved" });
+    try {
+      markResyncPending();
+      await waitForBackendReady(BACKUP_SHOW_COPY_TIMEOUT_MS);
+      transitionAppLifecycle({ type: "interactive" });
+    } catch (error) {
+      log.warn("the primary's show did not load at startup", error);
+      transitionAppLifecycle({
+        type: "showfile-prompt",
+        recoveryError:
+          "Following the primary, but its show has not loaded yet. Open a show to stop following.",
+      });
+    }
+  };
+
   return (
     <>
       <StartupSplashTransition
@@ -256,6 +277,7 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
         open={showStartupShowfilePicker()}
         onClose={closeStartupShowfilePicker}
         onOpen={openStartupShowfileSelection}
+        onFollowed={() => void followFromStartup()}
       />
     </>
   );

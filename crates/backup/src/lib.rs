@@ -168,6 +168,8 @@ pub struct BackupState {
     /// stopped answering.
     #[typeshare(serialized_as = "Option<number>")]
     pub took_over_automatically_at_ms: Option<u64>,
+    /// `host:port` of a primary this host is checking before it follows it, as while pairing.
+    pub checking_address: Option<String>,
 }
 
 impl BackupState {
@@ -187,7 +189,8 @@ impl BackupState {
     fn read_only_reason(&self) -> Option<String> {
         self.primary_address.as_ref().map(|address| {
             format!(
-                "This Nightfall is a backup following {address}. Take over to make changes here."
+                "This Nightfall is a backup following {address}. Take over or stop following to \
+                 make changes here."
             )
         })
     }
@@ -208,6 +211,9 @@ pub enum BackupCommand {
     },
     /// Stops following and outputs the copied show as a normal desk.
     TakeOver,
+    /// Stops following without taking over: this host runs on its own again, remembers no
+    /// primary, and keeps its epoch. Opening a show does the same.
+    StopFollowing,
     /// Turns automatic takeover on or off for when this host follows a primary.
     SetAutoTakeOver {
         /// Whether to take over on its own once the primary stops answering.
@@ -247,7 +253,8 @@ impl ResourceFeed for BackupState {
 
 /// Normalizes an operator-typed primary address to `host:port`.
 fn normalize_address(address: &str) -> Result<String, String> {
-    let trimmed = address.trim();
+    let compact: String = address.chars().filter(|c| !c.is_whitespace()).collect();
+    let trimmed = compact.as_str();
     let without_scheme = trimmed
         .strip_prefix("http://")
         .or_else(|| trimmed.strip_prefix("ws://"))
@@ -270,6 +277,21 @@ fn normalize_address(address: &str) -> Result<String, String> {
 #[derive(Debug, Default, Resource)]
 struct RoleError(Option<String>);
 
+/// A follow command waiting for the primary to be checked.
+#[derive(Debug)]
+struct PendingProbe {
+    /// The follow command to complete.
+    command_id: CommandId,
+    /// `host:port` of the primary being checked.
+    address: String,
+    /// Number of the link's probe of that primary.
+    probe: u64,
+}
+
+/// The follow command waiting for its primary to be checked, if any.
+#[derive(Debug, Default, Resource)]
+struct PendingFollow(Option<PendingProbe>);
+
 /// Restores the stored role into a new world and points the link at the stored primary.
 ///
 /// The output and ingress restrictions apply here too, before the world's first frame, so a
@@ -284,7 +306,7 @@ fn restore_backup_role(
     mut gate: ResMut<ClientIngressGate>,
     port: Option<Res<nightfall_websocket::BackendPort>>,
 ) {
-    let (stored, error) = preferences::load(preferences::preferences_path().as_deref());
+    let (stored, error) = preferences::current(preferences::preferences_path().as_deref());
     state.available = true;
     state.apply_preferences(&stored);
     state.took_over_automatically_at_ms = failover::took_over_automatically_at();
@@ -306,29 +328,74 @@ fn restore_backup_role(
     link::process_backup_link().set_target(stored.primary_address.map(|address| {
         link::LinkTarget {
             address,
-            pin: None,
             token: stored.pairing_token,
         }
     }));
 }
 
 /// Applies role changes, storing them so a restarted host keeps its role.
+///
+/// Following waits for the primary to be checked, and paired with when a PIN is given, so a
+/// wrong address or PIN leaves the role as it was; [`finish_pending_follow`] completes it.
 fn handle_backup_commands(
     mut commands: MessageReader<CommandEnvelope<BackupCommand>>,
     mut state: ResMut<BackupState>,
     mut role_error: ResMut<RoleError>,
+    mut pending: ResMut<PendingFollow>,
     mut responder: CommandResponder,
 ) {
     for envelope in commands.read() {
-        let changes_role = !matches!(envelope.command, BackupCommand::SetAutoTakeOver { .. });
-        let outcome = match &envelope.command {
-            BackupCommand::FollowPrimary { address, pin } => {
-                follow_primary(address, pin.as_deref())
+        if let BackupCommand::FollowPrimary { address, pin } = &envelope.command {
+            match normalize_address(address) {
+                Ok(address) => {
+                    if let Some(replaced) = pending.0.take() {
+                        let _ = responder.fail(
+                            replaced.command_id,
+                            CommandError::new(
+                                "backup.follow_replaced",
+                                "Following another primary instead.",
+                            ),
+                        );
+                    }
+                    let pin: Option<String> = pin
+                        .as_deref()
+                        .map(|pin| pin.chars().filter(|c| !c.is_whitespace()).collect())
+                        .filter(|pin: &String| !pin.is_empty());
+                    role_error.0 = None;
+                    state.checking_address = Some(address.clone());
+                    let probe = link::process_backup_link().probe(address.clone(), pin);
+                    pending.0 = Some(PendingProbe {
+                        command_id: envelope.command_id,
+                        address,
+                        probe,
+                    });
+                }
+                Err(message) => {
+                    role_error.0 = Some(message.clone());
+                    if let Err(error) = responder.fail(
+                        envelope.command_id,
+                        CommandError::new("backup.role_change_failed", message),
+                    ) {
+                        tracing::error!(command_id = %envelope.command_id, %error, "backup_command_completion_failed");
+                    }
+                }
             }
+            continue;
+        }
+        let changes_role = !matches!(envelope.command, BackupCommand::SetAutoTakeOver { .. });
+        let outcome: Result<RoleChange, String> = match &envelope.command {
+            // Handled above, since it completes only once the primary was checked.
+            BackupCommand::FollowPrimary { .. } => continue,
+            BackupCommand::StopFollowing if state.is_backup() => Ok(stop_following()),
+            // A host that follows no one, such as one that just took over, keeps its backup.
+            BackupCommand::StopFollowing => Ok((
+                preferences::current(preferences::preferences_path().as_deref()).0,
+                None,
+            )),
             BackupCommand::TakeOver if state.is_backup() => Ok(take_over()),
             // A host that follows no one has nothing to take over.
             BackupCommand::TakeOver => Ok((
-                preferences::load(preferences::preferences_path().as_deref()).0,
+                preferences::current(preferences::preferences_path().as_deref()).0,
                 None,
             )),
             BackupCommand::SetAutoTakeOver { enabled } => {
@@ -374,26 +441,107 @@ fn handle_backup_commands(
 /// The role a change leaves this host with, and why it could not be stored, if it could not.
 type RoleChange = (preferences::BackupPreferences, Option<String>);
 
-/// Stores `address` as this host's primary and starts following it, returning the new role.
+/// Completes a follow command once the link has checked its primary: follows it with the
+/// pairing token the check got, or fails the command and leaves the role as it was.
+fn finish_pending_follow(
+    mut pending: ResMut<PendingFollow>,
+    mut state: ResMut<BackupState>,
+    mut role_error: ResMut<RoleError>,
+    mut responder: CommandResponder,
+) {
+    let Some(probe) = pending.0.as_ref() else {
+        return;
+    };
+    let Some(result) = link::process_backup_link().take_probe(probe.probe) else {
+        return;
+    };
+    let Some(PendingProbe {
+        command_id,
+        address,
+        ..
+    }) = pending.0.take()
+    else {
+        return;
+    };
+    state.checking_address = None;
+    let completion = match result {
+        Ok(token) => {
+            let (stored, save_error) = follow_primary(address, token);
+            state.apply_preferences(&stored);
+            failover::set_took_over_automatically_at(None);
+            state.took_over_automatically_at_ms = None;
+            role_error.0 = save_error.clone();
+            match save_error {
+                None => responder.succeed(command_id),
+                Some(message) => responder.fail(
+                    command_id,
+                    CommandError::new("backup.role_not_saved", message),
+                ),
+            }
+        }
+        Err(message) => {
+            tracing::warn!(%address, %message, "Not following the primary");
+            role_error.0 = Some(message.clone());
+            responder.fail(
+                command_id,
+                CommandError::new("backup.primary_unavailable", message),
+            )
+        }
+    };
+    if let Err(error) = completion {
+        tracing::error!(%command_id, %error, "backup_command_completion_failed");
+    }
+}
+
+/// Stores `address` as this host's primary with the pairing `token` it gave, if any, and starts
+/// following it, returning the new role.
 ///
 /// The primary becomes this host's only peer: a backup has no backup of its own to remember.
-fn follow_primary(address: &str, pin: Option<&str>) -> Result<RoleChange, String> {
-    let address = normalize_address(address)?;
-    let pin = pin.map(str::trim).filter(|pin| !pin.is_empty());
+fn follow_primary(address: String, token: Option<String>) -> RoleChange {
     let (stored, save_error) =
         preferences::update(preferences::preferences_path().as_deref(), |stored| {
             stored.primary_address = Some(address.clone());
-            stored.pairing_token = None;
+            stored.pairing_token = token.clone();
             stored.backup_peer = None;
         });
     failover::set_backup_peer(None);
     tracing::info!(%address, "Following a primary as its backup");
-    link::process_backup_link().set_target(Some(link::LinkTarget {
-        address,
-        pin: pin.map(str::to_string),
-        token: None,
-    }));
-    Ok((stored, save_error))
+    link::process_backup_link().set_target(Some(link::LinkTarget { address, token }));
+    (stored, save_error)
+}
+
+/// Stops following without taking over and returns the new role: this host runs on its own,
+/// remembers neither its primary nor a backup, and keeps its epoch.
+fn stop_following() -> RoleChange {
+    let (stored, save_error) =
+        preferences::update(preferences::preferences_path().as_deref(), |stored| {
+            stored.primary_address = None;
+            stored.pairing_token = None;
+            stored.backup_peer = None;
+        });
+    failover::set_backup_peer(None);
+    tracing::info!("Stopped following the primary");
+    let link = link::process_backup_link();
+    link.cancel_probe("Stopped following before the primary was checked.");
+    link.set_target(None);
+    link.mark_peer_checked();
+    (stored, save_error)
+}
+
+/// Stops following when a client opens or creates a show, which replaces the copied show, and
+/// returns why the change could not be stored, if it could not. Does nothing on a host that
+/// follows no primary, apart from cancelling a follow still waiting for its primary to be checked.
+pub fn leave_backup_role_for_show_load(state: &mut BackupState) -> Option<String> {
+    if state.checking_address.is_some() {
+        link::process_backup_link()
+            .cancel_probe("A show was opened before the primary was checked.");
+    }
+    if !state.is_backup() {
+        return None;
+    }
+    let (stored, save_error) = stop_following();
+    state.apply_preferences(&stored);
+    save_error
 }
 
 /// Stops following the primary and returns the new role.
@@ -413,6 +561,7 @@ fn take_over() -> RoleChange {
     failover::set_backup_peer(stored.backup_peer.clone());
     failover::forget_checkpoints_served();
     tracing::info!(epoch = stored.epoch, "Backup took over output");
+    link.cancel_probe("Took over before the primary was checked.");
     link.set_target(None);
     // The old primary is the host this one just replaced; checking it before outputting would
     // only delay the takeover.
@@ -435,9 +584,10 @@ fn rejoin_as_backup(address: &str, epoch: u64) -> RoleChange {
         });
     failover::set_backup_peer(None);
     failover::forget_checkpoints_served();
-    link::process_backup_link().set_target(Some(link::LinkTarget {
+    let link = link::process_backup_link();
+    link.cancel_probe("Started following a newer primary before this one was checked.");
+    link.set_target(Some(link::LinkTarget {
         address: address.to_string(),
-        pin: None,
         token: None,
     }));
     (stored, save_error)
@@ -707,6 +857,7 @@ impl Plugin for BackupPlugin {
         tracing::debug!("Registering BackupPlugin");
         app.init_resource::<BackupState>();
         app.init_resource::<RoleError>();
+        app.init_resource::<PendingFollow>();
         app.init_resource::<BackupTracking>();
         app.init_resource::<CommandForwarding>();
         app.register_live_state(
@@ -721,11 +872,13 @@ impl Plugin for BackupPlugin {
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "TakeOver");
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "FollowPrimary");
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "SetAutoTakeOver");
+        allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "StopFollowing");
         app.add_systems(Startup, restore_backup_role);
         app.add_systems(
             Update,
             (
                 handle_backup_commands,
+                finish_pending_follow,
                 take_over_when_primary_is_lost,
                 rejoin_when_backup_took_over,
                 sync_backup_link,
@@ -777,6 +930,10 @@ mod tests {
         assert_eq!(
             normalize_address("desk.local:3544").unwrap(),
             "desk.local:3544"
+        );
+        assert_eq!(
+            normalize_address(" 192.168.1.20 : 3000 ").unwrap(),
+            "192.168.1.20:3000"
         );
         assert!(normalize_address("192.168.1.20").is_err());
         assert!(normalize_address(":3000").is_err());

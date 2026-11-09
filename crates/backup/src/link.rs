@@ -39,7 +39,6 @@ use crate::{
         PEER_CHECK_INTERVAL, STATUS_TIMEOUT,
     },
     forwarding::{ForwardCursor, ForwardedBatch, commands_through},
-    preferences,
 };
 
 /// Time between revision checks while the link is healthy.
@@ -73,6 +72,10 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(3);
 /// Upper bound for a single request, including a show download.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// Upper bound for each request that checks a primary before following it, so an address that
+/// never answers fails while the operator still waits on the form.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Folder under the host data directory that holds unpacked copies of the primary's show.
 const MIRROR_DIR_NAME: &str = "backup-mirror";
 
@@ -82,13 +85,12 @@ fn pairing_cookie_name(address: &str) -> String {
     format!("nightfall_pairing_{port}")
 }
 
-/// The primary a backup follows and how it authenticates there.
+/// The primary a backup follows and how it authenticates there. Pairing with a PIN happens
+/// before a host follows, in [`BackupLink::probe`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LinkTarget {
     /// `host:port` of the primary.
     pub address: String,
-    /// PIN to pair with first, when the operator just entered one.
-    pub pin: Option<String>,
     /// Token from an earlier pairing, used until the primary rejects it.
     pub token: Option<String>,
 }
@@ -155,6 +157,12 @@ struct LinkShared {
     peer_checked: bool,
     /// The backup last checked and what the check found.
     peer_check: Option<(String, failover::PeerCheck)>,
+    /// Number of the newest probe of a primary before following it; a probe whose number is no
+    /// longer this one was replaced or cancelled, and its outcome is dropped.
+    probe_generation: u64,
+    /// The number of the last finished probe, and the pairing token it got or why the primary
+    /// cannot be followed.
+    probe: Option<(u64, Result<Option<String>, String>)>,
     report: LinkReport,
     mirror: Option<MirroredShow>,
     checkpoint: Option<LiveCheckpoint>,
@@ -219,7 +227,7 @@ impl BackupLink {
         self.target.send_if_modified(|current| {
             let changed = match (current.as_ref(), target.as_ref()) {
                 (Some(current), Some(next)) => {
-                    current.address != next.address || next.pin.is_some()
+                    current.address != next.address || current.token != next.token
                 }
                 (None, None) => false,
                 _ => true,
@@ -324,6 +332,71 @@ impl BackupLink {
         self.shared.lock().ok()?.rejoin.take()
     }
 
+    /// Rejoins as the backup of `address`, which took over with `epoch` and asked this host to
+    /// step down.
+    pub(crate) fn request_rejoin(&self, address: String, epoch: u64) {
+        if let Ok(mut shared) = self.shared.lock() {
+            shared.rejoin = Some((address, epoch));
+        }
+    }
+
+    /// Checks on a separate thread that the host at `address` is a primary this host can follow,
+    /// pairing with `pin` when given, and returns the probe's number. [`Self::take_probe`]
+    /// returns the outcome; a newer probe or [`Self::cancel_probe`] drops this one.
+    pub(crate) fn probe(&self, address: String, pin: Option<String>) -> u64 {
+        let generation = {
+            let mut shared = self
+                .shared
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            shared.probe_generation += 1;
+            shared.probe = None;
+            shared.probe_generation
+        };
+        let shared = Arc::clone(&self.shared);
+        let spawned = std::thread::Builder::new()
+            .name("backup-probe".into())
+            .spawn(move || {
+                let result = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime.block_on(probe_primary(&address, pin.as_deref())),
+                    Err(error) => Err(format!("Could not reach the primary: {error}")),
+                };
+                finish_probe(&shared, generation, result);
+            });
+        if let Err(error) = spawned {
+            tracing::error!(%error, "Could not start checking the primary");
+            finish_probe(
+                &self.shared,
+                generation,
+                Err(format!("Could not start checking the primary: {error}")),
+            );
+        }
+        generation
+    }
+
+    /// Takes the outcome of probe `generation` once it finished: the pairing token to follow the
+    /// primary with, or why it cannot be followed.
+    pub(crate) fn take_probe(&self, generation: u64) -> Option<Result<Option<String>, String>> {
+        let mut shared = self.shared.lock().ok()?;
+        if shared.probe.as_ref()?.0 != generation {
+            return None;
+        }
+        shared.probe.take().map(|(_, result)| result)
+    }
+
+    /// Ends the running probe, if any, with `reason` as its outcome, so the follow it was for
+    /// fails instead of starting after the operator moved on.
+    pub(crate) fn cancel_probe(&self, reason: &str) {
+        if let Ok(mut shared) = self.shared.lock() {
+            let generation = shared.probe_generation;
+            shared.probe_generation += 1;
+            shared.probe = Some((generation, Err(reason.to_string())));
+        }
+    }
+
     /// Counts the check for a backup that took over as done, so output is not held for it.
     pub(crate) fn mark_peer_checked(&self) {
         if let Ok(mut shared) = self.shared.lock() {
@@ -386,13 +459,7 @@ fn run_worker(mut target_rx: watch::Receiver<Option<LinkTarget>>, shared: Arc<Mu
                 }
                 Some(target) => {
                     tokio::select! {
-                        // `follow` gives up only on a rejected PIN; the same target would be
-                        // rejected again, so wait for the operator to enter another one.
-                        () = follow(&target, &shared) => {
-                            if target_rx.changed().await.is_err() {
-                                return;
-                            }
-                        }
+                        () = follow(&target, &shared) => {}
                         changed = target_rx.changed() => {
                             if changed.is_err() {
                                 return;
@@ -434,7 +501,8 @@ async fn watch_backup_peer(shared: &Mutex<LinkShared>) {
         let mut rejoin = None;
         let mut check = None;
         if let Some(peer) = failover::backup_peer().filter(|_| !own.following) {
-            let found = match fetch_host_status(&client, &format!("http://{peer}")).await {
+            let base = format!("http://{peer}");
+            let found = match fetch_host_status(&client, &base).await {
                 Ok(status) if failover::should_rejoin(own.epoch, &status) => {
                     tracing::warn!(
                         %peer,
@@ -445,7 +513,12 @@ async fn watch_backup_peer(shared: &Mutex<LinkShared>) {
                     failover::PeerCheck::Primary
                 }
                 Ok(status) if status.following => failover::PeerCheck::Following,
-                Ok(_) => failover::PeerCheck::Primary,
+                Ok(status) => {
+                    if failover::should_ask_to_step_down(own.epoch, &status) {
+                        ask_to_step_down(&client, &base, &peer, own.epoch).await;
+                    }
+                    failover::PeerCheck::Primary
+                }
                 Err(error) => {
                     tracing::debug!(?error, %peer, "backup_peer_check_failed");
                     failover::PeerCheck::Unreachable
@@ -462,6 +535,82 @@ async fn watch_backup_peer(shared: &Mutex<LinkShared>) {
             shared.peer_checked = true;
         }
         tokio::time::sleep(PEER_CHECK_INTERVAL).await;
+    }
+}
+
+/// Asks the primary this host replaced, at `base`, to step down and follow this host, so it goes
+/// silent even when it cannot reach this host to find out on its own. That host listens only
+/// because it remembers this one as its backup.
+async fn ask_to_step_down(client: &reqwest::Client, base: &str, peer: &str, epoch: u64) {
+    let Some(port) = failover::own_port() else {
+        return;
+    };
+    let request = client
+        .post(format!("{base}{}", failover::STEP_DOWN_PATH))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(
+            serde_json::to_string(&failover::StepDownRequest { epoch, port }).unwrap_or_default(),
+        );
+    match request.send().await {
+        Ok(response) if response.status().is_success() => {
+            tracing::info!(%peer, "Asked the replaced primary to step down");
+        }
+        Ok(response) => {
+            // Repeats every check while that host refuses, so it stays out of the warnings.
+            tracing::debug!(%peer, status = %response.status(), "The replaced primary refused to step down");
+        }
+        Err(error) => tracing::debug!(%error, %peer, "step_down_request_failed"),
+    }
+}
+
+/// Records the outcome of probe `generation`, unless a newer probe or a cancel replaced it.
+fn finish_probe(
+    shared: &Mutex<LinkShared>,
+    generation: u64,
+    result: Result<Option<String>, String>,
+) {
+    if let Ok(mut shared) = shared.lock()
+        && shared.probe_generation == generation
+    {
+        shared.probe = Some((generation, result));
+    }
+}
+
+/// Checks that the host at `address` is a primary this host can follow: it answers, it does not
+/// follow another host, and its show can be read, after pairing with `pin` when given. Returns
+/// the pairing token, if pairing gave one, or why it cannot be followed.
+async fn probe_primary(address: &str, pin: Option<&str>) -> Result<Option<String>, String> {
+    let client = host_client(PROBE_TIMEOUT)
+        .map_err(|error| format!("Could not reach the primary: {error}"))?;
+    let base = format!("http://{address}");
+    let status = fetch_host_status(&client, &base)
+        .await
+        .map_err(|error| match error {
+            LinkError::Unauthorized(message) | LinkError::Failed(message) => format!(
+                "{message} Check the address, and that External control is on at {address}."
+            ),
+        })?;
+    if status.following {
+        return Err(format!(
+            "{address} is a backup itself. Follow its primary instead."
+        ));
+    }
+    let token = match pin {
+        Some(pin) => Some(pair(&client, &base, address, pin).await.map_err(
+            |error| match error {
+                LinkError::Unauthorized(message) | LinkError::Failed(message) => message,
+            },
+        )?),
+        None => None,
+    };
+    let cookie = token
+        .as_ref()
+        .map(|token| format!("{}={token}", pairing_cookie_name(address)));
+    // Only a refusal matters here: a primary still starting has no show to read yet, and the
+    // link waits for one.
+    match fetch_revision(&client, &base, cookie.as_deref()).await {
+        Err(LinkError::Unauthorized(_)) => Err(format!("{address} needs its pairing PIN.")),
+        Ok(_) | Err(LinkError::Failed(_)) => Ok(token),
     }
 }
 
@@ -540,23 +689,19 @@ impl LinkError {
     }
 }
 
-/// Sends the primary heartbeats while pairing with it and keeping the backup's copy of its show
-/// in step. Returns only when the PIN was rejected; the caller then waits for a new target.
+/// Sends the primary heartbeats while keeping the backup's copy of its show in step, until the
+/// caller drops it for a new target.
 async fn follow(target: &LinkTarget, shared: &Mutex<LinkShared>) {
     let base = format!("http://{}", target.address);
-    tokio::select! {
-        () = follow_heartbeat(&base, shared) => {}
-        () = follow_with_pairing(target, &base, shared) => {}
-    }
-    // A rejected PIN ends the heartbeat too, so its last answer cannot age into a takeover.
-    if let Ok(mut shared) = shared.lock() {
-        shared.heartbeat = None;
-    }
+    tokio::join!(
+        follow_heartbeat(&base, shared),
+        follow_with_token(target, &base, shared),
+    );
 }
 
-/// Pairs with the primary if the operator gave a PIN, then follows its show, checkpoints and
-/// commands. Returns only when the PIN was rejected.
-async fn follow_with_pairing(target: &LinkTarget, base: &str, shared: &Mutex<LinkShared>) {
+/// Follows the primary's show, checkpoints and commands with the target's pairing token. Never
+/// returns.
+async fn follow_with_token(target: &LinkTarget, base: &str, shared: &Mutex<LinkShared>) {
     let client = match host_client(REQUEST_TIMEOUT) {
         Ok(client) => client,
         Err(error) => {
@@ -579,39 +724,10 @@ async fn follow_with_pairing(target: &LinkTarget, base: &str, shared: &Mutex<Lin
         },
     );
 
-    let mut token = target.token.clone();
-    if let Some(pin) = &target.pin {
-        loop {
-            match pair(&client, base, &target.address, pin).await {
-                Ok(paired) => {
-                    store_token(&target.address, &paired);
-                    token = Some(paired);
-                    break;
-                }
-                Err(LinkError::Unauthorized(message)) => {
-                    set_report(
-                        shared,
-                        LinkReport {
-                            status: BackupLinkStatus::PairingRequired,
-                            error: Some(message),
-                            ..LinkReport::default()
-                        },
-                    );
-                    // Retrying a wrong PIN would only lock this host out of the primary.
-                    return;
-                }
-                Err(LinkError::Failed(message)) => {
-                    update_report(shared, |report| {
-                        report.status = BackupLinkStatus::Unreachable;
-                        report.error = Some(message);
-                    });
-                    tokio::time::sleep(RETRY_INTERVAL).await;
-                }
-            }
-        }
-    }
-
-    let cookie = token.map(|token| format!("{}={token}", pairing_cookie_name(&target.address)));
+    let cookie = target
+        .token
+        .as_ref()
+        .map(|token| format!("{}={token}", pairing_cookie_name(&target.address)));
     tokio::join!(
         follow_show_and_checkpoints(&client, base, cookie.as_deref(), shared),
         follow_commands(&client, base, cookie.as_deref(), shared),
@@ -929,18 +1045,6 @@ fn cookie_value(set_cookie: &str, name: &str) -> Option<String> {
     )
 }
 
-/// Saves a fresh pairing token, unless the operator changed primaries in the meantime.
-fn store_token(address: &str, token: &str) {
-    let (_, error) = preferences::update(preferences::preferences_path().as_deref(), |stored| {
-        if stored.primary_address.as_deref() == Some(address) {
-            stored.pairing_token = Some(token.to_string());
-        }
-    });
-    if let Some(error) = error {
-        tracing::warn!(%error, "Could not save the backup pairing token");
-    }
-}
-
 /// Asks the primary for the revision of its live show.
 async fn fetch_revision(
     client: &reqwest::Client,
@@ -1119,8 +1223,8 @@ mod tests {
         );
     }
 
-    /// Restating the stored primary keeps the connection, while a new PIN or another primary
-    /// restarts it.
+    /// Restating the stored primary keeps the connection, while a new pairing token or another
+    /// primary restarts it.
     #[test]
     fn restating_the_same_primary_keeps_the_link() {
         let (target, mut target_rx) = watch::channel(None);
@@ -1130,7 +1234,6 @@ mod tests {
         };
         let stored = LinkTarget {
             address: "192.0.2.10:3000".into(),
-            pin: None,
             token: Some("token".into()),
         };
         link.set_target(Some(stored.clone()));
@@ -1141,7 +1244,7 @@ mod tests {
         assert!(!target_rx.has_changed().unwrap());
 
         link.set_target(Some(LinkTarget {
-            pin: Some("123456".into()),
+            token: Some("new-token".into()),
             ..stored.clone()
         }));
         assert!(target_rx.has_changed().unwrap());

@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createSignal, Match, Show, Switch } from "solid-js";
+import { useAppShell } from "../../../components/providers/app-shell";
 import { Alert } from "../../../components/ui/alert";
 import { Badge, type BadgeTone } from "../../../components/ui/badge";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
@@ -86,13 +87,45 @@ function TakeOverButton(props: { size?: "compact" | "inline" }) {
       <DeleteConfirmModal
         isOpen={confirming()}
         title="Take over output"
-        message="This Nightfall stops following the primary and outputs the copied show at the show's own priority. A primary that can still reach this computer steps down and becomes its backup."
+        message="This Nightfall stops following the primary and outputs the copied show at the show's own priority. If the primary is still running, or comes back, it is asked to step down and becomes this computer's backup."
         confirmLabel="Take over"
         focusCancel
         onCancel={() => setConfirming(false)}
         onConfirm={() => {
           setConfirming(false);
           void sendBackupCommand({ type: "TakeOver" });
+        }}
+      />
+    </>
+  );
+}
+
+/**
+ * Asks before stopping following, since this computer then sends the copied show as its own;
+ * opening a show replaces it.
+ */
+function StopFollowingButton(props: { size?: "compact" | "inline" }) {
+  const [confirming, setConfirming] = createSignal(false);
+  return (
+    <>
+      <Button
+        size={props.size ?? "compact"}
+        type="button"
+        data-testid="backup-stop-following"
+        onClick={() => setConfirming(true)}
+      >
+        Stop following
+      </Button>
+      <DeleteConfirmModal
+        isOpen={confirming()}
+        title="Stop following"
+        message="This Nightfall stops following the primary and runs on its own with the copied show, sending its output. Unlike a takeover, it does not ask the primary to step down, so stop or reconfigure the primary's output first if it is still running."
+        confirmLabel="Stop following"
+        focusCancel
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false);
+          void sendBackupCommand({ type: "StopFollowing" });
         }}
       />
     </>
@@ -114,7 +147,10 @@ export function BackupBanner() {
             Backup of {address()}: {describeBackupLink(state())}. Changes are
             off here and sACN runs one priority below the primary.
           </span>
-          <TakeOverButton />
+          <span class="flex gap-2">
+            <StopFollowingButton />
+            <TakeOverButton />
+          </span>
         </div>
       )}
     </Show>
@@ -212,7 +248,10 @@ function BackupRoleStatus() {
                   Following {primary()}: {describeBackupLink(state())}.
                 </span>
               </p>
-              <TakeOverButton />
+              <span class="flex gap-2">
+                <StopFollowingButton />
+                <TakeOverButton />
+              </span>
             </>
           )}
         </Match>
@@ -237,23 +276,9 @@ function BackupRoleStatus() {
   );
 }
 
-/** Configures which primary this host follows as a backup, with the role, its partner's health and errors. */
-export function BackupServerSettings() {
-  const state = useStore($backupState);
-  const [address, setAddress] = createSignal("");
-  const [pin, setPin] = createSignal("");
-  /** Follows `primary`, pairing with the typed PIN when one was entered. */
-  const follow = (event: SubmitEvent, primary: string) => {
-    event.preventDefault();
-    void sendBackupCommand({
-      type: "FollowPrimary",
-      data: { address: primary, pin: pin().trim() || undefined },
-    }).then((applied) => {
-      if (applied) setPin("");
-    });
-  };
-  /** Renders the PIN field shared by the first pairing and pairing again. */
-  const pinField = () => (
+/** Renders the pairing PIN field shared by following and pairing again. */
+function PinField(props: { value: string; onInput: (pin: string) => void }) {
+  return (
     <label class="flex flex-col gap-1 text-xs text-gray-400">
       Pairing PIN
       <Input
@@ -261,12 +286,149 @@ export function BackupServerSettings() {
         inputmode="numeric"
         autocomplete="off"
         class="w-24"
-        value={pin()}
-        onInput={(event) => setPin(event.currentTarget.value)}
+        value={props.value}
+        onInput={(event) => props.onInput(event.currentTarget.value)}
         data-testid="backup-primary-pin"
       />
     </label>
   );
+}
+
+/**
+ * Follows a primary: checks it answers and pairs with the PIN first, so a wrong address or PIN
+ * leaves this computer as it was and shows why. Calls `onFollowed` once this computer follows it.
+ */
+export function FollowPrimaryForm(props: { onFollowed?: () => void }) {
+  const state = useStore($backupState);
+  const [address, setAddress] = createSignal("");
+  const [pin, setPin] = createSignal("");
+  /** Sends the follow command and clears the PIN once the primary accepted it. */
+  const follow = (event: SubmitEvent) => {
+    event.preventDefault();
+    void sendBackupCommand({
+      type: "FollowPrimary",
+      data: {
+        address: address(),
+        pin: pin().trim() || undefined,
+      },
+    }).then((applied) => {
+      if (!applied) return;
+      setPin("");
+      props.onFollowed?.();
+    });
+  };
+  return (
+    <div class="flex flex-col gap-2" data-testid="backup-follow-form">
+      <form class="flex flex-wrap items-end gap-2" onSubmit={follow}>
+        <label class="flex flex-col gap-1 text-xs text-gray-400">
+          Primary address
+          <Input
+            density="compact"
+            placeholder="192.168.1.20:3030"
+            value={address()}
+            onInput={(event) => setAddress(event.currentTarget.value)}
+            data-testid="backup-primary-address"
+          />
+        </label>
+        <PinField value={pin()} onInput={setPin} />
+        <Button
+          size="compact"
+          type="submit"
+          disabled={!address().trim() || !!state().checking_address}
+          data-testid="backup-follow"
+        >
+          {state().checking_address ? "Connecting…" : "Follow primary"}
+        </Button>
+      </form>
+      <Show when={!state().primary_address && state().error}>
+        {(error) => (
+          <Alert
+            variant="caution"
+            density="compact"
+            role="alert"
+            data-testid="backup-follow-error"
+          >
+            {error()}
+          </Alert>
+        )}
+      </Show>
+      <p class="text-xs text-gray-400">
+        This computer then copies the primary's live show and follows it without
+        sending output, ready to take over. The primary needs External control
+        on. Opening a show stops following.{" "}
+        <a
+          href={documentationPageUrl(
+            "user-guide/panels/io-transports.html#backup-server",
+          )}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="underline"
+        >
+          How backups work
+        </a>
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The Showfiles dialog's section for following a primary: the follow form, or, while this
+ * computer is a backup, its link and a way to stop following.
+ */
+export function FollowPrimarySection(props: { onFollowed?: () => void }) {
+  const state = useStore($backupState);
+  return (
+    <Show when={state().available}>
+      <section
+        class="mt-4 rounded border border-gray-700 p-3"
+        aria-label="Follow a primary"
+        data-testid="showfiles-follow-primary"
+      >
+        <h3 class="mb-2 text-sm font-semibold text-gray-200">
+          Follow a primary
+        </h3>
+        <Show
+          when={state().primary_address}
+          fallback={<FollowPrimaryForm onFollowed={props.onFollowed} />}
+        >
+          {(primary) => (
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-300">
+              <p class="flex flex-wrap items-center gap-2">
+                <Badge tone={linkTone(state().link)} uppercase>
+                  Backup
+                </Badge>
+                <span>
+                  Following {primary()}: {describeBackupLink(state())}. Opening
+                  a show stops following.
+                </span>
+              </p>
+              <StopFollowingButton />
+            </div>
+          )}
+        </Show>
+      </section>
+    </Show>
+  );
+}
+
+/** Shows this computer's backup role, its partner's health, and the automatic takeover setting. */
+export function BackupServerSettings() {
+  const state = useStore($backupState);
+  const appShell = useAppShell();
+  const [pin, setPin] = createSignal("");
+  /** Pairs again with the primary this computer follows, using the typed PIN. */
+  const pairAgain = (event: SubmitEvent) => {
+    event.preventDefault();
+    void sendBackupCommand({
+      type: "FollowPrimary",
+      data: {
+        address: state().primary_address ?? "",
+        pin: pin().trim() || undefined,
+      },
+    }).then((applied) => {
+      if (applied) setPin("");
+    });
+  };
 
   return (
     <Show when={state().available}>
@@ -285,8 +447,8 @@ export function BackupServerSettings() {
             role="alert"
             data-testid="backup-both-primary"
           >
-            Both computers are sending output. On the one that should stop,
-            follow the other as its primary.
+            Both computers are sending output. On the one that should stop, open
+            the Showfiles dialog and follow the other as its primary.
           </Alert>
         </Show>
         <Show
@@ -297,13 +459,13 @@ export function BackupServerSettings() {
         >
           <form
             class="mt-2 flex flex-wrap items-end gap-2"
-            onSubmit={(event) => follow(event, state().primary_address ?? "")}
+            onSubmit={pairAgain}
           >
-            {pinField()}
+            <PinField value={pin()} onInput={setPin} />
             <Button
               size="compact"
               type="submit"
-              disabled={!pin().trim()}
+              disabled={!pin().trim() || !!state().checking_address}
               data-testid="backup-pair-again"
             >
               Pair again
@@ -323,32 +485,6 @@ export function BackupServerSettings() {
           )}
         </Show>
         <div class="mt-3 flex flex-col gap-2 border-t border-gray-800 pt-3">
-          <Show when={!state().primary_address}>
-            <form
-              class="flex flex-wrap items-end gap-2"
-              onSubmit={(event) => follow(event, address())}
-            >
-              <label class="flex flex-col gap-1 text-xs text-gray-400">
-                Primary address
-                <Input
-                  density="compact"
-                  placeholder="192.168.1.20:3000"
-                  value={address()}
-                  onInput={(event) => setAddress(event.currentTarget.value)}
-                  data-testid="backup-primary-address"
-                />
-              </label>
-              {pinField()}
-              <Button
-                size="compact"
-                type="submit"
-                disabled={!address().trim()}
-                data-testid="backup-follow"
-              >
-                Follow primary
-              </Button>
-            </form>
-          </Show>
           <label class="flex items-start gap-2 text-xs text-gray-300">
             <Checkbox
               checked={state().auto_take_over}
@@ -370,8 +506,16 @@ export function BackupServerSettings() {
             </span>
           </label>
           <p class="text-xs text-gray-400">
-            A backup follows another Nightfall's live show without sending over
-            it, ready to take over. The primary needs external control on.{" "}
+            To make this computer a backup, follow a primary from the{" "}
+            <button
+              type="button"
+              class="underline"
+              onClick={() => appShell.showOpenShowfileModal()}
+              data-testid="backup-open-showfiles"
+            >
+              Showfiles dialog
+            </button>
+            .{" "}
             <a
               href={documentationPageUrl(
                 "user-guide/panels/io-transports.html#backup-server",

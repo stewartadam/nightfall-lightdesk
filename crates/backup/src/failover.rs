@@ -69,6 +69,21 @@ static HOST_STATUS: Mutex<HostStatus> = Mutex::new(HostStatus {
 /// `host:port` of the backup that last followed this host, if any.
 static BACKUP_PEER: Mutex<Option<String>> = Mutex::new(None);
 
+/// Route on which a host that took over asks the primary it replaced to step down.
+///
+/// It skips pairing, since a primary forgets its paired devices when it restarts, which is
+/// exactly when it needs to hear this. Only the remembered backup peer is listened to.
+pub const STEP_DOWN_PATH: &str = "/api/public/backup/step-down";
+
+/// Asks a primary to step down because the host sending it took over with a newer epoch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepDownRequest {
+    /// Epoch of the takeover.
+    pub epoch: u64,
+    /// Port the sender's server listens on, so the receiver can follow it.
+    pub port: u16,
+}
+
 /// The backup that last received a checkpoint from this host, when, and the same time as Unix
 /// milliseconds.
 static LAST_PEER_REQUEST: Mutex<Option<(String, Instant, u64)>> = Mutex::new(None);
@@ -142,6 +157,37 @@ pub(crate) fn set_backup_peer(peer: Option<String>) {
     *BACKUP_PEER
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = peer;
+}
+
+/// Answers a step-down request from the host at `ip`: when that host is this host's remembered
+/// backup, took over with a newer epoch than this host's, and this host runs as a primary, this
+/// host rejoins as its backup. Returns whether this host steps down.
+///
+/// The request carries no pairing token, so only the remembered backup is listened to: that host
+/// already followed this one, and is trusted to take its place.
+pub fn request_step_down(ip: IpAddr, request: &StepDownRequest) -> bool {
+    let address = peer_address(ip, request.port);
+    if backup_peer().as_deref() != Some(address.as_str()) {
+        tracing::warn!(%address, "Ignored a step-down request from a host that is not this host's backup");
+        return false;
+    }
+    if !should_step_down(&host_status(), request.epoch) {
+        return false;
+    }
+    tracing::warn!(%address, epoch = request.epoch, "A newer primary asked this host to step down");
+    crate::link::process_backup_link().request_rejoin(address, request.epoch);
+    true
+}
+
+/// Returns whether a host with status `own` steps down for a takeover with `epoch`.
+pub(crate) fn should_step_down(own: &HostStatus, epoch: u64) -> bool {
+    !own.following && epoch > own.epoch
+}
+
+/// Returns whether this host, a primary with `own_epoch`, should ask its backup peer to step
+/// down: the peer runs as a primary too, from before this host's takeover.
+pub(crate) fn should_ask_to_step_down(own_epoch: u64, peer: &HostStatus) -> bool {
+    !peer.following && peer.epoch < own_epoch
 }
 
 /// Remembers the backup that just asked this host for a checkpoint, storing it when it changed so
@@ -289,6 +335,32 @@ mod tests {
         assert!(!should_rejoin(2, &peer(false, 2)));
         assert!(!should_rejoin(3, &peer(false, 2)));
         assert!(!should_rejoin(1, &peer(true, 2)));
+    }
+
+    /// A host that took over asks only a peer still running as a primary from before its
+    /// takeover to step down, and a primary steps down only for a newer takeover, sent by the
+    /// backup it remembers.
+    #[test]
+    fn steps_down_only_for_a_newer_takeover() {
+        let host = |following, epoch| HostStatus {
+            following,
+            epoch,
+            sacn_cid: None,
+        };
+        assert!(should_ask_to_step_down(2, &host(false, 1)));
+        assert!(!should_ask_to_step_down(2, &host(false, 2)));
+        assert!(!should_ask_to_step_down(2, &host(true, 1)));
+        assert!(should_step_down(&host(false, 1), 2));
+        assert!(!should_step_down(&host(false, 2), 2));
+        assert!(!should_step_down(&host(true, 1), 2));
+
+        set_backup_peer(Some("192.0.2.11:3000".into()));
+        let request = StepDownRequest {
+            epoch: u64::MAX,
+            port: 3000,
+        };
+        assert!(!request_step_down("192.0.2.12".parse().unwrap(), &request));
+        set_backup_peer(None);
     }
 
     /// A backup takes over only after the timeout, and never while the primary's sACN arrives.

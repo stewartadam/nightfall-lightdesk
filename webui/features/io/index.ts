@@ -9,6 +9,7 @@
 export {
   BackupBanner,
   BackupServerSettings,
+  FollowPrimarySection,
 } from "./components/backup-server";
 export { Mappable, type MappableChoice } from "./components/mappable";
 export {

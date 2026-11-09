@@ -10,8 +10,9 @@
 //! travels inside a showfile, which the backup copies from its primary.
 
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{LazyLock, Mutex},
 };
 
 use nightfall_websocket::host_preferences::{
@@ -73,25 +74,55 @@ pub(crate) fn load(path: Option<&Path>) -> (BackupPreferences, Option<String>) {
     }
 }
 
-/// Serializes changes to the stored preferences, which the world, the link worker and the HTTP
-/// routes all make.
-static UPDATE_LOCK: Mutex<()> = Mutex::new(());
-
-/// Loads the stored preferences, changes them with `update`, and stores the result, so a change
-/// to one field keeps the others, even while another thread changes a different field.
+/// The preferences this process last loaded or changed, with the path they belong to.
 ///
-/// Returns the changed preferences with the error that kept them from being stored, if any, so a
-/// caller can act on them even when the host data directory is unavailable.
+/// The lock also serializes changes, which the world, the link worker and the HTTP routes all
+/// make. Keeping the last value means a change that could not be stored still holds for the rest
+/// of the session, even after a show load restores the role.
+///
+/// Kept per path, though the app only uses one, so tests on separate paths stay independent.
+static CURRENT: LazyLock<Mutex<HashMap<Option<PathBuf>, BackupPreferences>>> =
+    LazyLock::new(Mutex::default);
+
+/// Returns this session's preferences for `path`: the last ones this process loaded or changed,
+/// or the stored ones on first use, with the error that kept them from being read, if any.
+pub(crate) fn current(path: Option<&Path>) -> (BackupPreferences, Option<String>) {
+    let mut current = CURRENT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let key = path.map(Path::to_path_buf);
+    if let Some(preferences) = current.get(&key) {
+        return (preferences.clone(), None);
+    }
+    let (preferences, error) = load(path);
+    // Defaults standing in for an unreadable file are not kept, so every restore reports it.
+    if error.is_none() {
+        current.insert(key, preferences.clone());
+    }
+    (preferences, error)
+}
+
+/// Changes this session's preferences with `update` and stores the result, so a change to one
+/// field keeps the others, even while another thread changes a different field.
+///
+/// Returns the changed preferences with the error that kept them from being stored, if any. The
+/// change holds for the rest of the session either way, so a caller can act on it even when the
+/// host data directory is unavailable.
 pub(crate) fn update(
     path: Option<&Path>,
     update: impl FnOnce(&mut BackupPreferences),
 ) -> (BackupPreferences, Option<String>) {
-    let _guard = UPDATE_LOCK
+    let mut current = CURRENT
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let (mut preferences, _) = load(path);
+    let key = path.map(Path::to_path_buf);
+    let mut preferences = match current.get(&key) {
+        Some(preferences) => preferences.clone(),
+        None => load(path).0,
+    };
     update(&mut preferences);
     let error = save(path, &preferences).err();
+    current.insert(key, preferences.clone());
     (preferences, error)
 }
 
@@ -135,5 +166,20 @@ mod tests {
         let (loaded, error) = load(Some(&path));
         assert_eq!(loaded, BackupPreferences::default());
         assert!(error.unwrap().contains("backup preferences"));
+    }
+
+    /// A change that cannot be stored still holds for the rest of the session, so restoring the
+    /// role after a show load does not undo it.
+    #[test]
+    fn unsaved_change_holds_for_the_session() {
+        let directory = tempfile::tempdir().unwrap();
+        let blocker = directory.path().join("not-a-directory");
+        std::fs::write(&blocker, "").unwrap();
+        let path = blocker.join("backup.json");
+
+        let (updated, error) = update(Some(&path), |stored| stored.epoch = 7);
+        assert!(error.is_some());
+        assert_eq!(updated.epoch, 7);
+        assert_eq!(current(Some(&path)), (updated, None));
     }
 }

@@ -23,6 +23,7 @@ import {
   restartAppLifecycleForBackendSessionReset,
   transitionAppLifecycle,
 } from "../../../state/app-lifecycle";
+import { $backupState } from "../../../state/settings";
 import * as types from "../../../types";
 import {
   bypassBackendReadinessForE2E,
@@ -39,6 +40,7 @@ interface StartupControllerProps {
 /** Advances app startup through backend readiness and draft discovery. */
 export function StartupController(props: StartupControllerProps) {
   const lifecycle = useStore(appLifecycle);
+  const backup = useStore($backupState);
   let draftCheckInFlight = false;
 
   beginAppLifecycleStartup(props.enabled);
@@ -86,6 +88,18 @@ export function StartupController(props: StartupControllerProps) {
       connectionStatus() === EngineRuntimeStatus.Connected
     ) {
       restartAppLifecycleForBackendSessionReset();
+      return;
+    }
+    // A backup restored at startup loads its primary's show on its own; once it has, the
+    // prompt to pick a show no longer applies.
+    if (
+      (state.phase === "startup-showfile-prompt" ||
+        state.phase === "startup-draft-prompt") &&
+      backendState === types.AppState.Ready &&
+      backup().primary_address &&
+      backup().link === types.BackupLinkStatus.Synced
+    ) {
+      transitionAppLifecycle({ type: "interactive" });
       return;
     }
     // Prompt and world-swap phases are owned by the user's recovery choice.

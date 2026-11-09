@@ -66,6 +66,28 @@ async function openPanel(page: Page, title: string): Promise<void> {
   await page.keyboard.press("Enter");
 }
 
+/**
+ * Follows the primary at `address` from the Showfiles dialog's Follow a primary section, which
+ * the I/O Transports panel links to, optionally capturing the filled-in section first.
+ */
+async function followFromShowfiles(
+  page: Page,
+  address: string,
+  screenshotPath?: string,
+): Promise<void> {
+  await openPanel(page, "I/O Transports");
+  await page.getByTestId("backup-open-showfiles").click();
+  const dialog = page.getByRole("dialog", { name: "Open Showfile" });
+  const section = dialog.getByTestId("showfiles-follow-primary");
+  await section.getByTestId("backup-primary-address").fill(address);
+  if (screenshotPath) {
+    await section.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: screenshotPath });
+  }
+  await section.getByTestId("backup-follow").click();
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
+}
+
 /** Types an sACN priority into the Network settings tab and returns the still-open dialog. */
 async function typePriority(page: Page, priority: number) {
   await page.keyboard.press("ControlOrMeta+,");
@@ -165,15 +187,12 @@ test("backup follows a primary, stays read-only, and takes over", async ({
     await page.goto("/?e2e=1");
     await waitForDockviewApp(page);
 
-    await openPanel(page, "I/O Transports");
+    await followFromShowfiles(
+      page,
+      `127.0.0.1:${primary.backend.backendPort}`,
+      testInfo.outputPath("1-follow-a-primary.png"),
+    );
     const settings = page.getByTestId("backup-server-settings");
-    await settings
-      .getByTestId("backup-primary-address")
-      .fill(`127.0.0.1:${primary.backend.backendPort}`);
-    await settings.screenshot({
-      path: testInfo.outputPath("1-backup-settings.png"),
-    });
-    await settings.getByTestId("backup-follow").click();
 
     const banner = page.getByTestId("backup-banner");
     await expect(banner).toContainText(
@@ -218,7 +237,7 @@ test("backup follows a primary, stays read-only, and takes over", async ({
     await confirm.getByRole("button", { name: "Take over" }).click();
     await expect(banner).toBeHidden();
     await openPanel(page, "I/O Transports");
-    await expect(settings.getByTestId("backup-follow")).toBeVisible();
+    await expect(settings.getByTestId("backup-link-status")).toBeHidden();
 
     await enterPriority(page, 120);
     await expect.poll(() => storedPriority(page)).toBe(120);
@@ -250,12 +269,7 @@ test("backup follows the primary's playback and keeps it on takeover", async ({
     await page.goto("/?e2e=1");
     await waitForDockviewApp(page);
 
-    await openPanel(page, "I/O Transports");
-    const settings = page.getByTestId("backup-server-settings");
-    await settings
-      .getByTestId("backup-primary-address")
-      .fill(`127.0.0.1:${primary.backend.backendPort}`);
-    await settings.getByTestId("backup-follow").click();
+    await followFromShowfiles(page, `127.0.0.1:${primary.backend.backendPort}`);
     const banner = page.getByTestId("backup-banner");
     await expect(banner).toContainText("In step with the primary's", {
       timeout: 60_000,
@@ -367,12 +381,7 @@ test("backup replays the primary's fader moves as they happen", async ({
     await page.goto("/?e2e=1");
     await waitForDockviewApp(page);
 
-    await openPanel(page, "I/O Transports");
-    const settings = page.getByTestId("backup-server-settings");
-    await settings
-      .getByTestId("backup-primary-address")
-      .fill(`127.0.0.1:${primary.backend.backendPort}`);
-    await settings.getByTestId("backup-follow").click();
+    await followFromShowfiles(page, `127.0.0.1:${primary.backend.backendPort}`);
     const banner = page.getByTestId("backup-banner");
     await expect(banner).toContainText("In step with the primary's", {
       timeout: 60_000,
@@ -433,12 +442,7 @@ test("backup replays the primary's fader moves as they happen", async ({
 async function followPrimary(page: Page, primaryPort: number): Promise<void> {
   await page.goto("/?e2e=1");
   await waitForDockviewApp(page);
-  await openPanel(page, "I/O Transports");
-  const settings = page.getByTestId("backup-server-settings");
-  await settings
-    .getByTestId("backup-primary-address")
-    .fill(`127.0.0.1:${primaryPort}`);
-  await settings.getByTestId("backup-follow").click();
+  await followFromShowfiles(page, `127.0.0.1:${primaryPort}`);
   await expect(page.getByTestId("backup-banner")).toContainText(
     "In step with the primary's",
     { timeout: 60_000 },
@@ -585,6 +589,94 @@ test("backup takes over on its own when the primary stops", async ({
     });
   } finally {
     if (primaryRunning) await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});
+
+/**
+ * Following an address that does not answer leaves the computer as it was, with the reason
+ * shown, and the PIN and address are accepted with stray spaces.
+ */
+test("an unreachable primary is not followed", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto("/?e2e=1");
+  await waitForDockviewApp(page);
+  await openPanel(page, "I/O Transports");
+  await page.getByTestId("backup-open-showfiles").click();
+  const dialog = page.getByRole("dialog", { name: "Open Showfile" });
+  const section = dialog.getByTestId("showfiles-follow-primary");
+  await section.getByTestId("backup-primary-address").fill(" 127.0.0.1 : 9 ");
+  await section.getByTestId("backup-primary-pin").fill("12 34 56");
+  await section.getByTestId("backup-follow").click();
+  await expect(section.getByTestId("backup-follow-error")).toContainText(
+    "127.0.0.1:9",
+    { timeout: 20_000 },
+  );
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId("backup-banner")).toHaveCount(0);
+  await section.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("14-unreachable-primary.png"),
+  });
+});
+
+/**
+ * A backup leaves its role either with Stop following, which keeps the copied show, or by
+ * opening a show from the Showfiles dialog, which replaces it.
+ */
+test("a backup stops following, or opens a show instead", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await followPrimary(page, primary.backend.backendPort);
+    const banner = page.getByTestId("backup-banner");
+    // The backup can reload the primary's show once more after it first gets in step.
+    await waitForDockviewApp(page);
+    await expect(page.getByTestId("startup-splash")).toHaveCount(0);
+
+    await banner.getByTestId("backup-stop-following").click();
+    const confirm = page.getByRole("dialog", { name: "Stop following" });
+    await expect(confirm).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("15-stop-following.png"),
+    });
+    await confirm.getByRole("button", { name: "Stop following" }).click();
+    await expect(banner).toBeHidden();
+    await enterPriority(page, 130);
+    await expect.poll(() => storedPriority(page)).toBe(130);
+
+    await followPrimary(page, primary.backend.backendPort);
+    await openPanel(page, "I/O Transports");
+    await page.getByTestId("backup-open-showfiles").click();
+    const dialog = page.getByRole("dialog", { name: "Open Showfile" });
+    const section = dialog.getByTestId("showfiles-follow-primary");
+    await expect(section).toContainText("Following 127.0.0.1");
+    await section.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath("16-showfiles-while-following.png"),
+    });
+    await dialog.getByRole("button", { name: "New showfile" }).click();
+    const newDialog = page.getByRole("dialog", { name: "New Showfile" });
+    await newDialog
+      .getByLabel("Show name")
+      .fill(`after-backup-${testInfo.workerIndex}-${Date.now()}`);
+    await newDialog.getByRole("button", { name: "Create Show" }).click();
+    await expect(banner).toBeHidden({ timeout: 30_000 });
+    await expect(
+      page
+        .locator('[data-component="Toast"]')
+        .filter({ hasText: "Opening a show stopped following" }),
+    ).toBeVisible();
+    await waitForDockviewApp(page);
+    await enterPriority(page, 140);
+    await expect.poll(() => storedPriority(page)).toBe(140);
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
     stopPlaywrightWorkerSlot(primary.workerSlot);
   }
 });

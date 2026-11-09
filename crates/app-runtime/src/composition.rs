@@ -245,11 +245,22 @@ pub(super) fn init_bevy_with_transport_policy(
         settings.usb_output_enabled = transport_policy.allow_usb_output;
     }
 
+    // A backup accepts opening a show, which ends its role, rather than leaving the operator
+    // stuck on the copied show.
+    for command_type in systems::backup_mirror::SHOW_LOAD_COMMANDS {
+        allow_command_while_read_only(
+            &mut app,
+            nightfall_showfile::ShowfileCommand::COMMAND_MODULE,
+            command_type,
+        );
+    }
+
     // event handling - plugins add more here
     app.add_systems(
         Update,
         (
             // event generation based on showfile
+            systems::backup_mirror::leave_backup_role_for_show_loads,
             systems::showfile_events::handle_events.run_if(disk_storage_available),
             bevy::ecs::schedule::ApplyDeferred,
             systems::deleted_object_instances::release_deleted_object_instances,

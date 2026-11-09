@@ -19,14 +19,15 @@ use axum::{
     extract::{ConnectInfo, Query},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use bevy::prelude::*;
 use nightfall_backup::{
     forwarding::{ForwardCursor, forward_journal},
-    prelude::{MirroredShowfileReady, ShowfileRevision},
+    prelude::{BackupState, MirroredShowfileReady, ShowfileRevision},
 };
 use nightfall_engine::prelude::*;
+use nightfall_showfile::ShowfileCommand;
 use nightfall_websocket::prelude::HttpRouteRegistry;
 
 use crate::swap_orchestrator::PendingWorldSwapRequest;
@@ -34,6 +35,61 @@ use crate::swap_orchestrator::PendingWorldSwapRequest;
 /// Origin recorded for show loads the backup link starts.
 const BACKUP_LINK_ORIGIN: &str = "Backup link";
 
+/// Showfile commands that open or create a show, which a backup accepts and which end its role.
+pub(crate) const SHOW_LOAD_COMMANDS: &[&str] = &[
+    "NewShowfile",
+    "NewNamedShowfile",
+    "LoadShowfile",
+    "LoadNamedShowfile",
+    "LoadDraftShowfile",
+    "LoadShowfileRevision",
+];
+
+/// Returns whether `command` opens or creates a show, replacing whatever show is open. Matches
+/// the same commands as [`SHOW_LOAD_COMMANDS`], which a test keeps in step.
+fn opens_a_show(command: &ShowfileCommand) -> bool {
+    matches!(
+        command,
+        ShowfileCommand::NewShowfile
+            | ShowfileCommand::NewNamedShowfile(_)
+            | ShowfileCommand::LoadShowfile
+            | ShowfileCommand::LoadNamedShowfile(_)
+            | ShowfileCommand::LoadDraftShowfile(_)
+            | ShowfileCommand::LoadShowfileRevision(_)
+    )
+}
+
+/// Stops following the primary when a client opens or creates a show, before the show load
+/// runs, so the world it loads starts as a normal desk.
+pub(crate) fn leave_backup_role_for_show_loads(
+    mut commands: MessageReader<CommandEnvelope<ShowfileCommand>>,
+    state: Option<ResMut<BackupState>>,
+    mut notifications: MessageWriter<UiNotification>,
+) {
+    let Some(mut state) = state else {
+        return;
+    };
+    if !commands
+        .read()
+        .any(|envelope| opens_a_show(&envelope.command))
+    {
+        return;
+    }
+    let was_backup = state.is_backup();
+    let primary = state.primary_address.clone().unwrap_or_default();
+    let save_error = nightfall_backup::leave_backup_role_for_show_load(&mut state);
+    if !was_backup {
+        return;
+    }
+    let message = match save_error {
+        None => format!("Opening a show stopped following {primary}."),
+        Some(error) => format!(
+            "Opening a show stopped following {primary}, but this will not survive a restart: \
+             {error}"
+        ),
+    };
+    notifications.write(UiNotification::toast(ToastLevel::Info, message));
+}
 /// Replaces the world with the newest show copied from the primary.
 ///
 /// Only the newest copy in a frame is loaded, since each one replaces the whole show. The load
@@ -80,10 +136,24 @@ pub(crate) fn register_backup_http_routes(registry: &mut HttpRouteRegistry) {
         get(current_showfile_revision),
     );
     registry.register(nightfall_backup::LIVE_STATE_PATH, get(current_live_state));
+    registry.register(nightfall_backup::failover::STEP_DOWN_PATH, post(step_down));
     registry.register(
         nightfall_backup::FORWARDED_COMMANDS_PATH,
         get(forwarded_commands),
     );
+}
+
+/// Steps down to follow the paired host that sent the request, when it took over with a newer
+/// epoch than this host's. Answers 409 when this host keeps its role.
+async fn step_down(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(request): Json<nightfall_backup::failover::StepDownRequest>,
+) -> StatusCode {
+    if nightfall_backup::failover::request_step_down(peer.ip(), &request) {
+        StatusCode::ACCEPTED
+    } else {
+        StatusCode::CONFLICT
+    }
 }
 
 /// Answers with the commands forwarded after the backup's cursor, holding the request open for
@@ -227,5 +297,42 @@ async fn current_showfile_revision() -> Response {
         .into_response(),
         Ok(Err(error)) => (StatusCode::INTERNAL_SERVER_ERROR, error).into_response(),
         Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every command that opens or creates a show is a show load, and its `type` tag is in
+    /// [`SHOW_LOAD_COMMANDS`], which a backup accepts while read-only; saving is neither.
+    #[test]
+    fn show_loads_match_the_read_only_allow_list() {
+        use nightfall_showfile::{NewShowfileOptions, ShowfileRevisionSelection};
+
+        let tag = |command: &ShowfileCommand| {
+            serde_json::to_value(command).unwrap()["type"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let loads = [
+            ShowfileCommand::NewShowfile,
+            ShowfileCommand::NewNamedShowfile(NewShowfileOptions {
+                name: "Show".into(),
+                include_sample_data: false,
+            }),
+            ShowfileCommand::LoadShowfile,
+            ShowfileCommand::LoadNamedShowfile("Show".into()),
+            ShowfileCommand::LoadDraftShowfile("Show".into()),
+            ShowfileCommand::LoadShowfileRevision(ShowfileRevisionSelection {
+                showfile_name: "Show".into(),
+                revision_name: "rev".into(),
+            }),
+        ];
+        let tags: Vec<String> = loads.iter().map(tag).collect();
+        assert_eq!(tags, SHOW_LOAD_COMMANDS);
+        assert!(loads.iter().all(opens_a_show));
+        assert!(!opens_a_show(&ShowfileCommand::SaveShowfile));
     }
 }

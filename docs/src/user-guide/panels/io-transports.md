@@ -46,8 +46,10 @@ A backup server is a second computer running Nightfall that keeps a copy of the 
 To set one up:
 
 1. On the primary, turn on **External control** and note its address and **Pairing PIN**.
-1. On the backup, open I/O Transports and enter the primary's address, such as `192.168.1.20:3030`, under **Backup server**.
+1. On the backup, open the **Showfiles** dialog, which also appears when Nightfall starts, and enter the primary's address, such as `192.168.1.20:3030`, under **Follow a primary**. Use the port the primary's backend listens on.
 1. Enter the primary's PIN and select **Follow primary**. A primary on the same computer does not need a PIN.
+
+The backup first checks that the primary answers and accepts the PIN. If it does not, the backup stays as it was and says why, such as a wrong PIN or an address it cannot reach.
 
 While it follows the primary, the backup:
 
@@ -61,9 +63,11 @@ While it follows the primary, the backup:
 
 The backup loads each copy as a working draft under the primary's showfile name, replacing the backup's own unsaved draft of a show with that name. The saved showfile on the backup is not changed.
 
-To take over, select **Take over** in the banner or under **Backup server**. The backup stops following the primary and outputs the copied show at the show's own priority on every transport. If the primary is still running and can reach the backup, it steps down within a few seconds and becomes the backup's backup, so the two never keep sending the same universes at the same priority.
+To take over, select **Take over** in the banner or under **Backup server**. The backup stops following the primary and outputs the copied show at the show's own priority on every transport. If the primary is still running, the backup asks it to step down, and within a few seconds it becomes the backup's backup, so the two never keep sending the same universes at the same priority.
 
-The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart. A primary forgets its paired devices when it restarts. When the banner says the primary needs its pairing PIN again, enter the new PIN under **Backup server** and select **Pair again**.
+To stop being a backup without taking over, select **Stop following**, or open or create a show from the **Showfiles** dialog. **Stop following** keeps the copied show and starts sending its output, but does not ask the primary to step down. Opening a show replaces the copied show.
+
+The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart: the backup follows its primary again and loads its show without asking which show to open. A primary forgets its paired devices when it restarts. When the banner says the primary needs its pairing PIN again, enter the new PIN under **Backup server** and select **Pair again**.
 
 When you take over, the backup keeps playing what the primary was playing. While the backup loads a newly copied show, its banner says it is loading the primary's show.
 
@@ -76,12 +80,12 @@ A backup only takes over on its own after it has reached the primary and loaded 
 The top of **Backup server** says what this computer is and how its partner is doing:
 
 - **Backup**: the primary it follows and whether it is in step.
-- **Primary**: the backup that follows it, and whether that backup is in step, not in step since a given time, or unreachable. If the backup is also sending as a primary, a warning says both computers are sending output; on the one that should stop, follow the other as its primary.
+- **Primary**: the backup that follows it, and whether that backup is in step, not in step since a given time, or unreachable. If the backup is also sending as a primary, a warning says both computers are sending output; on the one that should stop, open the **Showfiles** dialog and follow the other as its primary.
 - **Standalone**: no backup follows this computer.
 
 A takeover, and an old primary stepping down, also show a message on every connected device. If a device loses its connection to the primary, the connection message offers **Open the backup**, which opens the backup's address.
 
-When the old primary comes back, it checks its backup before sending anything. Finding that the backup took over, it becomes the backup's backup instead: it stays silent, refuses changes, and follows the new primary. On another computer it asks for the new primary's PIN first; enter it under **Backup server** and select **Pair again**. To swap the roles back, take over on the old primary.
+When the old primary comes back, the computer that took over asks it to step down within a few seconds. The old primary also checks its backup before sending anything, when it can reach it. Either way, it becomes the backup's backup: it stays silent, refuses changes, and follows the new primary. On another computer it asks for the new primary's PIN first, and can only reach the new primary while **External control** is on there; enter the PIN under **Backup server** and select **Pair again**. To swap the roles back, take over on the old primary.
 
 If the backup itself loses the network, it cannot tell that apart from the primary failing and takes over too. When the network returns, the computer that took over last keeps the show, and the other steps down. Turn off **Take over automatically** if you would rather decide every takeover yourself.
 
