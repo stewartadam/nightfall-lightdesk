@@ -8,7 +8,7 @@
 
 import { crc32 } from "node:zlib";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
-import { expect, type Page, test } from "./playwright-fixtures";
+import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
 const FIRST_ID = 97_101;
@@ -273,6 +273,10 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
   const summary = dialog.getByTestId("rig-import-summary");
   await expect(summary).toContainText("wash-rig.mvr");
   await expect(summary).toContainText("0 of 2 fixtures will be added");
+  await expect(
+    dialog.getByRole("tab", { name: "Fixture types (1)" }),
+    "a type that needs a choice opens the review on its tab",
+  ).toHaveAttribute("aria-selected", "true");
   await expect(dialog.getByRole("cell", { name: "Missing" })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("2-missing-type.png") });
 
@@ -280,15 +284,20 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
   await typeSelect.selectOption({ label: "Generic Moving Head RGBW" });
   await expect(summary).toContainText("2 of 2 fixtures will be added");
   await expect(dialog.getByRole("cell", { name: "Stand-in" })).toBeVisible();
+  await dialog.getByRole("tab", { name: "Fixtures (2)" }).click();
   await expect(dialog.getByRole("cell", { name: "200.1" })).toBeVisible();
   await expect(dialog.getByRole("cell", { name: "200.233" })).toBeVisible();
+  const groupsTab = dialog.getByRole("tab", { name: /^Groups/ });
+  await groupsTab.click();
   const groups = dialog.getByRole("table", { name: "Groups the import makes" });
   await expect(groups.getByRole("cell", { name: "LX 1" })).toBeVisible();
   await expect(groups.getByRole("cell", { name: "New" })).toBeVisible();
+  await dialog.getByRole("tab", { name: "Fixtures (2)" }).click();
 
   await dialog.getByLabel("Fixture numbering").selectOption("Offset");
   await dialog.getByLabel("ID offset").fill("0");
   await dialog.getByLabel("ID offset").blur();
+  await settleTabPanel(dialog);
   await page.screenshot({ path: test.info().outputPath("3-ready.png") });
 
   await dialog.getByRole("button", { name: "Import 2 fixtures" }).click();
@@ -310,11 +319,12 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
   await expect(summary).toContainText(
     "0 of 2 fixtures will be added, 1 updated",
   );
+  await dialog.getByRole("tab", { name: "Fixtures (2)" }).click();
   await expect(
     dialog.getByRole("cell", { name: "Update (moved, repatched)" }),
   ).toBeVisible();
   await expect(dialog.getByRole("cell", { name: "Unchanged" })).toBeVisible();
-  await expect(groups, "LX 1 already holds both washes").toBeHidden();
+  await expect(groupsTab, "LX 1 already holds both washes").toBeHidden();
   await expect(
     dialog.getByLabel("Update fixtures already in the show to match the file"),
   ).toBeChecked();
@@ -326,6 +336,15 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
   expect(await fixtureX(page, FIRST_ID)).toBeCloseTo(-2);
   await page.screenshot({ path: test.info().outputPath("6-updated.png") });
 });
+
+/** Waits for the review's tab panel to finish sliding in, so a screenshot shows its table. */
+async function settleTabPanel(dialog: Locator): Promise<void> {
+  await dialog
+    .getByRole("tabpanel")
+    .evaluate((panel) =>
+      Promise.all(panel.getAnimations().map((animation) => animation.finished)),
+    );
+}
 
 /** Reads the show's scene objects with their labels, heights (to the centimetre) and model settings. */
 async function sceneObjectSummaries(page: Page): Promise<
@@ -356,6 +375,8 @@ test("imports trusses and scenery as scene objects", async ({
   backendSlot,
   page,
 }) => {
+  // The waits for the slow headless visualizer push this past the default timeout.
+  test.setTimeout(120_000);
   await prepareFreshBackendShowfile(backendSlot.backendPort);
   await page.goto("/?e2e=1");
   await waitForDockviewApp(page);
@@ -383,6 +404,7 @@ test("imports trusses and scenery as scene objects", async ({
   await dialog.getByLabel("Fixture numbering").selectOption("Offset");
   await dialog.getByLabel("ID offset").fill("0");
   await dialog.getByLabel("ID offset").blur();
+  await dialog.getByRole("tab", { name: "Scenery (2)" }).click();
   const scenery = dialog.getByRole("table", { name: "Scenery in the rig" });
   await expect(scenery.getByRole("cell", { name: "LX 1 truss" })).toBeVisible();
   await expect(
@@ -390,7 +412,7 @@ test("imports trusses and scenery as scene objects", async ({
   ).toBeVisible();
   await expect(scenery.getByRole("cell", { name: "New" })).toHaveCount(2);
   await expect(dialog.getByLabel("Import trusses and scenery")).toBeChecked();
-  await scenery.scrollIntoViewIfNeeded();
+  await settleTabPanel(dialog);
   await page.screenshot({ path: test.info().outputPath("1-scenery.png") });
 
   await dialog.getByRole("button", { name: "Import 2 fixtures" }).click();
@@ -411,6 +433,19 @@ test("imports trusses and scenery as scene objects", async ({
   await page.waitForTimeout(15_000);
   await page.screenshot({ path: test.info().outputPath("2-visualizer.png") });
 
+  const sceneryToggle = page.getByRole("button", {
+    name: "Hide Scenery (O)",
+  });
+  await sceneryToggle.click();
+  await expect(
+    page.getByRole("button", { name: "Show Scenery (O)" }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await page.waitForTimeout(5_000);
+  await page.screenshot({
+    path: test.info().outputPath("3-scenery-hidden.png"),
+  });
+  await page.getByRole("button", { name: "Show Scenery (O)" }).click();
+
   await page.locator("button[title='Menu']").click();
   await page.getByRole("button", { name: "Import Rig from MVR" }).click();
   await dialog.getByTestId("rig-import-file").setInputFiles({
@@ -418,6 +453,7 @@ test("imports trusses and scenery as scene objects", async ({
     mimeType: "application/octet-stream",
     buffer: trussRig(),
   });
+  await dialog.getByRole("tab", { name: "Scenery (2)" }).click();
   await expect(scenery.getByRole("cell", { name: "Unchanged" })).toHaveCount(2);
   await dialog.getByRole("button", { name: "Close rig import dialog" }).click();
 });

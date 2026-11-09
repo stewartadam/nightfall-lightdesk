@@ -233,6 +233,51 @@ export function sceneryStatusLabel(status: types.SceneryImportStatus): string {
   }
 }
 
+/** The lists the import review shows, one per tab. */
+export type RigImportTab = "types" | "groups" | "scenery" | "fixtures";
+
+/** Tab names in the import review. */
+export const RIG_IMPORT_TAB_LABELS: Readonly<Record<RigImportTab, string>> = {
+  types: "Fixture types",
+  groups: "Groups",
+  scenery: "Scenery",
+  fixtures: "Fixtures",
+};
+
+/**
+ * The tabs a preview has rows for, in review order. Fixture types and fixtures always show;
+ * groups and scenery only when the import makes groups or the file has scenery.
+ */
+export function rigImportTabs(
+  preview: Pick<types.RigImportPreview, "groups" | "scenery">,
+): RigImportTab[] {
+  const tabs: RigImportTab[] = ["types"];
+  if (preview.groups.length > 0) tabs.push("groups");
+  if (preview.scenery.length > 0) tabs.push("scenery");
+  tabs.push("fixtures");
+  return tabs;
+}
+
+/** How many rows a tab lists, shown beside its name. */
+export function rigImportTabCount(
+  preview: Pick<
+    types.RigImportPreview,
+    "fixtureTypes" | "groups" | "scenery" | "fixtures"
+  >,
+  tab: RigImportTab,
+): number {
+  switch (tab) {
+    case "types":
+      return preview.fixtureTypes.length;
+    case "groups":
+      return preview.groups.length;
+    case "scenery":
+      return preview.scenery.length;
+    case "fixtures":
+      return preview.fixtures.length;
+  }
+}
+
 /** Short words for what a scenery row stands for. */
 export function sceneryKindLabel(kind: types.RigSceneryKind): string {
   switch (kind) {

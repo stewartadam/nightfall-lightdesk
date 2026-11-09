@@ -15,6 +15,8 @@ import {
   importDoneMessage,
   libraryKey,
   numberingOption,
+  rigImportTabCount,
+  rigImportTabs,
   withMappingMode,
   withTypeMapping,
 } from "./rig-import-model";
@@ -138,4 +140,22 @@ test("import done message", () => {
     importDoneMessage({ ...base, newFixtures: 0, updatedFixtures: 0 }),
     "Refreshed the groups from rig.mvr",
   );
+});
+
+/** Groups and scenery tabs appear only when the preview has rows for them, and counts follow the rows. */
+test("review tabs follow the preview", () => {
+  const preview = {
+    fixtureTypes: [{}, {}],
+    groups: [],
+    scenery: [{}],
+    fixtures: [{}, {}, {}],
+  } as unknown as types.RigImportPreview;
+  assert.deepEqual(rigImportTabs(preview), ["types", "scenery", "fixtures"]);
+  assert.equal(rigImportTabCount(preview, "types"), 2);
+  assert.equal(rigImportTabCount(preview, "scenery"), 1);
+  assert.equal(rigImportTabCount(preview, "fixtures"), 3);
+  assert.deepEqual(rigImportTabs({ ...preview, scenery: [] }), [
+    "types",
+    "fixtures",
+  ]);
 });
