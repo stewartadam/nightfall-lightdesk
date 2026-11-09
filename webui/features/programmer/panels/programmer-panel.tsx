@@ -512,6 +512,7 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
       rows: displayRows,
       selection: gridSelection,
       blueprints: $blueprints,
+      parkedLookup,
     });
 
   const cellProvider = createMemo(() => {

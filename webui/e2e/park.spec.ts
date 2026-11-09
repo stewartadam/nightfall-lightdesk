@@ -197,3 +197,47 @@ test("the status bar parked count opens Fixtures filtered to parked parameters",
   await expect(indicator).toHaveCount(0);
   await expect(fixtures).toContainText("Nothing is parked");
 });
+
+/**
+ * Right-clicking a value cell parks it from Fixtures, and right-clicking the same value in
+ * Programmer unparks it.
+ */
+test("the grid right-click menus park and unpark a value", async ({
+  page,
+  backendSlot,
+}) => {
+  await openShowWithOwnedFixture(page, backendSlot.backendPort);
+  await submitCommand(page, `fix ${ownedFixtureId} red @ 100`);
+
+  await openPanel(page, "Fixtures");
+  const fixtures = page.locator('[data-panel-kind="fixtures"]:visible');
+  const fixturesRed = fixtures
+    .locator('[data-grid-column-key="Red_Value"]')
+    .first();
+  await expect(fixturesRed).toBeVisible();
+  await fixturesRed.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Park", exact: true }).click();
+  await expect.poll(() => parkedCount(page)).toBe(1);
+  await expect(
+    fixtures.getByRole("img", { name: /^Parked/ }).first(),
+  ).toBeVisible();
+  await fixturesRed.click({ button: "right" });
+  await expect(
+    page.getByRole("menuitem", { name: "Unpark", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: test.info().outputPath("park-context-menu.png"),
+  });
+  await page.keyboard.press("Escape");
+
+  await page.getByText("Programmer", { exact: true }).first().click();
+  const programmer = page.locator('[data-panel-kind="programmer"]:visible');
+  const programmerRed = programmer
+    .locator('[data-grid-column-key="Red_Value"]')
+    .first();
+  await expect(programmerRed).toBeVisible();
+  await programmerRed.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Unpark", exact: true }).click();
+  await expect.poll(() => parkedCount(page)).toBe(0);
+  await expect(programmer.getByRole("img", { name: /^Parked/ })).toHaveCount(0);
+});

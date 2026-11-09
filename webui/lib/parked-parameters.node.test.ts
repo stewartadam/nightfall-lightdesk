@@ -8,13 +8,15 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import type * as types from "../types";
+import * as types from "../types";
+import { setAttributeMetadata } from "./attribute-metadata";
 import { GridCellKind } from "./data-grid-types";
 import {
   applyParkedIndicator,
   buildParkedParameterLookup,
   isAttributeParked,
   isRowParked,
+  parkCommandForRefs,
   parkedEntriesForCell,
   parkedParameterKeys,
 } from "./parked-parameters";
@@ -74,6 +76,46 @@ test("the parked-only filter keeps parked rows and attribute columns", () => {
   assert.equal(isAttributeParked(lookup, "Intensity"), true);
   assert.equal(isAttributeParked(lookup, "Macro Speed"), true);
   assert.equal(isAttributeParked(lookup, "Tilt"), false);
+});
+
+test("park commands target each ref once with typed attributes", () => {
+  setAttributeMetadata([
+    {
+      key: "Pan",
+      attribute: { type: "Pan" },
+      label: "Pan",
+      category: types.AttributeCategory.Position,
+      sort_order: 0,
+    },
+  ]);
+  assert.deepEqual(
+    parkCommandForRefs(
+      [
+        { fixture_uid: "a", index: 2 },
+        { fixture_uid: "a", index: 2 },
+        { fixture_uid: "b" },
+      ],
+      ["Pan", "Macro Speed"],
+    ),
+    {
+      type: "Park",
+      data: {
+        selection: {
+          source: {
+            type: "Resolved",
+            data: [{ fixture_uid: "a", index: 2 }, { fixture_uid: "b" }],
+          },
+          clauses: [],
+        },
+        attributes: [
+          { type: "Pan" },
+          { type: "Custom", data: { label: "Macro Speed" } },
+        ],
+      },
+    },
+  );
+  assert.equal(parkCommandForRefs([{ fixture_uid: "a" }], []), undefined);
+  assert.equal(parkCommandForRefs([], ["Pan"]), undefined);
 });
 
 test("unpark keys drop the parked value", () => {
