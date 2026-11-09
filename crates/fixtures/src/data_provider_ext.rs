@@ -232,6 +232,26 @@ impl FixtureDataProviderExt {
         self.inner.get(fixture_uid).ok().map(|f| f.elements.len())
     }
 
+    /// Expands a fixture or element reference to element references.
+    ///
+    /// An element reference expands to itself. A whole-fixture reference expands to one reference
+    /// per element, and to element 1 for a fixture that reports no elements. Returns `None` for a
+    /// whole-fixture reference to an unknown fixture.
+    pub fn element_refs(&self, fixture: &FixtureRef) -> Option<Vec<FixtureRef>> {
+        if fixture.index.is_some() {
+            return Some(vec![fixture.clone()]);
+        }
+        let element_count = u32::try_from(self.element_count(fixture.fixture_uid)?.max(1)).ok()?;
+        Some(
+            (1..=element_count)
+                .map(|index| FixtureRef {
+                    fixture_uid: fixture.fixture_uid,
+                    index: Some(index),
+                })
+                .collect(),
+        )
+    }
+
     /// Returns a read guard over the parameter index for batch lookups.
     /// Use this when performing many lookups to avoid repeated lock acquisitions.
     pub fn parameter_index(&self) -> RwLockReadGuard<'_, ParameterIndex> {

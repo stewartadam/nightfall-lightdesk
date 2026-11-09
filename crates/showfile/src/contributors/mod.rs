@@ -21,6 +21,7 @@ mod fixtures_patch;
 mod flows;
 mod fx;
 mod macros;
+mod park;
 mod scene_objects;
 mod snapshot_values;
 mod timecodes_timelines;
@@ -34,6 +35,7 @@ pub(super) use fixtures_patch::{FixturesPatchLoadContributor, FixturesPatchSaveC
 pub(super) use flows::{FlowsLoadContributor, FlowsSaveContributor};
 pub(super) use fx::{FxLoadContributor, FxSaveContributor};
 pub(super) use macros::{MacrosLoadContributor, MacrosSaveContributor};
+pub(super) use park::{ParkLoadContributor, ParkSaveContributor};
 pub(super) use scene_objects::{SceneObjectsLoadContributor, SceneObjectsSaveContributor};
 pub(super) use timecodes_timelines::{
     TimecodesTimelinesLoadContributor, TimecodesTimelinesSaveContributor,
@@ -52,6 +54,7 @@ pub(super) enum ShowfileContribution<'a> {
     TimecodesTimelines(timecodes_timelines::TimecodesTimelinesSnapshot<'a>),
     Boards(boards::BoardsSnapshot<'a>),
     Macros(macros::MacrosSnapshot<'a>),
+    Park(park::ParkSnapshot<'a>),
 }
 
 /// Adds one domain-owned slice to a showfile save operation.
@@ -175,6 +178,9 @@ fn apply_save_contribution(
         ShowfileContribution::Macros(contribution) => {
             snapshot.macros = contribution.macros.into_owned();
         }
+        ShowfileContribution::Park(contribution) => {
+            snapshot.parked = contribution.parked.into_owned();
+        }
     }
 }
 
@@ -247,6 +253,9 @@ fn load_contribution_for_domain(
         }),
         ShowfileLoadDomain::Macros => ShowfileContribution::Macros(macros::MacrosSnapshot {
             macros: Cow::Borrowed(&snapshot.macros),
+        }),
+        ShowfileLoadDomain::Park => ShowfileContribution::Park(park::ParkSnapshot {
+            parked: Cow::Borrowed(&snapshot.parked),
         }),
     }
 }

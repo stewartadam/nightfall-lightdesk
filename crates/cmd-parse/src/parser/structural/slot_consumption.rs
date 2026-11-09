@@ -50,7 +50,7 @@ pub(in crate::parser) fn consume_slot<'i>(
         if !dmx_channel_token_allowed(channel_fills, token) {
             return None;
         }
-    } else if slot_id == SlotId::ReleaseChannelExpr
+    } else if matches!(slot_id, SlotId::ReleaseChannelExpr | SlotId::ParkTargetExpr)
         && token.kind == LexerTokenKind::Word
         && token_id.is_none_or(|token_id| !slot_accepts_token(slot_id, token_id))
     {
@@ -228,7 +228,7 @@ pub(in crate::parser) fn consume_slot<'i>(
             return None;
         }
     }
-    if slot_id == SlotId::ChannelOverrideValue
+    if matches!(slot_id, SlotId::ChannelOverrideValue | SlotId::ParkValue)
         && ((existing_fills == 0 && token_id != Some(TokenId::AtSign))
             || (existing_fills > 0 && !slot_requires_followup_value(slot_id, &slot_fills)))
     {

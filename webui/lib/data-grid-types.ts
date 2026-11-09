@@ -52,7 +52,8 @@ type GridCellStateIndicatorTone =
   | "lookahead"
   | "conflict"
   | "error"
-  | "warning";
+  | "warning"
+  | "parked";
 
 export interface GridCellStateIndicator {
   label: string;

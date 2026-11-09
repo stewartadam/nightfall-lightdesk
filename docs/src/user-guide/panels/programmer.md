@@ -16,4 +16,6 @@ Right-click attribute cells for the available value and clear operations. Filter
 
 **Clear programmer** in this panel clears selection first, then values on another press. Continue until the live values are released before checking cue playback. Setting intensity to zero leaves a programmer instruction; it is different from clearing it.
 
+Parked parameters show a **P** tag and survive **Clear programmer**. Properties offers **Park selection** and **Unpark selection** for the active selection and lists its parked parameters. See [Park](../commands.md#park).
+
 If a running clip looks wrong, clear the programmer and inspect [Layers](layers.md). Store only the intended instructions, then use Save Showfile to preserve the changes.

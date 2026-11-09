@@ -59,6 +59,7 @@
     "cross-plugin": [
       "nightfall-boards",
       "nightfall-macros",
+      "nightfall-park",
       "nightfall-references",
       "nightfall-showfile",
       "nightfall-wasm-bridge"

@@ -72,6 +72,8 @@ const TOKEN_SPECS: &[TokenSpec] = &[
     spec(TokenId::Rm, "rm"),
     spec(TokenId::Clear, "clear"),
     spec(TokenId::Release, "release"),
+    spec(TokenId::Park, "park"),
+    spec(TokenId::Unpark, "unpark"),
     spec(TokenId::Recall, "recall"),
     spec(TokenId::Debug, "debug"),
     spec(TokenId::Sleep, "sleep"),

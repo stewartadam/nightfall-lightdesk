@@ -319,6 +319,8 @@ export const boardStates = atom<BoardStatusMap>({});
 export const macros = atom<MacroMap>({});
 /** Macro bodies running right now, with the statement each one is on. */
 export const macroRuns = atom<types.MacroRunStatus[]>([]);
+/** Parameters held at a fixed value over all playback, ordered by fixture, element and attribute. */
+export const parkedParameters = atom<types.ParkedParameter[]>([]);
 export const fx = deepMap<FxMap>({});
 export const stepFx = deepMap<StepFxMap>({});
 export const fxModules = deepMap<FxModuleMap>({});
@@ -1114,6 +1116,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     boardStates,
     macros,
     macroRuns,
+    parkedParameters,
     fx,
     stepFx,
     fxModules,

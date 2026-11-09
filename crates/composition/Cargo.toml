@@ -18,6 +18,7 @@ nightfall-flow = { path = "../flow", default-features = false }
 nightfall-fx = { path = "../fx" }
 nightfall-io = { path = "../io" }
 nightfall-macros = { path = "../macros" }
+nightfall-park = { path = "../park" }
 nightfall-programming = { path = "../programming" }
 nightfall-references = { path = "../references" }
 nightfall-scene-objects = { path = "../scene-objects" }

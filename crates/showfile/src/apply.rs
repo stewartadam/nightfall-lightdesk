@@ -25,6 +25,7 @@ use nightfall_fx::prelude::*;
 use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
+use nightfall_park::prelude::ParkedParameters;
 use nightfall_scene_objects::prelude::*;
 use nightfall_timecode::prelude::*;
 use nightfall_timeline::prelude::*;
@@ -78,10 +79,12 @@ pub enum ShowfileLoadDomain {
     Boards,
     /// Command-line macros.
     Macros,
+    /// Parked fixture parameters, keyed by fixture UID so they apply whatever loads first.
+    Park,
 }
 
 impl ShowfileLoadDomain {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::DeskState,
         Self::FixturesPatch,
         Self::SceneObjects,
@@ -93,6 +96,7 @@ impl ShowfileLoadDomain {
         Self::TimecodesTimelines,
         Self::Boards,
         Self::Macros,
+        Self::Park,
     ];
 
     /// Returns the domains that must be applied before this domain.
@@ -115,6 +119,7 @@ impl ShowfileLoadDomain {
             ],
             Self::Boards => &[],
             Self::Macros => &[],
+            Self::Park => &[],
         }
     }
 }
@@ -186,6 +191,7 @@ pub fn apply_showfile_snapshot(
         timeline_data_provider,
         board_data_provider,
         macro_data_provider,
+        parked,
         input_routes,
         output_routes,
         disabled_routes,
@@ -222,7 +228,8 @@ pub fn apply_showfile_snapshot(
         TimecodesTimelinesLoadContributor::new(timecode_data_provider, timeline_data_provider);
     let mut boards_contributor = BoardsLoadContributor::new(board_data_provider);
     let mut macros_contributor = MacrosLoadContributor::new(macro_data_provider);
-    let mut load_contributors: [&mut dyn ShowfileLoadContributor; 11] = [
+    let mut park_contributor = ParkLoadContributor::new(parked.as_deref_mut());
+    let mut load_contributors: [&mut dyn ShowfileLoadContributor; 12] = [
         &mut desk_state_contributor,
         &mut fixtures_patch_contributor,
         &mut scene_objects_contributor,
@@ -234,6 +241,7 @@ pub fn apply_showfile_snapshot(
         &mut timecodes_timelines_contributor,
         &mut boards_contributor,
         &mut macros_contributor,
+        &mut park_contributor,
     ];
 
     // Deterministic phase barriers:
@@ -291,6 +299,8 @@ pub struct ShowfileApplyState<'w> {
     pub board_data_provider: ResMut<'w, DataProvider<Board>>,
     /// Macros.
     pub macro_data_provider: ResMut<'w, DataProvider<Macro>>,
+    /// Parked fixture parameters, absent in hosts without park.
+    pub parked: Option<ResMut<'w, ParkedParameters>>,
     /// DMX input routes.
     pub input_routes: ResMut<'w, InputRoutes>,
     /// DMX output routes.
@@ -344,6 +354,7 @@ pub fn initialize_showfile_resources(world: &mut World) {
     world.init_resource::<DataProvider<Timeline>>();
     world.init_resource::<DataProvider<Board>>();
     world.init_resource::<DataProvider<Macro>>();
+    world.init_resource::<ParkedParameters>();
     world.init_resource::<InputRoutes>();
     world.init_resource::<OutputRoutes>();
     world.init_resource::<DisabledRoutes>();

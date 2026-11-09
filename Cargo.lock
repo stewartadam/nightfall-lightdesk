@@ -287,6 +287,7 @@ dependencies = [
  "nightfall-output-artnet",
  "nightfall-output-sacn",
  "nightfall-output-usb",
+ "nightfall-park",
  "nightfall-programming",
  "nightfall-references",
  "nightfall-scene-objects",
@@ -5446,6 +5447,7 @@ dependencies = [
  "nightfall-fx",
  "nightfall-io",
  "nightfall-macros",
+ "nightfall-park",
  "nightfall-programming",
  "nightfall-references",
  "nightfall-scene-objects",
@@ -6108,6 +6110,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "nightfall-park"
+version = "0.1.0-alpha.5"
+dependencies = [
+ "bevy_app",
+ "bevy_ecs",
+ "moonshine-kind",
+ "nightfall",
+ "nightfall-actions",
+ "nightfall-cmd-parse",
+ "nightfall-compositor",
+ "nightfall-dmx",
+ "nightfall-engine",
+ "nightfall-fixture-model",
+ "nightfall-fixtures",
+ "nightfall-programming",
+ "nightfall-selection-runtime",
+ "nightfall-undo",
+ "nightfall-workspace-hack",
+ "serde",
+ "serde_json",
+ "tracing",
+ "typeshare",
+ "uuid",
+]
+
+[[package]]
 name = "nightfall-playback-planner"
 version = "0.1.0-alpha.5"
 dependencies = [
@@ -6248,6 +6276,7 @@ dependencies = [
  "nightfall-input-midi",
  "nightfall-input-osc",
  "nightfall-io",
+ "nightfall-park",
  "nightfall-scene-objects",
  "nightfall-selection",
  "nightfall-tempo",

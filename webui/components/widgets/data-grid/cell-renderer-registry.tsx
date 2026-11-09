@@ -512,6 +512,8 @@ function stateIndicatorFallbackText(indicator: GridCellStateIndicator): string {
     case "error":
     case "warning":
       return "!";
+    case "parked":
+      return "P";
   }
 }
 
@@ -534,6 +536,8 @@ function stateIndicatorDotClass(tone: GridCellStateIndicator["tone"]): string {
       return "bg-rose-400";
     case "warning":
       return "bg-amber-400";
+    case "parked":
+      return "bg-orange-400";
   }
 }
 
@@ -561,6 +565,8 @@ function stateIndicatorTagClass(tone: GridCellStateIndicator["tone"]): string {
       return "border border-rose-400/60 bg-rose-400/15 text-rose-200";
     case "warning":
       return "border border-amber-400/60 bg-amber-400/15 text-amber-200";
+    case "parked":
+      return "border border-orange-400/70 bg-orange-400/20 text-orange-200";
   }
 }
 

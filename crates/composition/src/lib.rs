@@ -32,6 +32,7 @@ use nightfall_flow::prelude::FlowPlugin;
 use nightfall_fx::prelude::FxPlugin;
 use nightfall_io::IoPlugin;
 use nightfall_macros::prelude::MacrosPlugin;
+use nightfall_park::prelude::ParkPlugin;
 use nightfall_programming::prelude::ProgrammingPlugin;
 use nightfall_references::ReferencesPlugin;
 use nightfall_scene_objects::prelude::SceneObjectPlugin;
@@ -93,17 +94,18 @@ impl PluginGroup for CorePlugins {
     }
 }
 
-/// The desk and the show data it operates: masters and faders, programmer, cues, boards and
-/// macros.
+/// The desk and the show data it operates: masters and faders, programmer, park, cues, boards
+/// and macros.
 pub struct DeskPlugins;
 
 impl PluginGroup for DeskPlugins {
-    /// Adds masters and faders first, then the programmer, cues, boards and macros. The
-    /// showfile requests and settings go with them.
+    /// Adds masters and faders first, then the programmer, park (which reads the programmer's
+    /// selection), cues, boards and macros. The showfile requests and settings go with them.
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
             .add(ControlsPlugin)
             .add(ProgrammingPlugin)
+            .add(ParkPlugin)
             .add(CuePlugin)
             .add(ShowfilePlugin)
             .add(BoardsPlugin)

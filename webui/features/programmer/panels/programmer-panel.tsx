@@ -52,6 +52,11 @@ import { getFixtureAttributeNames } from "../../../lib/fixture-attributes";
 import { anyLayerHasTransitioningAttribute } from "../../../lib/layer-transition-state";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import {
+  applyParkedIndicator,
+  buildParkedParameterLookup,
+  parkedEntriesForCell,
+} from "../../../lib/parked-parameters";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
@@ -63,6 +68,7 @@ import {
   fixtures,
   groups,
   layerStack,
+  parkedParameters,
   programmerSelection,
   programmerState,
   sequences,
@@ -107,6 +113,11 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
   const $cues = useShallowStore(cues);
   const $sequences = useShallowStore(sequences);
   const $groups = useSharedStore(groups);
+  const $parkedParameters = useStore(parkedParameters);
+  /** Indexes parked parameters so each value cell can find its parked entries. */
+  const parkedLookup = createMemo(() =>
+    buildParkedParameterLookup($parkedParameters()),
+  );
   const panelId = props.initialPanelId ?? props.id;
 
   // Track which fixtures are expanded (showing element rows)
@@ -506,6 +517,7 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
   const cellProvider = createMemo(() => {
     const selectionUids = new Set($programmerSelection());
     const layersArg = $layerStack();
+    const parked = parkedLookup();
     const activeInstancesData = Object.values($activeInstances());
     const isProgrammerLayer = (layer: LayerState): boolean => {
       if (
@@ -588,7 +600,18 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
         }
         const isConflicted = match && isParent && item.conflicts?.has(match[1]);
 
-        const cell = createARCell(colId, item.attributes);
+        const fixtureUid = item.type === "parent" ? item.uid : item.fixtureUid;
+        const elementIndex =
+          item.type === "element" ? item.elementIndex : undefined;
+        const attribute = match?.[1];
+        const parkedEntries =
+          attribute === undefined
+            ? []
+            : parkedEntriesForCell(parked, fixtureUid, elementIndex, attribute);
+        const cell = applyParkedIndicator(
+          createARCell(colId, item.attributes),
+          parkedEntries,
+        );
         if (isConflicted) {
           return applyElementBackground(
             applyAggregateConflictStyling(cell, true),
@@ -596,10 +619,6 @@ export default function ProgrammerPanel(props: ProgrammerPanelProps) {
           );
         }
 
-        const fixtureUid = item.type === "parent" ? item.uid : item.fixtureUid;
-        const elementIndex =
-          item.type === "element" ? item.elementIndex : undefined;
-        const attribute = match?.[1];
         const isTransitioning =
           attribute !== undefined &&
           anyLayerHasTransitioningAttribute(

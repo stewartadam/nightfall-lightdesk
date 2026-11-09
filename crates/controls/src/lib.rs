@@ -128,13 +128,13 @@ impl Plugin for ControlsPlugin {
                 .after(LayerGeneration)
                 .before(Compositing),
         );
-        // Inhibit masters cap intensity before virtual dimmers and relations scale the composited
-        // values.
+        // Inhibit masters cap intensity before parked values apply and before virtual dimmers and
+        // relations scale the composited values.
         app.add_systems(
             Render,
             masters::apply_master_inhibition
                 .in_set(VdimProcessing)
-                .before(nightfall_fixtures::VirtualIntensity),
+                .before(nightfall_fixtures::ParkedVirtualIntensity),
         );
 
         app.add_client_feed::<websocket::MastersFeed>()
