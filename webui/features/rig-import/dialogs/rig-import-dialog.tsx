@@ -299,10 +299,6 @@ export function RigImportDialog() {
             <p class="text-sm font-medium text-gray-300">
               Drop an .mvr file here or click to browse
             </p>
-            <p class="mt-1 text-xs text-gray-500">
-              Exported from Vectorworks, Capture, grandMA3 or another MVR tool.
-              The fixtures are added to the current show.
-            </p>
           </div>
         </Show>
 
@@ -598,7 +594,7 @@ export function RigImportDialog() {
               </Show>
 
               <Show when={hasScenery()}>
-                <section class="flex min-h-0 flex-col gap-2">
+                <section class="flex shrink-0 flex-col gap-2">
                   <h3 class="text-xs font-semibold uppercase text-gray-400">
                     Scenery
                   </h3>
@@ -656,7 +652,7 @@ export function RigImportDialog() {
                 </section>
               </Show>
 
-              <section class="flex min-h-0 flex-col gap-2">
+              <section class="flex shrink-0 flex-col gap-2">
                 <h3 class="text-xs font-semibold uppercase text-gray-400">
                   Fixtures
                 </h3>
@@ -734,7 +730,7 @@ export function RigImportDialog() {
             ? "Importing…"
             : (() => {
                 const current = preview();
-                return current ? importButtonLabel(current) : "Import";
+                return current ? importButtonLabel(current) : "Next";
               })()}
         </Button>
       </DialogFooter>
