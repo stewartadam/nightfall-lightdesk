@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::contracts::{SelectionDataSource, SelectionGroup};
 use crate::linear::SelectionResolver;
+use crate::subtraction::RemovedFixtures;
 use crate::validation::{
     MISSING_FIXTURE_REFERENCES_WARNING, push_missing_fixture_elements_warning,
 };
@@ -72,7 +73,8 @@ impl SelectionResolver<'_> {
                 buckets
             }
             SelectionExpr::Sub { lhs, rhs } => {
-                let remove = Self::resolve(rhs, data_source, visited_groups, warnings);
+                let remove =
+                    RemovedFixtures::new(Self::resolve(rhs, data_source, visited_groups, warnings));
                 Self::resolve_structure_buckets(lhs, data_source, visited_groups, warnings)
                     .into_iter()
                     .filter_map(|bucket| {
@@ -80,7 +82,7 @@ impl SelectionResolver<'_> {
                             .into_iter()
                             .flat_map(|item| match item {
                                 SelectionStructureItem::Fixture(fixture) => {
-                                    if remove.contains(&fixture) {
+                                    if remove.removes(&fixture) {
                                         Vec::new()
                                     } else {
                                         vec![SelectionStructureItem::Fixture(fixture)]
@@ -94,7 +96,7 @@ impl SelectionResolver<'_> {
                                         warnings,
                                     )
                                     .into_iter()
-                                    .filter(|fixture| !remove.contains(fixture))
+                                    .filter(|fixture| !remove.removes(fixture))
                                     .map(SelectionStructureItem::Fixture)
                                     .collect()
                                 }
@@ -537,14 +539,18 @@ impl SelectionResolver<'_> {
                 out
             }
             GroupRefExpr::Sub { lhs, rhs } => {
-                let remove =
-                    Self::resolve_group_ref_expr(rhs, data_source, visited_groups, warnings);
+                let remove = RemovedFixtures::new(Self::resolve_group_ref_expr(
+                    rhs,
+                    data_source,
+                    visited_groups,
+                    warnings,
+                ));
                 Self::resolve_group_ref_expr_spans(lhs, data_source, visited_groups, warnings)
                     .into_iter()
                     .filter_map(|span| {
                         let retained = span
                             .into_iter()
-                            .filter(|fixture| !remove.contains(fixture))
+                            .filter(|fixture| !remove.removes(fixture))
                             .collect::<Vec<_>>();
                         (!retained.is_empty()).then_some(retained)
                     })

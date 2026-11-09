@@ -552,6 +552,42 @@ fn plain_group_without_clauses_keeps_whole_fixture_refs() {
     assert_eq!(spans, vec![vec![fref(1)], vec![fref(2)], vec![fref(3)]]);
 }
 
+/// Subtracting a whole fixture from a group that expands fixtures into elements removes all
+/// of that fixture's elements, in both selection and group subtraction.
+#[test]
+fn subtracting_a_fixture_removes_its_elements_from_an_expanded_group() {
+    let provider = make_data_source_with_elements(1..=2, 2);
+    let mut groups = TestGroupProvider::default();
+    let _ = groups.add(make_group_with_clauses(
+        1,
+        1,
+        2,
+        vec![SpatialClause::Expand { depth: Some(1) }],
+    ));
+    let provider = provider.with_groups(&groups);
+    let element = |id: u32, index: u32| FixtureRef {
+        fixture_uid: Uuid::from_u128(id as u128),
+        index: Some(index),
+    };
+
+    let without_fixture = resolve_spans(
+        &SelectionExpr::Sub {
+            lhs: Box::new(SelectionExpr::Group(GroupRefExpr::ById(1))),
+            rhs: Box::new(fixture_expr(2)),
+        },
+        &provider,
+    );
+    assert_eq!(without_fixture, vec![vec![element(1, 1), element(1, 2)]]);
+
+    let flat = SelectionResolver::new(&provider)
+        .resolve_expr(&SelectionExpr::Sub {
+            lhs: Box::new(SelectionExpr::Group(GroupRefExpr::ById(1))),
+            rhs: Box::new(fixture_expr(1)),
+        })
+        .value;
+    assert_eq!(flat, vec![element(2, 1), element(2, 2)]);
+}
+
 /// Returns each span's fixture IDs.
 fn span_fixture_ids(spans: &[Vec<FixtureRef>]) -> Vec<Vec<u32>> {
     spans
