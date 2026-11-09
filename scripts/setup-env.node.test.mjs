@@ -7,10 +7,25 @@
  */
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { cp, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 import { nightfallTestDataDir } from "./nightfall-test-data-dir.mjs";
-import { buildEnvLines, PORT_BLOCK_SIZE, pickPortBlock } from "./setup-env.mjs";
+import { buildEnvLines, resolvePort } from "./setup-env.mjs";
+
+const scriptsDir = dirname(fileURLToPath(import.meta.url));
+/** setup-env.mjs and the local modules it imports. */
+const SETUP_ENV_FILES = [
+  "setup-env.mjs",
+  "nightfall-test-data-dir.mjs",
+  "playwright-path.mjs",
+  "showfile-storage.mjs",
+  "worktree-data-dir.mjs",
+];
 
 /**
  * Converts dotenv lines into a key-value map for assertions.
@@ -22,7 +37,7 @@ function envMapFromLines(lines) {
 /** Verifies inherited settings survive while generated worktree values win. */
 test("secondary worktree inherits dotenv text before applying overrides", () => {
   const seed =
-    '# Local settings\nNIGHTFALL_CARGO_COMMAND=mbx\nCUSTOM="hello # world"\nNIGHTFALL_PORT=3030\nPLAYWRIGHT_BROWSERS_PATH=/old\nNIGHTFALL_DATA_DIR=/main/data\nNIGHTFALL_OUTPUT_SACN_ENABLED=true\nNIGHTFALL_OUTPUT_ARTNET=true\nNIGHTFALL_INPUT_SACN_ENABLED=true\nNIGHTFALL_INPUT_ARTNET=true\n';
+    '# Local settings\nMY_SETTING=kept\nCUSTOM="hello # world"\nNIGHTFALL_PORT=3030\nPLAYWRIGHT_BROWSERS_PATH=/old\nNIGHTFALL_DATA_DIR=/main/data\nNIGHTFALL_OUTPUT_SACN_ENABLED=true\nNIGHTFALL_OUTPUT_ARTNET=true\nNIGHTFALL_INPUT_SACN_ENABLED=true\nNIGHTFALL_INPUT_ARTNET=true\n';
   const projectRoot = "/repo/branch";
   const lines = buildEnvLines({
     port: 3674,
@@ -32,7 +47,7 @@ test("secondary worktree inherits dotenv text before applying overrides", () => 
   });
   const env = envMapFromLines(lines);
   assert.deepEqual(lines.slice(0, 3), seed.split("\n").slice(0, 3));
-  assert.equal(env.NIGHTFALL_CARGO_COMMAND, "mbx");
+  assert.equal(env.MY_SETTING, "kept");
   assert.equal(env.CUSTOM, "hello # world");
   assert.equal(env.NIGHTFALL_PORT, "3674");
   assert.notEqual(env.PLAYWRIGHT_BROWSERS_PATH, "/old");
@@ -54,10 +69,10 @@ test("main worktree preserves existing custom settings", () => {
       port: 3030,
       projectRoot: "/repo/main",
       mainWorktree: "/repo/main",
-      seed: "NIGHTFALL_CARGO_COMMAND=mbx\nNIGHTFALL_OUTPUT_ARTNET=true\n",
+      seed: "MY_SETTING=kept\nNIGHTFALL_OUTPUT_ARTNET=true\n",
     }),
   );
-  assert.equal(env.NIGHTFALL_CARGO_COMMAND, "mbx");
+  assert.equal(env.MY_SETTING, "kept");
   assert.equal(env.NIGHTFALL_OUTPUT_ARTNET, "true");
 });
 
@@ -128,37 +143,88 @@ test("overridden keys are replaced instead of duplicated", () => {
 });
 
 /**
- * Verifies new worktrees get an aligned port block that stays clear of every
- * port block other worktrees own, including older unaligned ports.
+ * Verifies an explicit --port wins, a checkout otherwise keeps its own port or
+ * falls back to 3030, and malformed --port values are rejected rather than
+ * silently replaced.
  */
-test("port blocks are aligned and avoid other worktrees", () => {
-  assert.equal(
-    pickPortBlock([], () => 0),
-    3000,
-  );
-  assert.equal(
-    pickPortBlock([], () => 0.999),
-    3990,
-  );
-  assert.equal(
-    pickPortBlock([3000], () => 0),
-    3010,
-  );
-  // Legacy 3005 owns 3005-3014, so both 3000 and 3010 are taken.
-  assert.equal(
-    pickPortBlock([3005], () => 0),
-    3020,
-  );
-  for (let i = 0; i < 200; i += 1) {
-    const base = pickPortBlock([3030, 3517, 3988]);
-    assert.equal(base % PORT_BLOCK_SIZE, 0);
-    for (const taken of [3030, 3517, 3988]) {
-      assert.ok(
-        base + PORT_BLOCK_SIZE <= taken || taken + PORT_BLOCK_SIZE <= base,
-        `${base} overlaps ${taken}`,
-      );
-    }
+test("port comes from --port, then the checkout's own .env, then 3030", () => {
+  assert.equal(resolvePort(["--port=3640"], "5172"), 3640);
+  assert.equal(resolvePort([], "5172"), 5172);
+  assert.equal(resolvePort([], undefined), 3030);
+  assert.equal(resolvePort([], "not-a-port"), 3030);
+  for (const bad of ["--port=", "--port=abc", "--port=0", "--port=70000"]) {
+    assert.throws(() => resolvePort([bad], "5172"), /--port/, bad);
   }
-  const everyBlock = Array.from({ length: 100 }, (_, i) => 3000 + i * 10);
-  assert.throws(() => pickPortBlock(everyBlock), /set NIGHTFALL_PORT/);
+});
+
+/**
+ * Verifies a secondary worktree without --port is refused instead of falling
+ * back to the default port another checkout may already use.
+ */
+test("secondary worktree requires --port", () => {
+  assert.throws(
+    () => resolvePort([], undefined, { secondary: true }),
+    /wt hook pre-start setup-env/,
+  );
+  assert.equal(resolvePort(["--port=3640"], "3030", { secondary: true }), 3640);
+});
+
+/**
+ * Runs setup-env in a throwaway repository with another checkout's port
+ * exported, and verifies the generated .env uses the --port value (or the
+ * default for a fresh primary checkout), never the inherited variable.
+ */
+test("inherited NIGHTFALL_PORT never reaches the generated .env", async (t) => {
+  // macOS's temporary directory sits behind the /var -> /private/var symlink;
+  // resolve it so Git's worktree paths match the paths used here.
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "nightfall-setup-env-")),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const main = join(root, "main");
+  const worktree = join(root, "worktree");
+  execFileSync("git", ["init", "-q", main]);
+  for (const file of SETUP_ENV_FILES) {
+    await cp(join(scriptsDir, file), join(main, "scripts", file));
+  }
+  execFileSync("git", ["-C", main, "add", "scripts"]);
+  execFileSync("git", [
+    "-C",
+    main,
+    "-c",
+    "user.name=t",
+    "-c",
+    "user.email=t@t",
+    "commit",
+    "-q",
+    "-m",
+    "init",
+  ]);
+  execFileSync("git", ["-C", main, "worktree", "add", "-q", worktree]);
+  const env = {
+    ...process.env,
+    NIGHTFALL_PORT: "5172",
+    NIGHTFALL_DATA_DIR: join(root, "data"),
+  };
+
+  /** Runs one checkout's copy of setup-env and returns the port it wrote. */
+  const runSetup = async (checkout, args) => {
+    execFileSync(
+      process.execPath,
+      [join(checkout, "scripts", "setup-env.mjs"), ...args],
+      { env, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    return parseEnv(await readFile(join(checkout, ".env"), "utf8"))
+      .NIGHTFALL_PORT;
+  };
+
+  assert.equal(await runSetup(main, []), "3030");
+  assert.equal(await runSetup(worktree, ["--port=3640"]), "3640");
+  assert.throws(() =>
+    execFileSync(
+      process.execPath,
+      [join(worktree, "scripts", "setup-env.mjs")],
+      { env, stdio: ["ignore", "pipe", "pipe"] },
+    ),
+  );
 });

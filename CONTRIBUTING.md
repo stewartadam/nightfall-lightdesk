@@ -167,7 +167,7 @@ Production web and Tauri builds generate dependency notices with the pinned
 See [distribution notices](docs/internal/src/contributing/distribution-notices.md)
 for packaging and dependency-update requirements.
 
-Run `pnpm run setup:tools` first if you have not already installed the generator. `setup-env.mjs` creates the ignored `.env`; it chooses a backend port and configures the shared Playwright browser location. It overwrites that file, so run it once for a new checkout rather than over an environment you have customized.
+Run `pnpm run setup:tools` first if you have not already installed the generator. `setup-env.mjs` creates the ignored `.env`; it keeps the backend port the checkout's `.env` already has (3030 for a new clone, or `--port=<n>` to choose one) and configures the shared Playwright browser location. It overwrites that file, so run it once for a new checkout rather than over an environment you have customized.
 
 If you use [kache](https://github.com/kunobi-ninja/kache) as your `rustc` wrapper on macOS, set `cache_executables = false` under `[cache]` in `~/.config/kache/config.toml`. Each time kache stores a binary or test harness it runs `dsymutil`, which takes ~20s for each app-runtime executable, while relinking them on a cache hit takes a few seconds.
 
@@ -389,40 +389,27 @@ pnpm run dashboard:ui
 The dashboard page is served at `/worktree-dashboard.html` and calls the API via Vite proxy (`/worktree-api`).
 The API refuses requests whose `Host` isn't this machine or whose `Origin` isn't a
 loopback address, so other web pages can't drive it. To open the dashboard page from
-another address, such as another device on your LAN, list that origin in the
-dashboard's `.env`:
+another address, such as another device on your LAN, list that origin when you
+start the dashboard:
 
 ```sh
-NIGHTFALL_WORKTREE_DASHBOARD_ALLOWED_ORIGINS=http://192.168.1.20:3031
+NIGHTFALL_WORKTREE_DASHBOARD_ALLOWED_ORIGINS=http://192.168.1.20:3031 pnpm run dashboard
 ```
 The API discovers all worktrees from `git worktree list`, reads each `.env` (`NIGHTFALL_PORT`), and provides launch/recycle controls plus direct links to each Web UI.
 The `docs-user` service runs `mdbook serve docs` on `NIGHTFALL_PORT + 2` and the `docs-dev` service runs `mdbook serve docs/internal` on `NIGHTFALL_PORT + 3`, so each worktree previews its own copy of the user manual and the Developer Guide; both need `mdbook` on the dashboard's `PATH` (see [Building the documentation](#building-the-documentation)).
 
-To run the backend and Art-Net/sACN sender examples through a Cargo wrapper such
-as Mr Boxington, set `NIGHTFALL_CARGO_COMMAND=mbx` in the target worktree's `.env`.
-Each service launch reads that worktree's settings, including variable expansion,
-and applies them over the environment inherited when the dashboard started.
-An exported value provides a fallback for worktrees that do not configure it:
-
-```sh
-NIGHTFALL_CARGO_COMMAND=mbx pnpm run dashboard
-```
-
-The default is `cargo` (`cargo.exe` on Windows). The value must be one executable
-name on the dashboard's `PATH`, or an absolute executable path, without arguments
-or shell syntax. For example, `mbx` launches the backend with `mbx run`. Start and
-recycle use the same configured command, which is included in service logs;
-a missing executable produces a process error without falling back to Cargo.
-Start or recycle the worktree service after changing its `.env`; restarting the
-dashboard is unnecessary. The dashboard loads its own host and port settings from
-its startup directory's `.env`, but does not pass those dotenv values to other
-worktrees. UI and WASM builds still launch through pnpm with their worktree's
-environment.
+Each service launch reads that worktree's `.env`, including variable expansion,
+and applies it over the environment the dashboard was started with. Start or
+recycle the worktree service after changing its `.env`; restarting the dashboard
+is unnecessary. The dashboard doesn't load its own checkout's `.env` into its
+environment, so that checkout's settings never leak into other worktrees'
+services or into the `wt` commands it runs. Set dashboard options such as
+`NIGHTFALL_WORKTREE_DASHBOARD_PORT` in the shell that starts it.
 
 New worktrees seed their `.env` from the primary worktree's `.env`, preserving
-its settings and comments. Setup then appends the generated port (a random
-block of 10 ports between 3000 and 3999 that no other worktree's `.env` uses,
-so backend, web UI and docs ports never collide across worktrees) and shared
+its settings and comments. Setup then appends the generated port (a block of 10
+ports between 3000 and 3999 that no other worktree's `.env` uses, so backend,
+web UI and docs ports never collide across worktrees) and shared
 Playwright browser path, plus the isolated data directory and disabled network
 input/output settings for secondary worktrees. These generated values override
 the inherited settings. If the primary `.env` is missing, setup uses only the

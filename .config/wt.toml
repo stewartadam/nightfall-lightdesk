@@ -3,7 +3,7 @@ done = "node {{ worktree_path }}/scripts/worktree-done.mjs {{ args }}"
 service = "node {{ worktree_path }}/worktree-dashboard/worktree-service.mjs --worktree={{ worktree_path }} {{ args }}"
 
 [[pre-start]]
-setup-env = "node ./scripts/setup-env.mjs"
+setup-env = "port=$(node ./scripts/allocate-worktree-port.mjs) && node ./scripts/setup-env.mjs --port=\"$port\""
 
 [[pre-start]]
 install = "pnpm install"

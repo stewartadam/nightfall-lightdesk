@@ -14,7 +14,6 @@ import http from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { loadEnvFile } from "node:process";
 import { parseEnv } from "node:util";
 import { expand } from "dotenv-expand";
 import { SERVICE_SELECTORS } from "./dashboard-client.mjs";
@@ -22,15 +21,6 @@ import { createRequestGuard, parseAllowedOrigins } from "./request-guard.mjs";
 import { createStateStream } from "./state-stream.mjs";
 import { createWorktree } from "./worktree-create.mjs";
 import { removeWorktree } from "./worktree-remove.mjs";
-
-// Preserve launcher settings without inheriting the dashboard's dotenv file.
-const SERVICE_BASE_ENV = { ...process.env };
-
-try {
-  loadEnvFile();
-} catch (error) {
-  if (error.code !== "ENOENT") throw error;
-}
 
 const DASHBOARD_PORT = Number.parseInt(
   process.env.NIGHTFALL_WORKTREE_DASHBOARD_PORT ?? "4780",
@@ -190,15 +180,16 @@ export function servicePortFromEnv(service, env) {
 
 /**
  * Builds a service's command line from the same environment used by the
- * child: Cargo services honor NIGHTFALL_CARGO_COMMAND, and services whose
- * arguments depend on the worktree (such as the docs ports) resolve them here.
+ * child: services whose arguments depend on the worktree (such as the docs
+ * ports) resolve them here.
  */
 export function commandForService(service, env) {
   const definition = SERVICE_DEFINITIONS[service];
   if (definition) {
     const command = definition.cargo
-      ? env.NIGHTFALL_CARGO_COMMAND?.trim() ||
-        (process.platform === "win32" ? "cargo.exe" : "cargo")
+      ? process.platform === "win32"
+        ? "cargo.exe"
+        : "cargo"
       : definition.command;
     const args =
       typeof definition.args === "function"
@@ -274,7 +265,7 @@ export function processEnvForService(
   worktreeEnv = {},
   options = {},
 ) {
-  const nextEnv = { ...SERVICE_BASE_ENV, ...worktreeEnv };
+  const nextEnv = { ...process.env, ...worktreeEnv };
   const isBackend = service === "backend";
   const isRootWorktree = isDashboardRootWorktree(worktreePath);
 
@@ -554,7 +545,11 @@ function waitForServiceExit(worktreePath, service, timeoutMs = 5000) {
   });
 }
 
-/** Parses and expands worktree settings without importing dashboard dotenv values. */
+/**
+ * Parses a worktree's `.env` and expands `${VAR}` references against the
+ * dashboard's own environment, so a value such as `PATH="/extra:${PATH}"`
+ * extends the inherited value instead of referring to itself.
+ */
 export async function readEnvMap(worktreePath) {
   const envPath = join(worktreePath, ".env");
   if (!existsSync(envPath)) {
@@ -562,13 +557,13 @@ export async function readEnvMap(worktreePath) {
   }
 
   const values = parseEnv(await readFile(envPath, "utf8"));
-  const expansionEnv = { ...SERVICE_BASE_ENV, ...values };
+  const expansionEnv = { ...process.env, ...values };
   let resultKey = "__NIGHTFALL_EXPANSION_RESULT__";
   while (Object.hasOwn(expansionEnv, resultKey)) resultKey += "_";
   for (const [key, value] of Object.entries(values)) {
     const scope = { ...expansionEnv };
-    if (Object.hasOwn(SERVICE_BASE_ENV, key)) {
-      scope[key] = SERVICE_BASE_ENV[key];
+    if (Object.hasOwn(process.env, key)) {
+      scope[key] = process.env[key];
     } else {
       delete scope[key];
     }
@@ -1269,11 +1264,13 @@ function textResponse(res, statusCode, text) {
   res.end(text);
 }
 
-function dashboardApiInfo() {
-  const backendPortRaw = Number.parseInt(
-    process.env.NIGHTFALL_PORT ?? "3030",
-    10,
-  );
+/**
+ * Describes the API and suggests the dashboard page URL, served by the web UI
+ * of the checkout running the dashboard, whose port comes from its `.env`.
+ */
+async function dashboardApiInfo() {
+  const { values } = await readEnvMap(DASHBOARD_ROOT);
+  const backendPortRaw = Number.parseInt(values.NIGHTFALL_PORT ?? "3030", 10);
   const backendPort = Number.isFinite(backendPortRaw) ? backendPortRaw : 3030;
   const uiPort = backendPort + 1;
   const suggestedUiUrl = `http://localhost:${uiPort}/worktree-dashboard.html`;
@@ -1494,7 +1491,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
 
     if (method === "GET" && url.pathname === "/") {
-      textResponse(res, 200, dashboardApiInfo());
+      textResponse(res, 200, await dashboardApiInfo());
       return;
     }
 
@@ -1557,7 +1554,7 @@ const server = http.createServer(async (req, res) => {
         textResponse(
           res,
           400,
-          "Worktree is missing .env; run node scripts/setup-env.mjs in that worktree before managing services",
+          "Worktree is missing .env; run wt hook pre-start setup-env in that worktree before managing services",
         );
         return;
       }

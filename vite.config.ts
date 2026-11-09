@@ -149,8 +149,11 @@ function proxiedUrls(
   const env = loadEnv(mode, resolve(projectRoot), ["NIGHTFALL_"]);
   const backendPort =
     process.env.NIGHTFALL_PORT || env.NIGHTFALL_PORT || "3030";
-  const dashboardHost = env.NIGHTFALL_WORKTREE_DASHBOARD_HOST || "127.0.0.1";
-  const dashboardPort = env.NIGHTFALL_WORKTREE_DASHBOARD_PORT || "4780";
+  // The dashboard API reads its address only from the shell that starts it, so
+  // the proxy does the same instead of reading it from `.env`.
+  const dashboardHost =
+    process.env.NIGHTFALL_WORKTREE_DASHBOARD_HOST || "127.0.0.1";
+  const dashboardPort = process.env.NIGHTFALL_WORKTREE_DASHBOARD_PORT || "4780";
   const sharedPlaywrightServer =
     process.env.NIGHTFALL_PLAYWRIGHT_SHARED_VITE === "1";
 

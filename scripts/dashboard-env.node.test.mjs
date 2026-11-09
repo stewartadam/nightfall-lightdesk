@@ -28,18 +28,17 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
   t.after(() => rm(cwd, { recursive: true, force: true }));
   await writeFile(
     join(cwd, ".env"),
-    "NIGHTFALL_PORT=5172\nNIGHTFALL_CARGO_COMMAND=dashboard-cargo\nNIGHTFALL_DATA_DIR=/dashboard/data\nNIGHTFALL_STARTUP_CMDS=fps 30\nDASHBOARD_ONLY_SETTING=private\n",
+    "NIGHTFALL_PORT=5172\nNIGHTFALL_DATA_DIR=/dashboard/data\nNIGHTFALL_STARTUP_CMDS=fps 30\nDASHBOARD_ONLY_SETTING=private\n",
   );
   await mkdir(join(cwd, "worktree"));
   await writeFile(
     join(cwd, "worktree", ".env"),
     // biome-ignore lint/suspicious/noTemplateCurlyInString: These substitutions belong to the dotenv fixture.
-    'NIGHTFALL_PORT=3079 # local backend\nNIGHTFALL_CARGO_COMMAND="${HOME}/bin/worktree-cargo"\nNIGHTFALL_DATA_DIR="${WORKTREE_DATA_ROOT}/data #1"\nWORKTREE_DATA_ROOT="${HOME}/worktree"\nPATH="/extra:${PATH}"\nNIGHTFALL_STARTUP_CMDS="fps 10" # startup\nNIGHTFALL_SAMPLE_DATA=0\n',
+    'NIGHTFALL_PORT=3079 # local backend\nNIGHTFALL_DATA_DIR="${WORKTREE_DATA_ROOT}/data #1"\nWORKTREE_DATA_ROOT="${HOME}/worktree"\nPATH="/extra:${PATH}"\nNIGHTFALL_STARTUP_CMDS="fps 10" # startup\nNIGHTFALL_SAMPLE_DATA=0\n',
   );
   const env = { ...process.env, NIGHTFALL_WORKTREE_DASHBOARD_PORT: "0" };
   for (const key of [
     "NIGHTFALL_PORT",
-    "NIGHTFALL_CARGO_COMMAND",
     "NIGHTFALL_DATA_DIR",
     "NIGHTFALL_STARTUP_CMDS",
     "DASHBOARD_ONLY_SETTING",
@@ -49,12 +48,10 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
   const script = `
     import assert from "node:assert/strict";
     const launcherPort = process.env.NIGHTFALL_PORT;
-    const launcherCargo = process.env.NIGHTFALL_CARGO_COMMAND;
     const { processEnvForService, readEnvMap, commandForService, servicePortFromEnv } = await import(${JSON.stringify(dashboardUrl)});
     const { values: target } = await readEnvMap(cwd + "/worktree");
     assert.deepEqual({ ...target }, {
       NIGHTFALL_PORT: "3079",
-      NIGHTFALL_CARGO_COMMAND: process.env.HOME + "/bin/worktree-cargo",
       NIGHTFALL_DATA_DIR: process.env.HOME + "/worktree/data #1",
       NIGHTFALL_STARTUP_CMDS: "fps 10",
       NIGHTFALL_SAMPLE_DATA: "0",
@@ -69,7 +66,7 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
       assert.equal(childEnv.PATH, "/extra:" + process.env.PATH);
       const command = commandForService(service, childEnv);
       if (["backend", "artnet-sender", "sacn-sender"].includes(service)) {
-        assert.equal(command.command, target.NIGHTFALL_CARGO_COMMAND);
+        assert.equal(command.command, process.platform === "win32" ? "cargo.exe" : "cargo");
         assert.equal(command.label, command.command + " " + command.args.join(" "));
       } else if (service in books) {
         const [bookDir, offset] = books[service];
@@ -92,11 +89,6 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
     assert.equal(defaults.NIGHTFALL_PORT, launcherPort);
     assert.equal(defaults.NIGHTFALL_DATA_DIR, undefined);
     assert.equal(defaults.NIGHTFALL_STARTUP_CMDS, "fps 5");
-    const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
-    assert.equal(commandForService("backend", defaults).command, launcherCargo || cargo);
-    assert.equal(commandForService("backend", { NIGHTFALL_CARGO_COMMAND: " " }).command, cargo);
-    const other = processEnvForService("backend", cwd + "/other", { NIGHTFALL_CARGO_COMMAND: "other-cargo" });
-    assert.equal(commandForService("backend", other).command, "other-cargo");
     const sample = processEnvForService("backend", cwd + "/worktree", target, { sampleData: true });
     assert.equal(sample.NIGHTFALL_SAMPLE_DATA, "1");
     const root = processEnvForService("backend", cwd, target);
@@ -119,39 +111,35 @@ test("services use worktree dotenv beneath explicit lifecycle overrides", async 
         ...env,
         HOME: cwd,
         NIGHTFALL_PORT: "9000",
-        NIGHTFALL_CARGO_COMMAND: "launcher-cargo",
       },
     },
   );
 });
 
-/** Verifies dashboard startup loads optional dotenv settings beneath shell overrides. */
-test("dashboard loads startup dotenv and respects exported settings", async (t) => {
+/**
+ * Verifies the dashboard keeps its own checkout's .env out of its environment,
+ * so the `wt` commands and services it spawns can't inherit that checkout's
+ * port, while settings exported by the launching shell still apply.
+ */
+test("dashboard does not load its startup dotenv into its environment", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "nightfall-dashboard-env-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   const env = { ...process.env, NIGHTFALL_WORKTREE_DASHBOARD_PORT: "0" };
-  delete env.NIGHTFALL_CARGO_COMMAND;
-  const script = `await import(${JSON.stringify(dashboardUrl)}); process.stdout.write(JSON.stringify({ command: process.env.NIGHTFALL_CARGO_COMMAND ?? null })); process.exit(0);`;
+  delete env.NIGHTFALL_PORT;
+  await writeFile(join(cwd, ".env"), "NIGHTFALL_PORT=5172\n");
+  const script = `await import(${JSON.stringify(dashboardUrl)}); process.stdout.write(JSON.stringify({ port: process.env.NIGHTFALL_PORT ?? null })); process.exit(0);`;
 
-  const missing = await execFileAsync(
+  const clean = await execFileAsync(
     process.execPath,
     ["--input-type=module", "-e", script],
     { cwd, env },
   );
-  assert.equal(JSON.parse(missing.stdout).command, null);
+  assert.equal(JSON.parse(clean.stdout).port, null);
 
-  await writeFile(join(cwd, ".env"), "NIGHTFALL_CARGO_COMMAND=mbx\n");
-  const loaded = await execFileAsync(
+  const exported = await execFileAsync(
     process.execPath,
     ["--input-type=module", "-e", script],
-    { cwd, env },
+    { cwd, env: { ...env, NIGHTFALL_PORT: "9000" } },
   );
-  assert.equal(JSON.parse(loaded.stdout).command, "mbx");
-
-  const overridden = await execFileAsync(
-    process.execPath,
-    ["--input-type=module", "-e", script],
-    { cwd, env: { ...env, NIGHTFALL_CARGO_COMMAND: "custom-cargo" } },
-  );
-  assert.equal(JSON.parse(overridden.stdout).command, "custom-cargo");
+  assert.equal(JSON.parse(exported.stdout).port, "9000");
 });
