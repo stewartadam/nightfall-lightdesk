@@ -7,19 +7,31 @@
  */
 
 import { EraserIcon } from "@squidlab/phosphor-solid/eraser";
+import { LockIcon } from "@squidlab/phosphor-solid/lock";
+import { LockOpenIcon } from "@squidlab/phosphor-solid/lock-open";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import type { ContextMenuEntry } from "../../../components/widgets/context-menu/contract";
 import {
   type HeaderCellView,
   selectedClipboardCells,
 } from "../../../components/widgets/data-grid";
-import { getAttributeMetadata } from "../../../lib/attribute-metadata";
+import { commandAttributeForName } from "../../../lib/attribute-metadata";
 import type {
   GridColumn,
   GridSelection,
   Item,
 } from "../../../lib/data-grid-types";
 import { commandClient } from "../../../lib/engine-commands";
+import {
+  type ParkedParameterLookup,
+  parkCommandForRefs,
+  parkedEntriesForCell,
+  parkedParameterKeys,
+} from "../../../lib/parked-parameters";
+import {
+  resolvedSelectionExpr,
+  resolvedSpatialSelection,
+} from "../../../lib/resolved-selection";
 import * as types from "../../../types";
 import {
   type BlueprintApplicationScope,
@@ -32,6 +44,7 @@ interface ProgrammerGridCommandOptions {
   rows: () => readonly ProgrammerDisplayRow[];
   selection: () => GridSelection | undefined;
   blueprints: () => Record<string, types.Blueprint>;
+  parkedLookup: () => ParkedParameterLookup;
 }
 
 /** Creates the programmer grid's selection-scoped clear and context-menu commands. */
@@ -48,13 +61,6 @@ export function createProgrammerGridCommands(
   const attributeForColumnIndex = (columnIndex: number) =>
     attributeForColumnId(options.columns()[columnIndex]?.id);
 
-  /** Converts a displayed attribute name into the command model attribute shape. */
-  const commandAttributeForName = (attribute: string): types.Attribute =>
-    getAttributeMetadata(attribute)?.attribute ?? {
-      type: "Custom",
-      data: { label: attribute },
-    };
-
   /** Converts a displayed programmer row into a resolved fixture reference. */
   const fixtureRefForRow = (row: ProgrammerDisplayRow): types.FixtureRef => {
     if (row.type === "element") {
@@ -65,30 +71,6 @@ export function createProgrammerGridCommands(
     }
 
     return { fixture_uid: row.uid };
-  };
-
-  /** Builds a resolved selection expression for fixture refs, removing duplicates. */
-  const selectionExprForFixtureRefs = (
-    fixtureRefs: readonly types.FixtureRef[],
-  ): types.SelectionExpr | undefined => {
-    const seen = new Set<string>();
-    const refs: types.FixtureRef[] = [];
-    for (const ref of fixtureRefs) {
-      const key = `${ref.fixture_uid}:${ref.index ?? ""}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      refs.push(ref);
-    }
-
-    return refs.length > 0 ? { type: "Resolved", data: refs } : undefined;
-  };
-
-  /** Wraps resolved fixture refs in the spatial selection expected by attribute operations. */
-  const spatialSelectionForFixtureRefs = (
-    fixtureRefs: readonly types.FixtureRef[],
-  ): types.SpatialSelection | undefined => {
-    const source = selectionExprForFixtureRefs(fixtureRefs);
-    return source ? { source, clauses: [] } : undefined;
   };
 
   /** Applies one Blueprint independently to each fixture/attribute scope. */
@@ -350,7 +332,7 @@ export function createProgrammerGridCommands(
   const clearProgrammerRows = (
     fixtureRefs: readonly types.FixtureRef[],
   ): boolean => {
-    const selection = selectionExprForFixtureRefs(fixtureRefs);
+    const selection = resolvedSelectionExpr(fixtureRefs);
     if (!selection) return false;
     releaseProgrammerValues(selection, []);
     return true;
@@ -362,7 +344,7 @@ export function createProgrammerGridCommands(
     if (scopes.length === 0) return false;
 
     for (const { attributes, refs } of scopes) {
-      const scopedSelection = selectionExprForFixtureRefs(refs);
+      const scopedSelection = resolvedSelectionExpr(refs);
       if (scopedSelection) {
         releaseProgrammerValues(
           scopedSelection,
@@ -374,6 +356,68 @@ export function createProgrammerGridCommands(
     return true;
   };
 
+  /** Returns the parked entries behind the given body cells, once each. */
+  const parkedEntriesForCells = (
+    cells: readonly Item[],
+  ): types.ParkedParameter[] => {
+    const entries = new Set<types.ParkedParameter>();
+    for (const [col, rowIndex] of cells) {
+      const row = options.rows()[rowIndex];
+      const attribute = attributeForColumnIndex(col);
+      if (!row || !attribute) continue;
+      const ref = fixtureRefForRow(row);
+      for (const entry of parkedEntriesForCell(
+        options.parkedLookup(),
+        ref.fixture_uid,
+        ref.index,
+        attribute,
+      )) {
+        entries.add(entry);
+      }
+    }
+    return [...entries];
+  };
+
+  /** Builds Park and Unpark entries for the body cells under a context-menu gesture. */
+  const parkMenuEntries = (cells: readonly Item[]): ContextMenuEntry[] => {
+    const parkCommands = attributeScopesForCells(cells).flatMap(
+      ({ attributes, refs }) => {
+        const command = parkCommandForRefs(refs, attributes);
+        return command ? [command] : [];
+      },
+    );
+    const parked = parkedEntriesForCells(cells);
+    const entries: ContextMenuEntry[] = [];
+    if (parkCommands.length > 0) {
+      entries.push({
+        id: "park-cells",
+        label: cells.length === 1 ? "Park" : "Park selected values",
+        icon: LockIcon,
+        onSelect: () => {
+          for (const command of parkCommands) {
+            commandClient.emit("ParkCommand", command);
+          }
+        },
+      });
+    }
+    if (parked.length > 0) {
+      entries.push({
+        id: "unpark-cells",
+        label: cells.length === 1 ? "Unpark" : "Unpark selected values",
+        icon: LockOpenIcon,
+        onSelect: () => {
+          commandClient.emit("ParkCommand", {
+            type: "UnparkParameters",
+            data: parkedParameterKeys(parked),
+          });
+        },
+      });
+    }
+    return entries.length > 0
+      ? [...entries, { type: "separator" as const, id: "park-separator" }]
+      : [];
+  };
+
   /** Opens the selected-row context menu from a programmer body cell. */
   const onCellContextMenu = (cell: Item, event: MouseEvent) => {
     event.preventDefault();
@@ -382,7 +426,7 @@ export function createProgrammerGridCommands(
     const attributes = attributesForContextCell(cell);
     const blueprintScopes = attributeScopesForCells(contextCells).flatMap(
       ({ attributes: scopedAttributes, refs }) => {
-        const selection = spatialSelectionForFixtureRefs(refs);
+        const selection = resolvedSpatialSelection(refs);
         return selection
           ? [
               {
@@ -409,6 +453,7 @@ export function createProgrammerGridCommands(
               },
             ]
           : []),
+        ...parkMenuEntries(contextCells),
         ...(attributes.length > 0
           ? [
               {

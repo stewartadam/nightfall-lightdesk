@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { LayoutIcon } from "@squidlab/phosphor-solid/layout";
+import { LockIcon } from "@squidlab/phosphor-solid/lock";
 import { LockOpenIcon } from "@squidlab/phosphor-solid/lock-open";
 import type { Setter } from "solid-js";
 import {
@@ -28,6 +29,7 @@ import { commandClient } from "../../../lib/engine-commands";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import {
   type ParkedParameterLookup,
+  parkCommandForRefs,
   parkedEntriesForCell,
   parkedParameterKeys,
 } from "../../../lib/parked-parameters";
@@ -185,7 +187,7 @@ export function createFixturesGridController(
     }
   };
 
-  /** Opens right-click affordances for asserting-layer navigation and unparking. */
+  /** Opens right-click affordances for asserting-layer navigation, parking and unparking. */
   const onCellContextMenu = (cell: Item, event: MouseEvent) => {
     const [col, row] = cell;
     const rowData = options.rows()[row];
@@ -223,6 +225,24 @@ export function createFixturesGridController(
           navigateToAssertingLayerForCell(rowData, attribute, channelKind),
       },
     ];
+    const parkCommand = parkCommandForRefs(
+      [{ fixture_uid: fixtureUid, index: elementIndex }],
+      [attribute],
+    );
+    const partlyParked =
+      rowData.type === "parent" &&
+      rowData.hasElements &&
+      parkedEntries.length > 0;
+    if (parkCommand && (parkedEntries.length === 0 || partlyParked)) {
+      items.push({
+        id: "park-parameter",
+        label: partlyParked ? "Park all elements" : "Park",
+        icon: LockIcon,
+        onSelect: () => {
+          commandClient.emit("ParkCommand", parkCommand);
+        },
+      });
+    }
     if (parkedEntries.length > 0) {
       items.push({
         id: "unpark-parameter",

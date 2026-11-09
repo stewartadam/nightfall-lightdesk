@@ -7,7 +7,7 @@
  */
 
 import type { Accessor } from "solid-js";
-import { getAttributeMetadata } from "../../../lib/attribute-metadata";
+import { commandAttributeForName } from "../../../lib/attribute-metadata";
 import {
   ClipboardUnavailableError,
   readClipboardText,
@@ -121,10 +121,7 @@ export function createStepFxEditorEditController(
   /** Adds and selects a lane for a newly chosen fixture attribute. */
   const addLane = (name: string): void => {
     mutate((next) => {
-      const attribute = getAttributeMetadata(name)?.attribute ?? {
-        type: "Custom" as const,
-        data: { label: name },
-      };
+      const attribute = commandAttributeForName(name);
       next.lanes.push(createDefaultStepFxLane(attribute));
       selectTrack(next.lanes.length - 1, "absolute");
     });

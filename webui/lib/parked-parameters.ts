@@ -7,7 +7,9 @@
  */
 
 import type * as types from "../types";
+import { commandAttributeForName } from "./attribute-metadata";
 import type { GridCell, GridCellStateIndicator } from "./data-grid-types";
+import { resolvedSpatialSelection } from "./resolved-selection";
 import { normalizeAttributeName } from "./utils";
 
 /**
@@ -133,6 +135,24 @@ export function parkedEntriesForCell(
     elementKey(fixtureUid, elementIndex, attribute),
   );
   return entry ? [entry] : [];
+}
+
+/**
+ * Builds the command that parks the named attributes of these fixtures or fixture elements at the
+ * value each one outputs right now. A fixture ref parks every element, and `Intensity` parks a
+ * virtual intensity where the element has no dimmer. Returns `undefined` when there is nothing to
+ * park.
+ */
+export function parkCommandForRefs(
+  refs: readonly types.FixtureRef[],
+  attributes: readonly string[],
+): types.ParkCommand | undefined {
+  const selection = resolvedSpatialSelection(refs);
+  if (attributes.length === 0 || !selection) return undefined;
+  return {
+    type: "Park",
+    data: { selection, attributes: attributes.map(commandAttributeForName) },
+  };
 }
 
 /** Returns the keys that unpark exactly the given parked entries. */
