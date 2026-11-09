@@ -7,6 +7,7 @@
  */
 
 import { WrenchIcon } from "@squidlab/phosphor-solid/wrench";
+import { RENDER_PROPERTIES_CAPABILITY } from "../../../lib/panel-capabilities";
 import { definePanel } from "../../../lib/panel-module";
 
 export default definePanel({
@@ -17,6 +18,7 @@ export default definePanel({
   minHeight: 240,
   icon: WrenchIcon,
   loadComponent: () => import("./patch-panel"),
+  capabilities: [RENDER_PROPERTIES_CAPABILITY.id],
   showInPalette: true,
   singleton: "singleton",
 });

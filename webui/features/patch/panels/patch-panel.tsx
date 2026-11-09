@@ -34,8 +34,10 @@ import {
   routeValidationSettings,
 } from "../../../state/appStores";
 import { ROUTE_VALIDATION_SETTING } from "../../../state/settings-request";
+import { usePropertiesInspector } from "../../property-inspector";
 import PatchFixtureListTab from "../components/fixture-list-tab";
 import PatchFixturesTab from "../components/fixtures-tab";
+import OutputOffsetsProperties from "../components/output-offsets-properties";
 import DmxRoutesTab from "../components/routes-tab";
 import PatchUniversesTab from "../components/universes-tab";
 import { type PatchTab, patchPanelActiveTab } from "../model/patch-view";
@@ -98,6 +100,13 @@ export default function PatchPanel(props: PatchPanelProps) {
     createSignal<JSX.Element | null>(null);
   const { openSettings } = useAppShell();
   const { openWizard } = usePatchWizard();
+
+  usePropertiesInspector(
+    props.id,
+    "Patch",
+    () => <OutputOffsetsProperties selectedFixtureIds={selectedFixtureIds()} />,
+    { priority: 10, autoActivate: true },
+  );
 
   const canDeleteRoutes = () =>
     activeTab() === "routes" &&

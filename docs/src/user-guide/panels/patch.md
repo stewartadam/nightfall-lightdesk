@@ -10,6 +10,14 @@ Use the add-fixture wizard to select a library definition and mode, set quantity
 
 The **Fixtures** tab lists IDs, labels, make/model, mode, channel width, and 3D placement. Edit labels and placement cells here. Fixture IDs identify lights in commands; DMX addresses are separate. Multi-element fixtures can expose several controllable cells under one fixture ID.
 
+## Output offsets
+
+An output offset shifts what one fixture sends for an attribute, after cues, FX, the programmer and masters. Use it to line up a mover that is mounted slightly off, or to match a fixture's color to its neighbors without reprogramming cues.
+
+Select one fixture in the **Fixtures** tab, then open **Properties**. **Output offsets** lists each of the fixture's DMX attributes with its offset, in percent of the parameter's range, from -100% to 100%. Type a value or use the steppers; the offset applies as soon as you stop typing or press Enter. Attributes with an offset are highlighted, and the reset button sets one back to 0%. An offset applies to every element of the fixture that has the attribute, is saved with the show, and undoes like any other edit.
+
+From the command line, `store fixture 5 offset pan 2%` sets the same offset. Without `%`, the value is in the parameter's DMX units, for example `store fixture 5 offset pan 3`.
+
 ## Route DMX
 
 The **DMX Routes** tab lists every DMX route. Group by fixture or universe to inspect them, and check Source, Target, Priority, and Clone values. Resolve highlighted conflicts before outputting to hardware; overlapping addresses can make one command affect the wrong light.
