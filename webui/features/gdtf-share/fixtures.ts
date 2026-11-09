@@ -96,6 +96,18 @@ export async function installGdtfShareFixture(
 }
 
 /**
+ * Returns the GDTF Share web page of one revision, where its uploader's notes and the
+ * fixture's other revisions can be read.
+ */
+export function gdtfSharePageUrl(
+  fixture: Pick<GdtfShareFixture, "manufacturer" | "fixture" | "rid">,
+): string {
+  const manu = encodeURIComponent(fixture.manufacturer);
+  const fix = encodeURIComponent(fixture.fixture);
+  return `https://gdtf-share.com/share.php?page=home&manu=${manu}&fix=${fix}&rev=${fixture.rid}`;
+}
+
+/**
  * Returns the library entries of GDTF fixture type `typeId`, matched by the
  * `FixtureTypeID` both the library and GDTF Share report. No id matches nothing.
  */

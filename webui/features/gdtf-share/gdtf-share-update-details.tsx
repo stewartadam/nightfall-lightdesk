@@ -26,6 +26,7 @@ import type {
   GdtfShareFixture,
   GdtfShareUpdate,
 } from "../../types";
+import { gdtfSharePageUrl } from "./fixtures";
 import { formatDate, kilobytes } from "./format";
 import { installIntoLibrary, installOutcomeNote } from "./install";
 
@@ -108,6 +109,17 @@ export function GdtfShareUpdateDetails(props: GdtfShareUpdateDetailsProps) {
       <div>
         <span class="text-neutral-400">Newest:</span>{" "}
         {describeRevision(props.update.latest)}
+      </div>
+      <div>
+        <a
+          class="text-blue-300 underline"
+          href={gdtfSharePageUrl(props.update.latest)}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="gdtf-share-update-link"
+        >
+          See what changed on GDTF Share
+        </a>
       </div>
       <div>
         <span class="text-neutral-400">This file:</span>{" "}

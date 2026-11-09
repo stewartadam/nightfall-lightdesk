@@ -616,6 +616,10 @@ test("offers newer GDTF Share revisions of library fixtures", async ({
   const details = page.getByTestId("gdtf-share-update");
   await expect(details).toContainText("Newest: Release 2.0");
   await expect(details).toContainText("This file: Release 1.0");
+  await expect(details.getByTestId("gdtf-share-update-link")).toHaveAttribute(
+    "href",
+    "https://gdtf-share.com/share.php?page=home&manu=Nightfall%20Test&fix=E2E%20Wash&rev=105",
+  );
   await page.screenshot({
     path: testInfo.outputPath("11-update-properties.png"),
   });
