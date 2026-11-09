@@ -9,6 +9,8 @@
 //! Whether the open show's draft is still being saved, published to clients so they can keep a
 //! warning up and confirm before closing while saves fail.
 
+use std::sync::{Mutex, PoisonError};
+
 use bevy::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
@@ -54,6 +56,29 @@ pub(crate) fn record_draft_save_result(
     if status.error.as_ref() != error {
         status.error = error.cloned();
     }
+}
+
+/// Process-wide copy of the active world's draft save error, for hosts deciding whether to
+/// confirm a quit. Worlds are replaced on show switches, so hosts cannot hold the resource.
+static DRAFT_SAVE_FAILURE: Mutex<Option<String>> = Mutex::new(None);
+
+/// Returns why the open show's latest draft save failed, if it did.
+///
+/// Hosts whose window close or quit ends the backend, such as the desktop app, read it to
+/// confirm before the edits held only in memory are lost.
+pub fn draft_save_failure() -> Option<String> {
+    DRAFT_SAVE_FAILURE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+/// Copies the active world's draft save status to [`draft_save_failure`] whenever it changes,
+/// including when a newly built world starts with a clean status.
+pub(crate) fn mirror_draft_save_status(status: Res<DraftSaveStatus>) {
+    *DRAFT_SAVE_FAILURE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = status.error.clone();
 }
 
 /// Clears a recorded draft save failure after a full showfile save, which rewrites the working

@@ -262,6 +262,12 @@ pub(super) fn init_bevy_with_transport_policy(
             .after(ShowfileHandling)
             .run_if(resource_changed::<IoRuntimeSettings>),
     );
+    app.add_systems(
+        Update,
+        systems::showfile_events::mirror_draft_save_status
+            .after(ShowfileHandling)
+            .run_if(resource_changed::<systems::showfile_events::DraftSaveStatus>),
+    );
 
     app
 }

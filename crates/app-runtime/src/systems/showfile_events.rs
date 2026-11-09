@@ -85,6 +85,8 @@ use draft::{
 };
 pub use draft_status::DraftSaveStatus;
 use draft_status::clear_draft_save_failure;
+pub use draft_status::draft_save_failure;
+pub(crate) use draft_status::mirror_draft_save_status;
 pub(crate) use draft_status::record_draft_save_result;
 use feedback::*;
 pub(crate) use http_routes::register_showfile_http_routes;

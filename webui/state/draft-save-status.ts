@@ -8,6 +8,7 @@
 
 import { atom } from "nanostores";
 import { setStoreAction } from "../lib/nanostore-action";
+import { isTauriRuntime } from "../lib/tauri";
 import type * as types from "../types";
 import { pushToast } from "./notifications";
 
@@ -53,7 +54,11 @@ function confirmLeavingWithUnsavedDraft(event: BeforeUnloadEvent): void {
   event.returnValue = "";
 }
 
-/** Installs the leave-page confirmation for failed draft saves once for the page. */
+/**
+ * Installs the leave-page confirmation for failed draft saves once for the page. The desktop
+ * app confirms natively before quitting instead, since closing its window stops the backend.
+ */
 export function installDraftSaveCloseGuard(): void {
+  if (isTauriRuntime()) return;
   window.addEventListener("beforeunload", confirmLeavingWithUnsavedDraft);
 }
