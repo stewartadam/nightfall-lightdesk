@@ -14,7 +14,11 @@ import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
 import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
-import { deleteCue, sendCueUpdate } from "../../../lib/cue-service";
+import {
+  cueWithUnconfirmedEdit,
+  deleteCue,
+  sendCueUpdate,
+} from "../../../lib/cue-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import {
@@ -82,8 +86,13 @@ export function createCueListController(props: CueListControllerProps) {
     { priority: 10, autoActivate: true },
   );
 
-  /** Stores a cue label change while preserving cue identity and timing data. */
-  const updateCueLabel = (cue: Cue, label: string) => {
+  /**
+   * Stores a cue label change while preserving the rest of the cue, building on an edit another
+   * panel sent that the engine has not confirmed yet so the rename does not revert it.
+   */
+  const updateCueLabel = (storedCue: Cue, label: string) => {
+    const cue =
+      cueWithUnconfirmedEdit(storedCue.identifiers.uid, storedCue) ?? storedCue;
     if (label === cue.identifiers.label) return;
     sendCueUpdate({
       ...cue,

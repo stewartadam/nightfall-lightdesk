@@ -31,6 +31,7 @@ import {
   deleteSequence,
   sendCueUpdate,
   sendSequenceUpdate,
+  sequenceWithUnconfirmedEdit,
 } from "../../../lib/cue-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
@@ -160,8 +161,16 @@ export function createSequenceListController(
     { priority: 10, autoActivate: true },
   );
 
-  /** Stores a sequence label change without changing the sequence ID or UID. */
-  const updateSequenceLabel = (sequence: Sequence, label: string) => {
+  /**
+   * Stores a sequence label change without changing the sequence ID or UID, building on an edit
+   * another panel sent that the engine has not confirmed yet so the rename does not revert it.
+   */
+  const updateSequenceLabel = (storedSequence: Sequence, label: string) => {
+    const sequence =
+      sequenceWithUnconfirmedEdit(
+        storedSequence.identifiers.uid,
+        storedSequence,
+      ) ?? storedSequence;
     if (label === sequence.identifiers.label) return;
     sendSequenceUpdate({
       ...sequence,

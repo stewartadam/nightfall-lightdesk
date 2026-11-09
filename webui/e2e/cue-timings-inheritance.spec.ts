@@ -357,7 +357,7 @@ test("cue timings show inherited values and Delete clears overrides", async ({
       const cues = stores.cues.get();
       const existingCue = cues[baseCueUid];
       if (!existingCue) throw new Error("expected the owned base cue");
-      const cueUid = "95000100-0000-4000-8000-000000000000";
+      const cueUid = "95000100000040008000000000000000";
       const cueId = 950_001;
       const cue = {
         ...existingCue,
@@ -492,7 +492,7 @@ test("cue timings show inherited values and Delete clears overrides", async ({
           const transition =
             cue?.instructions?.[0]?.assertions?.transitions_by_attribute?.Red;
           return {
-            fadeInCleared: transition?.fade_in === undefined,
+            fadeInCleared: transition?.fade_in == null,
             fadeOutSecs: transition?.fade_out?.data?.secs,
           };
         }, context.cueUid),
@@ -2039,7 +2039,7 @@ test("cue timings badge varied whole-fixture parent rows within elements", async
         const cues = stores.cues.get();
         const existingCue = cues[baseCueUid];
         if (!existingCue) throw new Error("expected the owned base cue");
-        const cueUid = "92000100-0000-4000-8000-000000000000";
+        const cueUid = "92000100000040008000000000000000";
         const cueId = 920_001;
         const cue = {
           ...existingCue,

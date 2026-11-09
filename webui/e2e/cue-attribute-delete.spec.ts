@@ -1973,9 +1973,9 @@ test("cue editor overwrites tracked values with local assertions", async ({
       const originalSequence = JSON.parse(JSON.stringify(containingSequence));
       const targetCueId = 910_001;
       const priorCueId = targetCueId - 1;
-      const cueUid = "91000100-0000-4000-8000-000000000000";
-      const priorCueUid = "91000000-0000-4000-8000-000000000000";
-      const sequenceUid = "91000200-0000-4000-8000-000000000000";
+      const cueUid = "91000100000040008000000000000000";
+      const priorCueUid = "91000000000040008000000000000000";
+      const sequenceUid = "91000200000040008000000000000000";
       const selection = {
         source: {
           type: "Resolved",
@@ -2525,9 +2525,9 @@ test("cue editor toolbar toggles tracked values", async ({
       const originalSequence = JSON.parse(JSON.stringify(containingSequence));
       const targetCueId = 940_001;
       const priorCueId = targetCueId - 1;
-      const cueUid = "94000100-0000-4000-8000-000000000000";
-      const priorCueUid = "94000000-0000-4000-8000-000000000000";
-      const sequenceUid = "94000200-0000-4000-8000-000000000000";
+      const cueUid = "94000100000040008000000000000000";
+      const priorCueUid = "94000000000040008000000000000000";
+      const sequenceUid = "94000200000040008000000000000000";
 
       const selection = {
         source: {
