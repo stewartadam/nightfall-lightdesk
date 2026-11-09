@@ -740,6 +740,13 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   });
 
   useKeyboardShortcut({
+    key: "o",
+    handler: () => context.setShowSceneObjects(!context.showSceneObjects()),
+    description: "Toggle scene object visibility",
+    componentId: COMPONENT_ID,
+  });
+
+  useKeyboardShortcut({
     key: "b",
     handler: () => renderer()?.toggleBeams(),
     description: "Toggle volumetric beams",
@@ -1003,6 +1010,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     highlightSelectionEnabled: $highlightSelection,
     showEmitters: context.showEmitters,
     showGrid: context.showGrid,
+    showSceneObjects: context.showSceneObjects,
     showOrbitTargetIndicator: $showOrbitTargetIndicator,
     darkness: $darkness,
     showLabels: context.showLabels,
