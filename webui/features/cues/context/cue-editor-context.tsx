@@ -33,11 +33,11 @@ import {
 } from "solid-js";
 import { formatCueEditorTitle } from "../../../lib/cue-editor-title";
 import {
-  cueWithPendingEdit,
+  cueWithUnconfirmedEdit,
   previewCue,
   sendCueUpdate,
   sendSequenceUpdate,
-  sequenceWithPendingEdit,
+  sequenceWithUnconfirmedEdit,
   stopPreviewInstance,
 } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
@@ -162,7 +162,7 @@ export function createCueEditorContextValue(
   const setupSequence = createMemo(() => {
     sequenceStoreRevision();
     return options.setupSequenceUid
-      ? sequenceWithPendingEdit(
+      ? sequenceWithUnconfirmedEdit(
           options.setupSequenceUid,
           sequences.get()[options.setupSequenceUid],
         )
@@ -173,7 +173,7 @@ export function createCueEditorContextValue(
   const releaseSequence = createMemo(() => {
     sequenceStoreRevision();
     return options.releaseSequenceUid
-      ? sequenceWithPendingEdit(
+      ? sequenceWithUnconfirmedEdit(
           options.releaseSequenceUid,
           sequences.get()[options.releaseSequenceUid],
         )
@@ -294,7 +294,7 @@ export function createCueEditorContextValue(
       return { status: "not_found", cueUid };
     }
 
-    const cue = cueWithPendingEdit(cueUid, cueMap[cueUid]);
+    const cue = cueWithUnconfirmedEdit(cueUid, cueMap[cueUid]);
     if (cue) {
       return { status: "loaded", cue };
     }

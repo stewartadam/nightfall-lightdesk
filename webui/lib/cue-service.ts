@@ -10,7 +10,7 @@ import type * as types from "../types";
 import { commandOutputValue } from "./command-result";
 import { commandClient } from "./engine-commands";
 import { getLogger } from "./logger";
-import { createPendingEdits } from "./pending-edits";
+import { createUnconfirmedEdits } from "./unconfirmed-edits";
 
 const log = getLogger(import.meta.url);
 
@@ -29,41 +29,44 @@ function instanceIdFromResult(result: types.CommandResult): types.InstanceId {
 }
 
 /** Cue definitions sent to the engine whose results have not arrived yet, keyed by cue UID. */
-const pendingCueEdits = createPendingEdits<string, types.Cue>();
+const unconfirmedCueEdits = createUnconfirmedEdits<string, types.Cue>();
 
 /** Sequence definitions sent to the engine whose results have not arrived yet, keyed by UID. */
-const pendingSequenceEdits = createPendingEdits<string, types.Sequence>();
+const unconfirmedSequenceEdits = createUnconfirmedEdits<
+  string,
+  types.Sequence
+>();
 
 /**
  * Returns the cue to show and build further edits on: the newest one this client sent and the
  * engine has not confirmed yet, otherwise the store cue. A cue this client just created is
  * returned before the engine has stored it. Reactive per cue.
  */
-export function cueWithPendingEdit(
+export function cueWithUnconfirmedEdit(
   uid: string,
   storeCue: types.Cue | undefined,
 ): types.Cue | undefined {
-  return pendingCueEdits.value(uid) ?? storeCue;
+  return unconfirmedCueEdits.value(uid) ?? storeCue;
 }
 
 /**
  * Returns the sequence to show and build further edits on: the newest one this client sent and
  * the engine has not confirmed yet, otherwise the store sequence. Reactive per sequence.
  */
-export function sequenceWithPendingEdit(
+export function sequenceWithUnconfirmedEdit(
   uid: string,
   storeSequence: types.Sequence | undefined,
 ): types.Sequence | undefined {
-  return pendingSequenceEdits.value(uid) ?? storeSequence;
+  return unconfirmedSequenceEdits.value(uid) ?? storeSequence;
 }
 
 /**
- * Stores a whole cue definition. Until the engine confirms it, {@link cueWithPendingEdit} returns
+ * Stores a whole cue definition. Until the engine confirms it, {@link cueWithUnconfirmedEdit} returns
  * it in place of the store cue, so a quick second edit builds on this one even when the engine's
  * reply to an older edit lands in between. The backend flattens multi-fixture instructions.
  */
 export function sendCueUpdate(updatedCue: types.Cue, batchId?: string) {
-  pendingCueEdits.set(updatedCue.identifiers.uid, updatedCue, (cue) =>
+  unconfirmedCueEdits.set(updatedCue.identifiers.uid, updatedCue, (cue) =>
     commandClient.invoke(
       "CueCommand",
       { type: "StoreCue", data: cue } satisfies types.CueCommand,
@@ -76,13 +79,13 @@ export function sendCueUpdate(updatedCue: types.Cue, batchId?: string) {
 
 /**
  * Stores a whole sequence definition, including its setup and release cues. Until the engine
- * confirms it, {@link sequenceWithPendingEdit} returns it in place of the store sequence.
+ * confirms it, {@link sequenceWithUnconfirmedEdit} returns it in place of the store sequence.
  */
 export function sendSequenceUpdate(
   updatedSequence: types.Sequence,
   batchId?: string,
 ) {
-  pendingSequenceEdits.set(
+  unconfirmedSequenceEdits.set(
     updatedSequence.identifiers.uid,
     updatedSequence,
     (sequence) =>

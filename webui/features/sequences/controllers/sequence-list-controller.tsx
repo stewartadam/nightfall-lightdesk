@@ -31,7 +31,7 @@ import {
   deleteSequence,
   sendCueUpdate,
   sendSequenceUpdate,
-  sequenceWithPendingEdit,
+  sequenceWithUnconfirmedEdit,
 } from "../../../lib/cue-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
@@ -167,8 +167,10 @@ export function createSequenceListController(
    */
   const updateSequenceLabel = (storedSequence: Sequence, label: string) => {
     const sequence =
-      sequenceWithPendingEdit(storedSequence.identifiers.uid, storedSequence) ??
-      storedSequence;
+      sequenceWithUnconfirmedEdit(
+        storedSequence.identifiers.uid,
+        storedSequence,
+      ) ?? storedSequence;
     if (label === sequence.identifiers.label) return;
     sendSequenceUpdate({
       ...sequence,

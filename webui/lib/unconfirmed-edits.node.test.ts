@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPendingEdits } from "./pending-edits";
+import { createUnconfirmedEdits } from "./unconfirmed-edits";
 
 /** A send whose completion the test controls, recording every value it was asked to send. */
 function controlledSend<V>() {
@@ -33,8 +33,8 @@ function controlledSend<V>() {
 }
 
 /** A first value is shown and sent at once, then dropped once its command settles. */
-test("shows a pending value until its command settles", async () => {
-  const edits = createPendingEdits<string, number>();
+test("shows an unconfirmed value until its command settles", async () => {
+  const edits = createUnconfirmedEdits<string, number>();
   const channel = controlledSend<number>();
 
   edits.set("cue", 1, channel.send);
@@ -52,7 +52,7 @@ test("shows a pending value until its command settles", async () => {
  * stays shown until the last command settles, so the reply to an older command cannot hide it.
  */
 test("sends later values in order behind the in-flight command", async () => {
-  const edits = createPendingEdits<string, number>();
+  const edits = createUnconfirmedEdits<string, number>();
   const channel = controlledSend<number>();
 
   edits.set("cue", 1, channel.send);
@@ -76,7 +76,7 @@ test("sends later values in order behind the in-flight command", async () => {
 
 /** Each queued value keeps the send it was set with, so undo batch identity is not merged. */
 test("keeps each queued value's own send", async () => {
-  const edits = createPendingEdits<string, number>();
+  const edits = createUnconfirmedEdits<string, number>();
   const first = controlledSend<number>();
   const second = controlledSend<number>();
 
@@ -88,9 +88,9 @@ test("keeps each queued value's own send", async () => {
   assert.deepEqual(second.sent, [2]);
 });
 
-/** A rejected or failed command drops the entry, which rolls the overlay back to the store. */
-test("drops the pending value when its command fails", async () => {
-  const edits = createPendingEdits<string, number>();
+/** A rejected or failed command drops the entry, so readers fall back to the store value. */
+test("drops the unconfirmed value when its command fails", async () => {
+  const edits = createUnconfirmedEdits<string, number>();
   const channel = controlledSend<number>();
 
   edits.set("cue", 1, channel.send);
@@ -100,8 +100,8 @@ test("drops the pending value when its command fails", async () => {
 });
 
 /** A send that throws synchronously, such as while disconnected, does not leave a stuck entry. */
-test("drops the pending value when sending throws", async () => {
-  const edits = createPendingEdits<string, number>();
+test("drops the unconfirmed value when sending throws", async () => {
+  const edits = createUnconfirmedEdits<string, number>();
 
   edits.set("cue", 1, () => {
     throw new Error("disconnected");
@@ -113,7 +113,7 @@ test("drops the pending value when sending throws", async () => {
 
 /** Keys are independent: one key's in-flight command does not hold back another key's send. */
 test("tracks keys independently", async () => {
-  const edits = createPendingEdits<string, number>();
+  const edits = createUnconfirmedEdits<string, number>();
   const channel = controlledSend<number>();
 
   edits.set("a", 1, channel.send);

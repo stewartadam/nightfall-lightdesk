@@ -9,8 +9,8 @@
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal } from "solid-js";
 import {
-  cueWithPendingEdit,
-  sequenceWithPendingEdit,
+  cueWithUnconfirmedEdit,
+  sequenceWithUnconfirmedEdit,
 } from "../../../lib/cue-service";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
@@ -38,12 +38,12 @@ export function createSequenceEditorSourceController(sequenceUid: string) {
    * but not yet confirmed over the store definition.
    */
   const cue = (cueUid: string): types.Cue | undefined =>
-    cueWithPendingEdit(cueUid, cueMap()[cueUid]);
+    cueWithUnconfirmedEdit(cueUid, cueMap()[cueUid]);
 
   /** Resolves the edited sequence, including any of its unconfirmed edits, or why it is absent. */
   const loadingState = createMemo((): SequenceEditorLoadingState => {
     if (!definitionsLoaded()) return { status: "loading" };
-    const sequence = sequenceWithPendingEdit(
+    const sequence = sequenceWithUnconfirmedEdit(
       sequenceUid,
       sequenceMap()[sequenceUid],
     );

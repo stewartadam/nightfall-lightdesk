@@ -15,7 +15,7 @@ import { useRevealObjectCapability } from "../../../components/providers/panel-c
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
 import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
 import {
-  cueWithPendingEdit,
+  cueWithUnconfirmedEdit,
   deleteCue,
   sendCueUpdate,
 } from "../../../lib/cue-service";
@@ -92,7 +92,7 @@ export function createCueListController(props: CueListControllerProps) {
    */
   const updateCueLabel = (storedCue: Cue, label: string) => {
     const cue =
-      cueWithPendingEdit(storedCue.identifiers.uid, storedCue) ?? storedCue;
+      cueWithUnconfirmedEdit(storedCue.identifiers.uid, storedCue) ?? storedCue;
     if (label === cue.identifiers.label) return;
     sendCueUpdate({
       ...cue,

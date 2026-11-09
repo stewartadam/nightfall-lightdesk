@@ -12,14 +12,14 @@ import { getLogger } from "./logger";
 const log = getLogger(import.meta.url);
 
 /** Sends one value to the engine and settles once its command has a terminal result. */
-export type PendingEditSend<V> = (value: V) => Promise<unknown>;
+export type UnconfirmedEditSend<V> = (value: V) => Promise<unknown>;
 
 /**
  * Edits the user made that the engine has not confirmed yet, keyed by the edited object.
- * Callers show {@link PendingEdits.value} in place of the store value while it is set, and
+ * Callers show {@link UnconfirmedEdits.value} in place of the store value while it is set, and
  * never write the engine-owned store themselves.
  */
-export interface PendingEdits<K, V> {
+export interface UnconfirmedEdits<K, V> {
   /** Returns the newest unconfirmed value for a key, or undefined. Reactive per key. */
   value(key: K): V | undefined;
   /**
@@ -27,17 +27,17 @@ export interface PendingEdits<K, V> {
    * flight, the send waits in order behind it, so the engine applies the key's edits in the
    * order the user made them and each keeps its own command (and undo step).
    */
-  set(key: K, value: V, send: PendingEditSend<V>): void;
+  set(key: K, value: V, send: UnconfirmedEditSend<V>): void;
 }
 
 /** One value waiting to be sent. */
 interface QueuedSend<V> {
   value: V;
-  send: PendingEditSend<V>;
+  send: UnconfirmedEditSend<V>;
 }
 
 /** Bookkeeping for one key with an unconfirmed value. */
-interface PendingEntry<V> {
+interface UnconfirmedEntry<V> {
   /** Newest value set for the key, shown in place of the store value. */
   value: V;
   /** Sends waiting behind the in-flight command, oldest first. */
@@ -45,7 +45,7 @@ interface PendingEntry<V> {
 }
 
 /**
- * Creates an overlay of unconfirmed edits over engine-owned state.
+ * Tracks unconfirmed edits to engine-owned state, shown in place of the store value.
  *
  * The engine publishes the state a command produced no later than that command's
  * `CommandResult`, so an entry is dropped as soon as its last command settles: on success the
@@ -54,8 +54,8 @@ interface PendingEntry<V> {
  * entry stays until the newest value's command settles. At most one command per key is in
  * flight.
  */
-export function createPendingEdits<K, V>(): PendingEdits<K, V> {
-  const entries = new Map<K, PendingEntry<V>>();
+export function createUnconfirmedEdits<K, V>(): UnconfirmedEdits<K, V> {
+  const entries = new Map<K, UnconfirmedEntry<V>>();
   const revisions = new Map<K, [Accessor<number>, Setter<number>]>();
 
   /** Returns the per-key revision signal, creating it on first use. */
@@ -68,14 +68,14 @@ export function createPendingEdits<K, V>(): PendingEdits<K, V> {
     return signal;
   };
 
-  /** Notifies readers of one key that its pending value changed. */
+  /** Notifies readers of one key that its unconfirmed value changed. */
   const notify = (key: K) => {
     const [, setRevision] = revisionSignal(key);
     setRevision((current) => current + 1);
   };
 
   /** Sends the oldest queued value for a key, then the next, dropping the entry when drained. */
-  const sendNext = (key: K, entry: PendingEntry<V>) => {
+  const sendNext = (key: K, entry: UnconfirmedEntry<V>) => {
     const next = entry.queue.shift();
     if (!next) {
       entries.delete(key);
@@ -90,7 +90,7 @@ export function createPendingEdits<K, V>(): PendingEdits<K, V> {
     }
     sent
       .catch((error) => {
-        log.warn("Pending edit command did not complete", error);
+        log.warn("Unconfirmed edit command did not complete", error);
       })
       .then(() => sendNext(key, entry));
   };
@@ -109,7 +109,7 @@ export function createPendingEdits<K, V>(): PendingEdits<K, V> {
         notify(key);
         return;
       }
-      const entry: PendingEntry<V> = { value, queue: [{ value, send }] };
+      const entry: UnconfirmedEntry<V> = { value, queue: [{ value, send }] };
       entries.set(key, entry);
       notify(key);
       sendNext(key, entry);
