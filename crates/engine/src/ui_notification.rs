@@ -47,6 +47,10 @@ pub enum UiNotification {
         /// Buttons offered alongside the message, in display order.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         actions: Vec<ToastAction>,
+        /// Keeps the toast up until the operator dismisses it, for problems that must not be
+        /// missed even when nobody is watching the screen.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        sticky: bool,
     },
     /// Update the frontend's remembered current showfile name.
     CurrentShowfileChanged {
@@ -66,6 +70,17 @@ impl UiNotification {
             level,
             message: message.into(),
             actions: Vec::new(),
+            sticky: false,
+        }
+    }
+
+    /// Builds a toast that stays up until the operator dismisses it.
+    pub fn sticky_toast(level: ToastLevel, message: impl Into<String>) -> Self {
+        Self::ShowToast {
+            level,
+            message: message.into(),
+            actions: Vec::new(),
+            sticky: true,
         }
     }
 
@@ -79,6 +94,7 @@ impl UiNotification {
             level,
             message: message.into(),
             actions,
+            sticky: false,
         }
     }
 

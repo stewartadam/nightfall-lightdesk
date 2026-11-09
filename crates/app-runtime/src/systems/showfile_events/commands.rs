@@ -28,6 +28,7 @@ pub fn handle_events(
     mut pending_world_swap_request: Option<ResMut<crate::PendingWorldSwapRequest>>,
     mut current_showfile: ResMut<CurrentShowfile>,
     mut clean_snapshot_hash: ResMut<ShowfileCleanSnapshotHash>,
+    mut draft_save_status: ResMut<DraftSaveStatus>,
     settings_registry: Option<Res<SettingsRegistry>>,
     mut commands: Commands,
     mut events: MessageReader<CommandEnvelope<ShowfileCommand>>,
@@ -88,6 +89,7 @@ pub fn handle_events(
                         {
                             tracing::warn!("Failed to update clean showfile hash: {}", error);
                         }
+                        clear_draft_save_failure(&mut draft_save_status);
                         write_showfile_saved_feedback(event, &mut responder, &mut ui_notifications);
                     }
                 }
@@ -111,11 +113,13 @@ pub fn handle_events(
                     }
                 };
                 let mut showfile_save_state = showfile_state.p0();
-                match save_draft_showfile_if_dirty(
+                let result = save_draft_showfile_if_dirty(
                     &mut showfile_save_state,
                     showfile_name.as_deref(),
                     &mut clean_snapshot_hash,
-                ) {
+                );
+                record_draft_save_result(&mut draft_save_status, &result);
+                match result {
                     Ok(_) => {
                         succeed_showfile_command(&mut responder, event.command_id);
                     }

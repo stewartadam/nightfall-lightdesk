@@ -708,7 +708,7 @@ async fn world_swap_saves_the_outgoing_show_draft() {
         .join("showfile.json.gz");
     let initial_draft = std::fs::read(&draft_snapshot).expect("read initial draft");
 
-    save_outgoing_show_draft(&mut app);
+    assert_eq!(save_outgoing_show_draft(&mut app), None);
     assert_eq!(
         std::fs::read(&draft_snapshot).expect("read draft of a clean show"),
         initial_draft,
@@ -721,11 +721,61 @@ async fn world_swap_saves_the_outgoing_show_draft() {
             "unsaved",
             nightfall::prelude::VariableValue::String("kept".to_string()),
         );
-    save_outgoing_show_draft(&mut app);
+    assert_eq!(save_outgoing_show_draft(&mut app), None);
     assert_ne!(
         std::fs::read(&draft_snapshot).expect("read draft after the swap save"),
         initial_draft,
         "the swap save should write the unsaved change into the draft"
+    );
+    assert_eq!(
+        app.world()
+            .resource::<super::systems::showfile_events::DraftSaveStatus>()
+            .error,
+        None
+    );
+
+    drop(app);
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
+/// Verifies a swap save that cannot write the drafts folder records the failure in the draft
+/// save status clients follow.
+#[tokio::test]
+async fn world_swap_records_a_failed_outgoing_draft_save() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("create showfile root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let mut app = WorldFactory::new(test_log_config(), false, false, false)
+        .build(WorldBootstrap::Empty {
+            showfile_name: Some("tour".to_string()),
+        })
+        .expect("named empty world factory build");
+    app.world()
+        .resource::<nightfall_engine::prelude::GlobalVariables>()
+        .set(
+            "unsaved",
+            nightfall::prelude::VariableValue::String("lost".to_string()),
+        );
+    let drafts = root.path().join("drafts");
+    std::fs::remove_dir_all(&drafts).expect("remove drafts folder");
+    std::fs::write(&drafts, b"not a folder").expect("block drafts folder");
+
+    let error = save_outgoing_show_draft(&mut app);
+    assert!(
+        error.is_some(),
+        "the failure should be returned for the swap to report"
+    );
+
+    assert!(
+        app.world()
+            .resource::<super::systems::showfile_events::DraftSaveStatus>()
+            .error
+            .is_some(),
+        "a failed swap save should be recorded for clients"
     );
 
     drop(app);

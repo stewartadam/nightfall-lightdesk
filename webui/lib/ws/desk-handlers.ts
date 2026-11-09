@@ -7,6 +7,7 @@
  */
 
 import { pushToast } from "../../state/appStores";
+import { applyDraftSaveStatusSnapshot } from "../../state/draft-save-status";
 import { toastActionButtons } from "../../state/toast-actions";
 import type * as types from "../../types";
 import { decodeCorrelationId } from "../console-scrollback";
@@ -32,6 +33,10 @@ export function registerDeskHandlers(
 
   registry.register("UiNotification", (message) => {
     handleUiNotification(message.data as unknown as types.UiNotification);
+  });
+
+  registry.register("DraftSaveStatus", (message) => {
+    applyDraftSaveStatusSnapshot(message.data);
   });
 }
 
@@ -64,8 +69,9 @@ function handleUiNotification(notification: types.UiNotification) {
           : "info";
       // A problem the operator can act on stays until dismissed so it isn't missed mid-show.
       const sticky =
-        actions.length > 0 &&
-        (toastLevel === "warning" || toastLevel === "error");
+        notification.data.sticky === true ||
+        (actions.length > 0 &&
+          (toastLevel === "warning" || toastLevel === "error"));
       pushToast(
         toastLevel,
         notification.data.message,
