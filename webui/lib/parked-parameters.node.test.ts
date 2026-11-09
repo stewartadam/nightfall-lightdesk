@@ -13,6 +13,8 @@ import { GridCellKind } from "./data-grid-types";
 import {
   applyParkedIndicator,
   buildParkedParameterLookup,
+  isAttributeParked,
+  isRowParked,
   parkedEntriesForCell,
   parkedParameterKeys,
 } from "./parked-parameters";
@@ -60,6 +62,18 @@ test("virtual intensity and custom attributes match the grid's column names", ()
   assert.deepEqual(parkedEntriesForCell(lookup, "b", 1, "Macro Speed"), [
     entries[3],
   ]);
+});
+
+test("the parked-only filter keeps parked rows and attribute columns", () => {
+  const lookup = buildParkedParameterLookup(entries);
+  assert.equal(isRowParked(lookup, "a", undefined), true);
+  assert.equal(isRowParked(lookup, "a", 2), true);
+  assert.equal(isRowParked(lookup, "a", 3), false);
+  assert.equal(isRowParked(lookup, "c", undefined), false);
+  assert.equal(isAttributeParked(lookup, "Pan"), true);
+  assert.equal(isAttributeParked(lookup, "Intensity"), true);
+  assert.equal(isAttributeParked(lookup, "Macro Speed"), true);
+  assert.equal(isAttributeParked(lookup, "Tilt"), false);
 });
 
 test("unpark keys drop the parked value", () => {

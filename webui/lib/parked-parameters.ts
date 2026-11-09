@@ -19,12 +19,18 @@ export interface ParkedParameterLookup {
   byElement: ReadonlyMap<string, types.ParkedParameter>;
   /** Parked entries of each fixture by displayed attribute name, across its elements. */
   byFixture: ReadonlyMap<string, types.ParkedParameter[]>;
+  /** Keys of the fixtures and fixture elements that have at least one parked parameter. */
+  rows: ReadonlySet<string>;
+  /** Displayed attribute names that are parked on at least one element. */
+  attributes: ReadonlySet<string>;
 }
 
 /** The empty lookup, for grids rendered before the first park update arrives. */
 export const EMPTY_PARKED_PARAMETER_LOOKUP: ParkedParameterLookup = {
   byElement: new Map(),
   byFixture: new Map(),
+  rows: new Set(),
+  attributes: new Set(),
 };
 
 /** Returns the attribute name a fixture grid column uses for a typed attribute. */
@@ -43,6 +49,13 @@ function elementKey(
   return `${fixtureUid}|${elementIndex}|${normalizeAttributeName(attribute)}`;
 }
 
+/** Builds the key of a fixture row, or of one of its element rows, in a parked lookup. */
+function rowKey(fixtureUid: string, elementIndex: number | undefined): string {
+  return elementIndex === undefined
+    ? fixtureUid
+    : `${fixtureUid}|${elementIndex}`;
+}
+
 /** Builds the key of one fixture's attribute across its elements in a parked lookup. */
 function fixtureKey(fixtureUid: string, attribute: string): string {
   return `${fixtureUid}|${normalizeAttributeName(attribute)}`;
@@ -58,11 +71,16 @@ export function buildParkedParameterLookup(
   if (entries.length === 0) return EMPTY_PARKED_PARAMETER_LOOKUP;
   const byElement = new Map<string, types.ParkedParameter>();
   const byFixture = new Map<string, types.ParkedParameter[]>();
+  const rows = new Set<string>();
+  const attributes = new Set<string>();
   for (const entry of entries) {
     // The engine only holds entries that name an element, so skip any that don't.
     if (entry.element.index === undefined) continue;
     const attribute = parkedAttributeName(entry.attribute);
     const fixtureUid = entry.element.fixture_uid;
+    rows.add(rowKey(fixtureUid, undefined));
+    rows.add(rowKey(fixtureUid, entry.element.index));
+    attributes.add(attribute);
     byElement.set(
       elementKey(fixtureUid, entry.element.index, attribute),
       entry,
@@ -75,7 +93,27 @@ export function buildParkedParameterLookup(
       byFixture.set(key, [entry]);
     }
   }
-  return { byElement, byFixture };
+  return { byElement, byFixture, rows, attributes };
+}
+
+/**
+ * Returns whether a grid row has anything parked: any element of the fixture on a fixture row, or
+ * the element itself on an element row.
+ */
+export function isRowParked(
+  lookup: ParkedParameterLookup,
+  fixtureUid: string,
+  elementIndex: number | undefined,
+): boolean {
+  return lookup.rows.has(rowKey(fixtureUid, elementIndex));
+}
+
+/** Returns whether any element has the attribute behind a fixture grid column parked. */
+export function isAttributeParked(
+  lookup: ParkedParameterLookup,
+  attribute: string,
+): boolean {
+  return lookup.attributes.has(normalizeAttributeName(attribute));
 }
 
 /**

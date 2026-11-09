@@ -153,3 +153,47 @@ test("park tags parked values and Properties unparks them", async ({
     path: test.info().outputPath("park-unparked.png"),
   });
 });
+
+/**
+ * The status bar counts parked parameters, and clicking it opens Fixtures filtered to the parked
+ * fixture and attribute columns until everything is unparked.
+ */
+test("the status bar parked count opens Fixtures filtered to parked parameters", async ({
+  page,
+  backendSlot,
+}) => {
+  await openShowWithOwnedFixture(page, backendSlot.backendPort);
+  const indicator = page.getByTestId("status-parked-indicator");
+  await expect(indicator).toHaveCount(0);
+
+  await submitCommand(page, `park fixture ${ownedFixtureId} red @ 100`);
+  await expect.poll(() => parkedCount(page)).toBe(1);
+  await expect(indicator).toHaveText("1 parked");
+  await indicator.click();
+
+  const fixtures = page.locator('[data-panel-kind="fixtures"]:visible');
+  await expect(fixtures).toBeVisible();
+  await expect(
+    fixtures.getByRole("switch", { name: "Show only parked parameters" }),
+  ).toBeChecked();
+  await expect(
+    fixtures.locator('[data-grid-column-key="Red_Value"]').first(),
+  ).toBeVisible();
+  await expect(
+    fixtures.locator('[data-grid-column-key="Pan_Value"]'),
+  ).toHaveCount(0);
+  await expect(
+    fixtures.getByRole("img", { name: /^Parked/ }).first(),
+  ).toBeVisible();
+  await expect(
+    fixtures.locator('[data-grid-column-key="Red_Value"]').first(),
+  ).toContainText("255");
+  await page.screenshot({
+    path: test.info().outputPath("park-fixtures-filter.png"),
+  });
+
+  await submitCommand(page, `unpark fixture ${ownedFixtureId}`);
+  await expect.poll(() => parkedCount(page)).toBe(0);
+  await expect(indicator).toHaveCount(0);
+  await expect(fixtures).toContainText("Nothing is parked");
+});

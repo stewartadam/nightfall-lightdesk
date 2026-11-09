@@ -23,6 +23,7 @@ export type FixturesToolbarProps = {
   panelId: string;
   showOnlyWithAttributes: boolean;
   showReleasedOutput: boolean;
+  showOnlyParked: boolean;
   filterColumns: DataGridFilterColumn<FixtureDisplayRow>[];
   filters: TableFilterSettings;
   visibleRows: number;
@@ -30,6 +31,7 @@ export type FixturesToolbarProps = {
   columns: GridColumn[];
   setShowOnlyWithAttributes: (enabled: boolean) => void;
   setShowReleasedOutput: (enabled: boolean) => void;
+  setShowOnlyParked: (enabled: boolean) => void;
   setFilters: (filters: TableFilterSettings) => void;
 };
 
@@ -51,6 +53,12 @@ export function FixturesToolbar(props: FixturesToolbarProps) {
             ariaLabel="Show DMX"
             checked={props.showReleasedOutput}
             onChange={props.setShowReleasedOutput}
+          />
+          <ToggleSwitch
+            label="Parked"
+            ariaLabel="Show only parked parameters"
+            checked={props.showOnlyParked}
+            onChange={props.setShowOnlyParked}
           />
           <ToolbarSeparator />
           <DataGridFilterMenu
