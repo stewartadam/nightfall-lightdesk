@@ -583,11 +583,36 @@ test("offers newer GDTF Share revisions of library fixtures", async ({
     fixture_type_id: WASH.fixture_type_id,
     revision: "Release 1.0",
   });
+
+  const created = await page.evaluate(
+    (assetEtag) =>
+      (window as any).appStores.sendAndAwait({
+        module: "FixtureLibraryCommand",
+        command: {
+          type: "CreateFixturesFromLibrary",
+          data: {
+            make: "Nightfall Test",
+            model: "E2E Wash",
+            mode: "Standard",
+            asset_etag: assetEtag,
+            fixtures: [{ id: 9101 }, { id: 9102 }, { id: 9103 }],
+          },
+        },
+      }),
+    installedEtag,
+  );
+  expect(created.outcome.type).toBe("Succeeded");
+  await expect(
+    rows.first().getByRole("gridcell", { name: "3", exact: true }),
+  ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("10-update-available.png"),
   });
 
   await rows.first().click();
+  await expect(page.getByTestId("fixture-library-patched-count")).toHaveText(
+    "Patched: 3 fixtures",
+  );
   const details = page.getByTestId("gdtf-share-update");
   await expect(details).toContainText("Newest: Release 2.0");
   await expect(details).toContainText("This file: Release 1.0");

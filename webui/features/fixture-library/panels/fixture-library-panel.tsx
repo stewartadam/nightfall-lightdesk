@@ -68,11 +68,13 @@ import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
   fixtureLibrary,
+  fixtures as patchedFixtures,
   runtimeCapabilities,
   unloadableFixtureFiles,
 } from "../../../state/appStores";
 import type {
   AvailableFixtureInfo,
+  Fixture,
   FixtureLibraryCommand,
   FixtureLibraryEntry,
   GdtfShareUpdate,
@@ -114,15 +116,42 @@ function updateText(update: GdtfShareUpdate | undefined): string {
   return update.library_copy ? "Newer copy in library" : "Update available";
 }
 
+/** Show state the library columns read beside each row's own fields. */
+interface LibraryRowContext {
+  /** Newer GDTF Share revisions found, by file fingerprint. */
+  updates: ReadonlyMap<string, GdtfShareUpdate>;
+  /** How many patched fixtures use each library revision, by {@link libraryDefinitionId}. */
+  patched: ReadonlyMap<string, number>;
+}
+
+/**
+ * Counts the patched fixtures created from each library revision, keyed like
+ * {@link libraryDefinitionId}. Fixtures with no recorded revision are left out.
+ */
+function countPatched(
+  fixtures: Record<string, Fixture>,
+): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const fixture of Object.values(fixtures)) {
+    if (!fixture.library_asset_etag) continue;
+    const key = libraryDefinitionId({
+      make: fixture.make,
+      model: fixture.model,
+      asset_etag: fixture.library_asset_etag,
+    });
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /**
  * Returns the text a column shows and filters on for one row. A file that failed to load
  * shows "Failed to load" as its make, its file name as the model and the error as its modes.
- * `updates` holds the newer GDTF Share revisions found, by file fingerprint.
  */
 function libraryRowText(
   row: FixtureLibraryRow,
   column: string,
-  updates: ReadonlyMap<string, GdtfShareUpdate>,
+  context: LibraryRowContext,
 ): string {
   if (row.kind === "unloadable") {
     switch (column) {
@@ -150,8 +179,10 @@ function libraryRowText(
       return fixture.source_format;
     case "revision":
       return libraryRevisionLabel(fixture.asset_etag);
+    case "patched":
+      return String(context.patched.get(libraryDefinitionId(fixture)) ?? 0);
     case "gdtf-share":
-      return updateText(updates.get(fixture.asset_etag));
+      return updateText(context.updates.get(fixture.asset_etag));
     default:
       return "";
   }
@@ -165,6 +196,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
   log.trace("mounting");
   const panelId = props.initialPanelId ?? props.id;
   const $fixtureLibrary = useStore(fixtureLibrary);
+  const $patchedFixtures = useStore(patchedFixtures);
   const $unloadableFiles = useStore(unloadableFixtureFiles);
   const $selection = useStore(fixtureLibrarySelection);
 
@@ -208,6 +240,20 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
   const selectedUpdate = createMemo(() => {
     const fixture = selectedFixture();
     return fixture ? updates().get(fixture.asset_etag) : undefined;
+  });
+
+  /** How many patched fixtures use each library revision. */
+  const patched = createMemo(() => countPatched($patchedFixtures()));
+
+  /** Show state every row's column text reads. */
+  const rowContext = createMemo(
+    (): LibraryRowContext => ({ updates: updates(), patched: patched() }),
+  );
+
+  /** How many patched fixtures use the selected profile's revision. */
+  const selectedPatchedCount = createMemo(() => {
+    const fixture = selectedFixture();
+    return fixture ? (patched().get(libraryDefinitionId(fixture)) ?? 0) : 0;
   });
 
   /** Whether the panel shows GDTF Share search in place of the library list. */
@@ -326,6 +372,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
         selectedFixture={selectedFixture}
         unloadableFile={selectedUnloadable}
         update={selectedUpdate}
+        patchedCount={selectedPatchedCount}
         onShowFixture={showLibraryCopy}
       />
     ),
@@ -360,14 +407,14 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
       title: "Make",
       id: "make",
       width: 150,
-      filter: { value: (row) => libraryRowText(row, "make", updates()) },
+      filter: { value: (row) => libraryRowText(row, "make", rowContext()) },
       ...alwaysVisibleColumnMeta("Identity", "Make"),
     },
     {
       title: "Model",
       id: "model",
       width: 150,
-      filter: { value: (row) => libraryRowText(row, "model", updates()) },
+      filter: { value: (row) => libraryRowText(row, "model", rowContext()) },
       ...columnVisibilityMeta("Metadata", "Model"),
     },
     {
@@ -389,10 +436,18 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
       ...columnVisibilityMeta("Metadata", "Revision"),
     },
     {
+      title: "Patched",
+      id: "patched",
+      width: 80,
+      ...columnVisibilityMeta("Metadata", "Patched"),
+    },
+    {
       title: "GDTF Share",
       id: "gdtf-share",
       width: 150,
-      filter: { value: (row) => libraryRowText(row, "gdtf-share", updates()) },
+      filter: {
+        value: (row) => libraryRowText(row, "gdtf-share", rowContext()),
+      },
       ...columnVisibilityMeta("Metadata", "GDTF Share"),
     },
   ];
@@ -433,11 +488,11 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
 
   /**
    * Provides cells from keyed row and column snapshots. Files that failed to load are greyed
-   * out, with a warning sign before the file name. Rebuilt when GDTF Share updates change, so
-   * the GDTF Share column stays current.
+   * out, with a warning sign before the file name. Rebuilt when patch counts or GDTF Share
+   * updates change, so those columns stay current.
    */
   const cellProvider = createMemo(() => {
-    const found = updates();
+    const context = rowContext();
     return createKeyedDataGridCellProvider({
       rows: fixtures(),
       columns: displayColumns(),
@@ -445,7 +500,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
       columnKey: (column) => String(column.id),
       getCellContent: ({ row, column }): GridCell => {
         const colId = String(column.id);
-        const cell = makeSafeTextCell(libraryRowText(row, colId, found));
+        const cell = makeSafeTextCell(libraryRowText(row, colId, context));
         if (row.kind === "fixture") return cell;
         return {
           ...cell,

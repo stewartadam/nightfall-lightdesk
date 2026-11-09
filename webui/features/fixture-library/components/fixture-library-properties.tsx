@@ -39,6 +39,8 @@ interface FixtureLibraryPropertiesProps {
   unloadableFile: Accessor<types.UnloadableFixtureFile | null>;
   /** A newer GDTF Share revision of the selected fixture's file, if one was found. */
   update: Accessor<types.GdtfShareUpdate | undefined>;
+  /** How many patched fixtures use the selected fixture's revision. */
+  patchedCount: Accessor<number>;
   /** Selects another library entry, such as an installed update. */
   onShowFixture: (fixture: types.AvailableFixtureInfo) => void;
 }
@@ -316,6 +318,12 @@ export default function FixtureLibraryProperties(
                 <div>
                   <span class="text-neutral-400">Source Format:</span>{" "}
                   {fixture().source_format}
+                </div>
+                <div data-testid="fixture-library-patched-count">
+                  <span class="text-neutral-400">Patched:</span>{" "}
+                  {props.patchedCount() === 1
+                    ? "1 fixture"
+                    : `${props.patchedCount()} fixtures`}
                 </div>
                 <div>
                   <label
