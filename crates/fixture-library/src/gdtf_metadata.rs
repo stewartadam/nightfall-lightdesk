@@ -13,6 +13,7 @@
 
 use std::path::Path;
 
+use nightfall_fixtures::library::commands::GdtfRevisionNote;
 use serde::{Deserialize, Serialize};
 
 use crate::gdtf_repair::{open_gdtf, open_gdtf_description};
@@ -35,6 +36,9 @@ pub struct GdtfMetadata {
     /// revision's name; `None` when the archive records no revision text.
     #[serde(default)]
     pub revision: Option<String>,
+    /// Every `Revision` entry with text, oldest first, so an update can show what changed.
+    #[serde(default)]
+    pub revision_notes: Vec<GdtfRevisionNote>,
     /// File path for on-demand re-parsing
     pub file_path: std::path::PathBuf,
 }
@@ -57,6 +61,7 @@ impl GdtfMetadata {
             modes,
             fixture_type_id: extract_fixture_type_id(&gdtf_file),
             revision: extract_revision(&gdtf_file),
+            revision_notes: extract_revision_notes(&gdtf_file),
             file_path: path.to_path_buf(),
         })
     }
@@ -114,6 +119,23 @@ fn extract_revision(gdtf: &gdtf::GdtfFile) -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
+/// Extracts every `Revision` entry that has text, oldest first, trimmed, with the date the
+/// archive records for it.
+fn extract_revision_notes(gdtf: &gdtf::GdtfFile) -> Vec<GdtfRevisionNote> {
+    let Some(fixture_type) = gdtf.description.fixture_types.first() else {
+        return Vec::new();
+    };
+    fixture_type
+        .revisions
+        .iter()
+        .filter(|revision| !revision.text.trim().is_empty())
+        .map(|revision| GdtfRevisionNote {
+            text: revision.text.trim().to_string(),
+            date: revision.date.trim().to_string(),
+        })
+        .collect()
+}
+
 /// Extract DMX mode names from GDTF file
 fn extract_mode_names(gdtf: &gdtf::GdtfFile) -> Vec<String> {
     if let Some(fixture_type) = gdtf.description.fixture_types.first() {
@@ -129,6 +151,7 @@ fn extract_mode_names(gdtf: &gdtf::GdtfFile) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::GdtfRevisionNote;
     use crate::testing::{GdtfBuilder, GeometrySpec, ModeSpec};
 
     /// Verifies an empty `LongName` falls back to the fixture type's `Name`.
@@ -171,5 +194,27 @@ mod tests {
             .revision("  added white channel ")
             .write_metadata(dir.path());
         assert_eq!(metadata.revision.as_deref(), Some("added white channel"));
+    }
+
+    /// Lists every revision with text, oldest first and trimmed, with its recorded date,
+    /// skipping entries whose text is blank.
+    #[test]
+    fn lists_revision_notes_oldest_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = GdtfBuilder::new("Test", "Spot")
+            .geometry(GeometrySpec::generic("Body"))
+            .mode(ModeSpec::new("Mode", "Body"))
+            .revision("Created")
+            .revision("   ")
+            .revision(" added white channel ")
+            .write_metadata(dir.path());
+        let note = |text: &str| GdtfRevisionNote {
+            text: text.to_string(),
+            date: "2024-01-01T00:00:00".to_string(),
+        };
+        assert_eq!(
+            metadata.revision_notes,
+            vec![note("Created"), note("added white channel")]
+        );
     }
 }

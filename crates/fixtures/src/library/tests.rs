@@ -20,8 +20,10 @@ use nightfall_fixture_model::prelude::PhysicalUnit;
 use super::catalog::{
     BUILTIN_SOURCE_FORMAT, builtin_fixture_profiles, find_builtin_fixture_profile,
 };
-use super::commands::LibraryFixtureInstance;
-use super::instantiate::{LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixtures};
+use super::commands::{LibraryFixtureInstance, LibraryFixtureModeUpdate};
+use super::instantiate::{
+    LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixtures, update_library_fixtures,
+};
 use super::{create_fixture_from_library, moving_heads, normalize_fixture_profile, strobes};
 use crate::prelude::{Fixture, FixtureDataProviderExt, Parameter};
 
@@ -588,10 +590,17 @@ fn create_in_world(
     let mut resolutions = 0;
     let result = {
         let mut commands = Commands::new(&mut queue, world);
-        create_library_fixtures(&mut commands, fixtures, request, || {
-            resolutions += 1;
-            moving_head_template()
-        })
+        create_library_fixtures(
+            &mut commands,
+            fixtures,
+            |_| None,
+            request,
+            || {
+                resolutions += 1;
+                moving_head_template()
+            },
+        )
+        .map(drop)
     };
     queue.apply(world);
     (result, resolutions)
@@ -755,4 +764,124 @@ fn create_library_fixtures_rejects_empty_request() {
         "fixture_library.no_fixtures"
     );
     assert_eq!(resolutions, 0);
+}
+
+/// Runs one revision update against a standalone store and applies its spawns.
+///
+/// The template resolves to the moving-head built-in under `revision`, whatever mode is
+/// asked for. Returns the error, if any, and the modes resolved, in order.
+fn update_in_world(
+    world: &mut World,
+    fixtures: &mut FixtureDataProviderExt,
+    updates: &[LibraryFixtureModeUpdate],
+    revision: &str,
+) -> (Result<(), CommandError>, Vec<String>) {
+    let mut queue = CommandQueue::default();
+    let mut resolved = Vec::new();
+    let result = {
+        let mut commands = Commands::new(&mut queue, world);
+        update_library_fixtures(
+            &mut commands,
+            fixtures,
+            |_| None,
+            updates,
+            |mode| {
+                resolved.push(mode.to_string());
+                let mut template = moving_head_template()?;
+                template.asset_etag = revision.to_string();
+                Ok(template)
+            },
+        )
+        .map(drop)
+    };
+    queue.apply(world);
+    (result, resolved)
+}
+
+/// Builds revision updates that rebuild each fixture from the named mode.
+fn mode_updates(updates: &[(u32, &str)]) -> Vec<LibraryFixtureModeUpdate> {
+    updates
+        .iter()
+        .map(|(id, mode)| LibraryFixtureModeUpdate {
+            id: *id,
+            mode: (*mode).to_string(),
+        })
+        .collect()
+}
+
+/// Verifies a revision update keeps each fixture's identity and placement, records the
+/// new revision, and resolves each distinct mode once.
+#[test]
+fn update_library_fixtures_keeps_identity_and_resolves_each_mode_once() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    create_in_world(&mut world, &mut fixtures, &batch_request(&[10, 11, 12]))
+        .0
+        .expect("creation should succeed");
+    let before = fixtures.inner.from_id(10).unwrap().clone();
+
+    let (result, resolved) = update_in_world(
+        &mut world,
+        &mut fixtures,
+        &mode_updates(&[(10, "Spot"), (11, "Spot"), (12, "Spot")]),
+        "revision-2",
+    );
+
+    result.expect("update should succeed");
+    assert_eq!(resolved, vec!["Spot".to_string()]);
+    let after = fixtures.inner.from_id(10).unwrap().clone();
+    assert_eq!(after.identifiers, before.identifiers);
+    assert_eq!(after.placement, before.placement);
+    assert_eq!(after.library_asset_etag.as_deref(), Some("revision-2"));
+}
+
+/// Verifies an update that would leave another fixture of the same make, model and mode on
+/// its old revision is rejected without changing any fixture.
+#[test]
+fn update_library_fixtures_rejects_leaving_a_mode_on_two_revisions() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    create_in_world(&mut world, &mut fixtures, &batch_request(&[10, 11]))
+        .0
+        .expect("creation should succeed");
+
+    let (result, _) = update_in_world(
+        &mut world,
+        &mut fixtures,
+        &mode_updates(&[(10, "Spot")]),
+        "revision-2",
+    );
+
+    assert_eq!(
+        result.expect_err("partial update should be rejected").code,
+        "fixture_library.mixed_revisions"
+    );
+    assert_eq!(
+        fixtures
+            .inner
+            .from_id(10)
+            .unwrap()
+            .library_asset_etag
+            .as_deref(),
+        Some("builtin:generic-moving-head-spot-16ch:v1")
+    );
+}
+
+/// Verifies a missing update target is rejected before any mode is resolved.
+#[test]
+fn update_library_fixtures_rejects_missing_fixture() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    let (result, resolved) = update_in_world(
+        &mut world,
+        &mut fixtures,
+        &mode_updates(&[(404, "Spot")]),
+        "revision-2",
+    );
+
+    assert_eq!(
+        result.expect_err("missing fixture should be rejected").code,
+        "fixture_library.fixture_not_found"
+    );
+    assert!(resolved.is_empty());
 }

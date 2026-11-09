@@ -89,6 +89,35 @@ pub enum FixtureLibraryCommand {
         update_existing_ids: Vec<u32>,
     },
 
+    /// Describe one library revision for reviewing an update to it: each of its modes as
+    /// the fixture it builds, and the revision notes its GDTF archive records.
+    GetRevisionDetails {
+        /// Manufacturer name
+        make: String,
+        /// Model name
+        model: String,
+        /// Library revision to describe
+        asset_etag: String,
+    },
+
+    /// Move patched fixtures to another revision of their library fixture as one undoable
+    /// change.
+    ///
+    /// Each fixture is rebuilt from the revision's mode named for it and keeps its ID, UID,
+    /// label, placement and DMX patch. Every fixture that would be left on another revision
+    /// of an updated make, model and mode must be included, since a show holds one revision
+    /// of each; otherwise nothing changes.
+    UpdateFixturesToRevision {
+        /// Manufacturer name of the revision
+        make: String,
+        /// Model name of the revision
+        model: String,
+        /// Library revision to move the fixtures to
+        asset_etag: String,
+        /// Fixtures to update, each with the revision's mode to rebuild it from
+        fixtures: Vec<LibraryFixtureModeUpdate>,
+    },
+
     /// Upload a fixture file to the library
     UploadFixture {
         /// Original filename (used to determine format and as storage name)
@@ -129,6 +158,51 @@ pub struct LibraryFixtureInstance {
     /// Optional user-defined label for the fixture
     #[serde(default)]
     pub label: Option<String>,
+}
+
+/// One fixture to move to another library revision, and the revision's mode to use for it
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(deny_unknown_fields)]
+pub struct LibraryFixtureModeUpdate {
+    /// Fixture ID
+    pub id: u32,
+    /// DMX mode of the new revision to rebuild the fixture from
+    pub mode: String,
+}
+
+/// One library revision as an update review shows it
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct LibraryRevisionDetails {
+    /// Every mode the revision offers, in the order the file lists them
+    pub modes: Vec<LibraryRevisionMode>,
+    /// Revision notes the GDTF archive records, oldest first; empty for other formats
+    pub revision_notes: Vec<GdtfRevisionNote>,
+}
+
+/// One mode of a library revision and the fixture it builds
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct LibraryRevisionMode {
+    /// DMX mode name
+    pub name: String,
+    /// Fixture the mode builds, with ID 0; `None` when the mode can't be converted
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixture: Option<Fixture>,
+    /// Why the mode can't be converted, when it can't
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// One `Revision` entry of a GDTF archive: what changed, and when
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct GdtfRevisionNote {
+    /// What the editor wrote about the change
+    pub text: String,
+    /// When the revision was made, as the archive records it (usually ISO 8601)
+    pub date: String,
 }
 
 /// Information about an available fixture
@@ -225,6 +299,8 @@ pub enum FixtureLibraryCommandSuccess {
     AvailableFixtures(ListAvailableFixturesResponse),
     /// The command produced one fixture profile.
     FixtureProfile(Box<GetFixtureProfileResponse>),
+    /// The command described one library revision.
+    RevisionDetails(LibraryRevisionDetails),
 }
 
 /// Domain-local outcome emitted after one fixture-library command has applied.
@@ -267,6 +343,9 @@ pub fn finish_fixture_library_commands(
             }
             Ok(FixtureLibraryCommandSuccess::FixtureProfile(response)) => {
                 responder.succeed_with_output(event.command_id, response)
+            }
+            Ok(FixtureLibraryCommandSuccess::RevisionDetails(details)) => {
+                responder.succeed_with_output(event.command_id, details)
             }
             Err(error) => responder.fail(event.command_id, error.clone()),
         };
