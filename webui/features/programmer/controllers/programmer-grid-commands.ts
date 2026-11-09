@@ -15,7 +15,7 @@ import {
   type HeaderCellView,
   selectedClipboardCells,
 } from "../../../components/widgets/data-grid";
-import { getAttributeMetadata } from "../../../lib/attribute-metadata";
+import { commandAttributeForName } from "../../../lib/attribute-metadata";
 import type {
   GridColumn,
   GridSelection,
@@ -28,6 +28,10 @@ import {
   parkedEntriesForCell,
   parkedParameterKeys,
 } from "../../../lib/parked-parameters";
+import {
+  resolvedSelectionExpr,
+  resolvedSpatialSelection,
+} from "../../../lib/resolved-selection";
 import * as types from "../../../types";
 import {
   type BlueprintApplicationScope,
@@ -57,13 +61,6 @@ export function createProgrammerGridCommands(
   const attributeForColumnIndex = (columnIndex: number) =>
     attributeForColumnId(options.columns()[columnIndex]?.id);
 
-  /** Converts a displayed attribute name into the command model attribute shape. */
-  const commandAttributeForName = (attribute: string): types.Attribute =>
-    getAttributeMetadata(attribute)?.attribute ?? {
-      type: "Custom",
-      data: { label: attribute },
-    };
-
   /** Converts a displayed programmer row into a resolved fixture reference. */
   const fixtureRefForRow = (row: ProgrammerDisplayRow): types.FixtureRef => {
     if (row.type === "element") {
@@ -74,30 +71,6 @@ export function createProgrammerGridCommands(
     }
 
     return { fixture_uid: row.uid };
-  };
-
-  /** Builds a resolved selection expression for fixture refs, removing duplicates. */
-  const selectionExprForFixtureRefs = (
-    fixtureRefs: readonly types.FixtureRef[],
-  ): types.SelectionExpr | undefined => {
-    const seen = new Set<string>();
-    const refs: types.FixtureRef[] = [];
-    for (const ref of fixtureRefs) {
-      const key = `${ref.fixture_uid}:${ref.index ?? ""}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      refs.push(ref);
-    }
-
-    return refs.length > 0 ? { type: "Resolved", data: refs } : undefined;
-  };
-
-  /** Wraps resolved fixture refs in the spatial selection expected by attribute operations. */
-  const spatialSelectionForFixtureRefs = (
-    fixtureRefs: readonly types.FixtureRef[],
-  ): types.SpatialSelection | undefined => {
-    const source = selectionExprForFixtureRefs(fixtureRefs);
-    return source ? { source, clauses: [] } : undefined;
   };
 
   /** Applies one Blueprint independently to each fixture/attribute scope. */
@@ -359,7 +332,7 @@ export function createProgrammerGridCommands(
   const clearProgrammerRows = (
     fixtureRefs: readonly types.FixtureRef[],
   ): boolean => {
-    const selection = selectionExprForFixtureRefs(fixtureRefs);
+    const selection = resolvedSelectionExpr(fixtureRefs);
     if (!selection) return false;
     releaseProgrammerValues(selection, []);
     return true;
@@ -371,7 +344,7 @@ export function createProgrammerGridCommands(
     if (scopes.length === 0) return false;
 
     for (const { attributes, refs } of scopes) {
-      const scopedSelection = selectionExprForFixtureRefs(refs);
+      const scopedSelection = resolvedSelectionExpr(refs);
       if (scopedSelection) {
         releaseProgrammerValues(
           scopedSelection,
@@ -453,7 +426,7 @@ export function createProgrammerGridCommands(
     const attributes = attributesForContextCell(cell);
     const blueprintScopes = attributeScopesForCells(contextCells).flatMap(
       ({ attributes: scopedAttributes, refs }) => {
-        const selection = spatialSelectionForFixtureRefs(refs);
+        const selection = resolvedSpatialSelection(refs);
         return selection
           ? [
               {

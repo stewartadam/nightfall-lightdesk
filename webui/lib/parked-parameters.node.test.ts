@@ -41,6 +41,7 @@ const entries = [
   } as types.Attribute),
 ];
 
+/** Verifies an element row matches only the parked entry of that exact element and attribute. */
 test("element rows find only their own parked entry", () => {
   const lookup = buildParkedParameterLookup(entries);
   assert.deepEqual(parkedEntriesForCell(lookup, "a", 2, "Pan"), [entries[1]]);
@@ -48,6 +49,7 @@ test("element rows find only their own parked entry", () => {
   assert.deepEqual(parkedEntriesForCell(lookup, "a", 1, "Tilt"), []);
 });
 
+/** Verifies a fixture row gathers the parked entries of every element for its attribute. */
 test("fixture rows collect every parked element of the attribute", () => {
   const lookup = buildParkedParameterLookup(entries);
   assert.deepEqual(parkedEntriesForCell(lookup, "a", undefined, "Pan"), [
@@ -56,6 +58,7 @@ test("fixture rows collect every parked element of the attribute", () => {
   ]);
 });
 
+/** Verifies virtual intensity and custom attributes are found under the names grid columns use. */
 test("virtual intensity and custom attributes match the grid's column names", () => {
   const lookup = buildParkedParameterLookup(entries);
   assert.deepEqual(parkedEntriesForCell(lookup, "b", 1, "Intensity"), [
@@ -66,6 +69,7 @@ test("virtual intensity and custom attributes match the grid's column names", ()
   ]);
 });
 
+/** Verifies the parked-only view keeps exactly the parked rows and parked attribute columns. */
 test("the parked-only filter keeps parked rows and attribute columns", () => {
   const lookup = buildParkedParameterLookup(entries);
   assert.equal(isRowParked(lookup, "a", undefined), true);
@@ -78,6 +82,7 @@ test("the parked-only filter keeps parked rows and attribute columns", () => {
   assert.equal(isAttributeParked(lookup, "Tilt"), false);
 });
 
+/** Verifies a park command names each fixture ref once, types attributes, and skips empty input. */
 test("park commands target each ref once with typed attributes", () => {
   setAttributeMetadata([
     {
@@ -118,12 +123,14 @@ test("park commands target each ref once with typed attributes", () => {
   assert.equal(parkCommandForRefs([], ["Pan"]), undefined);
 });
 
+/** Verifies unpark keys carry the element and attribute but not the parked value. */
 test("unpark keys drop the parked value", () => {
   assert.deepEqual(parkedParameterKeys([entries[0]]), [
     { element: { fixture_uid: "a", index: 1 }, attribute: { type: "Pan" } },
   ]);
 });
 
+/** Verifies the P tag is added only when a cell has parked entries. */
 test("the parked tag is added only to cells with parked entries", () => {
   const cell = {
     kind: GridCellKind.Text,

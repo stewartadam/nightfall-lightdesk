@@ -7,8 +7,9 @@
  */
 
 import type * as types from "../types";
-import { getAttributeMetadata } from "./attribute-metadata";
+import { commandAttributeForName } from "./attribute-metadata";
 import type { GridCell, GridCellStateIndicator } from "./data-grid-types";
+import { resolvedSpatialSelection } from "./resolved-selection";
 import { normalizeAttributeName } from "./utils";
 
 /**
@@ -136,16 +137,6 @@ export function parkedEntriesForCell(
   return entry ? [entry] : [];
 }
 
-/** Converts a fixture grid attribute name into the typed attribute park commands take. */
-function commandAttribute(attribute: string): types.Attribute {
-  return (
-    getAttributeMetadata(attribute)?.attribute ?? {
-      type: "Custom",
-      data: { label: attribute },
-    }
-  );
-}
-
 /**
  * Builds the command that parks the named attributes of these fixtures or fixture elements at the
  * value each one outputs right now. A fixture ref parks every element, and `Intensity` parks a
@@ -156,22 +147,11 @@ export function parkCommandForRefs(
   refs: readonly types.FixtureRef[],
   attributes: readonly string[],
 ): types.ParkCommand | undefined {
-  if (attributes.length === 0) return undefined;
-  const seen = new Set<string>();
-  const unique: types.FixtureRef[] = [];
-  for (const ref of refs) {
-    const key = `${ref.fixture_uid}|${ref.index ?? ""}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(ref);
-  }
-  if (unique.length === 0) return undefined;
+  const selection = resolvedSpatialSelection(refs);
+  if (attributes.length === 0 || !selection) return undefined;
   return {
     type: "Park",
-    data: {
-      selection: { source: { type: "Resolved", data: unique }, clauses: [] },
-      attributes: attributes.map(commandAttribute),
-    },
+    data: { selection, attributes: attributes.map(commandAttributeForName) },
   };
 }
 
