@@ -1006,3 +1006,95 @@ test("a restarted pair picks its roles from the backup server dialog", async ({
     }
   }
 });
+
+/** Opens the Console panel on its Session history tab. */
+async function openSessionHistory(page: Page): Promise<void> {
+  await openPanel(page, "Console");
+  await page.getByRole("tab", { name: "Session history" }).click();
+  await expect(page.getByTestId("session-history")).toBeVisible();
+}
+
+/**
+ * The Console's session history shows the commands each computer accepted, and the backup's
+ * replay of a forwarded command carries the same number as the primary's entry for it, next to
+ * the backup's own events.
+ */
+test("session history lines up the primary's commands with the backup's replay", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await followPrimary(page, primary.backend.backendPort);
+    await openSessionHistory(page);
+    await expect(
+      page
+        .getByTestId("session-history-entry")
+        .filter({ hasText: "Copied the primary's show" }),
+    ).toHaveCount(1, { timeout: 30_000 });
+    // Give the world the copied show loaded into a checkpoint to start replaying from.
+    await page.waitForTimeout(1_500);
+
+    await sendCommand(primaryPage, "ClipCommand", {
+      type: "StartClip",
+      data: { type: "Single", data: 1 },
+    });
+    await expect
+      .poll(() => isClipRunning(page, 1), { timeout: 30_000 })
+      .toBe(true);
+
+    await openSessionHistory(primaryPage);
+    const primaryEntry = primaryPage
+      .getByTestId("session-history-entry")
+      .filter({ hasText: "StartClip" })
+      .first();
+    await expect(primaryEntry).toContainText("done");
+    const sequence = await primaryEntry.getAttribute("data-forwarded");
+    expect(sequence).toMatch(/^\d+$/);
+
+    const replayed = page.locator(
+      `[data-testid="session-history-entry"][data-forwarded="${sequence}"]`,
+    );
+    await expect(replayed).toHaveAttribute("data-source", "Primary");
+    await expect(replayed).toContainText("StartClip");
+    await expect(replayed).toContainText("done");
+    await expect(
+      page
+        .getByTestId("session-history-entry")
+        .filter({ hasText: "Following 127.0.0.1" }),
+    ).toHaveCount(1);
+    await expect(
+      page
+        .getByTestId("session-history-entry")
+        .filter({ hasText: "FollowPrimary" }),
+    ).toContainText("done");
+    await primaryPage.screenshot({
+      path: testInfo.outputPath("12-primary-session-history.png"),
+    });
+
+    await page.getByTestId("session-history-source").selectOption("Backup");
+    await expect(
+      page.getByTestId("session-history-entry").first(),
+    ).toHaveAttribute("data-source", "Backup");
+    await page.getByTestId("session-history-source").selectOption("");
+    await page.screenshot({
+      path: testInfo.outputPath("13-backup-session-history.png"),
+    });
+
+    await sendCommand(primaryPage, "ClipCommand", {
+      type: "StopClip",
+      data: { type: "Single", data: 1 },
+    });
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});

@@ -114,26 +114,28 @@ impl CommandForwarding {
     ///
     /// Commands normally pass through dispatch, which records them. A domain that consumes a
     /// command before dispatch, as fader flash buttons do, records it here instead.
-    pub fn record_command<T: 'static>(&mut self, command: &T, origin: Option<CommandOrigin>) {
+    pub fn record_command<T: 'static>(
+        &mut self,
+        command: &T,
+        origin: Option<CommandOrigin>,
+    ) -> Option<u64> {
         if !self.recording {
-            return;
+            return None;
         }
-        let Some(forward) = self.commands.get(&TypeId::of::<T>()) else {
-            return;
-        };
-        if let Some(entry) = forward(command) {
-            self.record(origin, entry);
-        }
+        let forward = self.commands.get(&TypeId::of::<T>())?;
+        let entry = forward(command)?;
+        Some(self.record(origin, entry))
     }
 
-    /// Records `entry` under the next sequence number.
-    fn record(&mut self, origin: Option<CommandOrigin>, entry: ForwardedEntry) {
+    /// Records `entry` under the next sequence number and returns that number.
+    fn record(&mut self, origin: Option<CommandOrigin>, entry: ForwardedEntry) -> u64 {
         let sequence = FORWARD_SEQUENCE.fetch_add(1, Ordering::AcqRel) + 1;
         self.recorded.push(RecordedEntry {
             sequence,
             origin,
             entry,
         });
+        sequence
     }
 }
 
@@ -192,12 +194,10 @@ pub(crate) fn record_forwarded_command<T: 'static>(
     world: &mut World,
     command: &T,
     origin: &CommandOrigin,
-) {
-    if let Some(mut forwarding) = world.get_resource_mut::<CommandForwarding>()
-        && forwarding.recording
-    {
-        forwarding.record_command(command, Some(origin.clone()));
-    }
+) -> Option<u64> {
+    world
+        .get_resource_mut::<CommandForwarding>()?
+        .record_command(command, Some(origin.clone()))
 }
 
 /// Returns whether an update from `module` would be recorded, so ingress copies only those.
@@ -219,11 +219,19 @@ pub(crate) fn record_forwarded_update(world: &mut World, module: String, update:
 
 /// Applies a command or update forwarded by the primary, past the read-only gate that keeps
 /// this backup's own clients from changing the show.
-pub fn apply_forwarded_entry(world: &mut World, entry: ForwardedEntry) -> Result<(), String> {
+///
+/// `sequence` is the entry's number on the primary, which the backup's session history shows
+/// next to the replayed command.
+pub fn apply_forwarded_entry(
+    world: &mut World,
+    entry: ForwardedEntry,
+    sequence: u64,
+) -> Result<(), String> {
     match entry {
         ForwardedEntry::Command { module, command } => {
             let command_id = CommandId::new();
             let undo_id = UndoId::from(command_id);
+            crate::session_history::note_forwarded_replay(command_id, sequence);
             world
                 .resource_mut::<CommandTracker>()
                 .register_context(

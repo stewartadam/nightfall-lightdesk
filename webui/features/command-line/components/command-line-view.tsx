@@ -7,9 +7,10 @@
  */
 
 import { TerminalWindowIcon } from "@squidlab/phosphor-solid/terminal-window";
-import { Show } from "solid-js";
+import { createUniqueId, Show } from "solid-js";
 import { parseKeybinding } from "tinykeys";
 import { Input, InputGroup } from "../../../components/ui/form-controls";
+import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
 import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
 import { clearConsoleScrollback } from "../../../state/appStores";
@@ -18,11 +19,13 @@ import {
   remainingStatementCount,
   unsentStatements,
 } from "../model/command-queue";
+import { consoleView, setConsoleView } from "../state/console-view";
 import { CommandClearButton } from "./command-clear-button";
 import { CommandHistory } from "./command-history";
 import { CommandQueueStatus } from "./command-queue-status";
 import { CommandSuggestions } from "./command-suggestions";
 import { CommandValidationStatus } from "./command-validation-status";
+import { SessionHistory } from "./session-history";
 
 const CURSOR_NAV_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 const COMMAND_MODIFIER_LABEL = parseKeybinding("$mod+l")[0][0].includes("Meta")
@@ -124,41 +127,71 @@ export function CommandLineView(props: CommandLineViewProps) {
   );
 
   if (controller.variant === "panel") {
+    const tabsId = createUniqueId();
+    const contentId = `${tabsId}-content`;
     return (
       <div
         class="h-full w-full flex flex-col bg-neutral-950 text-neutral-100"
-        onKeyDown={controller.handlePanelKeyDown}
+        onKeyDown={(event) => {
+          if (consoleView() === "console") controller.handlePanelKeyDown(event);
+        }}
       >
-        <CommandHistory
-          entries={history.visibleConsoleEntries}
-          totalEntries={() => history.consoleEntries().length}
-          queued={() => unsentStatements(controller.pendingSubmissions())}
-          normalizedSearch={history.normalizedHistorySearch}
-          searchOpen={history.historySearchOpen}
-          search={history.historySearch}
-          onSearchInput={history.setHistorySearch}
-          onSearchKeyDown={history.handleSearchKeyDown}
-          onOpenSearch={history.openSearch}
-          onCloseSearch={history.closeSearch}
-          onClear={clearConsoleScrollback}
-          searchRef={history.setHistorySearchElement}
-          scrollbackRef={history.setScrollbackElement}
-        />
-        <form
-          onSubmit={controller.handleSubmit}
-          class="border-t border-neutral-800 p-2"
+        <div class="border-b border-neutral-800 px-2 py-1">
+          <SegmentedTabs
+            id={tabsId}
+            density="compact"
+            contentId={contentId}
+            label="Console views"
+            options={[
+              { key: "console", label: "Console" },
+              { key: "session", label: "Session history" },
+            ]}
+            value={consoleView()}
+            onChange={setConsoleView}
+          />
+        </div>
+        <div
+          class="flex min-h-0 flex-1 flex-col"
+          id={contentId}
+          role="tabpanel"
+          aria-labelledby={`${tabsId}-${consoleView()}`}
         >
-          <div
-            class="flex items-stretch gap-1"
-            onKeyDown={controller.handleKeyDown}
+          <Show
+            when={consoleView() === "console"}
+            fallback={<SessionHistory />}
           >
-            {input}
-            <CommandClearButton
-              variant={controller.variant}
-              onClear={controller.clearProgrammer}
+            <CommandHistory
+              entries={history.visibleConsoleEntries}
+              totalEntries={() => history.consoleEntries().length}
+              queued={() => unsentStatements(controller.pendingSubmissions())}
+              normalizedSearch={history.normalizedHistorySearch}
+              searchOpen={history.historySearchOpen}
+              search={history.historySearch}
+              onSearchInput={history.setHistorySearch}
+              onSearchKeyDown={history.handleSearchKeyDown}
+              onOpenSearch={history.openSearch}
+              onCloseSearch={history.closeSearch}
+              onClear={clearConsoleScrollback}
+              searchRef={history.setHistorySearchElement}
+              scrollbackRef={history.setScrollbackElement}
             />
-          </div>
-        </form>
+            <form
+              onSubmit={controller.handleSubmit}
+              class="border-t border-neutral-800 p-2"
+            >
+              <div
+                class="flex items-stretch gap-1"
+                onKeyDown={controller.handleKeyDown}
+              >
+                {input}
+                <CommandClearButton
+                  variant={controller.variant}
+                  onClear={controller.clearProgrammer}
+                />
+              </div>
+            </form>
+          </Show>
+        </div>
       </div>
     );
   }

@@ -323,6 +323,11 @@ pub fn note_backup_peer(ip: IpAddr, headers: &reqwest::header::HeaderMap) {
         *peer = Some(address.clone());
     }
     tracing::info!(%address, "A backup is following this host");
+    nightfall_engine::session_history::record_session_event(
+        "Backup",
+        "Backup",
+        format!("{address} follows this computer as its backup."),
+    );
     let (_, error) = preferences::update(preferences::preferences_path().as_deref(), |stored| {
         stored.backup_peer = Some(address);
     });

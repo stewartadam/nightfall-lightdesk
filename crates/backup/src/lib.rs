@@ -222,8 +222,9 @@ impl BackupState {
     }
 }
 
-/// Commands that change the host's backup role.
-#[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
+/// Commands that change the host's backup role. Their debug form hides the pairing PIN, since it
+/// appears in the session history.
+#[derive(Clone, Serialize, Deserialize, EnginePayload)]
 #[typeshare::typeshare]
 #[serde(tag = "type", content = "data")]
 #[serde(deny_unknown_fields)]
@@ -253,6 +254,26 @@ pub enum BackupCommand {
 }
 
 impl IngressCommand for BackupCommand {}
+
+impl std::fmt::Debug for BackupCommand {
+    /// Formats the command like a derived `Debug`, with any pairing PIN replaced by `***`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FollowPrimary { address, pin } => f
+                .debug_struct("FollowPrimary")
+                .field("address", address)
+                .field("pin", &pin.as_ref().map(|_| "***"))
+                .finish(),
+            Self::LeavePair => f.write_str("LeavePair"),
+            Self::TakeOver => f.write_str("TakeOver"),
+            Self::OpenFailoverShow => f.write_str("OpenFailoverShow"),
+            Self::SetAutoTakeOver { enabled } => f
+                .debug_struct("SetAutoTakeOver")
+                .field("enabled", enabled)
+                .finish(),
+        }
+    }
+}
 
 /// A show in the failover folder, copied from the primary or opened again, ready to replace the
 /// world.
@@ -592,6 +613,7 @@ fn finish_pending_follow(
         }
         Err(message) => {
             tracing::warn!(%address, %message, "Not following the primary");
+            record_backup_event(format!("Did not follow {address}: {message}"));
             role_error.0 = Some(message.clone());
             responder.fail(
                 command_id,
@@ -620,6 +642,7 @@ fn follow_primary(address: String, key: Option<String>) -> RoleChange {
     failover::set_backup_peer(None);
     failover::share_pair_key(stored.pair_key.clone());
     tracing::info!(%address, "Following a primary as its backup");
+    record_backup_event(format!("Following {address} as its backup."));
     link::process_backup_link().set_target(Some(link::LinkTarget {
         address,
         token: key,
@@ -654,6 +677,7 @@ fn leave_pair(show: LeftShow) -> RoleChange {
     failover::set_backup_peer(None);
     failover::share_pair_key(None);
     tracing::info!("Left the backup pair; running on its own");
+    record_backup_event("Left the backup pair; running on its own.".to_string());
     let link = link::process_backup_link();
     link.cancel_probe("Stopped following before the primary was checked.");
     link.set_target(None);
@@ -719,6 +743,10 @@ fn take_over() -> RoleChange {
     failover::set_backup_peer(stored.backup_peer.clone());
     failover::forget_checkpoints_served();
     tracing::info!(epoch = stored.epoch, "Backup took over output");
+    record_backup_event(format!(
+        "Took over output with takeover epoch {}.",
+        stored.epoch
+    ));
     link.cancel_probe("Took over before the primary was checked.");
     link.set_target(None);
     // The old primary is the host this one just replaced; checking it before outputting would
@@ -784,6 +812,10 @@ fn take_over_when_primary_is_lost(
             tracing::warn!(
                 "The primary stopped answering, but its sACN still arrives; not taking over"
             );
+            record_backup_event(
+                "The primary stopped answering, but its sACN still arrives, so this computer \
+                 does not take over.",
+            );
         }
         *held_off = holding_off;
         return;
@@ -792,6 +824,10 @@ fn take_over_when_primary_is_lost(
         silent_for = ?silence.silent_for,
         "The primary stopped answering; taking over automatically"
     );
+    record_backup_event(format!(
+        "The primary has not answered for {:.1} s, so this computer takes over automatically.",
+        silence.silent_for.as_secs_f32()
+    ));
     let primary = state.primary_address.as_deref().map_or_else(
         || "The primary".to_string(),
         |address| format!("The primary {address}"),
@@ -821,6 +857,10 @@ fn rejoin_when_backup_took_over(
     if state.is_backup() {
         return;
     }
+    record_backup_event(format!(
+        "{address} took over with takeover epoch {epoch} while this computer was away, so this \
+         computer rejoins as its backup."
+    ));
     let (stored, save_error) = rejoin_as_backup(&address, epoch);
     state.apply_preferences(&stored);
     notifications.write(UiNotification::toast(
@@ -895,6 +935,53 @@ fn forget_backup_that_left(
     ));
 }
 
+/// Records a backup event in the session history.
+fn record_backup_event(description: impl Into<String>) {
+    record_session_event("Backup", "Backup", description);
+}
+
+/// The link status and backup health last recorded in the session history. Kept for the process,
+/// since each world a show load swaps in starts its [`BackupState`] over.
+static RECORDED_STATE: std::sync::Mutex<RecordedState> = std::sync::Mutex::new((None, None));
+
+/// The last link status recorded while this host followed a primary, and the backup's address
+/// and health.
+type RecordedState = (Option<BackupLinkStatus>, Option<(String, BackupPeerState)>);
+
+/// Records changes to the link with the primary, or to the health of this host's backup, in the
+/// session history.
+fn record_state_changes(next: &BackupState) {
+    let mut recorded = RECORDED_STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let link = next.is_backup().then_some(next.link);
+    if let Some(status) = link
+        && recorded.0 != link
+    {
+        let error = next
+            .error
+            .as_deref()
+            .map(|error| format!(" ({error})"))
+            .unwrap_or_default();
+        record_backup_event(format!("Link to the primary: {status:?}{error}."));
+        // Kept while not following too, so a world starting over does not record it again.
+        recorded.0 = link;
+    }
+    let peer = next
+        .backup
+        .as_ref()
+        .map(|backup| (backup.address.clone(), backup.state))
+        .filter(|(_, state)| *state != BackupPeerState::Checking);
+    if let Some((address, state)) = &peer
+        && recorded.1.as_ref() != peer.as_ref()
+    {
+        record_backup_event(format!("Backup {address}: {state:?}."));
+    }
+    if peer.is_some() || next.backup.is_none() {
+        recorded.1 = peer;
+    }
+}
+
 /// Mirrors the link's progress into the client-facing state, applies the output and ingress
 /// restrictions of the backup role, keeping output in standby while a copied show waits to close,
 /// adopts the primary's epoch, publishes this host's status to other hosts, and hands newly
@@ -964,6 +1051,7 @@ fn sync_backup_link(
         },
         ..state.clone()
     };
+    record_state_changes(&next);
     state.set_if_neq(next);
     failover::publish_host_status(failover::HostStatus {
         following: state.is_backup(),
@@ -982,6 +1070,10 @@ fn sync_backup_link(
 
     if let Some(show) = link.take_mirror() {
         if state.is_backup() {
+            record_backup_event(match &show.showfile_name {
+                Some(name) => format!("Copied the primary's show \"{name}\" and loads it."),
+                None => "Copied the primary's show and loads it.".to_string(),
+            });
             mirrored.write(MirroredShowfileReady {
                 showfile_name: show.showfile_name,
                 directory: show.directory,
@@ -1029,6 +1121,10 @@ fn apply_live_state_checkpoints(world: &mut World) {
     let mut tracking = world.resource_mut::<BackupTracking>();
     tracking.checkpoint = Some(checkpoint.sequence);
     if tracking.is_stale(through) {
+        record_backup_event(format!(
+            "Skipped checkpoint {}, which is older than the forwarded commands already replayed.",
+            checkpoint.sequence
+        ));
         return;
     }
     tracking.through = through;
@@ -1041,6 +1137,10 @@ fn apply_live_state_checkpoints(world: &mut World) {
     );
     for error in errors {
         tracing::warn!(%error, "backup_live_state_restore_failed");
+        record_backup_event(format!(
+            "Could not apply part of checkpoint {}: {error}",
+            checkpoint.sequence
+        ));
     }
 }
 
@@ -1062,6 +1162,10 @@ fn replay_forwarded_commands(world: &mut World) {
         let mut tracking = world.resource_mut::<BackupTracking>();
         if batch.gap {
             tracking.through = None;
+            record_backup_event(
+                "The primary's forwarded commands have a gap, so replay waits for the next \
+                 checkpoint.",
+            );
             continue;
         }
         let Some(mut through) = tracking
@@ -1075,8 +1179,11 @@ fn replay_forwarded_commands(world: &mut World) {
                 continue;
             }
             through.sequence = sequence;
-            if let Err(error) = apply_forwarded_entry(world, entry) {
+            if let Err(error) = apply_forwarded_entry(world, entry, sequence) {
                 tracing::warn!(%error, "backup_forwarded_command_failed");
+                record_backup_event(format!(
+                    "Could not replay forwarded command #{sequence}: {error}"
+                ));
             }
         }
         world.resource_mut::<BackupTracking>().through = Some(through);
@@ -1144,6 +1251,18 @@ impl Plugin for BackupPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The debug form of a follow command, which the session history shows, hides the PIN.
+    #[test]
+    fn debug_form_hides_the_pairing_pin() {
+        let command = BackupCommand::FollowPrimary {
+            address: "10.0.0.2:3000".into(),
+            pin: Some("123456".into()),
+        };
+        let shown = format!("{command:?}");
+        assert!(shown.contains("10.0.0.2:3000"));
+        assert!(!shown.contains("123456"));
+    }
 
     /// A checkpoint older than the forwarded commands a world replayed is stale, while a newer
     /// one, one from a restarted primary, or the first one is not.

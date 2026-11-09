@@ -49,6 +49,7 @@ pub mod reference_index;
 pub mod render_pass;
 pub mod resync;
 pub mod runtime_capabilities;
+pub mod session_history;
 pub mod settings;
 pub mod ui_notification;
 pub mod variables;
@@ -167,6 +168,10 @@ pub mod prelude {
         FxModuleCapability, LibraryCapability, RuntimeCapabilities, RuntimeMode,
         TimelineAudioCapability, disk_storage_available,
     };
+    pub use crate::session_history::{
+        SessionHistoryCommand, SessionHistoryEntry, SessionHistoryKind, SessionHistoryOutcome,
+        SessionHistoryPage, record_session_command, record_session_event,
+    };
     pub use crate::settings::{
         SettingsAppExt, SettingsCommandHandling, SettingsPlugin, SettingsRegistry, SettingsSection,
         SettingsSync, SettingsUpdate, SettingsValue, SettingsValues, load_saved_settings,
@@ -239,6 +244,7 @@ impl Plugin for EnginePlugin {
         app.add_message::<command_lifecycle::CommandReply>();
         app.add_message::<command_lifecycle::FinishedCommand>();
         app.add_message::<CommandNoticeReply>();
+        session_history::register(app);
         // Add startup transition system
         app.add_systems(
             Update,

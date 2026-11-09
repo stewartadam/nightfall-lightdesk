@@ -1148,12 +1148,18 @@ pub fn expand_fader_button_commands(
             FaderButtonInput::Go(_) => None,
         };
         if let Some(result) = held_input {
-            // Flash buttons never reach dispatch, where commands are recorded for a backup.
-            if result.is_ok()
-                && let Some(forwarding) = forwarding.as_mut()
-                && let Some(command) = envelope.payload.as_any().downcast_ref::<FaderCommand>()
-            {
-                forwarding.record_command(command, None);
+            // Flash buttons never reach dispatch, where commands are recorded for a backup and
+            // the session history.
+            if let Some(command) = envelope.payload.as_any().downcast_ref::<FaderCommand>() {
+                let forwarded_sequence = result
+                    .is_ok()
+                    .then(|| forwarding.as_mut()?.record_command(command, None))
+                    .flatten();
+                let origin = responder
+                    .origin(envelope.command_id)
+                    .cloned()
+                    .unwrap_or(CommandOrigin::WebUi);
+                record_session_command(envelope.command_id, command, &origin, forwarded_sequence);
             }
             finish_fader_command(&mut responder, envelope.command_id, result);
             continue;

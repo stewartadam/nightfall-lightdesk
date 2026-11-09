@@ -73,6 +73,13 @@ pub fn submit_client_command<T>(
             let envelope = world
                 .resource::<CommandTracker>()
                 .admitted_envelope(command_id, undo_id, command);
+            // These commands skip dispatch, where the session history records the others.
+            crate::session_history::record_session_command(
+                command_id,
+                &envelope.command,
+                &envelope.origin,
+                None,
+            );
             world.write_message(envelope);
         }
     }
