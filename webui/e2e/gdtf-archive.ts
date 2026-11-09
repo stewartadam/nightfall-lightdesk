@@ -58,8 +58,12 @@ export interface TestGdtfFixture {
   manufacturer: string;
   model: string;
   fixtureTypeId: string;
-  /** Text of the archive's one `Revision` entry; none is written when left out. */
+  /** Text of the archive's latest `Revision` entry; none is written when left out. */
   revision?: string;
+  /** Texts of earlier `Revision` entries, oldest first, written before `revision`. */
+  history?: string[];
+  /** Makes the dimmer 16-bit, so the "Standard" mode takes two channels instead of one. */
+  wideDimmer?: boolean;
 }
 
 /** Escapes `text` for use inside a double-quoted XML attribute. */
@@ -85,10 +89,26 @@ export function libraryAssetEtag(bytes: Uint8Array): string {
 
 /**
  * Builds a minimal GDTF archive for `fixture`: a cube body with one wash beam and a single
- * one-channel dimmer mode named "Standard", enough for the library to list and preview it,
- * plus a revision entry when `fixture.revision` names one.
+ * one-channel dimmer mode named "Standard" (two channels with `wideDimmer`), enough for the
+ * library to list and preview it, plus revision entries for `fixture.history` and
+ * `fixture.revision`.
  */
 export function testGdtfArchive(fixture: TestGdtfFixture): Buffer {
+  const revisions = [
+    ...(fixture.history ?? []),
+    ...(fixture.revision === undefined ? [] : [fixture.revision]),
+  ];
+  const revisionsXml = revisions.length
+    ? `<Revisions>${revisions
+        .map(
+          (text, index) =>
+            `<Revision Text="${escapeXml(text)}" Date="2024-01-${String(index + 1).padStart(2, "0")}T00:00:00" UserID="0"/>`,
+        )
+        .join("")}</Revisions>\n`
+    : "";
+  const dimmer = fixture.wideDimmer
+    ? { offset: "1,2", from: "0/2" }
+    : { offset: "1", from: "0/1" };
   const identity = `Name="${fixture.model}" ShortName="${fixture.model}" LongName="${fixture.model}" Manufacturer="${fixture.manufacturer}"`;
   const identityMatrix = "{1,0,0,0}{0,1,0,0}{0,0,1,0}{0,0,0,1}";
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -115,9 +135,9 @@ export function testGdtfArchive(fixture: TestGdtfFixture): Buffer {
 <DMXModes>
 <DMXMode Name="Standard" Geometry="Body">
 <DMXChannels>
-<DMXChannel DMXBreak="1" Offset="1" Highlight="None" Geometry="Beam">
+<DMXChannel DMXBreak="1" Offset="${dimmer.offset}" Highlight="None" Geometry="Beam">
 <LogicalChannel Attribute="Dimmer" Snap="No" Master="None">
-<ChannelFunction Name="Dimmer" Attribute="Dimmer" DMXFrom="0/1" Default="0/1" PhysicalFrom="0" PhysicalTo="1"/>
+<ChannelFunction Name="Dimmer" Attribute="Dimmer" DMXFrom="${dimmer.from}" Default="${dimmer.from}" PhysicalFrom="0" PhysicalTo="1"/>
 </LogicalChannel>
 </DMXChannel>
 </DMXChannels>
@@ -125,7 +145,7 @@ export function testGdtfArchive(fixture: TestGdtfFixture): Buffer {
 <FTMacros/>
 </DMXMode>
 </DMXModes>
-${fixture.revision === undefined ? "" : `<Revisions><Revision Text="${escapeXml(fixture.revision)}" Date="2024-01-01T00:00:00" UserID="0"/></Revisions>\n`}</FixtureType>
+${revisionsXml}</FixtureType>
 </GDTF>
 `;
   return storedZip("description.xml", Buffer.from(xml, "utf8"));

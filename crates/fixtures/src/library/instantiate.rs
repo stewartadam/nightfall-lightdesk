@@ -148,7 +148,7 @@ impl LibraryFixtureStore<'_, '_> {
             resolve_template,
         )?;
         let description = if request.instances.is_empty() {
-            "Update Fixtures to Library Revision"
+            "Change Fixture Type from Library"
         } else {
             "Patch Fixtures from Library"
         };
@@ -214,13 +214,7 @@ pub fn create_library_fixtures(
             format!("Fixture ID {} is already in use", instance.id),
         ));
     }
-    if instances
-        .iter()
-        .map(|instance| instance.id)
-        .collect::<HashSet<_>>()
-        .len()
-        != instances.len()
-    {
+    if has_repeats(instances.iter().map(|instance| instance.id)) {
         return Err(CommandError::new(
             "fixture_library.duplicate_fixture_id",
             "A fixture ID was specified more than once",
@@ -276,19 +270,26 @@ pub fn update_library_fixtures(
     if has_repeats(updates.iter().map(|update| update.id)) {
         return Err(duplicate_update_target_error());
     }
-    if let Some(update) = updates
-        .iter()
-        .find(|update| fixtures.inner.from_id(update.id).is_err())
-    {
-        return Err(fixture_not_found_error(update.id));
+    for update in updates {
+        let Ok(existing) = fixtures.inner.from_id(update.id) else {
+            return Err(fixture_not_found_error(update.id));
+        };
+        if existing.library_asset_etag.is_none() {
+            return Err(CommandError::new(
+                "fixture_library.not_a_library_fixture",
+                format!(
+                    "Fixture {} wasn't created from the fixture library, so it has no \
+                     revision to update",
+                    update.id
+                ),
+            ));
+        }
     }
 
     let mut templates: HashMap<&str, LibraryFixtureTemplate> = HashMap::new();
     for update in updates {
         if !templates.contains_key(update.mode.as_str()) {
-            let mut template = resolve_mode(&update.mode)?;
-            template.fixture.library_asset_etag = Some(template.asset_etag.clone());
-            templates.insert(update.mode.as_str(), template);
+            templates.insert(update.mode.as_str(), resolve_mode(&update.mode)?);
         }
     }
     let replacements = updates
@@ -303,25 +304,38 @@ pub fn update_library_fixtures(
         .iter()
         .map(|update| update.id)
         .collect::<HashSet<_>>();
-    for replacement in &replacements {
-        let left_behind = fixtures.inner.iter().find(|other| {
+    let revision_of_mode = replacements
+        .iter()
+        .map(|fixture| {
+            (
+                (&fixture.make, &fixture.model, &fixture.mode),
+                &fixture.library_asset_etag,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let left_behind = fixtures
+        .inner
+        .iter()
+        .find(|other| {
             !updated_ids.contains(&other.identifiers.id)
-                && other.make == replacement.make
-                && other.model == replacement.model
-                && other.mode == replacement.mode
                 && other.library_asset_etag.is_some()
-                && other.library_asset_etag != replacement.library_asset_etag
-        });
-        if let Some(other) = left_behind {
-            return Err(CommandError::new(
+                && revision_of_mode
+                    .get(&(&other.make, &other.model, &other.mode))
+                    .is_some_and(|revision| **revision != other.library_asset_etag)
+        })
+        .map(|other| {
+            CommandError::new(
                 "fixture_library.mixed_revisions",
                 format!(
                     "Fixture {} also uses {} {} ({}) from another revision; update it too, \
                      since a show holds one revision of each mode",
                     other.identifiers.id, other.make, other.model, other.mode
                 ),
-            ));
-        }
+            )
+        });
+    drop(revision_of_mode);
+    if let Some(error) = left_behind {
+        return Err(error);
     }
 
     commit_library_fixtures(

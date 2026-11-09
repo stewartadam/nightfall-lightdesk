@@ -32,6 +32,7 @@ import { fixtureProfile } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { GdtfShareUpdateDetails } from "../../gdtf-share";
 import LibraryFixturePreview from "./library-fixture-preview";
+import { RevisionUpdateReview } from "./revision-update-review";
 
 interface FixtureLibraryPropertiesProps {
   selectedFixture: Accessor<types.AvailableFixtureInfo | null>;
@@ -355,19 +356,53 @@ export default function FixtureLibraryProperties(
 
             {/* Keyed by file, so an install under way never carries over to another fixture. */}
             <Show when={props.update()?.asset_etag} keyed>
-              {(_etag: string) => (
-                <Show when={props.update()}>
-                  {(update) => (
-                    <>
-                      <div class="border-t border-neutral-700" />
-                      <GdtfShareUpdateDetails
-                        update={update()}
-                        onShow={props.onShowFixture}
-                      />
-                    </>
-                  )}
-                </Show>
-              )}
+              {(_etag: string) => {
+                const [reviewing, setReviewing] =
+                  createSignal<types.AvailableFixtureInfo>();
+                const [updated, setUpdated] = createSignal<string>();
+                return (
+                  <Show when={props.update()}>
+                    {(update) => (
+                      <>
+                        <div class="border-t border-neutral-700" />
+                        <GdtfShareUpdateDetails
+                          update={update()}
+                          patchedCount={props.patchedCount()}
+                          onShow={props.onShowFixture}
+                          onReviewUpdate={(entry) => {
+                            setUpdated(undefined);
+                            setReviewing(entry);
+                          }}
+                        />
+                        <Show when={reviewing()}>
+                          {(target) => (
+                            <RevisionUpdateReview
+                              from={fixture()}
+                              to={target()}
+                              onUpdated={(summary) => {
+                                setReviewing(undefined);
+                                setUpdated(summary);
+                              }}
+                              onCancel={() => setReviewing(undefined)}
+                            />
+                          )}
+                        </Show>
+                        <Show when={updated()}>
+                          {(summary) => (
+                            <Alert
+                              variant="tip"
+                              density="compact"
+                              data-testid="revision-update-summary"
+                            >
+                              {summary()}
+                            </Alert>
+                          )}
+                        </Show>
+                      </>
+                    )}
+                  </Show>
+                );
+              }}
             </Show>
 
             <div class="border-t border-neutral-700" />

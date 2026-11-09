@@ -71,6 +71,14 @@ export function saveShowfile(): void {
   sendShowfileCommand(saveShowfileCommand());
 }
 
+/**
+ * Saves the current showfile and resolves once the backend confirms the save, rejecting
+ * with its message when the save fails.
+ */
+export async function saveShowfileAndAwait(): Promise<void> {
+  await sendShowfileCommandAndAwait(saveShowfileCommand());
+}
+
 /** Imports selected showfile domains through the backend. */
 export function importShowfile(options: types.ShowfileImportOptions): void {
   sendShowfileCommand({ type: "ImportShowfile", data: options });

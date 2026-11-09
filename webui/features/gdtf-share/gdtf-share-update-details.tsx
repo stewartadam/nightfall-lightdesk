@@ -41,14 +41,24 @@ function describeRevision(fixture: GdtfShareFixture): string {
 export interface GdtfShareUpdateDetailsProps {
   /** The newer revision found for the selected library file. */
   update: GdtfShareUpdate;
+  /** How many patched fixtures use the selected library file. */
+  patchedCount: number;
   /** Shows a library entry, once the update is installed or already in the library. */
   onShow: (entry: AvailableFixtureInfo) => void;
+  /** Starts reviewing a move of the patched fixtures to the installed update. */
+  onReviewUpdate: (entry: AvailableFixtureInfo) => void;
+}
+
+/** Names a fixture count, such as "1 fixture" or "3 fixtures". */
+function fixtureCount(count: number): string {
+  return `${count} ${count === 1 ? "fixture" : "fixtures"}`;
 }
 
 /**
  * Tells the user a newer GDTF Share revision of the selected library file exists, and
  * installs it next to the current file, or shows the library copy when one already is that
- * revision. The current file stays, so patched fixtures keep using it until changed.
+ * revision. The current file stays, so patched fixtures keep using it until the user
+ * reviews and confirms moving them to the update.
  */
 export function GdtfShareUpdateDetails(props: GdtfShareUpdateDetailsProps) {
   const $fixtureLibrary = useStore(fixtureLibrary);
@@ -74,8 +84,11 @@ export function GdtfShareUpdateDetails(props: GdtfShareUpdateDetailsProps) {
       : undefined;
   });
 
-  /** Installs the newest revision and shows the library entry it becomes. */
-  const install = async () => {
+  /**
+   * Installs the newest revision, then either reviews moving the patched fixtures to it
+   * (`thenReview`) or shows the library entry it becomes.
+   */
+  const install = async (thenReview: boolean) => {
     setInstalling(true);
     setDownload(undefined);
     setNote(undefined);
@@ -87,7 +100,8 @@ export function GdtfShareUpdateDetails(props: GdtfShareUpdateDetailsProps) {
       );
       if (lifetime.signal.aborted) return;
       if (outcome?.kind === "listed") {
-        props.onShow(outcome.entry);
+        if (thenReview) props.onReviewUpdate(outcome.entry);
+        else props.onShow(outcome.entry);
       } else {
         setNote(installOutcomeNote(installed, outcome));
       }
@@ -131,30 +145,57 @@ export function GdtfShareUpdateDetails(props: GdtfShareUpdateDetailsProps) {
         when={libraryCopy()}
         fallback={
           <>
-            <Button
-              size="compact"
-              variant="primary"
-              disabled={installing()}
-              onClick={install}
-              data-testid="gdtf-share-install-update"
-            >
-              {installing() ? "Installing…" : "Install update"}
-            </Button>
+            <div class="flex flex-wrap gap-2">
+              <Show when={props.patchedCount > 0}>
+                <Button
+                  size="compact"
+                  variant="primary"
+                  disabled={installing()}
+                  onClick={() => install(true)}
+                  data-testid="gdtf-share-install-and-update"
+                >
+                  Install and update {fixtureCount(props.patchedCount)}
+                </Button>
+              </Show>
+              <Button
+                size="compact"
+                variant={props.patchedCount > 0 ? undefined : "primary"}
+                disabled={installing()}
+                onClick={() => install(false)}
+                data-testid="gdtf-share-install-update"
+              >
+                {props.patchedCount > 0 ? "Install only" : "Install update"}
+              </Button>
+            </div>
             <p class="text-neutral-400 text-xs">
-              The update is added next to this file. Patched fixtures keep using
-              this file until you change their fixture type.
+              The update is added next to this file.
+              {props.patchedCount > 0
+                ? " Patched fixtures move to it only after you review and confirm."
+                : ""}
             </p>
           </>
         }
       >
         {(copy) => (
-          <Button
-            size="compact"
-            onClick={() => props.onShow(copy())}
-            data-testid="gdtf-share-show-update"
-          >
-            Show library copy
-          </Button>
+          <div class="flex flex-wrap gap-2">
+            <Show when={props.patchedCount > 0}>
+              <Button
+                size="compact"
+                variant="primary"
+                onClick={() => props.onReviewUpdate(copy())}
+                data-testid="gdtf-share-review-update"
+              >
+                Update {fixtureCount(props.patchedCount)}…
+              </Button>
+            </Show>
+            <Button
+              size="compact"
+              onClick={() => props.onShow(copy())}
+              data-testid="gdtf-share-show-update"
+            >
+              Show library copy
+            </Button>
+          </div>
         )}
       </Show>
       <Show when={installing()}>

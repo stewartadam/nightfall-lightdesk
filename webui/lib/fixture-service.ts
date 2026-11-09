@@ -8,6 +8,7 @@
 
 import type * as types from "../types/index";
 import type { FixtureLibraryCommand } from "../types/index";
+import { commandOutputValue, requireCommandSuccess } from "./command-result";
 import { fixtureWireLayout } from "./dmx";
 import { commandClient } from "./engine-commands";
 import { getLogger } from "./logger";
@@ -239,6 +240,45 @@ export async function createFixturesFromLibrary(
   );
 
   return result;
+}
+
+/**
+ * Describes one library revision for reviewing an update to it: every mode with the
+ * fixture it builds, and the revision notes its GDTF archive records. Rejects with the
+ * engine's message when the revision is not in the library.
+ */
+export async function fetchRevisionDetails(
+  make: string,
+  model: string,
+  assetEtag: string,
+): Promise<types.LibraryRevisionDetails> {
+  const result = await commandClient.invoke("FixtureLibraryCommand", {
+    type: "GetRevisionDetails",
+    data: { make, model, asset_etag: assetEtag },
+  });
+  requireCommandSuccess(result);
+  return commandOutputValue(result) as types.LibraryRevisionDetails;
+}
+
+/**
+ * Moves patched fixtures to another library revision, each rebuilt from the mode named
+ * for it, as one undoable engine change. Rejects with the engine's message when the
+ * update is refused, in which case no fixture changed.
+ */
+export async function updateFixturesToRevision(
+  make: string,
+  model: string,
+  assetEtag: string,
+  fixtures: types.LibraryFixtureModeUpdate[],
+): Promise<void> {
+  const result = await commandClient.invoke("FixtureLibraryCommand", {
+    type: "UpdateFixturesToRevision",
+    data: { make, model, asset_etag: assetEtag, fixtures },
+  });
+  requireCommandSuccess(result);
+  log.info(
+    `Updated ${fixtures.length} fixture(s) to library revision: ${make} ${model}`,
+  );
 }
 
 /**

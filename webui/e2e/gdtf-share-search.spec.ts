@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import type { GdtfShareFixture } from "../types";
 import { libraryAssetEtag, testGdtfArchive } from "./gdtf-archive";
 import { expect, test } from "./playwright-fixtures";
@@ -484,24 +484,44 @@ function revisionArchive(fixture: GdtfShareFixture): Buffer {
 }
 
 /**
- * The Fixture Library flags a GDTF file with a newer GDTF Share revision, Properties names
- * both revisions, and installing the update adds it next to the old file and selects it.
- * The old file then points at the library copy instead of offering another install. The
- * update check is answered by a stand-in that records what the panel sent, so the test also
- * shows the library reports each file's fixture type and revision text.
+ * Generated archive of {@link WASH_UPDATE}: its notes list the installed revision and one
+ * fix after it, and its dimmer is 16-bit, so the update grows each fixture by a channel.
  */
-test("offers newer GDTF Share revisions of library fixtures", async ({
-  page,
-  backendSlot,
-}, testInfo) => {
-  test.setTimeout(180_000);
-  const libraryDir = join(backendSlot.dataDir, "fixtures");
+function updateArchive(): Buffer {
+  return testGdtfArchive({
+    manufacturer: WASH_UPDATE.manufacturer,
+    model: WASH_UPDATE.fixture,
+    fixtureTypeId: WASH_UPDATE.fixture_type_id ?? "",
+    history: [WASH.revision, "Fixed the beam angle"],
+    revision: WASH_UPDATE.revision,
+    wideDimmer: true,
+  });
+}
+
+/** Library fingerprints of the installed {@link WASH} file and its update. */
+interface WashUpdate {
+  installedEtag: string;
+  updateEtag: string;
+  /** Every library file the panel asked the update check about. */
+  checked: unknown[];
+}
+
+/**
+ * Installs {@link WASH} into the library and stands in for GDTF Share: the update check
+ * offers {@link WASH_UPDATE} for it (pointing at the library copy once one exists), and
+ * installing the update writes {@link updateArchive} the way the engine would.
+ */
+async function standInForWashUpdate(
+  page: Page,
+  dataDir: string,
+): Promise<WashUpdate> {
+  const libraryDir = join(dataDir, "fixtures");
   await mkdir(libraryDir, { recursive: true });
   const installedArchive = revisionArchive(WASH);
   await writeFile(join(libraryDir, installFileName(WASH)), installedArchive);
   const installedEtag = libraryAssetEtag(installedArchive);
-  const updateArchive = revisionArchive(WASH_UPDATE);
-  const updateEtag = libraryAssetEtag(updateArchive);
+  const update = updateArchive();
+  const updateEtag = libraryAssetEtag(update);
 
   await standInForGdtfShare(page, { user: "lighting@example.com", libraryDir });
   const checked: unknown[] = [];
@@ -532,7 +552,7 @@ test("offers newer GDTF Share revisions of library fixtures", async ({
       url.pathname === `/api/gdtf-share/fixtures/${WASH_UPDATE.rid}/install`,
     async (route) => {
       const partial = join(libraryDir, ".update.partial");
-      await writeFile(partial, updateArchive);
+      await writeFile(partial, update);
       await rename(partial, join(libraryDir, installFileName(WASH_UPDATE)));
       return route.fulfill({
         contentType: "application/x-ndjson",
@@ -547,7 +567,14 @@ test("offers newer GDTF Share revisions of library fixtures", async ({
       });
     },
   );
+  return { installedEtag, updateEtag, checked };
+}
 
+/**
+ * Opens the app with only the Fixture Library and Properties panels, so both have room
+ * for the screenshots, and returns the library panel.
+ */
+async function openLibraryWithProperties(page: Page): Promise<Locator> {
   await openApp(page);
   const library = await addPanel(
     page,
@@ -573,17 +600,11 @@ test("offers newer GDTF Share revisions of library fixtures", async ({
     },
     [LIBRARY_PANEL_ID, PROPERTIES_PANEL_ID],
   );
-  const rows = library.getByRole("row").filter({ hasText: "E2E Wash" });
-  await expect(rows).toHaveCount(1, { timeout: 30_000 });
-  await expect(rows.first()).toContainText("Update available", {
-    timeout: 20_000,
-  });
-  expect(checked).toContainEqual({
-    asset_etag: installedEtag,
-    fixture_type_id: WASH.fixture_type_id,
-    revision: "Release 1.0",
-  });
+  return library;
+}
 
+/** Patches fixtures 9101 to 9103 from library revision `assetEtag` of the wash. */
+async function patchThreeWashes(page: Page, assetEtag: string): Promise<void> {
   const created = await page.evaluate(
     (assetEtag) =>
       (window as any).appStores.sendAndAwait({
@@ -599,9 +620,40 @@ test("offers newer GDTF Share revisions of library fixtures", async ({
           },
         },
       }),
-    installedEtag,
+    assetEtag,
   );
   expect(created.outcome.type).toBe("Succeeded");
+}
+
+/**
+ * The Fixture Library flags a GDTF file with a newer GDTF Share revision, Properties names
+ * both revisions, and installing the update adds it next to the old file and selects it.
+ * The old file then points at the library copy instead of offering another install. The
+ * update check is answered by a stand-in that records what the panel sent, so the test also
+ * shows the library reports each file's fixture type and revision text.
+ */
+test("offers newer GDTF Share revisions of library fixtures", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const { installedEtag, checked } = await standInForWashUpdate(
+    page,
+    backendSlot.dataDir,
+  );
+  const library = await openLibraryWithProperties(page);
+  const rows = library.getByRole("row").filter({ hasText: "E2E Wash" });
+  await expect(rows).toHaveCount(1, { timeout: 30_000 });
+  await expect(rows.first()).toContainText("Update available", {
+    timeout: 20_000,
+  });
+  expect(checked).toContainEqual({
+    asset_etag: installedEtag,
+    fixture_type_id: WASH.fixture_type_id,
+    revision: "Release 1.0",
+  });
+
+  await patchThreeWashes(page, installedEtag);
   await expect(
     rows.first().getByRole("gridcell", { name: "3", exact: true }),
   ).toBeVisible();
@@ -639,5 +691,105 @@ test("offers newer GDTF Share revisions of library fixtures", async ({
   await expect(details.getByTestId("gdtf-share-show-update")).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("13-library-copy.png"),
+  });
+});
+
+/** Reads the library revision recorded on each of the patched washes 9101 to 9103. */
+function washRevisions(page: Page): Promise<(string | undefined)[]> {
+  return page.evaluate(() => {
+    const fixtures = Object.values(
+      (window as any).appStores.fixtures.get(),
+    ) as { identifiers: { id: number }; library_asset_etag?: string }[];
+    return [9101, 9102, 9103].map(
+      (id) =>
+        fixtures.find((fixture) => fixture.identifiers.id === id)
+          ?.library_asset_etag,
+    );
+  });
+}
+
+/**
+ * With patched fixtures, "Install and update" installs the GDTF Share update and opens a
+ * review: the notes written since the installed revision, the new mode each current mode
+ * becomes with its channel growth, and saving the show first. Confirming moves every
+ * fixture to the new revision in one engine change, and one undo puts them all back.
+ */
+test("installs a GDTF Share update and moves patched fixtures to it", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const { installedEtag, updateEtag } = await standInForWashUpdate(
+    page,
+    backendSlot.dataDir,
+  );
+  const library = await openLibraryWithProperties(page);
+  const rows = library.getByRole("row").filter({ hasText: "E2E Wash" });
+  await expect(rows.first()).toContainText("Update available", {
+    timeout: 30_000,
+  });
+  await patchThreeWashes(page, installedEtag);
+  await rows.first().click();
+  await expect(page.getByTestId("fixture-library-patched-count")).toHaveText(
+    "Patched: 3 fixtures",
+  );
+  const details = page.getByTestId("gdtf-share-update");
+  await expect(details.getByTestId("gdtf-share-install-update")).toHaveText(
+    "Install only",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("14-install-and-update-offered.png"),
+  });
+
+  await details.getByTestId("gdtf-share-install-and-update").click();
+  const review = page.getByTestId("revision-update-review");
+  const changes = review.getByTestId("revision-update-changes");
+  await expect(changes).toContainText("Fixed the beam angle", {
+    timeout: 20_000,
+  });
+  await expect(changes).toContainText("Release 2.0");
+  await expect(changes).not.toContainText("Release 1.0");
+  const modes = review.getByTestId("revision-update-modes");
+  await expect(modes).toContainText("Standard (3 × 1 channel)");
+  await expect(review.getByTestId("revision-update-mode")).toHaveValue(
+    "Standard",
+  );
+  await expect(modes).toContainText("This mode uses 1 channel more");
+  await expect(review.getByTestId("revision-update-save-first")).toBeChecked();
+  await review.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("15-update-review.png"),
+  });
+
+  await review.getByTestId("revision-update-confirm").click();
+  await expect(page.getByTestId("revision-update-summary")).toContainText(
+    "Updated 3 fixtures",
+    { timeout: 20_000 },
+  );
+  await expect
+    .poll(() => washRevisions(page))
+    .toEqual(Array(3).fill(updateEtag));
+  await expect(page.getByTestId("fixture-library-patched-count")).toHaveText(
+    "Patched: 0 fixtures",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("16-fixtures-updated.png"),
+  });
+
+  const undone = await page.evaluate(() =>
+    (window as any).appStores.sendAndAwait({
+      module: "UndoCommand",
+      command: { type: "Undo", data: {} },
+    }),
+  );
+  expect(undone.outcome.type).toBe("Succeeded");
+  await expect
+    .poll(() => washRevisions(page))
+    .toEqual(Array(3).fill(installedEtag));
+  await expect(page.getByTestId("fixture-library-patched-count")).toHaveText(
+    "Patched: 3 fixtures",
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("17-update-undone.png"),
   });
 });
