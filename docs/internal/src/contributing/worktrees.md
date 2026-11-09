@@ -87,7 +87,7 @@ A service appears in several places, and a change that misses one leaves a clien
 - `WORKTREE_MANAGED_SERVICES`, `SERVICE_SELECTORS`, `summarizeWorktree`, and `observedOpenForService` in `worktree-dashboard/dashboard-client.mjs`. The `wt service` alias and the MCP server both read these.
 - The list and status output in `worktree-dashboard/worktree-service.mjs`, and the tool descriptions in `worktree-dashboard/worktree-dashboard-mcp.mjs`.
 - The types, service options, and row cells in `webui/worktree-dashboard.tsx`.
-- The port block comment in `scripts/setup-env.mjs`, if you use a new offset.
+- The port block comment in `scripts/allocate-worktree-port.mjs`, if you use a new offset.
 - `.config/wt.toml`, if worktree setup must build or install something for the service.
 - The tests in `scripts/dashboard-env.node.test.mjs`, `scripts/worktree-service.node.test.mjs`, and `webui/e2e/worktree-dashboard.spec.ts`.
 - This page and the worktree section of CONTRIBUTING.md.
@@ -101,7 +101,7 @@ Restart the dashboard API after editing it. It has no hot reload, and restarting
 Run `wt service start -s <service>`. It prints the error and log tail. Every service writes its log to a new file under `nightfall-worktree-dashboard` in the system temporary directory, and the log button next to each service on the dashboard page opens it.
 
 - `spawn mdbook ENOENT` means mdBook isn't on the dashboard's `PATH`. Run `pnpm run setup:tools mdbook`, then restart the dashboard so it picks up the new `PATH`.
-- `needs a valid NIGHTFALL_PORT in .env` means the worktree has no `.env` or no port. Run `node scripts/setup-env.mjs` in that worktree.
+- `needs a valid NIGHTFALL_PORT in .env` means the worktree has no `.env` or no port. Run `wt hook pre-start setup-env` in that worktree.
 
 ### The status says "external process detected"
 

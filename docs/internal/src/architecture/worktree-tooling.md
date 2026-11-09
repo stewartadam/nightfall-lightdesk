@@ -36,7 +36,7 @@ The `.env` file in each worktree is the contract between the two halves. The `wt
 
 | Stage | Hooks | Purpose |
 |---|---|---|
-| pre-start | `setup-env` | Writes `.env`. Runs alone, because the steps after it read the port. |
+| pre-start | `setup-env` | Picks the port block and writes `.env`. Runs alone, because the steps after it read the port. |
 | pre-start | `install`, `typeshare` | Installs packages and generates TypeScript types, so the editor works at once. |
 | post-start | `copy-data-dir`, `copy-assets`, `copy-demo-audio` | Seeds the data directory and copies untracked assets from the main worktree. |
 | post-start | `build`, `wasm-build` | Builds the backend, test binaries, and WASM bridge in the background. |
@@ -44,7 +44,9 @@ The `.env` file in each worktree is the contract between the two halves. The `wt
 
 Pre-start hooks block until they finish. Post-start hooks run in the background after `wt` hands you the worktree, which is why a service can start before its build is done.
 
-`scripts/setup-env.mjs` copies the main worktree's `.env` and overrides a few keys. It picks a random block of 10 ports between 3000 and 3999, aligned to a multiple of 10, that overlaps no other worktree's `NIGHTFALL_PORT`. It treats each taken port as the start of a full block, which also keeps older worktrees with unaligned ports safe. Secondary worktrees also get a private `NIGHTFALL_DATA_DIR` and have network input and output turned off.
+The `setup-env` hook runs two scripts. `scripts/allocate-worktree-port.mjs` reads every other worktree's `NIGHTFALL_PORT` and prints a block of 10 ports between 3000 and 3999, aligned to a multiple of 10, that overlaps none of them. It treats each taken port as the start of a full block, so an unaligned port such as the primary checkout's is also safe. A worktree that already has a port keeps it while nothing overlaps it, so rerunning the hook doesn't move its URLs. The hook passes the result to `scripts/setup-env.mjs --port`, which knows nothing about other worktrees: it copies the main worktree's `.env` and overrides a few keys. Secondary worktrees also get a private `NIGHTFALL_DATA_DIR` and have network input and output turned off.
+
+`setup-env.mjs` ignores an inherited `NIGHTFALL_PORT` environment variable. A process that loaded another checkout's `.env` into its environment would otherwise hand that checkout's port to the new worktree. For the same reason the dashboard never loads its own `.env` into its environment.
 
 The `[aliases]` table adds `wt done`, which removes landed branches through `scripts/worktree-done.mjs`, and `wt service`, which runs `worktree-dashboard/worktree-service.mjs` with the worktree path. Worktrunk reads aliases and hooks from the `wt.toml` of the worktree you run it in, so a change to them reaches a worktree only once its branch includes the change.
 
@@ -82,7 +84,7 @@ Port probes are plain TCP connections, so a quiet timer check spawns no processe
 
 ## Service lifecycle
 
-Each service is an entry in `SERVICE_DEFINITIONS`: a command, its arguments, and whether it runs through Cargo. Cargo services run `NIGHTFALL_CARGO_COMMAND` when the worktree sets it, so a wrapper such as Mr Boxington works. Arguments can be a function of the worktree's environment, which is how the book services pass `--port`. A service whose port comes from `SERVICE_PORT_OFFSETS` gets `NIGHTFALL_PORT` plus its offset.
+Each service is an entry in `SERVICE_DEFINITIONS`: a command, its arguments, and whether it runs through Cargo. Arguments can be a function of the worktree's environment, which is how the book services pass `--port`. A service whose port comes from `SERVICE_PORT_OFFSETS` gets `NIGHTFALL_PORT` plus its offset.
 
 The three actions work like this:
 
@@ -129,7 +131,8 @@ The dashboard page is a Solid app in `webui/worktree-dashboard.tsx`. The Vite de
 | Location | Description |
 |---|---|
 | `.config/wt.toml` | Worktrunk hooks and aliases. |
-| `scripts/setup-env.mjs` | Writes `.env` and picks the port block. |
+| `scripts/allocate-worktree-port.mjs` | Picks a port block no other worktree uses. |
+| `scripts/setup-env.mjs` | Writes `.env` with the port it is given. |
 | `scripts/seed-data-dir-from-main.mjs` | Seeds or re-seeds the data directory. |
 | `scripts/claude-worktree-hook.mjs` | Routes Claude Code worktrees through `wt`. |
 | `scripts/worktree-done.mjs` | The `wt done` alias. |
