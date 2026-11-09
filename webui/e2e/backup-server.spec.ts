@@ -471,9 +471,15 @@ test("a primary whose backup took over steps down and follows it", async ({
     await primaryPage.setViewportSize({ width: 1600, height: 1000 });
     await openPanel(primaryPage, "I/O Transports");
     await expect(primaryPage.getByTestId("backup-peer")).toContainText(
-      `Backed up by 127.0.0.1:${backendSlot.backendPort}`,
+      `Backed up by 127.0.0.1:${backendSlot.backendPort}: in step`,
       { timeout: 30_000 },
     );
+    await primaryPage
+      .getByTestId("backup-server-settings")
+      .scrollIntoViewIfNeeded();
+    await primaryPage.screenshot({
+      path: testInfo.outputPath("8b-primary-backed-up.png"),
+    });
 
     await page
       .getByTestId("backup-banner")
@@ -537,7 +543,7 @@ test("backup takes over on its own when the primary stops", async ({
       .poll(
         () =>
           primaryPage.evaluate(
-            () => (window as any).appStores.backupState.get().backup_address,
+            () => (window as any).appStores.backupState.get().backup?.address,
           ),
         { timeout: 30_000 },
       )
@@ -570,7 +576,8 @@ test("backup takes over on its own when the primary stops", async ({
       page.getByTestId("backup-took-over-automatically"),
     ).toBeVisible();
     await expect(page.getByTestId("backup-peer")).toContainText(
-      `Backed up by 127.0.0.1:${primary.backend.backendPort}`,
+      `Backed up by 127.0.0.1:${primary.backend.backendPort}: unreachable`,
+      { timeout: 15_000 },
     );
     await page.getByTestId("backup-server-settings").scrollIntoViewIfNeeded();
     await page.screenshot({

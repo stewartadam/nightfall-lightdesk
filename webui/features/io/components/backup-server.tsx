@@ -7,16 +7,21 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createSignal, Show } from "solid-js";
+import { createSignal, Match, Show, Switch } from "solid-js";
+import { Alert } from "../../../components/ui/alert";
+import { Badge, type BadgeTone } from "../../../components/ui/badge";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { commandClient } from "../../../lib/engine-commands";
+import { documentationPageUrl } from "../../../lib/feedback";
 import { getLogger } from "../../../lib/logger";
 import { $backupState } from "../../../state/settings";
 import {
   type BackupCommand,
   BackupLinkStatus,
+  type BackupPeer,
+  BackupPeerState,
   type BackupState,
 } from "../../../types";
 
@@ -116,7 +121,123 @@ export function BackupBanner() {
   );
 }
 
-/** Configures which primary this host follows as a backup, with the link's state and errors. */
+/** Describes how this primary's backup is doing, in a few words after its address. */
+function describeBackupPeer(peer: BackupPeer): string {
+  const since = peer.last_seen_ms ? timeOfDay(peer.last_seen_ms) : undefined;
+  switch (peer.state) {
+    case BackupPeerState.InStep:
+      return "in step";
+    case BackupPeerState.NotInStep:
+      return since ? `not in step since ${since}` : "not in step yet";
+    case BackupPeerState.Unreachable:
+      return since ? `unreachable since ${since}` : "unreachable";
+    case BackupPeerState.AlsoPrimary:
+      return "also sending as a primary";
+    default:
+      return "checking";
+  }
+}
+
+/** Badge tone for how this primary's backup is doing. */
+function peerTone(state: BackupPeerState): BadgeTone {
+  switch (state) {
+    case BackupPeerState.InStep:
+      return "success";
+    case BackupPeerState.AlsoPrimary:
+      return "danger";
+    case BackupPeerState.Checking:
+      return "neutral";
+    default:
+      return "warning";
+  }
+}
+
+/** Badge tone for how the link to the primary stands. */
+function linkTone(link: BackupLinkStatus): BadgeTone {
+  switch (link) {
+    case BackupLinkStatus.Synced:
+      return "success";
+    case BackupLinkStatus.PairingRequired:
+    case BackupLinkStatus.Unreachable:
+      return "warning";
+    default:
+      return "info";
+  }
+}
+
+/**
+ * Names this computer's role and how its partner is doing on one line: a backup and its link to
+ * the primary, a primary and its backup's health, or a computer running on its own.
+ */
+function BackupRoleStatus() {
+  const state = useStore($backupState);
+  /** Says when this computer last took over on its own, after its role line. */
+  const tookOverNotice = () => (
+    <Show when={state().took_over_automatically_at_ms}>
+      {(at) => (
+        <span data-testid="backup-took-over-automatically">
+          {" "}
+          Took over automatically at {timeOfDay(at())}.
+        </span>
+      )}
+    </Show>
+  );
+  return (
+    <div
+      class="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-300"
+      data-testid="backup-role"
+    >
+      <Switch
+        fallback={
+          <p class="flex flex-wrap items-center gap-2">
+            <Badge uppercase>Standalone</Badge>
+            <span>
+              Not backed up.
+              {tookOverNotice()}
+            </span>
+          </p>
+        }
+      >
+        <Match when={state().primary_address}>
+          {(primary) => (
+            <>
+              <p
+                class="flex flex-wrap items-center gap-2"
+                data-testid="backup-link-status"
+              >
+                <Badge tone={linkTone(state().link)} uppercase>
+                  Backup
+                </Badge>
+                <span>
+                  Following {primary()}: {describeBackupLink(state())}.
+                </span>
+              </p>
+              <TakeOverButton />
+            </>
+          )}
+        </Match>
+        <Match when={state().backup}>
+          {(backup) => (
+            <p
+              class="flex flex-wrap items-center gap-2"
+              data-testid="backup-peer"
+            >
+              <Badge tone={peerTone(backup().state)} uppercase>
+                Primary
+              </Badge>
+              <span>
+                Backed up by {backup().address}: {describeBackupPeer(backup())}.
+                {tookOverNotice()}
+              </span>
+            </p>
+          )}
+        </Match>
+      </Switch>
+    </div>
+  );
+}
+
+/** Configures which primary this host follows as a backup, with the role, its partner's health and errors. */
 export function BackupServerSettings() {
   const state = useStore($backupState);
   const [address, setAddress] = createSignal("");
@@ -155,11 +276,56 @@ export function BackupServerSettings() {
         data-testid="backup-server-settings"
       >
         <h4 class="text-xs font-semibold text-gray-200">Backup server</h4>
+        <BackupRoleStatus />
+        <Show when={state().backup?.state === BackupPeerState.AlsoPrimary}>
+          <Alert
+            variant="caution"
+            density="compact"
+            class="mt-2"
+            role="alert"
+            data-testid="backup-both-primary"
+          >
+            Both computers are sending output. On the one that should stop,
+            follow the other as its primary.
+          </Alert>
+        </Show>
         <Show
-          when={state().primary_address}
-          fallback={
+          when={
+            state().primary_address &&
+            state().link === BackupLinkStatus.PairingRequired
+          }
+        >
+          <form
+            class="mt-2 flex flex-wrap items-end gap-2"
+            onSubmit={(event) => follow(event, state().primary_address ?? "")}
+          >
+            {pinField()}
+            <Button
+              size="compact"
+              type="submit"
+              disabled={!pin().trim()}
+              data-testid="backup-pair-again"
+            >
+              Pair again
+            </Button>
+          </form>
+        </Show>
+        <Show when={state().error}>
+          {(error) => (
+            <Alert
+              variant="caution"
+              density="compact"
+              class="mt-2"
+              role="alert"
+            >
+              {error()}
+            </Alert>
+          )}
+        </Show>
+        <div class="mt-3 flex flex-col gap-2 border-t border-gray-800 pt-3">
+          <Show when={!state().primary_address}>
             <form
-              class="mt-2 flex flex-wrap items-end gap-2"
+              class="flex flex-wrap items-end gap-2"
               onSubmit={(event) => follow(event, address())}
             >
               <label class="flex flex-col gap-1 text-xs text-gray-400">
@@ -182,95 +348,42 @@ export function BackupServerSettings() {
                 Follow primary
               </Button>
             </form>
-          }
-        >
-          {(primary) => (
-            <>
-              <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
-                <p
-                  class="text-xs text-gray-300"
-                  data-testid="backup-link-status"
-                >
-                  Following {primary()}: {describeBackupLink(state())}.
-                </p>
-                <TakeOverButton />
-              </div>
-              <Show when={state().link === BackupLinkStatus.PairingRequired}>
-                <form
-                  class="mt-2 flex flex-wrap items-end gap-2"
-                  onSubmit={(event) => follow(event, primary())}
-                >
-                  {pinField()}
-                  <Button
-                    size="compact"
-                    type="submit"
-                    disabled={!pin().trim()}
-                    data-testid="backup-pair-again"
-                  >
-                    Pair again
-                  </Button>
-                </form>
-              </Show>
-            </>
-          )}
-        </Show>
-        <Show
-          when={
-            !state().primary_address && state().took_over_automatically_at_ms
-          }
-        >
-          {(at) => (
-            <p
-              class="mt-2 text-xs text-amber-200"
-              data-testid="backup-took-over-automatically"
+          </Show>
+          <label class="flex items-start gap-2 text-xs text-gray-300">
+            <Checkbox
+              checked={state().auto_take_over}
+              onChange={(event) => {
+                const box = event.currentTarget;
+                // Show what the engine applied, which a failed command leaves unchanged.
+                void sendBackupCommand({
+                  type: "SetAutoTakeOver",
+                  data: { enabled: box.checked },
+                }).then(() => {
+                  box.checked = state().auto_take_over;
+                });
+              }}
+              data-testid="backup-auto-take-over"
+            />
+            <span>
+              Take over automatically when the primary stops answering for 3
+              seconds, unless its sACN still arrives here
+            </span>
+          </label>
+          <p class="text-xs text-gray-400">
+            A backup follows another Nightfall's live show without sending over
+            it, ready to take over. The primary needs external control on.{" "}
+            <a
+              href={documentationPageUrl(
+                "user-guide/panels/io-transports.html#backup-server",
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="underline"
             >
-              Took over automatically at {timeOfDay(at())} because the primary
-              stopped answering.
-            </p>
-          )}
-        </Show>
-        <Show when={state().backup_address}>
-          {(backup) => (
-            <p class="mt-2 text-xs text-gray-300" data-testid="backup-peer">
-              Backed up by {backup()}.
-            </p>
-          )}
-        </Show>
-        <label class="mt-2 flex items-start gap-2 text-xs text-gray-300">
-          <Checkbox
-            checked={state().auto_take_over}
-            onChange={(event) => {
-              const box = event.currentTarget;
-              // Show what the engine applied, which a failed command leaves unchanged.
-              void sendBackupCommand({
-                type: "SetAutoTakeOver",
-                data: { enabled: box.checked },
-              }).then(() => {
-                box.checked = state().auto_take_over;
-              });
-            }}
-            data-testid="backup-auto-take-over"
-          />
-          <span>
-            Take over automatically when the primary stops answering for 3
-            seconds, unless its sACN still arrives here.
-          </span>
-        </label>
-        <p class="mt-2 text-xs text-gray-400">
-          A backup keeps a copy of another Nightfall's live show. It sends sACN
-          one priority below the show's so receivers follow the primary, mutes
-          Art-Net and USB DMX, and turns off changes on this computer. The
-          primary needs external control on. When a backup takes over, the old
-          primary steps down and follows it once it can reach it again. Saved on
-          this computer.
-        </p>
-        <Show when={state().error}>
-          {(error) => (
-            <p class="mt-2 text-xs text-red-300" role="alert">
-              {error()}
-            </p>
-          )}
-        </Show>
+              How backups work
+            </a>
+          </p>
+        </div>
       </section>
     </Show>
   );

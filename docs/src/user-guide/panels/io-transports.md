@@ -73,7 +73,13 @@ The backup checks on the primary twice a second. When **Take over automatically*
 
 A backup only takes over on its own after it has reached the primary and loaded its show since it last started.
 
-The primary lists its backup under **Backup server**. If a device loses its connection to the primary, the connection message offers **Open the backup**, which opens the backup's address.
+The top of **Backup server** says what this computer is and how its partner is doing:
+
+- **Backup**: the primary it follows and whether it is in step.
+- **Primary**: the backup that follows it, and whether that backup is in step, not in step since a given time, or unreachable. If the backup is also sending as a primary, a warning says both computers are sending output; on the one that should stop, follow the other as its primary.
+- **Standalone**: no backup follows this computer.
+
+A takeover, and an old primary stepping down, also show a message on every connected device. If a device loses its connection to the primary, the connection message offers **Open the backup**, which opens the backup's address.
 
 When the old primary comes back, it checks its backup before sending anything. Finding that the backup took over, it becomes the backup's backup instead: it stays silent, refuses changes, and follows the new primary. On another computer it asks for the new primary's PIN first; enter it under **Backup server** and select **Pair again**. To swap the roles back, take over on the old primary.
 

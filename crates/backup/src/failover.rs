@@ -21,12 +21,12 @@ use std::{
         Mutex,
         atomic::{AtomicU16, AtomicU64, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use serde::{Deserialize, Serialize};
 
-use crate::preferences;
+use crate::{BackupPeer, BackupPeerState, preferences};
 
 /// Public route every host answers with its [`HostStatus`].
 pub const HOST_STATUS_PATH: &str = "/api/public/backup/status";
@@ -68,6 +68,24 @@ static HOST_STATUS: Mutex<HostStatus> = Mutex::new(HostStatus {
 
 /// `host:port` of the backup that last followed this host, if any.
 static BACKUP_PEER: Mutex<Option<String>> = Mutex::new(None);
+
+/// The backup that last received a checkpoint from this host, when, and the same time as Unix
+/// milliseconds.
+static LAST_PEER_REQUEST: Mutex<Option<(String, Instant, u64)>> = Mutex::new(None);
+
+/// Time since its last checkpoint after which a backup no longer counts as in step.
+pub(crate) const PEER_IN_STEP_WINDOW: Duration = Duration::from_secs(5);
+
+/// What the last check of this host's backup found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PeerCheck {
+    /// The backup answered and follows a primary.
+    Following,
+    /// The backup answered as a primary itself, without a newer epoch than this host's.
+    Primary,
+    /// The backup did not answer.
+    Unreachable,
+}
 
 /// Port this host's server listens on, or 0 when unknown.
 static OWN_PORT: AtomicU16 = AtomicU16::new(0);
@@ -132,10 +150,7 @@ pub(crate) fn set_backup_peer(peer: Option<String>) {
 /// Only requests the primary already accepted should reach this, since the remembered backup is
 /// trusted to take this host's place.
 pub fn note_backup_peer(ip: IpAddr, headers: &reqwest::header::HeaderMap) {
-    let Some(port) = headers
-        .get(BACKUP_PORT_HEADER)
-        .and_then(|value| value.to_str().ok()?.parse::<u16>().ok())
-    else {
+    let Some(port) = backup_port(headers) else {
         return;
     };
     let address = peer_address(ip, port);
@@ -154,6 +169,70 @@ pub fn note_backup_peer(ip: IpAddr, headers: &reqwest::header::HeaderMap) {
     });
     if let Some(error) = error {
         tracing::warn!(%error, "Could not save this host's backup");
+    }
+}
+
+/// Records that this host just sent a checkpoint to the backup that asked for it, which keeps
+/// that backup in step.
+pub fn note_checkpoint_served(ip: IpAddr, headers: &reqwest::header::HeaderMap) {
+    let Some(port) = backup_port(headers) else {
+        return;
+    };
+    *LAST_PEER_REQUEST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((
+        peer_address(ip, port),
+        Instant::now(),
+        crate::link::now_ms(),
+    ));
+}
+
+/// Forgets when a backup last received a checkpoint, as when this host changes role, so an old
+/// time is never shown for a later stint as primary.
+pub(crate) fn forget_checkpoints_served() {
+    *LAST_PEER_REQUEST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+}
+
+/// Reads the port a backup sends with its checkpoint requests.
+fn backup_port(headers: &reqwest::header::HeaderMap) -> Option<u16> {
+    headers
+        .get(BACKUP_PORT_HEADER)
+        .and_then(|value| value.to_str().ok()?.parse::<u16>().ok())
+}
+
+/// Returns how this host's backup at `address` is doing, from the last check of it and the last
+/// checkpoint this host sent it.
+pub(crate) fn peer_health(address: String, check: Option<PeerCheck>) -> BackupPeer {
+    let last_request = LAST_PEER_REQUEST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .filter(|(requester, _, _)| *requester == address)
+        .map(|(_, at, at_ms)| (at.elapsed(), *at_ms));
+    let state = peer_state(check, last_request.map(|(since, _)| since));
+    BackupPeer {
+        address,
+        state,
+        last_seen_ms: (state != BackupPeerState::InStep)
+            .then_some(last_request.map(|(_, at_ms)| at_ms))
+            .flatten(),
+    }
+}
+
+/// Classifies a backup from the last check of it and the time since its last checkpoint.
+fn peer_state(check: Option<PeerCheck>, since_request: Option<Duration>) -> BackupPeerState {
+    match check {
+        None => BackupPeerState::Checking,
+        Some(PeerCheck::Unreachable) => BackupPeerState::Unreachable,
+        Some(PeerCheck::Primary) => BackupPeerState::AlsoPrimary,
+        Some(PeerCheck::Following)
+            if since_request.is_some_and(|since| since <= PEER_IN_STEP_WINDOW) =>
+        {
+            BackupPeerState::InStep
+        }
+        Some(PeerCheck::Following) => BackupPeerState::NotInStep,
     }
 }
 
@@ -218,6 +297,35 @@ mod tests {
         assert!(!should_take_over(Duration::from_secs(1), false));
         assert!(should_take_over(FAILOVER_TIMEOUT, false));
         assert!(!should_take_over(FAILOVER_TIMEOUT * 2, true));
+    }
+
+    /// A backup is in step only while it follows and asked for a checkpoint recently; otherwise
+    /// the check's finding names the problem.
+    #[test]
+    fn classifies_the_backup() {
+        let recent = Some(Duration::from_secs(1));
+        let stale = Some(PEER_IN_STEP_WINDOW * 2);
+        assert_eq!(peer_state(None, recent), BackupPeerState::Checking);
+        assert_eq!(
+            peer_state(Some(PeerCheck::Following), recent),
+            BackupPeerState::InStep
+        );
+        assert_eq!(
+            peer_state(Some(PeerCheck::Following), stale),
+            BackupPeerState::NotInStep
+        );
+        assert_eq!(
+            peer_state(Some(PeerCheck::Following), None),
+            BackupPeerState::NotInStep
+        );
+        assert_eq!(
+            peer_state(Some(PeerCheck::Unreachable), recent),
+            BackupPeerState::Unreachable
+        );
+        assert_eq!(
+            peer_state(Some(PeerCheck::Primary), recent),
+            BackupPeerState::AlsoPrimary
+        );
     }
 
     /// Peer addresses read back as `host:port`, with IPv6 bracketed and mapped IPv4 unwrapped.

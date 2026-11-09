@@ -153,6 +153,8 @@ struct LinkShared {
     rejoin: Option<(String, u64)>,
     /// Whether the check for a backup that took over finished at least once in this process.
     peer_checked: bool,
+    /// The backup last checked and what the check found.
+    peer_check: Option<(String, failover::PeerCheck)>,
     report: LinkReport,
     mirror: Option<MirroredShow>,
     checkpoint: Option<LiveCheckpoint>,
@@ -307,6 +309,16 @@ impl BackupLink {
         shared.heartbeat.as_ref().map(|(_, status)| status.epoch)
     }
 
+    /// Returns what the last check of the backup at `address` found, if it was checked.
+    pub(crate) fn peer_check(&self, address: &str) -> Option<failover::PeerCheck> {
+        let shared = self.shared.lock().ok()?;
+        shared
+            .peer_check
+            .as_ref()
+            .filter(|(checked, _)| checked == address)
+            .map(|(_, check)| *check)
+    }
+
     /// Takes the backup found running as a newer primary, with its epoch, if any.
     pub(crate) fn take_rejoin(&self) -> Option<(String, u64)> {
         self.shared.lock().ok()?.rejoin.take()
@@ -420,25 +432,33 @@ async fn watch_backup_peer(shared: &Mutex<LinkShared>) {
     loop {
         let own = failover::host_status();
         let mut rejoin = None;
+        let mut check = None;
         if let Some(peer) = failover::backup_peer().filter(|_| !own.following) {
-            match fetch_host_status(&client, &format!("http://{peer}")).await {
+            let found = match fetch_host_status(&client, &format!("http://{peer}")).await {
                 Ok(status) if failover::should_rejoin(own.epoch, &status) => {
                     tracing::warn!(
                         %peer,
                         epoch = status.epoch,
                         "This host's backup took over; rejoining as its backup"
                     );
-                    rejoin = Some((peer, status.epoch));
+                    rejoin = Some((peer.clone(), status.epoch));
+                    failover::PeerCheck::Primary
                 }
-                Ok(_) => {}
-                Err(error) => tracing::debug!(?error, %peer, "backup_peer_check_failed"),
-            }
+                Ok(status) if status.following => failover::PeerCheck::Following,
+                Ok(_) => failover::PeerCheck::Primary,
+                Err(error) => {
+                    tracing::debug!(?error, %peer, "backup_peer_check_failed");
+                    failover::PeerCheck::Unreachable
+                }
+            };
+            check = Some((peer, found));
         }
         // One lock, so the world never sees the check done without the rejoin it found.
         if let Ok(mut shared) = shared.lock() {
             if rejoin.is_some() {
                 shared.rejoin = rejoin;
             }
+            shared.peer_check = check;
             shared.peer_checked = true;
         }
         tokio::time::sleep(PEER_CHECK_INTERVAL).await;

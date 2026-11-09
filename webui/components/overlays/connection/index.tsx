@@ -27,6 +27,7 @@ import { getLogger } from "../../../lib/logger";
 import { $pairingPromptOpen } from "../../../lib/pairing";
 import { appLifecycle } from "../../../state/app-lifecycle";
 import { $backupState } from "../../../state/settings";
+import { BackupPeerState } from "../../../types";
 import { DialogBackdrop, DialogSurface } from "../../ui/dialog";
 import Modal from "../../ui/modal";
 import Tooltip from "../../ui/tooltip";
@@ -296,7 +297,12 @@ const ConnectionOverlay = () => {
                 <span class="startup-status-dot" />
                 <span class="startup-status-dot" />
               </div>
-              <Show when={backupState().backup_address}>
+              <Show
+                when={
+                  backupState().backup?.state !== BackupPeerState.Unreachable &&
+                  backupState().backup?.address
+                }
+              >
                 {(backup) => (
                   <div
                     class="flex flex-col items-center gap-2 text-center text-sm text-gray-300"

@@ -122,7 +122,7 @@ export const $backupState = atom<BackupState>({
   synced_at_ms: undefined,
   epoch: 0,
   auto_take_over: true,
-  backup_address: undefined,
+  backup: undefined,
   took_over_automatically_at_ms: undefined,
 });
 

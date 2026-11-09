@@ -64,6 +64,9 @@ pub const FORWARDED_COMMANDS_PATH: &str = "/api/backup/commands";
 /// Longest the primary holds a forwarded commands request open while nothing happens.
 pub const FORWARDED_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// How often a primary reads how its backup is doing for clients.
+const PEER_HEALTH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+
 /// Export response header naming where the exported show came from.
 pub const EXPORT_SOURCE_HEADER: &str = "x-showfile-export-source";
 
@@ -103,6 +106,38 @@ pub enum BackupLinkStatus {
     Unreachable,
 }
 
+/// How the backup of a host running as a primary is doing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum BackupPeerState {
+    /// Not checked yet.
+    #[default]
+    Checking,
+    /// Follows a primary and copied this host's live state within the last few seconds.
+    InStep,
+    /// Answers, but has not copied this host's live state recently, as while it waits for a
+    /// pairing PIN or follows another primary.
+    NotInStep,
+    /// Does not answer.
+    Unreachable,
+    /// Runs as a primary too, so both computers send output.
+    AlsoPrimary,
+}
+
+/// The backup of a host running as a primary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct BackupPeer {
+    /// `host:port` of the backup.
+    pub address: String,
+    /// How the backup is doing.
+    pub state: BackupPeerState,
+    /// Unix time in milliseconds of the backup's last copy of this host's live state, while it is
+    /// not in step.
+    #[typeshare(serialized_as = "Option<number>")]
+    pub last_seen_ms: Option<u64>,
+}
+
 /// The host's backup role and the state of its link, as clients see it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Resource)]
 #[typeshare::typeshare]
@@ -126,9 +161,9 @@ pub struct BackupState {
     pub epoch: u64,
     /// Whether this host takes over on its own when its primary stops answering.
     pub auto_take_over: bool,
-    /// `host:port` of the backup following this host, so clients can switch to it when this
-    /// host goes away.
-    pub backup_address: Option<String>,
+    /// The host that backs this one up and how it is doing, while this host runs as a primary.
+    /// Clients also switch to it when this host goes away.
+    pub backup: Option<BackupPeer>,
     /// Unix time in milliseconds when this host last took over on its own because its primary
     /// stopped answering.
     #[typeshare(serialized_as = "Option<number>")]
@@ -376,6 +411,7 @@ fn take_over() -> RoleChange {
             stored.pairing_token = None;
         });
     failover::set_backup_peer(stored.backup_peer.clone());
+    failover::forget_checkpoints_served();
     tracing::info!(epoch = stored.epoch, "Backup took over output");
     link.set_target(None);
     // The old primary is the host this one just replaced; checking it before outputting would
@@ -398,6 +434,7 @@ fn rejoin_as_backup(address: &str, epoch: u64) -> RoleChange {
             stored.epoch = stored.epoch.max(epoch);
         });
     failover::set_backup_peer(None);
+    failover::forget_checkpoints_served();
     link::process_backup_link().set_target(Some(link::LinkTarget {
         address: address.to_string(),
         pin: None,
@@ -421,6 +458,7 @@ fn take_over_when_primary_is_lost(
     mut state: ResMut<BackupState>,
     mut role_error: ResMut<RoleError>,
     mut held_off: Local<bool>,
+    mut notifications: MessageWriter<UiNotification>,
 ) {
     if !state.is_backup() || !state.auto_take_over {
         return;
@@ -447,8 +485,16 @@ fn take_over_when_primary_is_lost(
         silent_for = ?silence.silent_for,
         "The primary stopped answering; taking over automatically"
     );
+    let primary = state.primary_address.as_deref().map_or_else(
+        || "The primary".to_string(),
+        |address| format!("The primary {address}"),
+    );
     let (stored, save_error) = take_over();
     state.apply_preferences(&stored);
+    notifications.write(UiNotification::toast(
+        ToastLevel::Warning,
+        format!("{primary} stopped answering, so this computer took over its output."),
+    ));
     let at = link::now_ms();
     failover::set_took_over_automatically_at(Some(at));
     state.took_over_automatically_at_ms = Some(at);
@@ -457,7 +503,11 @@ fn take_over_when_primary_is_lost(
 
 /// Rejoins as the backup of the host that last backed this one up, once the link found it
 /// running as a primary with a newer epoch.
-fn rejoin_when_backup_took_over(mut state: ResMut<BackupState>, mut role_error: ResMut<RoleError>) {
+fn rejoin_when_backup_took_over(
+    mut state: ResMut<BackupState>,
+    mut role_error: ResMut<RoleError>,
+    mut notifications: MessageWriter<UiNotification>,
+) {
     let Some((address, epoch)) = link::process_backup_link().take_rejoin() else {
         return;
     };
@@ -466,6 +516,13 @@ fn rejoin_when_backup_took_over(mut state: ResMut<BackupState>, mut role_error: 
     }
     let (stored, save_error) = rejoin_as_backup(&address, epoch);
     state.apply_preferences(&stored);
+    notifications.write(UiNotification::toast(
+        ToastLevel::Warning,
+        format!(
+            "{address} took over while this computer was away, so this computer now follows it \
+             as its backup and sends no output."
+        ),
+    ));
     failover::set_took_over_automatically_at(None);
     state.took_over_automatically_at_ms = None;
     role_error.0 = save_error;
@@ -481,6 +538,7 @@ fn sync_backup_link(
     mut gate: ResMut<ClientIngressGate>,
     mut mirrored: MessageWriter<MirroredShowfileReady>,
     sacn_identity: Option<Res<SacnOutputIdentity>>,
+    mut peer_checked_at: Local<Option<std::time::Instant>>,
 ) {
     let link = link::process_backup_link();
     let report = if state.is_backup() {
@@ -508,7 +566,18 @@ fn sync_backup_link(
         showfile_name: report.showfile_name,
         synced_at_ms: report.synced_at_ms,
         epoch,
-        backup_address: failover::backup_peer().filter(|_| !state.is_backup()),
+        backup: if state.is_backup() {
+            None
+        } else if peer_checked_at.is_none_or(|at| at.elapsed() >= PEER_HEALTH_INTERVAL) {
+            // The backup's health changes on a scale of seconds, so it is not read every frame.
+            *peer_checked_at = Some(std::time::Instant::now());
+            failover::backup_peer().map(|address| {
+                let check = link.peer_check(&address);
+                failover::peer_health(address, check)
+            })
+        } else {
+            state.backup.clone()
+        },
         ..state.clone()
     };
     state.set_if_neq(next);

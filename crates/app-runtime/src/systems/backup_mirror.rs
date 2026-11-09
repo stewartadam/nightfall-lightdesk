@@ -179,14 +179,17 @@ async fn current_live_state(
             .into_response();
     }
     match tokio::time::timeout(LIVE_STATE_TIMEOUT, response).await {
-        Ok(Ok(snapshot)) => (
-            [(
-                nightfall_backup::LIVE_STATE_WAIT_HEADER,
-                requested_at.elapsed().as_millis().to_string(),
-            )],
-            Json(snapshot),
-        )
-            .into_response(),
+        Ok(Ok(snapshot)) => {
+            nightfall_backup::failover::note_checkpoint_served(peer.ip(), &headers);
+            (
+                [(
+                    nightfall_backup::LIVE_STATE_WAIT_HEADER,
+                    requested_at.elapsed().as_millis().to_string(),
+                )],
+                Json(snapshot),
+            )
+                .into_response()
+        }
         _ => (
             StatusCode::SERVICE_UNAVAILABLE,
             "The engine did not answer in time.",
