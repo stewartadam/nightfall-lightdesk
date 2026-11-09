@@ -9,7 +9,6 @@
 
 import { realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { commandFor, readEnvMap, runCapture } from "./worktree-data-dir.mjs";
 
 const PORT_RANGE_START = 3000;
@@ -120,10 +119,7 @@ async function main() {
   process.stdout.write(`${port}\n`);
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (import.meta.main) {
   main().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`${message}\n`);

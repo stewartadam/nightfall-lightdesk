@@ -8,7 +8,7 @@
  */
 
 import { readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nightfallTestDataDir } from "./nightfall-test-data-dir.mjs";
 import { sharedBrowsersPath } from "./playwright-path.mjs";
@@ -115,10 +115,7 @@ async function main() {
   );
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (import.meta.main) {
   main().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`${message}\n`);

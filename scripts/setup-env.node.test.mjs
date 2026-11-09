@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -175,7 +175,11 @@ test("secondary worktree requires --port", () => {
  * default for a fresh primary checkout), never the inherited variable.
  */
 test("inherited NIGHTFALL_PORT never reaches the generated .env", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "nightfall-setup-env-"));
+  // macOS's temporary directory sits behind the /var -> /private/var symlink;
+  // resolve it so Git's worktree paths match the paths used here.
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "nightfall-setup-env-")),
+  );
   t.after(() => rm(root, { recursive: true, force: true }));
   const main = join(root, "main");
   const worktree = join(root, "worktree");
