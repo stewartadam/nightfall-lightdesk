@@ -19,6 +19,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 typeshare.workspace = true
+uuid.workspace = true
 zip = { version = "9.1", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]

@@ -325,10 +325,11 @@ fn restore_backup_role(
     *standby = DmxOutputStandby(state.is_backup() || awaiting_peer_check());
     gate.set_read_only(state.read_only_reason());
     link::process_backup_link().finish_mirror_load();
+    failover::share_pair_key(stored.pair_key.clone());
     link::process_backup_link().set_target(stored.primary_address.map(|address| {
         link::LinkTarget {
             address,
-            token: stored.pairing_token,
+            token: stored.pair_key,
         }
     }));
 }
@@ -493,20 +494,25 @@ fn finish_pending_follow(
     }
 }
 
-/// Stores `address` as this host's primary with the pairing `token` it gave, if any, and starts
-/// following it, returning the new role.
+/// Stores `address` as this host's primary with the pair `key` it issued, if any, shares that key
+/// so the primary can follow this host after a takeover, and starts following it, returning the
+/// new role.
 ///
 /// The primary becomes this host's only peer: a backup has no backup of its own to remember.
-fn follow_primary(address: String, token: Option<String>) -> RoleChange {
+fn follow_primary(address: String, key: Option<String>) -> RoleChange {
     let (stored, save_error) =
         preferences::update(preferences::preferences_path().as_deref(), |stored| {
             stored.primary_address = Some(address.clone());
-            stored.pairing_token = token.clone();
+            stored.pair_key = key.clone();
             stored.backup_peer = None;
         });
     failover::set_backup_peer(None);
+    failover::share_pair_key(stored.pair_key.clone());
     tracing::info!(%address, "Following a primary as its backup");
-    link::process_backup_link().set_target(Some(link::LinkTarget { address, token }));
+    link::process_backup_link().set_target(Some(link::LinkTarget {
+        address,
+        token: key,
+    }));
     (stored, save_error)
 }
 
@@ -516,10 +522,11 @@ fn stop_following() -> RoleChange {
     let (stored, save_error) =
         preferences::update(preferences::preferences_path().as_deref(), |stored| {
             stored.primary_address = None;
-            stored.pairing_token = None;
+            stored.pair_key = None;
             stored.backup_peer = None;
         });
     failover::set_backup_peer(None);
+    failover::share_pair_key(None);
     tracing::info!("Stopped following the primary");
     let link = link::process_backup_link();
     link.cancel_probe("Stopped following before the primary was checked.");
@@ -555,8 +562,8 @@ fn take_over() -> RoleChange {
     let (stored, save_error) =
         preferences::update(preferences::preferences_path().as_deref(), |stored| {
             stored.epoch = failover::takeover_epoch(stored.epoch, primary_epoch);
+            // The pair key stays, so the old primary can follow this host without its PIN.
             stored.backup_peer = stored.primary_address.take();
-            stored.pairing_token = None;
         });
     failover::set_backup_peer(stored.backup_peer.clone());
     failover::forget_checkpoints_served();
@@ -572,13 +579,11 @@ fn take_over() -> RoleChange {
 /// Becomes the backup of `address`, the host that last backed this one up and has since taken
 /// over with `epoch`, and returns the new role.
 ///
-/// No pairing token exists for that host yet, so on another computer the link asks for its PIN;
-/// meanwhile this host stays silent as a backup does.
+/// It follows with the key the two share, so it needs no PIN, even after either restarted.
 fn rejoin_as_backup(address: &str, epoch: u64) -> RoleChange {
     let (stored, save_error) =
         preferences::update(preferences::preferences_path().as_deref(), |stored| {
             stored.primary_address = Some(address.to_string());
-            stored.pairing_token = None;
             stored.backup_peer = None;
             stored.epoch = stored.epoch.max(epoch);
         });
@@ -588,7 +593,7 @@ fn rejoin_as_backup(address: &str, epoch: u64) -> RoleChange {
     link.cancel_probe("Started following a newer primary before this one was checked.");
     link.set_target(Some(link::LinkTarget {
         address: address.to_string(),
-        token: None,
+        token: stored.pair_key.clone(),
     }));
     (stored, save_error)
 }
@@ -855,6 +860,7 @@ impl Plugin for BackupPlugin {
     /// link progress into standby, the ingress gate and show loads.
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering BackupPlugin");
+        nightfall_websocket::on_backup_pair_key_forgotten(failover::forget_stored_pair_key);
         app.init_resource::<BackupState>();
         app.init_resource::<RoleError>();
         app.init_resource::<PendingFollow>();

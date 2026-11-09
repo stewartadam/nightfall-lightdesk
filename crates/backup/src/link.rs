@@ -539,17 +539,19 @@ async fn watch_backup_peer(shared: &Mutex<LinkShared>) {
 }
 
 /// Asks the primary this host replaced, at `base`, to step down and follow this host, so it goes
-/// silent even when it cannot reach this host to find out on its own. That host listens only
-/// because it remembers this one as its backup.
+/// silent even when it cannot reach this host to find out on its own. The request carries the key
+/// the two share, which that host checks.
 async fn ask_to_step_down(client: &reqwest::Client, base: &str, peer: &str, epoch: u64) {
-    let Some(port) = failover::own_port() else {
+    let (Some(port), Some(key)) = (failover::own_port(), failover::pair_key()) else {
+        tracing::debug!(%peer, "No pair key to ask the replaced primary to step down with");
         return;
     };
     let request = client
         .post(format!("{base}{}", failover::STEP_DOWN_PATH))
         .header(header::CONTENT_TYPE, "application/json")
         .body(
-            serde_json::to_string(&failover::StepDownRequest { epoch, port }).unwrap_or_default(),
+            serde_json::to_string(&failover::StepDownRequest { epoch, port, key })
+                .unwrap_or_default(),
         );
     match request.send().await {
         Ok(response) if response.status().is_success() => {
@@ -577,8 +579,8 @@ fn finish_probe(
 }
 
 /// Checks that the host at `address` is a primary this host can follow: it answers, it does not
-/// follow another host, and its show can be read, after pairing with `pin` when given. Returns
-/// the pairing token, if pairing gave one, or why it cannot be followed.
+/// follow another host, and it shares a pair key, after pairing with `pin` when given. Returns
+/// that key, or why the host cannot be followed.
 async fn probe_primary(address: &str, pin: Option<&str>) -> Result<Option<String>, String> {
     let client = host_client(PROBE_TIMEOUT)
         .map_err(|error| format!("Could not reach the primary: {error}"))?;
@@ -606,12 +608,40 @@ async fn probe_primary(address: &str, pin: Option<&str>) -> Result<Option<String
     let cookie = token
         .as_ref()
         .map(|token| format!("{}={token}", pairing_cookie_name(address)));
-    // Only a refusal matters here: a primary still starting has no show to read yet, and the
-    // link waits for one.
-    match fetch_revision(&client, &base, cookie.as_deref()).await {
+    match request_pair_key(&client, &base, cookie.as_deref()).await {
+        Ok(key) => Ok(Some(key)),
         Err(LinkError::Unauthorized(_)) => Err(format!("{address} needs its pairing PIN.")),
-        Ok(_) | Err(LinkError::Failed(_)) => Ok(token),
+        Err(LinkError::Failed(message)) => Err(message),
     }
+}
+
+/// Asks the primary at `base` for the key it will share with this host, which this host then
+/// sends instead of a pairing token so the two stay paired across restarts.
+async fn request_pair_key(
+    client: &reqwest::Client,
+    base: &str,
+    cookie: Option<&str>,
+) -> Result<String, LinkError> {
+    let mut request = client.post(format!("{base}{}", failover::PAIR_KEY_PATH));
+    if let Some(cookie) = cookie {
+        request = request.header(header::COOKIE, cookie);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|error| LinkError::from_request(&error))?;
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    if status == StatusCode::UNAUTHORIZED {
+        return Err(LinkError::Unauthorized(text));
+    }
+    if !status.is_success() || text.trim().is_empty() {
+        return Err(LinkError::Failed(non_empty_or(
+            text,
+            "The primary did not share a pair key.",
+        )));
+    }
+    Ok(text.trim().to_string())
 }
 
 /// Asks the host at `base` for its role and epoch.

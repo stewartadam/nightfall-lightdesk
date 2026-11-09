@@ -82,6 +82,8 @@ pub struct StepDownRequest {
     pub epoch: u64,
     /// Port the sender's server listens on, so the receiver can follow it.
     pub port: u16,
+    /// The key the two hosts share, which proves the sender is this host's backup.
+    pub key: String,
 }
 
 /// The backup that last received a checkpoint from this host, when, and the same time as Unix
@@ -159,16 +161,72 @@ pub(crate) fn set_backup_peer(peer: Option<String>) {
         .unwrap_or_else(std::sync::PoisonError::into_inner) = peer;
 }
 
-/// Answers a step-down request from the host at `ip`: when that host is this host's remembered
-/// backup, took over with a newer epoch than this host's, and this host runs as a primary, this
-/// host rejoins as its backup. Returns whether this host steps down.
+/// Route on which a backup asks its primary for the key the two will share.
+pub const PAIR_KEY_PATH: &str = "/api/backup/pair-key";
+
+/// Makes `key` the one this host shares with its primary or backup, or forgets it with `None`.
+/// The server accepts it like a pairing token, so the other host stays paired after a restart.
+pub(crate) fn share_pair_key(key: Option<String>) {
+    nightfall_websocket::set_backup_pair_key(key);
+}
+
+/// Forgets the stored pair key after a new PIN signed every device out, including the other
+/// host of the pair, which then needs the PIN again.
+pub(crate) fn forget_stored_pair_key() {
+    tracing::info!("A new PIN signed out the backup pair");
+    let (_, error) = preferences::update(preferences::preferences_path().as_deref(), |stored| {
+        stored.pair_key = None;
+    });
+    if let Some(error) = error {
+        tracing::warn!(%error, "Could not forget the backup pair key");
+    }
+}
+
+/// Returns the key this host shares with its primary or backup, if any.
+pub(crate) fn pair_key() -> Option<String> {
+    nightfall_websocket::backup_pair_key()
+}
+
+/// Returns whether `key` is the key this host shares with its primary or backup.
+fn is_pair_key(key: &str) -> bool {
+    pair_key().as_deref() == Some(key)
+}
+
+/// Issues a new key for the backup that just paired with this host, stores it, and returns it.
+/// It replaces any earlier key, so a backup that followed this host before loses its access.
 ///
-/// The request carries no pairing token, so only the remembered backup is listened to: that host
-/// already followed this one, and is trusted to take its place.
+/// A host that follows a primary itself refuses, since a backup cannot have a backup.
+pub fn issue_pair_key() -> Result<String, String> {
+    if host_status().following {
+        return Err("This computer is a backup itself.".to_string());
+    }
+    let key = format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
+    let (_, error) = preferences::update(preferences::preferences_path().as_deref(), |stored| {
+        stored.pair_key = Some(key.clone());
+    });
+    if let Some(error) = error {
+        tracing::warn!(%error, "Could not save the backup pair key");
+    }
+    share_pair_key(Some(key.clone()));
+    tracing::info!("Issued a pair key to a new backup");
+    Ok(key)
+}
+
+/// Answers a step-down request from the host at `ip`: when it comes from this host's remembered
+/// backup with the key the two share, took over with a newer epoch than this host's, and this
+/// host runs as a primary, this host rejoins as the backup of that host. Returns whether this
+/// host steps down.
+///
+/// The route skips pairing, since it must work whatever the pairing state; the address and the
+/// key together prove the sender is the backup this host trusts to take its place.
 pub fn request_step_down(ip: IpAddr, request: &StepDownRequest) -> bool {
     let address = peer_address(ip, request.port);
-    if backup_peer().as_deref() != Some(address.as_str()) {
-        tracing::warn!(%address, "Ignored a step-down request from a host that is not this host's backup");
+    if backup_peer().as_deref() != Some(address.as_str()) || !is_pair_key(&request.key) {
+        tracing::warn!(%address, "Ignored a step-down request that is not from this host's backup");
         return false;
     }
     if !should_step_down(&host_status(), request.epoch) {
@@ -339,7 +397,7 @@ mod tests {
 
     /// A host that took over asks only a peer still running as a primary from before its
     /// takeover to step down, and a primary steps down only for a newer takeover, sent by the
-    /// backup it remembers.
+    /// backup it remembers with the key the two share.
     #[test]
     fn steps_down_only_for_a_newer_takeover() {
         let host = |following, epoch| HostStatus {
@@ -354,12 +412,24 @@ mod tests {
         assert!(!should_step_down(&host(false, 2), 2));
         assert!(!should_step_down(&host(true, 1), 2));
 
+        // Neither a stranger with the key nor the remembered backup without it is listened to.
         set_backup_peer(Some("192.0.2.11:3000".into()));
-        let request = StepDownRequest {
+        share_pair_key(Some("pair-key".into()));
+        let with_key = StepDownRequest {
             epoch: u64::MAX,
             port: 3000,
+            key: "pair-key".into(),
         };
-        assert!(!request_step_down("192.0.2.12".parse().unwrap(), &request));
+        assert!(!request_step_down("192.0.2.12".parse().unwrap(), &with_key));
+        let without_key = StepDownRequest {
+            key: "not-the-pair-key".into(),
+            ..with_key.clone()
+        };
+        assert!(!request_step_down(
+            "192.0.2.11".parse().unwrap(),
+            &without_key
+        ));
+        share_pair_key(None);
         set_backup_peer(None);
     }
 

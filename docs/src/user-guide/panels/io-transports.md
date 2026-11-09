@@ -35,7 +35,7 @@ When developing Nightfall, the link points at the Vite dev server, which only ac
 
 ### Pairing PIN
 
-A phone, tablet or other computer must enter the **Pairing PIN** shown under External control before it can control the show. The computer running Nightfall never needs it. Each device enters the PIN once: it stays paired, and reconnects on its own after a network drop, until Nightfall restarts. The PIN stays the same until Nightfall restarts or you select **New PIN**, which also signs out every paired device. After five wrong PINs, a device must wait before trying again, and the wait grows with each further miss.
+A phone, tablet or other computer must enter the **Pairing PIN** shown under External control before it can control the show. The computer running Nightfall never needs it. Each device enters the PIN once: it stays paired, and reconnects on its own after a network drop, until Nightfall restarts. The PIN stays the same until Nightfall restarts or you select **New PIN**, which also signs out every paired device. A backup server and its primary stay paired with each other across restarts, see [Backup server](#backup-server), but **New PIN** on either computer signs that pair out too. After five wrong PINs, a device must wait before trying again, and the wait grows with each further miss.
 
 The PIN keeps casual visitors on your network out; it does not protect against an attacker on it. Nightfall serves other devices over plain HTTP, so anyone who can watch network traffic can capture the PIN or a paired device's session and take control. Use External control only on networks you trust.
 
@@ -49,7 +49,7 @@ To set one up:
 1. On the backup, open the **Showfiles** dialog, which also appears when Nightfall starts, and enter the primary's address, such as `192.168.1.20:3030`, under **Follow a primary**. Use the port the primary's backend listens on.
 1. Enter the primary's PIN and select **Follow primary**. A primary on the same computer does not need a PIN.
 
-The backup first checks that the primary answers and accepts the PIN. If it does not, the backup stays as it was and says why, such as a wrong PIN or an address it cannot reach.
+The backup first checks that the primary answers and accepts the PIN. If it does not, the backup stays as it was and says why, such as a wrong PIN or an address it cannot reach. Once it accepts, the two computers share a key that keeps them paired with each other, so neither needs a PIN again, even after a restart or a takeover. Only **New PIN** on either computer ends that.
 
 While it follows the primary, the backup:
 
@@ -67,7 +67,7 @@ To take over, select **Take over** in the banner or under **Backup server**. The
 
 To stop being a backup without taking over, select **Stop following**, or open or create a show from the **Showfiles** dialog. **Stop following** keeps the copied show and starts sending its output, but does not ask the primary to step down. Opening a show replaces the copied show.
 
-The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart: the backup follows its primary again and loads its show without asking which show to open. A primary forgets its paired devices when it restarts. When the banner says the primary needs its pairing PIN again, enter the new PIN under **Backup server** and select **Pair again**.
+The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart: the backup follows its primary again and loads its show without asking which show to open. The two computers stay paired with each other across restarts. If the banner says the primary needs its pairing PIN again, for example after **New PIN**, or because the primary paired a different backup, enter its PIN under **Backup server** and select **Pair again**.
 
 When you take over, the backup keeps playing what the primary was playing. While the backup loads a newly copied show, its banner says it is loading the primary's show.
 
@@ -85,7 +85,7 @@ The top of **Backup server** says what this computer is and how its partner is d
 
 A takeover, and an old primary stepping down, also show a message on every connected device. If a device loses its connection to the primary, the connection message offers **Open the backup**, which opens the backup's address.
 
-When the old primary comes back, the computer that took over asks it to step down within a few seconds. The old primary also checks its backup before sending anything, when it can reach it. Either way, it becomes the backup's backup: it stays silent, refuses changes, and follows the new primary. On another computer it asks for the new primary's PIN first, and can only reach the new primary while **External control** is on there; enter the PIN under **Backup server** and select **Pair again**. To swap the roles back, take over on the old primary.
+When the old primary comes back, the computer that took over asks it to step down within a few seconds. The old primary also checks its backup before sending anything, when it can reach it. Either way, it becomes the backup's backup: it stays silent, refuses changes, and follows the new primary. It needs no PIN for this, since the two still share their key, but it can only reach the new primary while **External control** is on there. To swap the roles back, take over on the old primary.
 
 If the backup itself loses the network, it cannot tell that apart from the primary failing and takes over too. When the network returns, the computer that took over last keeps the show, and the other steps down. Turn off **Take over automatically** if you would rather decide every takeover yourself.
 

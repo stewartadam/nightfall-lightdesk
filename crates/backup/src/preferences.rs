@@ -20,15 +20,16 @@ use nightfall_websocket::host_preferences::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Which primary this host backs up, if any, the pairing token it was given there, and how it
-/// fails over.
+/// Which primary this host backs up, if any, the key it shares with its primary or backup, and
+/// how it fails over.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub(crate) struct BackupPreferences {
     /// `host:port` of the primary this host follows, or `None` when it runs on its own.
     pub primary_address: Option<String>,
-    /// Pairing token the primary issued for this host, sent back as its pairing cookie.
-    pub pairing_token: Option<String>,
+    /// Key this host shares with its primary or backup. The host that follows sends it as its
+    /// pairing cookie and both accept it, so the two stay paired across restarts and role swaps.
+    pub pair_key: Option<String>,
     /// Takeover epoch: raised by every takeover and adopted from the primary while following,
     /// so the host that took over last can be told apart.
     pub epoch: u64,
@@ -44,7 +45,7 @@ impl Default for BackupPreferences {
     fn default() -> Self {
         Self {
             primary_address: None,
-            pairing_token: None,
+            pair_key: None,
             epoch: 0,
             backup_peer: None,
             auto_take_over: true,
@@ -146,7 +147,7 @@ mod tests {
 
         let preferences = BackupPreferences {
             primary_address: Some("192.0.2.10:3000".into()),
-            pairing_token: Some("token".into()),
+            pair_key: Some("token".into()),
             epoch: 3,
             backup_peer: Some("192.0.2.11:3000".into()),
             auto_take_over: false,

@@ -138,13 +138,26 @@ pub(crate) fn register_backup_http_routes(registry: &mut HttpRouteRegistry) {
     registry.register(nightfall_backup::LIVE_STATE_PATH, get(current_live_state));
     registry.register(nightfall_backup::failover::STEP_DOWN_PATH, post(step_down));
     registry.register(
+        nightfall_backup::failover::PAIR_KEY_PATH,
+        post(issue_pair_key),
+    );
+    registry.register(
         nightfall_backup::FORWARDED_COMMANDS_PATH,
         get(forwarded_commands),
     );
 }
 
-/// Steps down to follow the paired host that sent the request, when it took over with a newer
-/// epoch than this host's. Answers 409 when this host keeps its role.
+/// Issues the key this host will share with the backup that just paired with it. Pairing guards
+/// the route, so only a paired device or this computer can ask; a backup answers 409.
+async fn issue_pair_key() -> Response {
+    match nightfall_backup::failover::issue_pair_key() {
+        Ok(key) => key.into_response(),
+        Err(message) => (StatusCode::CONFLICT, message).into_response(),
+    }
+}
+
+/// Steps down to follow the host that sent the request, when it carries the key the two share and
+/// took over with a newer epoch than this host's. Answers 409 when this host keeps its role.
 async fn step_down(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(request): Json<nightfall_backup::failover::StepDownRequest>,
