@@ -808,10 +808,10 @@ test("strobe renderer maps control-first profiles to the physical emitters", () 
   );
 });
 
-/** Verifies the 312-channel profile renders and controls all twenty white segments. */
+/** Verifies the 20-segment strobe matrix profile renders and controls all twenty white segments. */
 test("strobe renderer supports twenty white segments", () => {
   const instance = buildStrobePanelFixture(
-    "fixture-strobe-312ch",
+    "fixture-strobe-20-segment",
     controlFirstStrobeElements(20),
   );
 

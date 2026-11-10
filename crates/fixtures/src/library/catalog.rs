@@ -120,9 +120,9 @@ static BUILTIN_FIXTURE_PROFILES: [BuiltinFixtureProfile; 12] = [
         &[mode("Strobe", strobes::create_strobe_matrix_308)],
     ),
     builtin(
-        "Strobe Matrix 312ch",
-        "builtin:generic-strobe-matrix-312ch:v1",
-        &[mode("Strobe", strobes::create_strobe_matrix_312)],
+        "Strobe Matrix 316ch",
+        "builtin:generic-strobe-matrix-316ch:v1",
+        &[mode("Strobe", strobes::create_strobe_matrix_316)],
     ),
     builtin(
         "RGB Strobe Bar 168ch",

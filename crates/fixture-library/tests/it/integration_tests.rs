@@ -68,7 +68,7 @@ fn test_empty_library() {
     );
     assert!(
         manager
-            .find_fixture("Generic", "Strobe Matrix 312ch")
+            .find_fixture("Generic", "Strobe Matrix 316ch")
             .is_some()
     );
     assert!(manager.find_fixture("NonExistent", "Fixture").is_none());

@@ -160,7 +160,7 @@ fn grb_pixel_tape_profile_matches_120_channel_order() {
 /// Verifies that the strobe matrix element order and non-virtual footprint match the fixture profile.
 #[test]
 fn strobe_matrix_profile_matches_308_channel_order() {
-    let fixture = strobes::create_strobe(1, "Generic", "Strobe Matrix 308ch", 16);
+    let fixture = strobes::create_strobe_matrix_308(1, "Generic", "Strobe Matrix 308ch");
 
     assert_eq!(fixture.elements.len(), 115);
     assert_eq!(footprint(&fixture), 308);
@@ -181,13 +181,16 @@ fn strobe_matrix_profile_matches_308_channel_order() {
     );
 }
 
-/// Verifies the 312-channel variant inserts four white segments before the RGB pixels.
+/// Verifies the 316-channel variant has 20 white segments and ends with the firmware strobes.
+///
+/// After the stock 312-channel map, slots 313-316 must be white strobe, white duration,
+/// RGB strobe, and RGB duration in that order, matching the patched firmware.
 #[test]
-fn strobe_matrix_profile_matches_312_channel_order() {
-    let fixture = strobes::create_strobe(1, "Generic", "Strobe Matrix 312ch", 20);
+fn strobe_matrix_profile_matches_316_channel_order() {
+    let fixture = strobes::create_strobe_matrix_316(1, "Generic", "Strobe Matrix 316ch");
 
-    assert_eq!(fixture.elements.len(), 119);
-    assert_eq!(footprint(&fixture), 312);
+    assert_eq!(fixture.elements.len(), 123);
+    assert_eq!(footprint(&fixture), 316);
     assert_eq!(fixture.elements[0].label, "Tilt Axis");
     assert_eq!(fixture.elements[1].label, "Rotation Speed");
     assert_eq!(fixture.elements[2].label, "Reset");
@@ -195,6 +198,32 @@ fn strobe_matrix_profile_matches_312_channel_order() {
     assert_eq!(fixture.elements[22].label, "Strobe Dimmer 20");
     assert_eq!(fixture.elements[23].label, "RGB Pixel 1");
     assert_eq!(fixture.elements[118].label, "RGB Pixel 96");
+    assert_eq!(fixture.elements[119].label, "White Strobe");
+    assert_eq!(fixture.elements[120].label, "White Strobe Duration");
+    assert_eq!(fixture.elements[121].label, "RGB Strobe");
+    assert_eq!(fixture.elements[122].label, "RGB Strobe Duration");
+    let strobe_attributes = fixture.elements[119..]
+        .iter()
+        .flat_map(|element| {
+            element
+                .parameters
+                .iter()
+                .map(|parameter| &parameter.attribute)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        strobe_attributes,
+        vec![
+            &Attribute::StrobeRate,
+            &Attribute::Custom {
+                label: "Strobe Duration".to_owned()
+            },
+            &Attribute::StrobeRate,
+            &Attribute::Custom {
+                label: "Strobe Duration".to_owned()
+            },
+        ]
+    );
 }
 
 /// Verifies the Generic RGB strobe bar preserves its segment layout and DMX footprint.
@@ -462,7 +491,7 @@ fn moving_spot_profile_matches_16_channel_order() {
 #[test]
 fn generic_tilt_fixtures_share_270_degree_tilt_range() {
     let spot = moving_heads::create_moving_spot_16ch(1, "Generic", "Moving Head Spot 16ch");
-    let strobe = strobes::create_strobe(2, "Generic", "Strobe Matrix 308ch", 16);
+    let strobe = strobes::create_strobe_matrix_308(2, "Generic", "Strobe Matrix 308ch");
     let wash =
         moving_heads::create_rotating_wash_beam_194(3, "Generic", "12-segment Rotating Wash Beam");
 

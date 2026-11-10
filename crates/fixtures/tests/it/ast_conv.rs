@@ -876,11 +876,11 @@ fn test_store_fixture_strobe_conversion() {
     }
 }
 
-/// Verifies the 312-channel strobe profile is available through fixture commands.
+/// Verifies the 316-channel strobe profile is available through fixture commands.
 #[test]
-fn test_store_fixture_strobe_312ch_conversion() {
-    let ast = generate_ast("store fix 4 \"Generic\" \"Strobe Matrix 312ch\" Strobe")
-        .expect("Failed to parse the 312-channel strobe store command");
+fn test_store_fixture_strobe_316ch_conversion() {
+    let ast = generate_ast("store fix 4 \"Generic\" \"Strobe Matrix 316ch\" Strobe")
+        .expect("Failed to parse the 316-channel strobe store command");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
 
     assert_eq!(commands.len(), 1);
@@ -890,9 +890,11 @@ fn test_store_fixture_strobe_312ch_conversion() {
     match cmd.unwrap() {
         FixtureCommand::StoreFixture(fixture) => {
             assert_eq!(fixture.identifiers.id, 4);
-            assert_eq!(fixture.elements.len(), 119);
+            assert_eq!(fixture.elements.len(), 123);
             assert_eq!(fixture.elements[22].label, "Strobe Dimmer 20");
             assert_eq!(fixture.elements[23].label, "RGB Pixel 1");
+            assert_eq!(fixture.elements[119].label, "White Strobe");
+            assert_eq!(fixture.elements[122].label, "RGB Strobe Duration");
         }
         other => panic!("Expected StoreFixture command, got {:?}", other),
     }
