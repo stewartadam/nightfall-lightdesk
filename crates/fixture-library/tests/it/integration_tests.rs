@@ -12,7 +12,7 @@ use nightfall_fixture_library::prelude::*;
 use tempfile::TempDir;
 
 /// Number of built-in fixture profiles registered for empty libraries.
-const BUILT_IN_FIXTURE_COUNT: usize = 12;
+const BUILT_IN_FIXTURE_COUNT: usize = 11;
 
 /// Helper to create a temporary library directory.
 fn create_temp_library() -> TempDir {
@@ -66,11 +66,7 @@ fn test_empty_library() {
             .find_fixture("Generic", "RGBPixelTape 120ch RGB")
             .is_some()
     );
-    assert!(
-        manager
-            .find_fixture("Generic", "Strobe Matrix 316ch")
-            .is_some()
-    );
+    assert!(manager.find_fixture("Generic", "Strobe Matrix").is_some());
     assert!(manager.find_fixture("NonExistent", "Fixture").is_none());
 }
 
@@ -260,7 +256,7 @@ fn generic_sample_profiles_are_self_contained() {
         "100-segment LED Bar",
         "10-segment Rotating RGBW Bar",
         "Moving Head RGBW",
-        "Strobe Matrix 308ch",
+        "Strobe Matrix",
     ] {
         let profile = manager.find_fixture("Generic", model).unwrap();
         let mode = &profile.mode_names()[0];

@@ -80,7 +80,7 @@ impl BuiltinFixtureProfile {
 }
 
 /// Built-in profiles available even when no fixture files are installed.
-static BUILTIN_FIXTURE_PROFILES: [BuiltinFixtureProfile; 12] = [
+static BUILTIN_FIXTURE_PROFILES: [BuiltinFixtureProfile; 11] = [
     builtin(
         "100-segment LED Bar",
         "builtin:generic-100-segment-led-bar:v1",
@@ -115,14 +115,13 @@ static BUILTIN_FIXTURE_PROFILES: [BuiltinFixtureProfile; 12] = [
         &[mode("RGB", pixel_bars::create_rgb_bar_40)],
     ),
     builtin(
-        "Strobe Matrix 308ch",
-        "builtin:generic-strobe-matrix-308ch:v1",
-        &[mode("Strobe", strobes::create_strobe_matrix_308)],
-    ),
-    builtin(
-        "Strobe Matrix 316ch",
-        "builtin:generic-strobe-matrix-316ch:v1",
-        &[mode("Strobe", strobes::create_strobe_matrix_316)],
+        "Strobe Matrix",
+        "builtin:generic-strobe-matrix:v1",
+        &[
+            mode("308ch", strobes::create_strobe_matrix_308),
+            mode("312ch", strobes::create_strobe_matrix_312),
+            mode("316ch", strobes::create_strobe_matrix_316),
+        ],
     ),
     builtin(
         "RGB Strobe Bar 168ch",

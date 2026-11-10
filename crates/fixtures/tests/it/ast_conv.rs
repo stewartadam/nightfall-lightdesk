@@ -850,8 +850,8 @@ fn test_store_fixture_rgb_bar_conversion() {
 
 #[test]
 fn test_store_fixture_strobe_conversion() {
-    let ast = generate_ast("store fix 3 \"Generic\" \"Strobe Matrix 308ch\" Strobe")
-        .expect("Failed to parse 'store fix 3 \"Generic\" \"Strobe Matrix 308ch\" Strobe'");
+    let ast = generate_ast("store fix 3 \"Generic\" \"Strobe Matrix\" 308ch")
+        .expect("Failed to parse 'store fix 3 \"Generic\" \"Strobe Matrix\" 308ch'");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
 
     assert_eq!(commands.len(), 1);
@@ -879,7 +879,7 @@ fn test_store_fixture_strobe_conversion() {
 /// Verifies the 316-channel strobe profile is available through fixture commands.
 #[test]
 fn test_store_fixture_strobe_316ch_conversion() {
-    let ast = generate_ast("store fix 4 \"Generic\" \"Strobe Matrix 316ch\" Strobe")
+    let ast = generate_ast("store fix 4 \"Generic\" \"Strobe Matrix\" 316ch")
         .expect("Failed to parse the 316-channel strobe store command");
     let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
 

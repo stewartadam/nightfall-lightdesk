@@ -21,6 +21,13 @@ pub(super) fn create_strobe_matrix_308(id: u32, make: &str, model: &str) -> Fixt
     create_strobe(id, make, model, 16, false)
 }
 
+/// Creates the 312-channel strobe matrix, which has 20 white segments and no firmware strobes.
+///
+/// This is the 20-segment hardware on its stock firmware, before the strobe/duration patch.
+pub(super) fn create_strobe_matrix_312(id: u32, make: &str, model: &str) -> Fixture {
+    create_strobe(id, make, model, 20, false)
+}
+
 /// Creates the 316-channel strobe matrix, which has 20 white segments and firmware strobes.
 ///
 /// This is the 20-segment hardware running the patched firmware. After the stock 312-channel

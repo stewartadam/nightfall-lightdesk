@@ -33,8 +33,8 @@ const RIG_UNIT = [
     count: 6,
   },
   { model: "RGB Strobe Bar 168ch", mode: "Strobe", channels: 168, count: 6 },
-  { model: "Strobe Matrix 308ch", mode: "Strobe", channels: 308, count: 2 },
-  { model: "Strobe Matrix 316ch", mode: "Strobe", channels: 316, count: 4 },
+  { model: "Strobe Matrix", mode: "308ch", channels: 308, count: 2 },
+  { model: "Strobe Matrix", mode: "316ch", channels: 316, count: 4 },
 ];
 
 /** Fixture group of the generated rig, with the IDs and universes it occupies. */

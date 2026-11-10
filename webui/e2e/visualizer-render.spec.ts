@@ -91,8 +91,8 @@ const OWNED_TILTED_STROBE = {
   id: 601,
   label: "Owned Tilted Strobe",
   make: "Generic",
-  model: "Strobe Matrix 308ch",
-  mode: "Strobe",
+  model: "Strobe Matrix",
+  mode: "308ch",
   update_existing_ids: [],
   update_existing_only: false,
   placement: {
