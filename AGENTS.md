@@ -21,12 +21,10 @@
 
 When running remotely, check `CONTRIBUTING.md` subsection *Nightfall setup* for setup instructions.
 
-Issue numbers provided are tracked by beads, to configure:
+Issue numbers provided are tracked by beads. When the environment sets `BEADS_SYNC_REMOTE`, the session start hook installs `bd` and clones the issue database from that remote. Never push beads data to this repository's remote or name the beads remote in committed files.
 
-```bash
-npm install -g @beads/bd
-bd init --branch beads-sync --actor agent
-```
+- Run `bd dolt pull` before picking up work, and `bd dolt push` after creating or updating issues so other sessions see the change.
+- If `bd` reports no database, run `bd bootstrap --yes`.
 
 ## Local setup
 

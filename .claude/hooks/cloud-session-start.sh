@@ -78,3 +78,31 @@ pnpm run setup:tools typeshare-cli
 if [ ! -f .env ]; then
   node scripts/setup-env.mjs
 fi
+
+# Beads issues live in a Dolt database on a maintainer-only remote, named by
+# the cloud environment's BEADS_SYNC_REMOTE variable so it stays out of this
+# repository. The data sits under a claude/ branch ref rather than Dolt's
+# default refs/dolt/data because cloud sessions may only push branches. bd
+# cannot pick a git ref itself, so the dolt CLI clones the database into the
+# layout bd's embedded mode expects; its pull/push then reuse the clone's ref.
+# A failed clone only costs issue tracking, so it must not fail the session.
+# Keep bd in step with maintainers' machines: a newer bd can migrate the shared
+# database's schema past what older clients read.
+if [ -n "${BEADS_SYNC_REMOTE:-}" ]; then
+  bd_version=1.3.4
+  dolt_version=2.7.2
+  if ! bd version 2>/dev/null | grep -qF "bd version $bd_version "; then
+    npm install -g "@beads/bd@$bd_version"
+  fi
+  if ! dolt version 2>/dev/null | grep -qF "dolt version $dolt_version"; then
+    curl -fsSL "https://github.com/dolthub/dolt/releases/download/v$dolt_version/dolt-linux-amd64.tar.gz" |
+      tar xzf - -C /usr/local --strip-components=1 dolt-linux-amd64/bin/dolt
+  fi
+  if [ ! -d .beads/embeddeddolt/beads ]; then
+    mkdir -p -m 700 .beads/embeddeddolt
+    printf '{"database":"dolt","backend":"dolt","dolt_mode":"embedded","dolt_database":"beads"}\n' >.beads/metadata.json
+    printf 'sync.remote: "%s"\n' "$BEADS_SYNC_REMOTE" >.beads/config.yaml
+    dolt clone --ref refs/heads/claude/beads-data "$BEADS_SYNC_REMOTE" .beads/embeddeddolt/beads ||
+      echo "beads clone failed; bd issues are unavailable this session" >&2
+  fi
+fi

@@ -244,12 +244,32 @@ Then install the combined hooks:
 pnpm exec prek install -t pre-commit -t commit-msg -t pre-push -t post-merge -t post-rewrite
 ```
 
-If you wish to also use beads, ensure hooks are chained:
+If you wish to also use beads, ensure hooks are chained. Keep `bd` at the
+version pinned in `.claude/hooks/cloud-session-start.sh`:
 
 ```sh
-npm install -g @beads/bd
+npm install -g @beads/bd@1.3.4
 bd hooks install --chain
 ```
+
+Maintainers share the issue database through a separate Dolt remote, never
+this repository's, stored under the branch ref `refs/heads/claude/beads-data`
+so cloud sessions can push it. Cloud sessions read the remote from the
+`BEADS_SYNC_REMOTE` environment variable. bd cannot set a git ref, so point a
+local database at it with the dolt CLI (`brew install dolt`):
+
+```sh
+cd .beads/embeddeddolt/<database>
+dolt remote remove origin
+dolt remote add --ref refs/heads/claude/beads-data origin <remote>
+cd - && bd dolt pull
+```
+
+Run `bd dolt pull` and `bd dolt push` to sync. Dolt records a commit for every
+issue write, so run `bd flatten` occasionally to drop history and keep the
+synced data small. Flattening rewrites history every other copy shares, so
+push it with `dolt push --force origin main` from the database directory and
+have other machines clone the database again.
 
 #### Optional tools
 
