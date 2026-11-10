@@ -391,3 +391,45 @@ test("input forms fit narrow panels", async ({ page }, testInfo) => {
     fullPage: true,
   });
 });
+
+/**
+ * Radio cards select from anywhere on the card, name the radio by its title alone, announce the
+ * description, mark the chosen card with the shared selected surface, and ignore a disabled card.
+ */
+test("radio cards select from the whole card", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1600, height: 1200 });
+  await page.goto("/design-lab.html");
+  await page
+    .getByRole("navigation", { name: "Component index" })
+    .getByRole("button", { name: /Input forms/ })
+    .click();
+  const panel = page.getByRole("region", { name: "Input form examples" });
+  const release = panel.getByRole("group", { name: "Release", exact: true });
+  const fade = release.getByRole("radio", { name: "Fade out", exact: true });
+  const snap = release.getByRole("radio", { name: "Snap out", exact: true });
+  const unavailable = release.getByRole("radio", {
+    name: "Release to cue list",
+    exact: true,
+  });
+  /** Locates the card label that wraps a radio, where the selected surface state lives. */
+  const card = (radio: typeof fade) =>
+    radio.locator("xpath=ancestor::label[1]");
+  await expect(fade).toBeChecked();
+  await expect(snap).toHaveAccessibleDescription(
+    "Releases the cue's values immediately.",
+  );
+  await expect(card(fade)).toHaveAttribute("data-selected", "true");
+  await release.getByText("Releases the cue's values immediately.").click();
+  await expect(snap).toBeChecked();
+  await expect(card(snap)).toHaveAttribute("data-selected", "true");
+  await expect(card(fade)).not.toHaveAttribute("data-selected");
+  await expect(unavailable).toBeDisabled();
+  await card(unavailable).click({ force: true });
+  await expect(snap).toBeChecked();
+  await snap.focus();
+  await page.keyboard.press("ArrowUp");
+  await expect(fade).toBeChecked();
+  await expect(card(fade)).toHaveAttribute("data-selected", "true");
+  await release.scrollIntoViewIfNeeded();
+  await release.screenshot({ path: testInfo.outputPath("radio-cards.png") });
+});

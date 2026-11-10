@@ -20,6 +20,7 @@ import {
   DialogCancelButton,
   DialogFooter,
 } from "../../../components/ui/dialog";
+import { RadioCard } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getLogger } from "../../../lib/logger";
 import {
@@ -138,25 +139,14 @@ export function ExportShowfileModal(props: {
             </legend>
             <For each={showfileExportOptions}>
               {(option) => (
-                <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-700 p-3 has-checked:border-blue-500 has-checked:bg-blue-950/30">
-                  <input
-                    type="radio"
-                    aria-label={option.label}
-                    name={`${titleId}-policy`}
-                    value={option.value}
-                    checked={policy() === option.value}
-                    onChange={() => setPolicy(option.value)}
-                    class="mt-1 accent-blue-500"
-                  />
-                  <span>
-                    <span class="block text-sm font-medium">
-                      {option.label}
-                    </span>
-                    <span class="mt-1 block text-xs text-neutral-400">
-                      {option.description}
-                    </span>
-                  </span>
-                </label>
+                <RadioCard
+                  title={option.label}
+                  description={option.description}
+                  name={`${titleId}-policy`}
+                  value={option.value}
+                  checked={policy() === option.value}
+                  onChange={() => setPolicy(option.value)}
+                />
               )}
             </For>
           </fieldset>
