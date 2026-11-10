@@ -207,10 +207,11 @@ function gridContaining(page: Page, text: string | RegExp): Locator {
 }
 
 /**
- * Seeds one fixture-library entry with multiple modes for properties-panel selection.
+ * Seeds one fixture-library entry with multiple modes for properties-panel selection. With
+ * `probeMissingModel`, the first entry is a GDTF without 3D model files.
  */
-async function seedFixtureLibrary(page: Page) {
-  await page.evaluate(() => {
+async function seedFixtureLibrary(page: Page, probeMissingModel = false) {
+  await page.evaluate((probeMissingModel) => {
     const stores = (window as any).appStores;
     stores.fixtureLibrary.set([
       {
@@ -219,6 +220,7 @@ async function seedFixtureLibrary(page: Page) {
         modes: ["Default", "Extended"],
         source_format: "GDTF",
         asset_etag: "mode-probe-v1",
+        missing_3d_model: probeMissingModel,
       },
       {
         make: "E2E Lighting",
@@ -228,7 +230,7 @@ async function seedFixtureLibrary(page: Page) {
         asset_etag: "mode-switch-v1",
       },
     ]);
-  });
+  }, probeMissingModel);
 }
 
 /**
@@ -266,10 +268,14 @@ async function seedNullFixtureProfile(page: Page) {
 
 /**
  * Opens Fixture Library beside Properties, selects the seeded row, and returns the mode selector.
+ * `probeMissingModel` seeds the selected row as a GDTF without 3D model files.
  */
-async function openFixtureLibraryProperties(page: Page): Promise<Locator> {
+async function openFixtureLibraryProperties(
+  page: Page,
+  probeMissingModel = false,
+): Promise<Locator> {
   await openApp(page);
-  await seedFixtureLibrary(page);
+  await seedFixtureLibrary(page, probeMissingModel);
 
   await addPanel(page, {
     id: "panel-FixtureLibrary-mode-parameters",
@@ -366,6 +372,28 @@ test("fixture library properties show empty state for null profile fixture", asy
   ).toHaveCount(0);
   await expect(page.getByText("E2E Lighting Mode Probe").last()).toBeVisible();
   await expect(page.getByText("DMX footprint")).toHaveCount(0);
+});
+
+/**
+ * Verifies a GDTF without 3D model files is flagged in the library's Source column and in
+ * Properties, and a GDTF with models is not.
+ */
+test("fixture library flags GDTFs without 3D models", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await openFixtureLibraryProperties(page, true);
+  await expect(page.getByTestId("fixture-library-missing-model")).toContainText(
+    "No 3D model",
+  );
+  const grid = gridContaining(page, "Mode Probe");
+  await expect(grid.getByText("GDTF, no 3D model")).toHaveCount(1);
+  await page.screenshot({
+    path: testInfo.outputPath("fixture-library-no-3d-model.png"),
+  });
+
+  await grid.locator("#tanstack-cell-1-1").click();
+  await expect(page.getByTestId("fixture-library-missing-model")).toBeHidden();
 });
 
 /**

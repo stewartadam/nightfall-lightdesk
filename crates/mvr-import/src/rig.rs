@@ -76,6 +76,8 @@ pub struct EmbeddedGdtf {
     pub modes: Vec<String>,
     /// Content fingerprint the library uses as the revision.
     pub revision: String,
+    /// Whether any model of the type has a 3D mesh in the GDTF.
+    pub has_models: bool,
 }
 
 /// One break of a fixture's DMX patch, in Nightfall break numbering.
@@ -511,6 +513,7 @@ fn extract_type<R: Read + Seek>(
             model: metadata.model,
             modes: metadata.modes,
             revision,
+            has_models: metadata.has_models,
         }),
         Err(error) => RigTypeSource::Unreadable(error.to_string()),
     }

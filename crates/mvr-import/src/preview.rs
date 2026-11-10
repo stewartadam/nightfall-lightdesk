@@ -145,6 +145,9 @@ pub struct FixtureTypePreview {
     pub status: FixtureTypeStatus,
     /// Number of fixtures of this type in the file.
     pub fixture_count: u32,
+    /// Whether the type's GDTF has no 3D model mesh, so its fixtures are drawn from primitive
+    /// shapes or as placeholders in the visualizer.
+    pub missing_3d_model: bool,
 }
 
 /// What the import does with a fixture.
