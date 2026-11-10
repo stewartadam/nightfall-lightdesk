@@ -72,6 +72,7 @@ import {
 import { compactViewport } from "../../state/viewport";
 import type {
   InputSignalLossPolicy,
+  IoSettingsCommand,
   NetworkInterfaceInfo,
   NetworkInterfaceStatus,
   RouteValidationMode,
@@ -105,6 +106,25 @@ const DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS = 2000;
 const DEFAULT_SHOWFILE_BACKUP_RETENTION = 20;
 /** Largest value a Rust `u32` command field accepts. */
 const U32_MAX = 4_294_967_295;
+const U16_MAX = 65_535;
+
+/**
+ * Sends an IO setting that the backend clamps into range and waits for it to finish, logging a
+ * failure. The backend sends no settings change when it clamps back to the value it already
+ * had, so callers rewrite their field from the stored setting once this resolves. `undefined`
+ * (an empty or invalid field) sends nothing.
+ */
+async function sendClampedIoSetting(
+  command: IoSettingsCommand | undefined,
+  description: string,
+): Promise<void> {
+  if (!command) return;
+  await commandClient
+    .invoke("IoSettingsCommand", command)
+    .catch((error: unknown) =>
+      log.warn(`Could not set the ${description}`, error),
+    );
+}
 const QUALITY_OPTIONS: { value: QualityPreset; label: string }[] = [
   { value: "low", label: "Low (faster)" },
   { value: "medium", label: "Medium" },
@@ -296,6 +316,16 @@ export function SettingsOverlay() {
     }
   };
   onCleanup($ioSettings.listen(showDmxOutputRate));
+  let sacnSyncUniverseInput: HTMLInputElement | undefined;
+  /** Writes the saved sACN sync universe into its field, replacing whatever the user typed. */
+  const showSacnSyncUniverse = () => {
+    if (sacnSyncUniverseInput) {
+      sacnSyncUniverseInput.value = String(
+        $ioSettings.get().sacn_sync_universe,
+      );
+    }
+  };
+  onCleanup($ioSettings.listen(showSacnSyncUniverse));
 
   /** Refresh cached model information on entry and stop polling when settings closes. */
   createEffect(() => {
@@ -445,19 +475,46 @@ export function SettingsOverlay() {
 
   /** Sends the requested network DMX output rate; the backend clamps it to its supported range. */
   const setDmxOutputRate = async (value: number) => {
-    if (Number.isFinite(value)) {
-      // The backend sends no settings change when it clamps back to the rate it already had, so
-      // the field is rewritten once the command finishes either way.
-      await commandClient
-        .invoke("IoSettingsCommand", {
-          type: "SetDmxOutputRate",
-          data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
-        })
-        .catch((error: unknown) =>
-          log.warn("Could not set the DMX output rate", error),
-        );
-    }
+    await sendClampedIoSetting(
+      Number.isFinite(value)
+        ? {
+            type: "SetDmxOutputRate",
+            data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
+          }
+        : undefined,
+      "DMX output rate",
+    );
     showDmxOutputRate();
+  };
+
+  /** Turns ArtSync on or off for Art-Net output. */
+  const setArtNetSyncEnabled = (enabled: boolean) => {
+    commandClient.emit("IoSettingsCommand", {
+      type: "SetArtNetSyncEnabled",
+      data: enabled,
+    });
+  };
+
+  /** Turns universe synchronization on or off for sACN output. */
+  const setSacnSyncEnabled = (enabled: boolean) => {
+    commandClient.emit("IoSettingsCommand", {
+      type: "SetSacnSyncEnabled",
+      data: enabled,
+    });
+  };
+
+  /** Sends the requested sACN sync universe; the backend clamps it to 1-63999. */
+  const setSacnSyncUniverse = async (value: number) => {
+    await sendClampedIoSetting(
+      Number.isFinite(value)
+        ? {
+            type: "SetSacnSyncUniverse",
+            data: Math.min(Math.max(Math.trunc(value), 0), U16_MAX),
+          }
+        : undefined,
+      "sACN sync universe",
+    );
+    showSacnSyncUniverse();
   };
 
   const setInputSignalLossTimeout = (value: number) => {
@@ -884,6 +941,59 @@ export function SettingsOverlay() {
                         value={ioSettings().dmx_output_rate_hz}
                         onChange={(e) =>
                           void setDmxOutputRate(e.currentTarget.valueAsNumber)
+                        }
+                      />
+                    )}
+                  </SettingsRow>
+                  <SettingsRow
+                    label="Art-Net sync"
+                    description="Sends ArtSync after each round of universes, so nodes that support it update all their outputs at once. Nodes without sync support ignore it."
+                  >
+                    {(field) => (
+                      <ToggleSwitch
+                        id={field.id}
+                        describedBy={field.describedBy}
+                        ariaLabel="Art-Net sync"
+                        layout="switch-only"
+                        checked={ioSettings().artnet_sync_enabled ?? false}
+                        onChange={setArtNetSyncEnabled}
+                      />
+                    )}
+                  </SettingsRow>
+                  <SettingsRow
+                    label="sACN sync"
+                    description="Uses E1.31 universe synchronization, so receivers that support it update all their universes at once. Receivers that support sync hold new data until the sync packet arrives."
+                  >
+                    {(field) => (
+                      <ToggleSwitch
+                        id={field.id}
+                        describedBy={field.describedBy}
+                        ariaLabel="sACN sync"
+                        layout="switch-only"
+                        checked={ioSettings().sacn_sync_enabled ?? false}
+                        onChange={setSacnSyncEnabled}
+                      />
+                    )}
+                  </SettingsRow>
+                  <SettingsRow
+                    label="sACN sync universe"
+                    description="Universe the sync packets are sent on. Receivers join it on their own."
+                  >
+                    {(field) => (
+                      <Input
+                        ref={sacnSyncUniverseInput}
+                        id={field.id}
+                        aria-describedby={field.describedBy}
+                        type="number"
+                        min="1"
+                        max="63999"
+                        step="1"
+                        disabled={!ioSettings().sacn_sync_enabled}
+                        value={ioSettings().sacn_sync_universe}
+                        onChange={(e) =>
+                          void setSacnSyncUniverse(
+                            e.currentTarget.valueAsNumber,
+                          )
                         }
                       />
                     )}

@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     InputSignalLossPolicy, InputUniverseVisibilityMode, IoRuntimeSettings, NetworkDmxOutputTargets,
     UsbDmxOutputTargets, sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout,
+    sanitize_sacn_sync_universe,
 };
 
 /// Commands that change [`IoRuntimeSettings`].
@@ -42,6 +43,12 @@ pub enum IoSettingsCommand {
     SetInputSignalLossTimeout(Duration),
     /// Set network DMX packets sent per second; clamped to 1..=60 Hz.
     SetDmxOutputRate(u32),
+    /// Set whether Art-Net output sends an ArtSync packet after each transmission.
+    SetArtNetSyncEnabled(bool),
+    /// Set whether sACN output uses universe synchronization.
+    SetSacnSyncEnabled(bool),
+    /// Set the universe sACN synchronization packets are sent on; clamped to 1..=63999.
+    SetSacnSyncUniverse(u16),
     /// Set whether input views show only external inputs or every detected input.
     SetInputUniverseVisibilityMode(InputUniverseVisibilityMode),
 }
@@ -49,7 +56,7 @@ pub enum IoSettingsCommand {
 impl IngressCommand for IoSettingsCommand {}
 
 /// Writes one transport settings change, sanitizing output targets and clamping the signal-loss
-/// timeout and output rate into their supported ranges. These edits cannot fail.
+/// timeout, output rate and sACN sync universe into their supported ranges. These edits cannot fail.
 pub(crate) fn apply(
     command: &IoSettingsCommand,
     settings: &mut IoRuntimeSettings,
@@ -80,6 +87,13 @@ pub(crate) fn apply(
         IoSettingsCommand::SetDmxOutputRate(rate_hz) => {
             settings.dmx_output_rate_hz = sanitize_dmx_output_rate_hz(*rate_hz);
         }
+        IoSettingsCommand::SetArtNetSyncEnabled(enabled) => {
+            settings.artnet_sync_enabled = *enabled;
+        }
+        IoSettingsCommand::SetSacnSyncEnabled(enabled) => settings.sacn_sync_enabled = *enabled,
+        IoSettingsCommand::SetSacnSyncUniverse(universe) => {
+            settings.sacn_sync_universe = sanitize_sacn_sync_universe(*universe);
+        }
         IoSettingsCommand::SetInputUniverseVisibilityMode(mode) => {
             settings.input_universe_visibility_mode = *mode;
         }
@@ -91,7 +105,7 @@ pub(crate) fn apply(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::MAX_DMX_OUTPUT_RATE_HZ;
+    use crate::{MAX_DMX_OUTPUT_RATE_HZ, MAX_SACN_UNIVERSE, MIN_SACN_UNIVERSE};
 
     /// Applies `command` to default settings and returns the result.
     fn applied(command: IoSettingsCommand) -> IoRuntimeSettings {
@@ -132,5 +146,26 @@ mod tests {
                 .input_signal_loss_timeout,
             Duration::from_millis(1)
         );
+    }
+
+    /// Verifies the sACN sync universe is clamped into the sACN universe range, and that the
+    /// sync address only exists while sACN sync is enabled.
+    #[test]
+    fn sacn_sync_universe_is_clamped_and_gated() {
+        assert_eq!(
+            applied(IoSettingsCommand::SetSacnSyncUniverse(0)).sacn_sync_universe,
+            MIN_SACN_UNIVERSE
+        );
+        assert_eq!(
+            applied(IoSettingsCommand::SetSacnSyncUniverse(u16::MAX)).sacn_sync_universe,
+            MAX_SACN_UNIVERSE
+        );
+
+        let mut settings = applied(IoSettingsCommand::SetSacnSyncUniverse(7));
+        assert_eq!(settings.sacn_sync_address(), None);
+        apply(&IoSettingsCommand::SetSacnSyncEnabled(true), &mut settings)
+            .expect("IO settings edits cannot fail");
+        assert_eq!(settings.sacn_sync_address(), Some(7));
+        assert!(applied(IoSettingsCommand::SetArtNetSyncEnabled(true)).artnet_sync_enabled);
     }
 }

@@ -6,11 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -77,6 +77,9 @@ struct SacnShared {
     running: AtomicBool,
     /// CID of the running worker's sACN source.
     source_cid: Mutex<Option<[u8; 16]>>,
+    /// Universe the worker synchronizes on, or 0 for no synchronization, the value E1.31 uses
+    /// in data packets for the same meaning.
+    sync_universe: AtomicU16,
 }
 
 /// sACN output client used inside ECS worlds.
@@ -128,6 +131,18 @@ impl SacnOutputClient {
     /// Marks the worker as running or stopped.
     pub(crate) fn set_running(&self, running: bool) {
         self.shared.running.store(running, Ordering::Release);
+    }
+
+    /// Sets the universe the worker synchronizes on, or `None` to send unsynchronized data.
+    pub(crate) fn set_sync_universe(&self, universe: Option<u16>) {
+        self.shared
+            .sync_universe
+            .store(universe.unwrap_or(0), Ordering::Release);
+    }
+
+    /// Returns the universe the worker synchronizes on, if any.
+    fn sync_universe(&self) -> Option<u16> {
+        Some(self.shared.sync_universe.load(Ordering::Acquire)).filter(|&universe| universe != 0)
     }
 
     /// Records the running worker's source CID.
@@ -219,10 +234,15 @@ fn transmit_tick(
     let mut sent_count = 0u32;
     let mut outcomes = Vec::with_capacity(frames.len());
     let mut flow = ControlFlow::Continue(());
+    // The source refuses data that names an unregistered sync universe, so fall back to
+    // unsynchronized data when it cannot be registered.
+    let sync_universe = client
+        .sync_universe()
+        .filter(|&universe| ensure_registered(source, registered_universes, universe).is_ok());
 
     for frame in frames.iter() {
         let key = (frame.universe, frame.unicast_ip);
-        match send_universe(source, registered_universes, frame) {
+        match send_universe(source, registered_universes, frame, sync_universe) {
             Ok(()) => {
                 sent_count += 1;
                 outcomes.push((key, Ok(())));
@@ -259,7 +279,12 @@ fn transmit_tick(
     }
 
     if flow.is_continue() {
-        terminate_unpublished_universes(source, registered_universes, &frames);
+        if let Some(sync_universe) = sync_universe
+            && sent_count > 0
+        {
+            send_sync_packets(source, sync_universe, &frames);
+        }
+        terminate_unpublished_universes(source, registered_universes, &frames, sync_universe);
     }
     client.record_tick(outcomes, start.elapsed(), sent_count);
     flow
@@ -280,7 +305,30 @@ impl StreamTerminator for SacnSource {
     }
 }
 
-/// Ends the stream of every registered universe that is no longer published.
+/// Sends one synchronization packet to every destination of this tick's data, so receivers
+/// apply all the universes they buffered for `sync_universe` at once.
+///
+/// Multicast receivers get the packet on the sync universe's multicast group, which receivers
+/// join on their own once data names it. Unicast receivers never see multicast traffic for
+/// their data, so each unicast destination also gets its own copy.
+fn send_sync_packets(source: &mut SacnSource, sync_universe: u16, frames: &[SacnFrame]) {
+    let destinations: BTreeSet<Option<Ipv4Addr>> =
+        frames.iter().map(|frame| frame.unicast_ip).collect();
+    for destination in destinations {
+        let dst_ip = destination.map(|ip| SocketAddr::new(ip.into(), SACN_PORT));
+        if let Err(error) = source.send_sync_packet(sync_universe, dst_ip) {
+            tracing::trace!(
+                ?error,
+                sync_universe,
+                ?destination,
+                "Sending sACN sync packet failed"
+            );
+        }
+    }
+}
+
+/// Ends the stream of every registered universe that is neither published nor the sync
+/// universe.
 ///
 /// E1.31 asks a source that stops sending a universe to say so with three Stream_Terminated
 /// packets, so receivers release it at once instead of holding the last look until their
@@ -294,10 +342,11 @@ fn terminate_unpublished_universes(
     source: &mut impl StreamTerminator,
     registered_universes: &mut HashSet<u16>,
     frames: &[SacnFrame],
+    sync_universe: Option<u16>,
 ) {
     let published: HashSet<u16> = frames.iter().map(|frame| frame.universe).collect();
     registered_universes.retain(|&universe| {
-        if published.contains(&universe) {
+        if published.contains(&universe) || sync_universe == Some(universe) {
             return true;
         }
         match source.terminate_stream(universe, DMX_START_CODE) {
@@ -314,14 +363,12 @@ fn terminate_unpublished_universes(
     });
 }
 
-/// Sends one universe, registering it with the source first and once more if the source
-/// reports it was dropped.
-fn send_universe(
+/// Registers `universe` with the source unless it is already registered.
+fn ensure_registered(
     source: &mut SacnSource,
     registered_universes: &mut HashSet<u16>,
-    frame: &SacnFrame,
+    universe: u16,
 ) -> Result<(), SacnError> {
-    let universe = frame.universe;
     if !registered_universes.contains(&universe) {
         source.register_universe(universe).inspect_err(|error| {
             tracing::trace!(
@@ -332,26 +379,43 @@ fn send_universe(
         })?;
         registered_universes.insert(universe);
     }
+    Ok(())
+}
+
+/// Sends one universe, registering it with the source first and once more if the source
+/// reports it was dropped. Data names `sync_universe` as its synchronization address, so
+/// receivers that support sync hold it until the matching sync packet arrives.
+fn send_universe(
+    source: &mut SacnSource,
+    registered_universes: &mut HashSet<u16>,
+    frame: &SacnFrame,
+    sync_universe: Option<u16>,
+) -> Result<(), SacnError> {
+    let universe = frame.universe;
+    ensure_registered(source, registered_universes, universe)?;
 
     let payload = with_start_code(&frame.data);
     let dst_ip = frame
         .unicast_ip
         .map(|ip| SocketAddr::new(ip.into(), SACN_PORT));
-    let result = source.send(&[universe], &payload, Some(100), dst_ip, None);
-    if !matches!(result, Err(SacnError::UniverseNotRegistered(_))) {
-        return result;
-    }
+    let result = source.send(&[universe], &payload, Some(100), dst_ip, sync_universe);
+    // The source reports a dropped data universe as UniverseNotRegistered and a dropped sync
+    // universe as IllegalSyncUniverse; register whichever it lost again and retry once.
+    let dropped = match result {
+        Err(SacnError::UniverseNotRegistered(_)) => universe,
+        Err(SacnError::IllegalSyncUniverse(sync)) => sync,
+        result => return result,
+    };
 
-    registered_universes.remove(&universe);
-    source.register_universe(universe).inspect_err(|error| {
+    registered_universes.remove(&dropped);
+    ensure_registered(source, registered_universes, dropped).inspect_err(|error| {
         tracing::trace!(
             ?error,
-            universe,
-            "Could not re-register sACN universe after UniverseNotRegistered error"
+            universe = dropped,
+            "Could not re-register sACN universe after the source dropped it"
         );
     })?;
-    registered_universes.insert(universe);
-    source.send(&[universe], &payload, Some(100), dst_ip, None)
+    source.send(&[universe], &payload, Some(100), dst_ip, sync_universe)
 }
 
 /// Prefix DMX payload bytes with the required sACN start code byte.
@@ -484,7 +548,7 @@ impl SacnOutputService {
     }
 
     /// Configures sACN output binding and rate from IO settings and the current interface
-    /// snapshot; a rate change retimes the running worker without rebinding it.
+    /// snapshot; a rate or sync change applies to the running worker without rebinding it.
     pub fn sync_with_settings(
         &self,
         settings: &IoRuntimeSettings,
@@ -492,6 +556,7 @@ impl SacnOutputService {
         transport_policy: &TransportRuntimePolicy,
     ) -> bool {
         self.period.set(settings.dmx_output_interval());
+        self.client.set_sync_universe(settings.sacn_sync_address());
         self.configure_binding(SacnOutputBinding::from_settings(
             settings,
             interface_state,
@@ -599,7 +664,7 @@ mod tests {
         let mut source = FakeTerminator::with_universes(&[1, 2]);
         let mut registered = HashSet::from([1, 2]);
 
-        terminate_unpublished_universes(&mut source, &mut registered, &[frame(1)]);
+        terminate_unpublished_universes(&mut source, &mut registered, &[frame(1)], None);
 
         assert_eq!(registered, HashSet::from([1]));
         assert_eq!(source.universes, HashSet::from([1]));
@@ -614,11 +679,11 @@ mod tests {
         source.send_error = Some(std::io::ErrorKind::NetworkUnreachable);
         let mut registered = HashSet::from([2]);
 
-        terminate_unpublished_universes(&mut source, &mut registered, &[]);
+        terminate_unpublished_universes(&mut source, &mut registered, &[], None);
         assert_eq!(registered, HashSet::from([2]));
 
         source.send_error = None;
-        terminate_unpublished_universes(&mut source, &mut registered, &[]);
+        terminate_unpublished_universes(&mut source, &mut registered, &[], None);
 
         assert!(registered.is_empty());
         assert!(source.universes.is_empty());
@@ -631,9 +696,84 @@ mod tests {
         let mut source = FakeTerminator::default();
         let mut registered = HashSet::from([3]);
 
-        terminate_unpublished_universes(&mut source, &mut registered, &[]);
+        terminate_unpublished_universes(&mut source, &mut registered, &[], None);
 
         assert!(registered.is_empty());
         assert_eq!(source.terminated, vec![3]);
+    }
+
+    /// The sync universe stays registered while sync uses it even though no data is published
+    /// on it, and is terminated once sync stops using it.
+    #[test]
+    fn sync_universe_stays_registered_while_in_use() {
+        let mut source = FakeTerminator::with_universes(&[1, 900]);
+        let mut registered = HashSet::from([1, 900]);
+
+        terminate_unpublished_universes(&mut source, &mut registered, &[frame(1)], Some(900));
+        assert_eq!(registered, HashSet::from([1, 900]));
+        assert!(source.terminated.is_empty());
+
+        terminate_unpublished_universes(&mut source, &mut registered, &[frame(1)], None);
+        assert_eq!(registered, HashSet::from([1]));
+        assert_eq!(source.universes, HashSet::from([1]));
+        assert_eq!(source.terminated, vec![900]);
+    }
+
+    /// With sync on, every data packet names the sync universe and the tick ends with one sync
+    /// packet per destination; with sync off, data names no sync universe and no sync packet
+    /// follows.
+    #[test]
+    fn sync_tick_marks_data_and_sends_sync_packet() {
+        use sacn::packet::{AcnRootLayerProtocol, E131RootLayerData};
+
+        let receiver = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, SACN_PORT));
+        let Ok(receiver) = receiver else {
+            // Another process owns the sACN port; the unicast path cannot be observed here.
+            return;
+        };
+        receiver
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .expect("set timeout");
+        let mut source = SacnSource::with_ip("test", sacn_output_bind_addr(Ipv4Addr::LOCALHOST))
+            .expect("open sACN source");
+        source.set_is_sending_discovery(false);
+        let mut registered = HashSet::new();
+        let client = SacnOutputClient::default();
+        client.publish(
+            [1, 2]
+                .map(|universe| SacnFrame {
+                    unicast_ip: Some(Ipv4Addr::LOCALHOST),
+                    ..frame(universe)
+                })
+                .to_vec(),
+        );
+
+        /// Receives every packet sent within the read timeout, as (is_sync, sync address).
+        fn packets(receiver: &std::net::UdpSocket) -> Vec<(bool, u16)> {
+            let mut buffer = [0u8; 1144];
+            let mut packets = Vec::new();
+            while let Ok(length) = receiver.recv(&mut buffer) {
+                let packet = AcnRootLayerProtocol::parse(&buffer[..length]).expect("parse sACN");
+                packets.push(match packet.pdu.data {
+                    E131RootLayerData::DataPacket(data) => (false, data.synchronization_address),
+                    E131RootLayerData::SynchronizationPacket(sync) => {
+                        (true, sync.synchronization_address)
+                    }
+                    E131RootLayerData::UniverseDiscoveryPacket(_) => continue,
+                });
+            }
+            packets
+        }
+
+        let _ = transmit_tick(&mut source, &mut registered, &client);
+        assert_eq!(packets(&receiver), vec![(false, 0), (false, 0)]);
+
+        client.set_sync_universe(Some(900));
+        let _ = transmit_tick(&mut source, &mut registered, &client);
+        assert_eq!(
+            packets(&receiver),
+            vec![(false, 900), (false, 900), (true, 900)]
+        );
+        assert!(registered.contains(&900));
     }
 }
