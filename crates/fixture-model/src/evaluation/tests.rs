@@ -90,13 +90,25 @@ fn control() -> Attribute {
 
 /// A body dimmer at `slots` and a red pixel following it with `kind`.
 fn pixel_bar(slots: DmxSlots, kind: RelationKind) -> FixtureModel {
+    pixel_bar_calibrated(slots, kind, |_| {})
+}
+
+/// A body dimmer at `slots`, adjusted by `calibrate`, and a real red pixel
+/// following it with `kind`.
+fn pixel_bar_calibrated(
+    slots: DmxSlots,
+    kind: RelationKind,
+    calibrate: impl FnOnce(&mut ParameterMetadata),
+) -> FixtureModel {
+    let mut dimmer = parameter(
+        Attribute::Intensity,
+        vec![function("Dimmer", 0, 255)],
+        slots,
+    );
+    calibrate(&mut dimmer);
     FixtureModel::new(
         [
-            vec![parameter(
-                Attribute::Intensity,
-                vec![function("Dimmer", 0, 255)],
-                slots,
-            )],
+            vec![dimmer],
             vec![parameter(
                 Attribute::Red,
                 vec![following(
@@ -641,4 +653,92 @@ fn unlinked_models_ignore_links() {
         1.0,
         "unscaled red",
     );
+}
+
+/// Verifies the fixture reads a real master by the DMX it outputs, so an
+/// inverted dimmer at its logical maximum blacks out its followers and a
+/// calibration offset shifts the level it applies.
+#[test]
+fn fixture_reads_masters_after_inversion_and_offset() {
+    let red = |calibrate: fn(&mut ParameterMetadata), kind, dimmer| {
+        read(
+            pixel_bar_calibrated(real(), kind, calibrate),
+            &[Some(dimmer), Some(255.0)],
+        )[1]
+        .map(|reading| reading.level)
+    };
+    let inverted: fn(&mut ParameterMetadata) = |dimmer| dimmer.is_inverted = true;
+    let offset: fn(&mut ParameterMetadata) =
+        |dimmer| dimmer.offset = ParameterValue::Absolute { value: 51.0 };
+    near(
+        red(inverted, RelationKind::Multiply, 255.0),
+        0.0,
+        "inverted full dimmer outputs 0",
+    );
+    near(
+        red(inverted, RelationKind::Multiply, 51.0),
+        0.8,
+        "inverted multiply",
+    );
+    near(
+        red(inverted, RelationKind::Override, 51.0),
+        0.8,
+        "inverted override",
+    );
+    near(
+        red(offset, RelationKind::Multiply, 76.5),
+        0.5,
+        "offset multiply",
+    );
+}
+
+/// Verifies the console reads masters by their output too, matching the
+/// fixture when it applies relations involving virtual channels.
+#[test]
+fn console_reads_masters_after_inversion() {
+    let model = pixel_bar_calibrated(DmxSlots::Virtual, RelationKind::Multiply, |dimmer| {
+        dimmer.is_inverted = true;
+    });
+    near(
+        console(model, &[51.0, 255.0], 1),
+        204.0,
+        "inverted multiply",
+    );
+}
+
+/// Verifies relation masters and mode masters agree on an inverted master:
+/// the level a relation applies and the mode it selects both come from the
+/// master's DMX output.
+#[test]
+fn relation_and_mode_masters_agree_on_inversion() {
+    let mut control_channel = parameter(control(), vec![function("Mode", 0, 255)], real());
+    control_channel.is_inverted = true;
+    let model = FixtureModel::new(
+        [
+            vec![control_channel],
+            vec![parameter(
+                Attribute::Red,
+                vec![
+                    under_mode(
+                        following(
+                            function("Dim", 0, 255),
+                            0,
+                            control(),
+                            RelationKind::Multiply,
+                        ),
+                        0,
+                        control(),
+                        0,
+                        127,
+                    ),
+                    function("Full", 0, 255),
+                ],
+                real(),
+            )],
+        ],
+        true,
+    );
+    let reading = read(model, &[Some(204.0), Some(255.0)])[1].unwrap();
+    assert_eq!(reading.function, Some(0), "control outputs DMX 51");
+    near(Some(reading.level), 0.2, "level from DMX 51");
 }
