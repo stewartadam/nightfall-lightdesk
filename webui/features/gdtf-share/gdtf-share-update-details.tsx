@@ -6,125 +6,54 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  onCleanup,
-  Show,
-} from "solid-js";
-import { Alert } from "../../components/ui/alert";
-import { ProgressBar } from "../../components/ui/progress-bar";
+import { Show } from "solid-js";
 import { Button } from "../../components/ui/visual-language/button";
-import { getLogger } from "../../lib/logger";
-import { fixtureLibrary } from "../../state/appStores";
-import type {
-  AvailableFixtureInfo,
-  GdtfShareDownloadProgress,
-  GdtfShareFixture,
-  GdtfShareUpdate,
-} from "../../types";
+import type { GdtfShareUpdate } from "../../types";
 import { gdtfSharePageUrl } from "./fixtures";
-import { formatDate, kilobytes } from "./format";
-import { installIntoLibrary, installOutcomeNote } from "./install";
-
-const log = getLogger(import.meta.url);
-
-/** Names a GDTF Share revision with who uploaded it and when GDTF Share last changed it. */
-function describeRevision(fixture: GdtfShareFixture): string {
-  const uploader = fixture.manufacturer_upload ? "manufacturer" : "user";
-  return `${fixture.revision || "Unnamed revision"} · ${uploader} upload · ${formatDate(fixture.last_modified)}`;
-}
+import { formatDate } from "./format";
 
 export interface GdtfShareUpdateDetailsProps {
   /** The newer revision found for the selected library file. */
   update: GdtfShareUpdate;
-  /** How many patched fixtures use the selected library file. */
-  patchedCount: number;
-  /** Shows a library entry, once the update is installed or already in the library. */
-  onShow: (entry: AvailableFixtureInfo) => void;
-  /** Starts reviewing a move of the patched fixtures to the installed update. */
-  onReviewUpdate: (entry: AvailableFixtureInfo) => void;
-}
-
-/** Names a fixture count, such as "1 fixture" or "3 fixtures". */
-function fixtureCount(count: number): string {
-  return `${count} ${count === 1 ? "fixture" : "fixtures"}`;
+  /**
+   * Label of the one action the section offers, such as "Update…", or none when there
+   * is nothing to do.
+   */
+  actionLabel?: string;
+  /** Runs the section's action. */
+  onAction: () => void;
 }
 
 /**
- * Tells the user a newer GDTF Share revision of the selected library file exists, and
- * installs it next to the current file, or shows the library copy when one already is that
- * revision. The current file stays, so patched fixtures keep using it until the user
- * reviews and confirms moving them to the update.
+ * Tells the user a newer GDTF Share revision of the selected library file exists: which
+ * revision, when GDTF Share last changed it, and a link to its notes there. The caller
+ * decides the single action it offers, such as updating or showing the library copy.
  */
 export function GdtfShareUpdateDetails(props: GdtfShareUpdateDetailsProps) {
-  const $fixtureLibrary = useStore(fixtureLibrary);
-  const [installing, setInstalling] = createSignal(false);
-  const [download, setDownload] = createSignal<GdtfShareDownloadProgress>();
-  const [note, setNote] = createSignal<string>();
-  const lifetime = new AbortController();
-  onCleanup(() => lifetime.abort());
-
-  /** Clears an earlier install note when the update shown changes. */
-  createEffect(
-    on(
-      () => props.update.latest.rid,
-      () => setNote(undefined),
-    ),
-  );
-
-  /** The library entry the engine reports already is the newest revision, if any. */
-  const libraryCopy = createMemo(() => {
-    const etag = props.update.library_copy;
-    return etag
-      ? $fixtureLibrary().find((entry) => entry.asset_etag === etag)
-      : undefined;
-  });
-
-  /**
-   * Installs the newest revision, then either reviews moving the patched fixtures to it
-   * (`thenReview`) or shows the library entry it becomes.
-   */
-  const install = async (thenReview: boolean) => {
-    setInstalling(true);
-    setDownload(undefined);
-    setNote(undefined);
-    try {
-      const { installed, outcome } = await installIntoLibrary(
-        props.update.latest,
-        setDownload,
-        lifetime.signal,
-      );
-      if (lifetime.signal.aborted) return;
-      if (outcome?.kind === "listed") {
-        if (thenReview) props.onReviewUpdate(outcome.entry);
-        else props.onShow(outcome.entry);
-      } else {
-        setNote(installOutcomeNote(installed, outcome));
-      }
-    } catch (failure) {
-      if (lifetime.signal.aborted) return;
-      log.warn("GDTF Share update install failed", failure);
-      setNote(failure instanceof Error ? failure.message : String(failure));
-    } finally {
-      if (!lifetime.signal.aborted) {
-        setInstalling(false);
-        setDownload(undefined);
-      }
-    }
-  };
-
   return (
     <div class="space-y-2 text-sm" data-testid="gdtf-share-update">
       <h3 class="font-medium">Update on GDTF Share</h3>
-      <div>
-        <span class="text-neutral-400">Newest:</span>{" "}
-        {describeRevision(props.update.latest)}
-      </div>
-      <div>
+      <p>
+        {props.update.latest.revision || "A new revision"} is available
+        <span class="text-neutral-400">
+          {" "}
+          · {formatDate(props.update.latest.last_modified)} · this file is{" "}
+          {props.update.installed?.revision || "an older revision"}
+        </span>
+      </p>
+      <div class="flex items-center gap-3">
+        <Show when={props.actionLabel}>
+          {(label) => (
+            <Button
+              size="compact"
+              variant="primary"
+              onClick={() => props.onAction()}
+              data-testid="gdtf-share-update-action"
+            >
+              {label()}
+            </Button>
+          )}
+        </Show>
         <a
           class="text-blue-300 underline"
           href={gdtfSharePageUrl(props.update.latest)}
@@ -132,94 +61,9 @@ export function GdtfShareUpdateDetails(props: GdtfShareUpdateDetailsProps) {
           rel="noopener noreferrer"
           data-testid="gdtf-share-update-link"
         >
-          See what changed on GDTF Share
+          What changed
         </a>
       </div>
-      <div>
-        <span class="text-neutral-400">This file:</span>{" "}
-        {props.update.installed
-          ? describeRevision(props.update.installed)
-          : "a revision GDTF Share has since replaced"}
-      </div>
-      <Show
-        when={libraryCopy()}
-        fallback={
-          <>
-            <div class="flex flex-wrap gap-2">
-              <Show when={props.patchedCount > 0}>
-                <Button
-                  size="compact"
-                  variant="primary"
-                  disabled={installing()}
-                  onClick={() => install(true)}
-                  data-testid="gdtf-share-install-and-update"
-                >
-                  Install and update {fixtureCount(props.patchedCount)}
-                </Button>
-              </Show>
-              <Button
-                size="compact"
-                variant={props.patchedCount > 0 ? undefined : "primary"}
-                disabled={installing()}
-                onClick={() => install(false)}
-                data-testid="gdtf-share-install-update"
-              >
-                {props.patchedCount > 0 ? "Install only" : "Install update"}
-              </Button>
-            </div>
-            <p class="text-neutral-400 text-xs">
-              The update is added next to this file.
-              {props.patchedCount > 0
-                ? " Patched fixtures move to it only after you review and confirm."
-                : ""}
-            </p>
-          </>
-        }
-      >
-        {(copy) => (
-          <div class="flex flex-wrap gap-2">
-            <Show when={props.patchedCount > 0}>
-              <Button
-                size="compact"
-                variant="primary"
-                onClick={() => props.onReviewUpdate(copy())}
-                data-testid="gdtf-share-review-update"
-              >
-                Update {fixtureCount(props.patchedCount)}…
-              </Button>
-            </Show>
-            <Button
-              size="compact"
-              onClick={() => props.onShow(copy())}
-              data-testid="gdtf-share-show-update"
-            >
-              Show library copy
-            </Button>
-          </div>
-        )}
-      </Show>
-      <Show when={installing()}>
-        <div class="flex items-center gap-2" role="status">
-          <ProgressBar
-            label="GDTF Share download progress"
-            value={download()?.received}
-            max={download()?.total}
-            class="flex-1"
-          />
-          <span class="shrink-0 text-xs text-neutral-400">
-            {download()
-              ? `${kilobytes(download()?.received ?? 0)} of ${kilobytes(download()?.total ?? 0)}`
-              : "Downloading…"}
-          </span>
-        </div>
-      </Show>
-      <Show when={note()}>
-        {(message) => (
-          <Alert variant="caution" density="compact" class="break-words">
-            {message()}
-          </Alert>
-        )}
-      </Show>
     </div>
   );
 }

@@ -626,11 +626,12 @@ async function patchThreeWashes(page: Page, assetEtag: string): Promise<void> {
 }
 
 /**
- * The Fixture Library flags a GDTF file with a newer GDTF Share revision, Properties names
- * both revisions, and installing the update adds it next to the old file and selects it.
- * The old file then points at the library copy instead of offering another install. The
- * update check is answered by a stand-in that records what the panel sent, so the test also
- * shows the library reports each file's fixture type and revision text.
+ * The Fixture Library flags a GDTF file with a newer GDTF Share revision, and Properties
+ * names both revisions with one Update… button. With nothing patched, its dialog only adds
+ * the update to the library next to the old file and selects it. The old file then points
+ * at the library copy instead of offering another download. The update check is answered
+ * by a stand-in that records what the panel sent, so the test also shows the library
+ * reports each file's fixture type and revision text.
  */
 test("offers newer GDTF Share revisions of library fixtures", async ({
   page,
@@ -652,43 +653,42 @@ test("offers newer GDTF Share revisions of library fixtures", async ({
     fixture_type_id: WASH.fixture_type_id,
     revision: "Release 1.0",
   });
-
-  await patchThreeWashes(page, installedEtag);
-  await expect(
-    rows.first().getByRole("gridcell", { name: "3", exact: true }),
-  ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("10-update-available.png"),
   });
 
   await rows.first().click();
-  await expect(page.getByTestId("fixture-library-patched-count")).toHaveText(
-    "Patched: 3 fixtures",
-  );
   const details = page.getByTestId("gdtf-share-update");
-  await expect(details).toContainText("Newest: Release 2.0");
-  await expect(details).toContainText("This file: Release 1.0");
+  await expect(details).toContainText("Release 2.0 is available");
+  await expect(details).toContainText("this file is Release 1.0");
   await expect(details.getByTestId("gdtf-share-update-link")).toHaveAttribute(
     "href",
     "https://gdtf-share.com/share.php?page=home&manu=Nightfall%20Test&fix=E2E%20Wash&rev=105",
   );
+  await expect(details.getByRole("button")).toHaveText(["Update…"]);
   await page.screenshot({
     path: testInfo.outputPath("11-update-properties.png"),
   });
 
-  await details.getByTestId("gdtf-share-install-update").click();
+  await details.getByTestId("gdtf-share-update-action").click();
+  const dialog = page.getByRole("dialog", { name: "Update E2E Wash" });
+  await expect(dialog).toContainText("No patched fixtures use this file.");
+  await page.screenshot({
+    path: testInfo.outputPath("12-add-to-library.png"),
+  });
+  await dialog.getByTestId("revision-update-confirm").click();
+  await expect(dialog).toHaveCount(0, { timeout: 20_000 });
   await expect(rows).toHaveCount(2, { timeout: 20_000 });
   await expect(details).toHaveCount(0);
   const oldRow = library
     .getByRole("row")
     .filter({ hasText: "Newer copy in library" });
   await expect(oldRow).toHaveCount(1, { timeout: 20_000 });
-  await page.screenshot({
-    path: testInfo.outputPath("12-update-installed.png"),
-  });
 
   await oldRow.click();
-  await expect(details.getByTestId("gdtf-share-show-update")).toBeVisible();
+  await expect(details.getByTestId("gdtf-share-update-action")).toHaveText(
+    "Show update",
+  );
   await page.screenshot({
     path: testInfo.outputPath("13-library-copy.png"),
   });
@@ -709,10 +709,11 @@ function washRevisions(page: Page): Promise<(string | undefined)[]> {
 }
 
 /**
- * With patched fixtures, "Install and update" installs the GDTF Share update and opens a
- * review: the notes written since the installed revision, the new mode each current mode
+ * With patched fixtures, Update… opens a dialog that downloads the GDTF Share update, then
+ * shows the notes written since the installed revision, the new mode each current mode
  * becomes with its channel growth, and saving the show first. Confirming moves every
- * fixture to the new revision in one engine change, and one undo puts them all back.
+ * fixture to the new revision in one engine change, closes the dialog and selects the new
+ * revision, and one undo moves them all back.
  */
 test("installs a GDTF Share update and moves patched fixtures to it", async ({
   page,
@@ -729,49 +730,52 @@ test("installs a GDTF Share update and moves patched fixtures to it", async ({
     timeout: 30_000,
   });
   await patchThreeWashes(page, installedEtag);
+  await expect(
+    rows.first().getByRole("gridcell", { name: "3", exact: true }),
+  ).toBeVisible();
   await rows.first().click();
   await expect(page.getByTestId("fixture-library-patched-count")).toHaveText(
     "Patched: 3 fixtures",
   );
   const details = page.getByTestId("gdtf-share-update");
-  await expect(details.getByTestId("gdtf-share-install-update")).toHaveText(
-    "Install only",
-  );
+  await expect(details.getByRole("button")).toHaveText(["Update…"]);
   await page.screenshot({
-    path: testInfo.outputPath("14-install-and-update-offered.png"),
+    path: testInfo.outputPath("14-update-offered.png"),
   });
 
-  await details.getByTestId("gdtf-share-install-and-update").click();
-  const review = page.getByTestId("revision-update-review");
-  const changes = review.getByTestId("revision-update-changes");
+  await details.getByTestId("gdtf-share-update-action").click();
+  const dialog = page.getByRole("dialog", { name: "Update E2E Wash" });
+  const changes = dialog.getByTestId("revision-update-changes");
   await expect(changes).toContainText("Fixed the beam angle", {
     timeout: 20_000,
   });
   await expect(changes).toContainText("Release 2.0");
   await expect(changes).not.toContainText("Release 1.0");
-  const modes = review.getByTestId("revision-update-modes");
-  await expect(modes).toContainText("Standard (3 × 1 channel)");
-  await expect(review.getByTestId("revision-update-mode")).toHaveValue(
+  const modes = dialog.getByTestId("revision-update-modes");
+  await expect(modes).toContainText("Move 3 fixtures to");
+  await expect(modes).toContainText("Standard · 3 fixtures");
+  await expect(dialog.getByTestId("revision-update-mode")).toHaveValue(
     "Standard",
   );
-  await expect(modes).toContainText("This mode uses 1 channel more");
-  await expect(review.getByTestId("revision-update-save-first")).toBeChecked();
-  await review.scrollIntoViewIfNeeded();
+  await expect(modes).toContainText("Uses 1 channel more");
+  await expect(dialog.getByTestId("revision-update-save-first")).toBeChecked();
+  await expect(dialog.getByTestId("revision-update-confirm")).toHaveText(
+    "Update 3 fixtures",
+  );
   await page.screenshot({
-    path: testInfo.outputPath("15-update-review.png"),
+    path: testInfo.outputPath("15-update-dialog.png"),
   });
 
-  await review.getByTestId("revision-update-confirm").click();
-  await expect(page.getByTestId("revision-update-summary")).toContainText(
-    "Updated 3 fixtures",
-    { timeout: 20_000 },
-  );
+  await dialog.getByTestId("revision-update-confirm").click();
+  await expect(dialog).toHaveCount(0, { timeout: 20_000 });
   await expect
     .poll(() => washRevisions(page))
     .toEqual(Array(3).fill(updateEtag));
+  await expect(rows).toHaveCount(2);
   await expect(page.getByTestId("fixture-library-patched-count")).toHaveText(
-    "Patched: 0 fixtures",
+    "Patched: 3 fixtures",
   );
+  await expect(details).toHaveCount(0);
   await page.screenshot({
     path: testInfo.outputPath("16-fixtures-updated.png"),
   });
@@ -787,9 +791,6 @@ test("installs a GDTF Share update and moves patched fixtures to it", async ({
     .poll(() => washRevisions(page))
     .toEqual(Array(3).fill(installedEtag));
   await expect(page.getByTestId("fixture-library-patched-count")).toHaveText(
-    "Patched: 3 fixtures",
+    "Patched: 0 fixtures",
   );
-  await page.screenshot({
-    path: testInfo.outputPath("17-update-undone.png"),
-  });
 });

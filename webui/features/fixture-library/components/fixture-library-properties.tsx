@@ -28,11 +28,16 @@ import {
 import { fixtureWireLayout, parameterDmxBreak } from "../../../lib/dmx";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import { fetchFixtureProfile } from "../../../lib/fixture-service";
-import { fixtureProfile } from "../../../state/appStores";
+import {
+  fixtureLibrary,
+  fixtureProfile,
+  fixtures,
+} from "../../../state/appStores";
 import type * as types from "../../../types";
 import { GdtfShareUpdateDetails } from "../../gdtf-share";
+import { patchedModeGroups } from "../revision-update";
 import LibraryFixturePreview from "./library-fixture-preview";
-import { RevisionUpdateReview } from "./revision-update-review";
+import { RevisionUpdateDialog } from "./revision-update-dialog";
 
 interface FixtureLibraryPropertiesProps {
   selectedFixture: Accessor<types.AvailableFixtureInfo | null>;
@@ -224,6 +229,8 @@ export default function FixtureLibraryProperties(
   props: FixtureLibraryPropertiesProps,
 ) {
   const $fixtureProfile = useStore(fixtureProfile);
+  const $fixtureLibrary = useStore(fixtureLibrary);
+  const $fixtures = useStore(fixtures);
   /** Provides the currently selected fixture library row. */
   const selectedFixture = createMemo(() => props.selectedFixture());
   /** Tracks fixture identity changes that should reset mode-local state. */
@@ -354,12 +361,29 @@ export default function FixtureLibraryProperties(
               </div>
             </div>
 
-            {/* Keyed by file, so an install under way never carries over to another fixture. */}
+            {/* Keyed by file, so a dialog left open never carries over to another fixture. */}
             <Show when={props.update()?.asset_etag} keyed>
               {(_etag: string) => {
-                const [reviewing, setReviewing] =
-                  createSignal<types.AvailableFixtureInfo>();
-                const [updated, setUpdated] = createSignal<string>();
+                const [open, setOpen] = createSignal(false);
+                /**
+                 * The library entry that already is the newest revision, when no patched
+                 * fixture of this make and model, on this file or another old one, still
+                 * needs moving to it, so the section only has to point at it.
+                 */
+                const readyCopy = createMemo(() => {
+                  const etag = props.update()?.library_copy;
+                  if (!etag) return undefined;
+                  const waiting = patchedModeGroups(
+                    Object.values($fixtures()),
+                    fixture().make,
+                    fixture().model,
+                    etag,
+                  );
+                  if (waiting.length > 0) return undefined;
+                  return $fixtureLibrary().find(
+                    (entry) => entry.asset_etag === etag,
+                  );
+                });
                 return (
                   <Show when={props.update()}>
                     {(update) => (
@@ -367,36 +391,23 @@ export default function FixtureLibraryProperties(
                         <div class="border-t border-neutral-700" />
                         <GdtfShareUpdateDetails
                           update={update()}
-                          patchedCount={props.patchedCount()}
-                          onShow={props.onShowFixture}
-                          onReviewUpdate={(entry) => {
-                            setUpdated(undefined);
-                            setReviewing(entry);
+                          actionLabel={readyCopy() ? "Show update" : "Update…"}
+                          onAction={() => {
+                            const copy = readyCopy();
+                            if (copy) props.onShowFixture(copy);
+                            else setOpen(true);
                           }}
                         />
-                        <Show when={reviewing()}>
-                          {(target) => (
-                            <RevisionUpdateReview
-                              from={fixture()}
-                              to={target()}
-                              onUpdated={(summary) => {
-                                setReviewing(undefined);
-                                setUpdated(summary);
-                              }}
-                              onCancel={() => setReviewing(undefined)}
-                            />
-                          )}
-                        </Show>
-                        <Show when={updated()}>
-                          {(summary) => (
-                            <Alert
-                              variant="tip"
-                              density="compact"
-                              data-testid="revision-update-summary"
-                            >
-                              {summary()}
-                            </Alert>
-                          )}
+                        <Show when={open()}>
+                          <RevisionUpdateDialog
+                            from={fixture()}
+                            update={update()}
+                            onDismiss={() => setOpen(false)}
+                            onDone={(entry) => {
+                              setOpen(false);
+                              props.onShowFixture(entry);
+                            }}
+                          />
                         </Show>
                       </>
                     )}

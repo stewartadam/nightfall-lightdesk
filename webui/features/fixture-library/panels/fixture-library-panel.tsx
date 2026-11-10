@@ -260,10 +260,33 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
   const [searchingOnline, setSearchingOnline] = createSignal(false);
   const [onlineQuery, setOnlineQuery] = createSignal("");
 
-  /** Leaves GDTF Share search and shows a library entry in the properties panel. */
+  /**
+   * Leaves GDTF Share search and shows a library entry in the properties panel, moving the
+   * grid's active cell to its row so the highlight follows, or clearing it when a filter
+   * hides the row.
+   */
   const showLibraryCopy = (fixture: AvailableFixtureInfo) => {
     setSearchingOnline(false);
     setFixtureLibrarySelectedFixture(fixture);
+    const row = fixtures().findIndex(
+      (entry) =>
+        entry.kind === "fixture" &&
+        entry.fixture.make === fixture.make &&
+        entry.fixture.model === fixture.model &&
+        entry.fixture.asset_etag === fixture.asset_etag,
+    );
+    setSelection(
+      row < 0
+        ? emptyGridSelection()
+        : {
+            ...emptyGridSelection(),
+            current: {
+              cell: [0, row],
+              range: { x: 0, y: row, width: 1, height: 1 },
+              rangeStack: [],
+            },
+          },
+    );
   };
 
   // Row selection state (for row checkboxes)
