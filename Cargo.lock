@@ -292,6 +292,7 @@ dependencies = [
  "nightfall-references",
  "nightfall-scene-objects",
  "nightfall-selection-runtime",
+ "nightfall-service-host",
  "nightfall-showfile",
  "nightfall-tempo",
  "nightfall-timecode",

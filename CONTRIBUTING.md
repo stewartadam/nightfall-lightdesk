@@ -517,7 +517,7 @@ through. Commands for the whole repository use a plain verb; the rest are named
 | `check:command-architecture`, `check:crate-boundaries`, `check:browser-demo-dependencies` | Architecture checks also run by the git hooks or CI. |
 | `test` | Run the script tests and the web UI Node tests. |
 | `test:scripts`, `test:webui-node` | Run either half of `test`. |
-| `test:packet-timing` | Run the Art-Net and sACN output workers over loopback and check their packets stay on the output tick grid. These tests are ignored in normal runs, CI and the push hook because other load on the machine makes them fail, so run them on an otherwise idle machine after changing output scheduling. |
+| `test:packet-timing` | Run the sample show with timeline 1 playing and Art-Net and sACN routed from the console for ten seconds, and check each protocol's packets stay on the output tick grid. The test is ignored in normal runs, CI and the push hook because other load on the machine makes it fail, so run it on an otherwise idle machine after changing output scheduling or the engine frame loop. |
 | `test:webui-playwright` | Run Playwright specs through the wrapper. Pass `--headed`, `--ui`, `--target embedded-demo` or spec paths. |
 | `test:webui-smoke`, `test:webui-hmr` | Run the CI smoke specs, or the dev-server hot-reload specs. |
 | `playwright:install` | Install the Playwright browsers into the shared cache. |

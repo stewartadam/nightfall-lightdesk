@@ -181,18 +181,7 @@ impl SacnWorker {
         client: SacnOutputClient,
         period: FixedRatePeriod,
     ) -> Option<Self> {
-        let source = init_source(binding)?;
-        Self::start(source, client, period, SACN_PORT)
-    }
-
-    /// Starts ticking every `period` on an already opened source, sending unicast frames to
-    /// `unicast_port`, or returns `None` when the thread cannot be started.
-    fn start(
-        mut source: SacnSource,
-        client: SacnOutputClient,
-        period: FixedRatePeriod,
-        unicast_port: u16,
-    ) -> Option<Self> {
+        let mut source = init_source(binding)?;
         let source_cid = source.cid().ok().map(|cid| *cid.as_bytes());
         let mut registered_universes = HashSet::<u16>::new();
         // Never replay frames published before output stopped; wait for the next engine frame.
@@ -204,7 +193,7 @@ impl SacnWorker {
                 &mut source,
                 &mut registered_universes,
                 &tick_client,
-                unicast_port,
+                SACN_PORT,
             );
             if flow.is_break() {
                 tick_client.set_running(false);
@@ -805,6 +794,3 @@ mod tests {
         assert!(registered.contains(&900));
     }
 }
-
-#[cfg(test)]
-mod packet_timing_tests;
