@@ -265,14 +265,33 @@ fn transmit_tick(
     flow
 }
 
+/// Ends a universe's stream on an sACN source.
+///
+/// Separates [`terminate_unpublished_universes`] from the network so its bookkeeping can be
+/// tested without sending packets.
+trait StreamTerminator {
+    /// Sends the Stream_Terminated packets for `universe` and deregisters it from the source.
+    fn terminate_stream(&mut self, universe: u16, start_code: u8) -> Result<(), SacnError>;
+}
+
+impl StreamTerminator for SacnSource {
+    fn terminate_stream(&mut self, universe: u16, start_code: u8) -> Result<(), SacnError> {
+        SacnSource::terminate_stream(self, universe, start_code)
+    }
+}
+
 /// Ends the stream of every registered universe that is no longer published.
 ///
 /// E1.31 asks a source that stops sending a universe to say so with three Stream_Terminated
 /// packets, so receivers release it at once instead of holding the last look until their
 /// 2.5 s data-loss timeout. Terminating also deregisters the universe, which drops it from the
 /// source's universe discovery adverts.
+///
+/// The source only deregisters a universe once all of its termination packets were sent, so a
+/// universe whose termination fails stays registered on both sides and is retried next tick.
+/// A universe the source no longer knows about is simply forgotten.
 fn terminate_unpublished_universes(
-    source: &mut SacnSource,
+    source: &mut impl StreamTerminator,
     registered_universes: &mut HashSet<u16>,
     frames: &[SacnFrame],
 ) {
@@ -281,10 +300,17 @@ fn terminate_unpublished_universes(
         if published.contains(&universe) {
             return true;
         }
-        if let Err(error) = source.terminate_stream(universe, DMX_START_CODE) {
-            tracing::debug!(?error, universe, "Could not terminate sACN universe stream");
+        match source.terminate_stream(universe, DMX_START_CODE) {
+            Ok(()) | Err(SacnError::UniverseNotRegistered(_)) => false,
+            Err(error) => {
+                tracing::debug!(
+                    ?error,
+                    universe,
+                    "Could not terminate sACN universe stream; retrying next tick"
+                );
+                true
+            }
         }
-        false
     });
 }
 
@@ -528,21 +554,86 @@ mod tests {
         }
     }
 
+    /// In-memory stand-in for an sACN source that records terminations and can fail them.
+    #[derive(Default)]
+    struct FakeTerminator {
+        /// Universes the fake source still has registered.
+        universes: HashSet<u16>,
+        /// When set, every termination fails with this I/O error kind before deregistering,
+        /// as the real source does when a termination packet cannot be sent.
+        send_error: Option<std::io::ErrorKind>,
+        /// Universes passed to `terminate_stream`, in call order.
+        terminated: Vec<u16>,
+    }
+
+    impl FakeTerminator {
+        /// Builds a fake source with `universes` registered.
+        fn with_universes(universes: &[u16]) -> Self {
+            Self {
+                universes: universes.iter().copied().collect(),
+                ..Self::default()
+            }
+        }
+    }
+
+    impl StreamTerminator for FakeTerminator {
+        /// Mirrors `SacnSource::terminate_stream`: rejects unknown universes, fails on a send
+        /// error without deregistering, and otherwise deregisters the universe.
+        fn terminate_stream(&mut self, universe: u16, _start_code: u8) -> Result<(), SacnError> {
+            self.terminated.push(universe);
+            if !self.universes.contains(&universe) {
+                return Err(SacnError::UniverseNotRegistered(universe));
+            }
+            if let Some(kind) = self.send_error {
+                return Err(SacnError::Io(std::io::Error::from(kind)));
+            }
+            self.universes.remove(&universe);
+            Ok(())
+        }
+    }
+
     /// A universe that stops being published is terminated and dropped from the source, while
-    /// universes still published stay registered.
+    /// universes still published are neither terminated nor forgotten.
     #[test]
     fn unpublished_universes_are_terminated() {
-        let mut source = SacnSource::with_ip("test", sacn_output_bind_addr(Ipv4Addr::LOCALHOST))
-            .expect("open sACN source");
-        let mut registered = HashSet::new();
-        for universe in [1, 2] {
-            source.register_universe(universe).expect("register");
-            registered.insert(universe);
-        }
+        let mut source = FakeTerminator::with_universes(&[1, 2]);
+        let mut registered = HashSet::from([1, 2]);
 
         terminate_unpublished_universes(&mut source, &mut registered, &[frame(1)]);
 
         assert_eq!(registered, HashSet::from([1]));
-        assert_eq!(source.universes().expect("universes"), vec![1]);
+        assert_eq!(source.universes, HashSet::from([1]));
+        assert_eq!(source.terminated, vec![2]);
+    }
+
+    /// A termination that cannot be sent leaves the universe registered so the next tick retries
+    /// it, keeping the worker's bookkeeping in step with the source's discovery list.
+    #[test]
+    fn failed_termination_is_retried() {
+        let mut source = FakeTerminator::with_universes(&[2]);
+        source.send_error = Some(std::io::ErrorKind::NetworkUnreachable);
+        let mut registered = HashSet::from([2]);
+
+        terminate_unpublished_universes(&mut source, &mut registered, &[]);
+        assert_eq!(registered, HashSet::from([2]));
+
+        source.send_error = None;
+        terminate_unpublished_universes(&mut source, &mut registered, &[]);
+
+        assert!(registered.is_empty());
+        assert!(source.universes.is_empty());
+        assert_eq!(source.terminated, vec![2, 2]);
+    }
+
+    /// A universe the source already dropped is forgotten instead of being retried forever.
+    #[test]
+    fn universe_unknown_to_source_is_forgotten() {
+        let mut source = FakeTerminator::default();
+        let mut registered = HashSet::from([3]);
+
+        terminate_unpublished_universes(&mut source, &mut registered, &[]);
+
+        assert!(registered.is_empty());
+        assert_eq!(source.terminated, vec![3]);
     }
 }
