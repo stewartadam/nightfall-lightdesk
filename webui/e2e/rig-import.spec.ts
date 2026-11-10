@@ -351,6 +351,7 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
   await expect(
     dialog.getByLabel("Update fixtures already in the show to match the file"),
   ).toBeChecked();
+  await settleTabPanel(dialog);
   await page.screenshot({ path: test.info().outputPath("5-reimport.png") });
 
   await dialog.getByRole("button", { name: "Import", exact: true }).click();
@@ -362,11 +363,15 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
 
 /** Waits for the review's tab panel to finish sliding in, so a screenshot shows its table. */
 async function settleTabPanel(dialog: Locator): Promise<void> {
-  await dialog
-    .getByRole("tabpanel")
-    .evaluate((panel) =>
-      Promise.all(panel.getAnimations().map((animation) => animation.finished)),
+  await dialog.getByRole("tabpanel").evaluate(async (panel) => {
+    // The entrance starts on the frame after the tab changes, so let it begin first.
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
     );
+    await Promise.all(
+      panel.getAnimations().map((animation) => animation.finished),
+    );
+  });
 }
 
 /** Reads the show's scene objects with their labels, heights (to the centimetre) and model settings. */
@@ -508,7 +513,7 @@ test("flags fixture types without 3D models", async ({ backendSlot, page }) => {
     "2 of 2 fixtures will be added",
   );
   await dialog.getByRole("tab", { name: "Fixture types (1)" }).click();
-  await expect(dialog.getByText("No 3D model")).toBeVisible();
+  await expect(dialog.getByText("Missing 3D")).toBeVisible();
   await settleTabPanel(dialog);
   await page.screenshot({ path: test.info().outputPath("1-no-3d-model.png") });
   await dialog.getByRole("button", { name: "Close rig import dialog" }).click();

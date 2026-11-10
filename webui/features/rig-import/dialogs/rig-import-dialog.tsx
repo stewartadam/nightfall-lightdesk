@@ -9,18 +9,21 @@
 import { useStore } from "@nanostores/solid";
 import { CaretLeftIcon } from "@squidlab/phosphor-solid/caret-left";
 import { CloudArrowUpIcon } from "@squidlab/phosphor-solid/cloud-arrow-up";
+import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import {
   createEffect,
   createMemo,
   createSignal,
   createUniqueId,
   For,
+  type JSX,
   Match,
   on,
   Show,
   Switch,
 } from "solid-js";
 import { Alert } from "../../../components/ui/alert";
+import { Badge, type BadgeTone } from "../../../components/ui/badge";
 import {
   Dialog,
   DialogBody,
@@ -43,8 +46,10 @@ import * as types from "../../../types";
 import { revealPatchFixtures } from "../../patch";
 import {
   fixtureStatusLabel,
+  fixtureStatusTone,
   fixtureTypeNeedsChoice,
   fixtureTypeStatusLabel,
+  fixtureTypeStatusTone,
   formatPatch,
   formatPosition,
   GROUP_SOURCE_OPTIONS,
@@ -61,6 +66,7 @@ import {
   rigImportTabs,
   sceneryKindLabel,
   sceneryStatusLabel,
+  sceneryStatusTone,
   withMappingMode,
   withTypeMapping,
 } from "../model/rig-import-model";
@@ -527,11 +533,11 @@ export function RigImportDialog() {
                       <Table aria-label="Fixture types in the rig">
                         <thead class="text-left">
                           <tr>
+                            <th scope="col" class="w-48">
+                              Status
+                            </th>
                             <th scope="col">Type in file</th>
                             <th scope="col">Fixture</th>
-                            <th scope="col" class="w-28">
-                              Source
-                            </th>
                             <th scope="col" class="w-20 text-right">
                               Count
                             </th>
@@ -553,6 +559,26 @@ export function RigImportDialog() {
                                 )?.modes ?? [];
                               return (
                                 <tr>
+                                  <StatusCell
+                                    label={fixtureTypeStatusLabel(type.status)}
+                                    tone={fixtureTypeStatusTone(type.status)}
+                                    title={
+                                      type.status.type === "Unreadable"
+                                        ? type.status.data.reason
+                                        : undefined
+                                    }
+                                  >
+                                    <Show when={type.missing3dModel}>
+                                      <Badge
+                                        tone="warning"
+                                        appearance="soft"
+                                        icon={WarningIcon}
+                                        title="This GDTF has no 3D model files, so its fixtures are drawn from simple shapes or as placeholder boxes."
+                                      >
+                                        Missing 3D
+                                      </Badge>
+                                    </Show>
+                                  </StatusCell>
                                   <td class="font-mono text-xs">{type.spec}</td>
                                   <td>
                                     <Show
@@ -626,23 +652,6 @@ export function RigImportDialog() {
                                       </div>
                                     </Show>
                                   </td>
-                                  <td
-                                    title={
-                                      type.status.type === "Unreadable"
-                                        ? type.status.data.reason
-                                        : undefined
-                                    }
-                                  >
-                                    {fixtureTypeStatusLabel(type.status)}
-                                    <Show when={type.missing3dModel}>
-                                      <span
-                                        class="block text-xs text-amber-300"
-                                        title="This GDTF has no 3D model files, so its fixtures are drawn from simple shapes or as placeholder boxes."
-                                      >
-                                        No 3D model
-                                      </span>
-                                    </Show>
-                                  </td>
                                   <td class="text-right">
                                     {type.fixtureCount}
                                   </td>
@@ -662,13 +671,13 @@ export function RigImportDialog() {
                       <Table aria-label="Groups the import makes">
                         <thead class="text-left">
                           <tr>
+                            <th scope="col" class="w-48">
+                              Status
+                            </th>
                             <th scope="col" class="w-16">
                               ID
                             </th>
                             <th scope="col">Name</th>
-                            <th scope="col" class="w-28">
-                              Action
-                            </th>
                             <th scope="col" class="w-20 text-right">
                               Fixtures
                             </th>
@@ -678,9 +687,12 @@ export function RigImportDialog() {
                           <For each={current().groups}>
                             {(group) => (
                               <tr>
+                                <StatusCell
+                                  label={group.existing ? "Refresh" : "New"}
+                                  tone={group.existing ? "info" : "success"}
+                                />
                                 <td>{group.groupId}</td>
                                 <td>{group.name}</td>
-                                <td>{group.existing ? "Refresh" : "New"}</td>
                                 <td class="text-right">{group.fixtureCount}</td>
                               </tr>
                             )}
@@ -697,6 +709,9 @@ export function RigImportDialog() {
                       <Table aria-label="Scenery in the rig">
                         <thead class="text-left">
                           <tr>
+                            <th scope="col" class="w-48">
+                              Status
+                            </th>
                             <th scope="col" class="w-16">
                               ID
                             </th>
@@ -706,7 +721,6 @@ export function RigImportDialog() {
                             <th scope="col" class="text-right">
                               Triangles
                             </th>
-                            <th scope="col">Status</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -716,24 +730,18 @@ export function RigImportDialog() {
                                 title={object.warnings.join("\n") || undefined}
                                 data-status={object.status}
                               >
+                                <StatusCell
+                                  label={sceneryStatusLabel(object.status)}
+                                  tone={sceneryStatusTone(object.status)}
+                                  changes={object.changes}
+                                  warnings={object.warnings}
+                                />
                                 <td>{object.sceneObjectId ?? "–"}</td>
                                 <td>{object.label}</td>
                                 <td>{sceneryKindLabel(object.kind)}</td>
                                 <td>{object.layer || "–"}</td>
                                 <td class="text-right">
                                   {object.triangles.toLocaleString()}
-                                </td>
-                                <td>
-                                  {sceneryStatusLabel(object.status)}
-                                  <Show when={object.changes.length > 0}>
-                                    <span class="text-gray-500">
-                                      {" "}
-                                      ({object.changes.join(", ")})
-                                    </span>
-                                  </Show>
-                                  <Show when={object.warnings.length > 0}>
-                                    <span class="text-amber-400"> ⚠</span>
-                                  </Show>
                                 </td>
                               </tr>
                             )}
@@ -750,6 +758,9 @@ export function RigImportDialog() {
                       <Table aria-label="Fixtures in the rig">
                         <thead class="text-left">
                           <tr>
+                            <th scope="col" class="w-48">
+                              Status
+                            </th>
                             <th scope="col" class="w-16">
                               ID
                             </th>
@@ -758,7 +769,6 @@ export function RigImportDialog() {
                             <th scope="col">Patch</th>
                             <th scope="col">Position (m)</th>
                             <th scope="col">Layer</th>
-                            <th scope="col">Status</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -768,6 +778,12 @@ export function RigImportDialog() {
                                 title={fixture.warnings.join("\n") || undefined}
                                 data-status={fixture.status}
                               >
+                                <StatusCell
+                                  label={fixtureStatusLabel(fixture.status)}
+                                  tone={fixtureStatusTone(fixture.status)}
+                                  changes={fixture.changes}
+                                  warnings={fixture.warnings}
+                                />
                                 <td>{fixture.fixtureId ?? "–"}</td>
                                 <td>{fixture.label || fixture.name}</td>
                                 <td>{fixture.mode ?? "–"}</td>
@@ -777,18 +793,6 @@ export function RigImportDialog() {
                                 </td>
                                 <td>
                                   {fixture.hangingPosition ?? fixture.layer}
-                                </td>
-                                <td>
-                                  {fixtureStatusLabel(fixture.status)}
-                                  <Show when={fixture.changes.length > 0}>
-                                    <span class="text-gray-500">
-                                      {" "}
-                                      ({fixture.changes.join(", ")})
-                                    </span>
-                                  </Show>
-                                  <Show when={fixture.warnings.length > 0}>
-                                    <span class="text-amber-400"> ⚠</span>
-                                  </Show>
                                 </td>
                               </tr>
                             )}
@@ -827,5 +831,55 @@ export function RigImportDialog() {
         </Button>
       </DialogFooter>
     </Dialog>
+  );
+}
+
+/** What a review row's status cell shows. */
+interface StatusCellProps {
+  /** What the import does with the row. */
+  label: string;
+  /** Badge color for the label. */
+  tone: BadgeTone;
+  /** Tooltip for the cell, such as why a fixture type can't be read. */
+  title?: string;
+  /** What an update changes ("moved", "repatched"), shown after the badge. */
+  changes?: readonly string[];
+  /** Problems the file has with the row; a warning badge lists them on hover. */
+  warnings?: readonly string[];
+  /** Further badges, such as a missing 3D model. */
+  children?: JSX.Element;
+}
+
+/**
+ * The first cell of every review table: the row's status as a badge, then any further
+ * badges, a warning badge when the file has problems with the row, and what an update
+ * changes.
+ */
+function StatusCell(props: StatusCellProps) {
+  return (
+    <td title={props.title}>
+      <div class="flex flex-wrap items-center gap-1">
+        <Badge tone={props.tone} appearance="soft">
+          {props.label}
+        </Badge>
+        {props.children}
+        <Show when={(props.warnings?.length ?? 0) > 0}>
+          <Badge
+            tone="warning"
+            appearance="soft"
+            icon={WarningIcon}
+            title={props.warnings?.join("\n")}
+          >
+            Warning
+          </Badge>
+        </Show>
+        <Show when={(props.changes?.length ?? 0) > 0}>
+          <span class="text-xs text-gray-400">
+            {" "}
+            ({props.changes?.join(", ")})
+          </span>
+        </Show>
+      </div>
+    </td>
   );
 }
