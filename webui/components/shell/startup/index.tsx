@@ -18,7 +18,6 @@ import {
   loadShowfileRevisionAndAwait,
   newShowfileAndAwait,
   type OpenShowfileSelection,
-  promptForNewShowfile,
 } from "../../../lib/showfile-actions";
 import {
   appLifecycle,
@@ -120,7 +119,7 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
   };
 
   /** Opens the startup-owned showfile picker without revealing the shell UI. */
-  const openOtherShowfile = () => {
+  const openStartupShowfilePicker = () => {
     setStartupShowfilePickerOpen(true);
   };
 
@@ -233,15 +232,6 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
     }).finally(clearE2eAutoOpenStartupShowfileRequest);
   });
 
-  /** Prompts for and creates a new showfile from startup recovery. */
-  const startNewShowfile = () => {
-    void (async () => {
-      const options = await promptForNewShowfile();
-      if (!options) return;
-      void openStartupShowfileSelection({ type: "new", ...options });
-    })();
-  };
-
   return (
     <>
       <StartupSplashTransition
@@ -260,8 +250,7 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
         }
         onKeepSaved={() => void keepSaved()}
         onLoadDraft={() => void loadDraft()}
-        onNewShowfile={startNewShowfile}
-        onOpenOther={openOtherShowfile}
+        onManageShowfiles={openStartupShowfilePicker}
       />
       <OpenShowfileModal
         open={showStartupShowfilePicker()}
