@@ -33,7 +33,9 @@ async function clipGroup(page: Page) {
 test("panel definitions constrain grid and edge groups", async ({
   page,
 }, testInfo) => {
-  await page.setViewportSize({ width: 1440, height: 1000 });
+  // Wide enough for the grid's declared minimums to fit beside the edges, so
+  // they apply in full instead of shrinking to fit the dock.
+  await page.setViewportSize({ width: 1920, height: 1000 });
   await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
   await waitForDockviewApp(page);
   await resetToDefaultLayout(page);

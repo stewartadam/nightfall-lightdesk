@@ -44,6 +44,7 @@ interface DockviewApiWithEdgeSizing {
     readonly minimumWidth: number;
     readonly minimumHeight: number;
     _shellManager: {
+      readonly element: HTMLElement;
       _middleColumn: MiddleColumnSizing;
       _outerSplitview: ShellSplitview;
       _viewConfigs: Map<EdgeGroupPosition, { minimumSize?: number }>;
@@ -79,8 +80,11 @@ export function setEdgeGroupMinimum(
  * grid then kept its minimum size and slid underneath the edge group while only
  * the top/bottom edge groups reflowed. Mirroring the grid minimum makes edge
  * resizing shrink the grid panels first and stop once they reach their minimums.
+ *
+ * `onResize` runs whenever the shell changes size, since that changes how much
+ * room the grid has beside the edge groups' minimums.
  */
-export function bindGridMinimum(api: DockviewApi) {
+export function bindGridMinimum(api: DockviewApi, onResize: () => void) {
   const component = (api as unknown as DockviewApiWithEdgeSizing).component;
   const shell = component._shellManager;
   const middle = shell._middleColumn;
@@ -92,7 +96,26 @@ export function bindGridMinimum(api: DockviewApi) {
     () => component.minimumWidth,
   );
   defineGridMinimum(middle._splitview, center, () => component.minimumHeight);
+  const observer = new ResizeObserver(onResize);
+  observer.observe(shell.element);
   return {
+    /**
+     * Reports, per axis, the grid's current combined minimum and the largest
+     * grid size that fits beside the edge groups' minimums, which is what the
+     * grid is squeezed to when its own minimum is larger.
+     */
+    fit() {
+      return {
+        width: {
+          minimum: component.minimumWidth,
+          available: gridAllowance(shell._outerSplitview, middle),
+        },
+        height: {
+          minimum: component.minimumHeight,
+          available: gridAllowance(middle._splitview, center),
+        },
+      };
+    },
     /** Lets both shell splitviews re-clamp their views after the grid minimum changes. */
     reclamp() {
       center._onDidChange.fire({});
@@ -100,6 +123,7 @@ export function bindGridMinimum(api: DockviewApi) {
     },
     /** Restores Dockview's fixed minimum before the bridge is released. */
     dispose() {
+      observer.disconnect();
       for (const view of [middle, center]) {
         delete (view as Partial<ShellViewSizing>).minimumSize;
         view.minimumSize = DOCKVIEW_SHELL_MINIMUM;
@@ -109,9 +133,34 @@ export function bindGridMinimum(api: DockviewApi) {
 }
 
 /**
+ * Splits a shell splitview's room for `view` into the gutter share the
+ * splitview takes out of it and the size left once every other visible view
+ * holds its minimum.
+ */
+function shellRoom(splitview: ShellSplitview, view: ShellViewSizing) {
+  let reserved = 0;
+  let visible = 0;
+  for (const item of splitview.viewItems) {
+    if (item.visible) visible += 1;
+    if (item.view !== view) reserved += item.minimumSize;
+  }
+  // Splitviews take their gutters out of every visible view's size.
+  const gutter = (splitview.margin * Math.max(0, visible - 1)) / visible;
+  return { gutter, available: splitview.size - reserved };
+}
+
+/** Measures the grid size `view` can hand the grid without overflowing its splitview. */
+function gridAllowance(splitview: ShellSplitview, view: ShellViewSizing) {
+  const { gutter, available } = shellRoom(splitview, view);
+  return Math.max(0, available - gutter);
+}
+
+/**
  * Replaces a shell view's fixed minimum with the grid's live minimum. When the
  * window cannot fit the grid beside its edge groups' minimums, the grid gives
  * up the difference and clips, so the edge groups stay on screen.
+ * `bindPanelConstraints` first shrinks the grid groups' minimums toward that
+ * space, so this clipping only happens in windows too small for that.
  */
 function defineGridMinimum(
   splitview: ShellSplitview,
@@ -121,15 +170,7 @@ function defineGridMinimum(
   Object.defineProperty(view, "minimumSize", {
     configurable: true,
     get() {
-      let reserved = 0;
-      let visible = 0;
-      for (const item of splitview.viewItems) {
-        if (item.visible) visible += 1;
-        if (item.view !== view) reserved += item.minimumSize;
-      }
-      // Splitviews take their gutters out of every visible view's size.
-      const gutter = (splitview.margin * Math.max(0, visible - 1)) / visible;
-      const available = splitview.size - reserved;
+      const { gutter, available } = shellRoom(splitview, view);
       return Math.max(
         DOCKVIEW_SHELL_MINIMUM,
         Math.min(gridMinimum() + gutter, available),
