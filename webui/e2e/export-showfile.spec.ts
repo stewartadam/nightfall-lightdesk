@@ -79,18 +79,21 @@ test("exports named copies from the menu, palette, and native File menu", async 
     ["Showfile references", "showfileReferences"],
     ["Showfile only", "showfileOnly"],
   ]) {
+    if (!(await dialog.isVisible())) {
+      await page.evaluate(() =>
+        (window as any).emitDiagnosticMenu("showfile.export"),
+      );
+      await dialog.getByLabel("Export name").fill("Tour");
+    }
     await dialog.getByRole("radio", { name: label, exact: true }).check();
-    await dialog.getByRole("button", { name: "Choose Folder…" }).click();
-    await expect(dialog.getByRole("status")).toContainText(
-      `/Exports/${exportName}.nightfall-show`,
-    );
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(dialog).toBeHidden();
     const exported = await page.evaluate(() =>
       (window as any).showfileExports.at(-1),
     );
     expect(exported.name).toBe(exportName);
     expect(exported.policy).toBe(policy);
   }
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("button", { name: "Open command palette" }).click();
   await page
     .getByPlaceholder("Type a command or search...")
@@ -100,7 +103,6 @@ test("exports named copies from the menu, palette, and native File menu", async 
   await expect(
     dialog.getByRole("radio", { name: "All references", exact: true }),
   ).toBeChecked();
-  await expect(dialog.getByRole("status")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.evaluate(() =>
     (window as any).emitDiagnosticMenu("showfile.export"),
@@ -108,7 +110,7 @@ test("exports named copies from the menu, palette, and native File menu", async 
   await expect(dialog).toBeVisible();
 });
 
-/** Invalid names, cancellation, busy writes, missing assets, and destination errors remain recoverable. */
+/** Invalid names, cancellation, busy writes, and destination errors stay in the dialog; warnings close it with a toast. */
 test("keeps export state clear during cancellation and failures", async ({
   page,
 }, testInfo) => {
@@ -119,7 +121,7 @@ test("keeps export state clear during cancellation and failures", async ({
     name: "Export Showfile",
     exact: true,
   });
-  const choose = dialog.getByRole("button", { name: "Choose Folder…" });
+  const choose = dialog.getByRole("button", { name: "Save", exact: true });
   await dialog.getByLabel("Export name").fill("../Tour");
   await expect(choose).toBeDisabled();
   await dialog.getByLabel("Export name").fill("Tour");
@@ -128,10 +130,20 @@ test("keeps export state clear during cancellation and failures", async ({
   });
   await choose.click();
   await expect(choose).toBeEnabled();
-  await expect(dialog.getByRole("status")).toHaveCount(0);
   await expect(dialog.getByRole("alert")).toHaveCount(0);
   await page.evaluate(() => {
     (window as any).cancelShowfileExport = false;
+    (window as any).failShowfileExport = true;
+  });
+  await choose.click();
+  await expect(dialog.getByRole("alert")).toContainText("already exists");
+  await expect(choose).toBeEnabled();
+  await page.screenshot({
+    animations: "disabled",
+    path: testInfo.outputPath("export-showfile-error.png"),
+  });
+  await page.evaluate(() => {
+    (window as any).failShowfileExport = false;
     (window as any).holdShowfileExport = true;
     (window as any).showfileExportWarnings = [
       "Missing referenced audio: track.wav",
@@ -145,31 +157,27 @@ test("keeps export state clear during cancellation and failures", async ({
     dialog.getByRole("button", { name: "Cancel", exact: true }),
   ).toBeDisabled();
   await expect(dialog.getByLabel("Export name")).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(dialog).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => typeof (window as any).finishShowfileExport === "function",
+      ),
+    )
+    .toBe(true);
   await page.evaluate(() => (window as any).finishShowfileExport());
-  await expect(dialog.getByRole("status")).toContainText(
-    "Missing referenced audio: track.wav",
-  );
+  await expect(dialog).toBeHidden();
   expect(
     await page.evaluate(() => (window as any).showfileExports.length),
-  ).toBe(2);
-  await expect(
-    dialog.locator(".nf-alert[data-variant='warning']"),
-  ).toContainText("The export completed with warnings:");
+  ).toBe(3);
+  const toast = page.locator(".toast-content", {
+    hasText: "Showfile exported with warnings",
+  });
+  await expect(toast).toContainText("Missing referenced audio: track.wav");
   await page.screenshot({
     animations: "disabled",
     path: testInfo.outputPath("export-showfile-warnings.png"),
-  });
-  await page.evaluate(() => {
-    (window as any).holdShowfileExport = false;
-    (window as any).failShowfileExport = true;
-  });
-  await choose.click();
-  await expect(dialog.getByRole("alert")).toContainText("already exists");
-  await expect(dialog.getByRole("status")).toHaveCount(0);
-  await expect(choose).toBeEnabled();
-  await page.screenshot({
-    path: testInfo.outputPath("export-showfile-error.png"),
   });
 });
