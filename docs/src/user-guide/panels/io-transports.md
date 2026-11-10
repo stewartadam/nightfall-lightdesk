@@ -67,7 +67,14 @@ To take over, select **Take over** in the banner or under **Backup server**. The
 
 To stop being a backup without taking over, select **Stop following**, or open or create a show from the **Showfiles** dialog. **Stop following** keeps the copied show and starts sending its output, but does not ask the primary to step down. Opening a show replaces the copied show.
 
-The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart: the backup follows its primary again and loads its show without asking which show to open. The two computers stay paired with each other across restarts. If the banner says the primary needs its pairing PIN again, for example after **New PIN**, or because the primary paired a different backup, enter its PIN under **Backup server** and select **Pair again**.
+The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart. The two computers stay paired with each other across restarts. If the banner says the primary needs its pairing PIN again, for example after **New PIN**, or because the primary paired a different backup, enter its PIN under **Backup server** and select **Pair again**.
+
+When a computer that belongs to a pair starts, it shows a **Backup server** dialog instead of asking which show to open:
+
+- On a backup, the dialog shows its link to the primary, such as waiting for the primary to open a show, and opens Nightfall on its own once the backup holds the primary's show. You can also **Take over**, or **Leave the pair** to open a show of its own.
+- On a primary, the dialog shows how its backup is doing. Select **Continue as primary** to open a show as usual, which the backup then follows. If the backup took over while this computer was away and should keep the show, select **Follow** with its address instead; no PIN is needed. If the backup took over and is running, this computer steps down on its own and the dialog switches to the backup's view.
+
+**Leave the pair**, in the dialog or under **Backup server** on a primary, makes this computer run on its own and forget the other computer and the key they share, so following again needs the PIN.
 
 When you take over, the backup keeps playing what the primary was playing. While the backup loads a newly copied show, its banner says it is loading the primary's show.
 

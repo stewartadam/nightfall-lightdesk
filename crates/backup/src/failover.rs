@@ -57,6 +57,8 @@ pub struct HostStatus {
     pub epoch: u64,
     /// CID the host transmits sACN under, if it transmits sACN.
     pub sacn_cid: Option<[u8; 16]>,
+    /// Whether the host has a show open, rather than waiting at startup for one to be picked.
+    pub show_open: bool,
 }
 
 /// This host's status, as the world last published it.
@@ -64,6 +66,7 @@ static HOST_STATUS: Mutex<HostStatus> = Mutex::new(HostStatus {
     following: false,
     epoch: 0,
     sacn_cid: None,
+    show_open: false,
 });
 
 /// `host:port` of the backup that last followed this host, if any.
@@ -257,6 +260,10 @@ pub fn note_backup_peer(ip: IpAddr, headers: &reqwest::header::HeaderMap) {
     let Some(port) = backup_port(headers) else {
         return;
     };
+    // A host that left its pair holds no key, and does not take a backup back that way.
+    if pair_key().is_none() {
+        return;
+    }
     let address = peer_address(ip, port);
     {
         let mut peer = BACKUP_PEER
@@ -388,6 +395,7 @@ mod tests {
             following,
             epoch,
             sacn_cid: None,
+            show_open: true,
         };
         assert!(should_rejoin(1, &peer(false, 2)));
         assert!(!should_rejoin(2, &peer(false, 2)));
@@ -404,6 +412,7 @@ mod tests {
             following,
             epoch,
             sacn_cid: None,
+            show_open: true,
         };
         assert!(should_ask_to_step_down(2, &host(false, 1)));
         assert!(!should_ask_to_step_down(2, &host(false, 2)));

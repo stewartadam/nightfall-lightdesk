@@ -239,6 +239,15 @@ async fn current_live_state(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Response {
+    // The world waiting at startup for a show is empty, and its checkpoint would wipe the
+    // backup's playback.
+    if !nightfall_backup::failover::host_status().show_open {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "The primary has no show open yet.",
+        )
+            .into_response();
+    }
     // A backup asking for checkpoints will read forwarded commands next, so start recording.
     forward_journal().note_reader();
     nightfall_backup::failover::note_backup_peer(peer.ip(), &headers);
@@ -286,6 +295,14 @@ async fn current_live_state(
 /// Only a capture of the running engine counts: during startup or a stall the stored copy may
 /// be older than what is on stage, so the backup is told to ask again instead.
 async fn current_showfile_revision() -> Response {
+    // The world waiting at startup for a show is empty, and copying it would wipe the backup.
+    if !nightfall_backup::failover::host_status().show_open {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "The primary has no show open yet.",
+        )
+            .into_response();
+    }
     let capture = match crate::diagnostic_showfile::capture_showfile().await {
         Ok(capture) if capture.source == crate::diagnostic_showfile::LIVE_SOURCE => capture,
         Ok(_) => {

@@ -8,6 +8,7 @@
 
 export {
   BackupBanner,
+  BackupPairStartupDialog,
   BackupServerSettings,
   FollowPrimarySection,
 } from "./components/backup-server";

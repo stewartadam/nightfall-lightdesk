@@ -11,6 +11,11 @@ import { createSignal, Match, Show, Switch } from "solid-js";
 import { useAppShell } from "../../../components/providers/app-shell";
 import { Alert } from "../../../components/ui/alert";
 import { Badge, type BadgeTone } from "../../../components/ui/badge";
+import {
+  Dialog,
+  DialogBody,
+  DialogFooter,
+} from "../../../components/ui/dialog";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
@@ -33,6 +38,8 @@ export function describeBackupLink(state: BackupState): string {
   switch (state.link) {
     case BackupLinkStatus.Connecting:
       return "Connecting to the primary";
+    case BackupLinkStatus.WaitingForShow:
+      return "Waiting for the primary to open a show";
     case BackupLinkStatus.Loading:
       return "Loading the primary's show";
     case BackupLinkStatus.Synced:
@@ -126,6 +133,42 @@ function StopFollowingButton(props: { size?: "compact" | "inline" }) {
         onConfirm={() => {
           setConfirming(false);
           void sendBackupCommand({ type: "StopFollowing" });
+        }}
+      />
+    </>
+  );
+}
+
+/**
+ * Asks before leaving the backup pair, since following the other computer again then needs its
+ * PIN.
+ */
+function LeavePairButton(props: { size?: "compact" | "inline" }) {
+  const state = useStore($backupState);
+  const [confirming, setConfirming] = createSignal(false);
+  /** Names the other computer of the pair for the confirmation. */
+  const partner = () =>
+    state().primary_address ?? state().backup?.address ?? "the other computer";
+  return (
+    <>
+      <Button
+        size={props.size ?? "compact"}
+        type="button"
+        data-testid="backup-leave-pair"
+        onClick={() => setConfirming(true)}
+      >
+        Leave the pair
+      </Button>
+      <DeleteConfirmModal
+        isOpen={confirming()}
+        title="Leave the backup pair"
+        message={`This Nightfall forgets ${partner()} and runs on its own, sending its output. Pairing the two again needs the other computer's PIN.`}
+        confirmLabel="Leave the pair"
+        focusCancel
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false);
+          void sendBackupCommand({ type: "LeavePair" });
         }}
       />
     </>
@@ -257,18 +300,21 @@ function BackupRoleStatus() {
         </Match>
         <Match when={state().backup}>
           {(backup) => (
-            <p
-              class="flex flex-wrap items-center gap-2"
-              data-testid="backup-peer"
-            >
-              <Badge tone={peerTone(backup().state)} uppercase>
-                Primary
-              </Badge>
-              <span>
-                Backed up by {backup().address}: {describeBackupPeer(backup())}.
-                {tookOverNotice()}
-              </span>
-            </p>
+            <>
+              <p
+                class="flex flex-wrap items-center gap-2"
+                data-testid="backup-peer"
+              >
+                <Badge tone={peerTone(backup().state)} uppercase>
+                  Primary
+                </Badge>
+                <span>
+                  Backed up by {backup().address}:{" "}
+                  {describeBackupPeer(backup())}.{tookOverNotice()}
+                </span>
+              </p>
+              <LeavePairButton />
+            </>
           )}
         </Match>
       </Switch>
@@ -530,5 +576,142 @@ export function BackupServerSettings() {
         </div>
       </section>
     </Show>
+  );
+}
+
+/**
+ * Startup dialog for a computer in a backup pair, shown instead of the showfile prompt. A backup
+ * sees its link to the primary and opens once it holds the primary's show, or takes over or
+ * leaves the pair. A primary sees its backup and continues as primary, follows its backup when
+ * that one took over and should keep the show, or leaves the pair. The view follows the role, so
+ * a primary that steps down for its backup switches to the backup's view on its own.
+ */
+export function BackupPairStartupDialog(props: {
+  open: boolean;
+  onContinueAsPrimary: () => void;
+}) {
+  const state = useStore($backupState);
+  /** Follows this primary's backup with the key the two share, so no PIN is needed. */
+  const followBackup = (address: string) => {
+    void sendBackupCommand({
+      type: "FollowPrimary",
+      data: { address, pin: undefined },
+    });
+  };
+  /** Continues as primary from Enter, but only in the primary's view. */
+  const submitDefault = () => {
+    if (!state().primary_address && state().backup) props.onContinueAsPrimary();
+  };
+  return (
+    <Dialog
+      kind="required"
+      isOpen={props.open}
+      title="Backup server"
+      onSubmit={submitDefault}
+      class="max-w-[560px]"
+    >
+      <DialogBody
+        class="space-y-3 text-sm text-neutral-300"
+        data-testid="backup-pair-startup"
+      >
+        <Switch>
+          <Match when={state().primary_address}>
+            {(primary) => (
+              <>
+                <p
+                  class="flex flex-wrap items-center gap-2"
+                  data-testid="backup-pair-startup-link"
+                >
+                  <Badge tone={linkTone(state().link)} uppercase>
+                    Backup
+                  </Badge>
+                  <span>
+                    Following {primary()}: {describeBackupLink(state())}.
+                  </span>
+                </p>
+                <p class="text-xs text-neutral-400">
+                  This computer opens once it holds the primary's show, and
+                  sends no output until it takes over. Take over to send the
+                  show copied last, or leave the pair to open a show of its own.
+                </p>
+              </>
+            )}
+          </Match>
+          <Match when={state().backup}>
+            {(backup) => (
+              <>
+                <p
+                  class="flex flex-wrap items-center gap-2"
+                  data-testid="backup-pair-startup-peer"
+                >
+                  <Badge tone={peerTone(backup().state)} uppercase>
+                    Primary
+                  </Badge>
+                  <span>
+                    Backed up by {backup().address}:{" "}
+                    {describeBackupPeer(backup())}.
+                  </span>
+                </p>
+                <p class="text-xs text-neutral-400">
+                  Continue as the primary to open a show, which{" "}
+                  {backup().address} then follows. If {backup().address} took
+                  over and should keep the show, follow it instead. Leave the
+                  pair to run on your own.
+                </p>
+              </>
+            )}
+          </Match>
+        </Switch>
+        <Show when={state().error}>
+          {(error) => (
+            <Alert
+              variant="caution"
+              density="compact"
+              role="alert"
+              data-testid="backup-pair-startup-error"
+            >
+              {error()}
+            </Alert>
+          )}
+        </Show>
+      </DialogBody>
+      <DialogFooter style={{ "justify-content": "space-between" }}>
+        <LeavePairButton />
+        <div class="flex items-center justify-end gap-x-2">
+          <Switch>
+            <Match when={state().primary_address}>
+              <TakeOverButton />
+            </Match>
+            <Match when={state().backup}>
+              {(backup) => (
+                <>
+                  <Button
+                    size="compact"
+                    type="button"
+                    disabled={!!state().checking_address}
+                    onClick={() => followBackup(backup().address)}
+                    data-testid="backup-pair-startup-follow"
+                  >
+                    {state().checking_address
+                      ? "Connecting…"
+                      : `Follow ${backup().address}`}
+                  </Button>
+                  <Button
+                    size="compact"
+                    variant="primary"
+                    type="button"
+                    autofocus
+                    onClick={() => props.onContinueAsPrimary()}
+                    data-testid="backup-pair-startup-continue"
+                  >
+                    Continue as primary
+                  </Button>
+                </>
+              )}
+            </Match>
+          </Switch>
+        </div>
+      </DialogFooter>
+    </Dialog>
   );
 }

@@ -5313,6 +5313,7 @@ dependencies = [
  "axum",
  "bevy_app",
  "bevy_ecs",
+ "bevy_state",
  "nightfall",
  "nightfall-actions",
  "nightfall-engine",

@@ -264,6 +264,22 @@ impl BackupLink {
         if loading && report.status == BackupLinkStatus::Synced {
             report.status = BackupLinkStatus::Loading;
         }
+        // A primary waiting at startup for a show answers, but has nothing to copy yet.
+        let waiting_for_show = shared
+            .heartbeat
+            .as_ref()
+            .is_some_and(|(heard_at, primary)| {
+                !primary.show_open && heard_at.elapsed() < failover::FAILOVER_TIMEOUT
+            });
+        if waiting_for_show
+            && matches!(
+                report.status,
+                BackupLinkStatus::Connecting | BackupLinkStatus::Unreachable
+            )
+        {
+            report.status = BackupLinkStatus::WaitingForShow;
+            report.error = None;
+        }
         report
     }
 
@@ -502,7 +518,7 @@ async fn watch_backup_peer(shared: &Mutex<LinkShared>) {
         let mut check = None;
         if let Some(peer) = failover::backup_peer().filter(|_| !own.following) {
             let base = format!("http://{peer}");
-            let found = match fetch_host_status(&client, &base).await {
+            let found = match fetch_host_status(&client, &base, "this host's backup").await {
                 Ok(status) if failover::should_rejoin(own.epoch, &status) => {
                     tracing::warn!(
                         %peer,
@@ -579,13 +595,14 @@ fn finish_probe(
 }
 
 /// Checks that the host at `address` is a primary this host can follow: it answers, it does not
-/// follow another host, and it shares a pair key, after pairing with `pin` when given. Returns
-/// that key, or why the host cannot be followed.
+/// follow another host, and it shares a pair key, after pairing with `pin` when given, or with
+/// the key this host shares with its backup when `address` is that backup. Returns the new key, or why the host
+/// cannot be followed.
 async fn probe_primary(address: &str, pin: Option<&str>) -> Result<Option<String>, String> {
     let client = host_client(PROBE_TIMEOUT)
         .map_err(|error| format!("Could not reach the primary: {error}"))?;
     let base = format!("http://{address}");
-    let status = fetch_host_status(&client, &base)
+    let status = fetch_host_status(&client, &base, address)
         .await
         .map_err(|error| match error {
             LinkError::Unauthorized(message) | LinkError::Failed(message) => format!(
@@ -603,23 +620,27 @@ async fn probe_primary(address: &str, pin: Option<&str>) -> Result<Option<String
                 LinkError::Unauthorized(message) | LinkError::Failed(message) => message,
             },
         )?),
+        // This host's backup accepts the key the two share, so following it needs no PIN. The
+        // key goes to no other host, since it also pairs a device with this host.
+        None if failover::backup_peer().as_deref() == Some(address) => failover::pair_key(),
         None => None,
     };
     let cookie = token
         .as_ref()
         .map(|token| format!("{}={token}", pairing_cookie_name(address)));
-    match request_pair_key(&client, &base, cookie.as_deref()).await {
+    match request_pair_key(&client, &base, address, cookie.as_deref()).await {
         Ok(key) => Ok(Some(key)),
         Err(LinkError::Unauthorized(_)) => Err(format!("{address} needs its pairing PIN.")),
         Err(LinkError::Failed(message)) => Err(message),
     }
 }
 
-/// Asks the primary at `base` for the key it will share with this host, which this host then
-/// sends instead of a pairing token so the two stay paired across restarts.
+/// Asks the primary at `base`, called `host` in errors, for the key it will share with this host,
+/// which this host then sends instead of a pairing token so the two stay paired across restarts.
 async fn request_pair_key(
     client: &reqwest::Client,
     base: &str,
+    host: &str,
     cookie: Option<&str>,
 ) -> Result<String, LinkError> {
     let mut request = client.post(format!("{base}{}", failover::PAIR_KEY_PATH));
@@ -629,7 +650,7 @@ async fn request_pair_key(
     let response = request
         .send()
         .await
-        .map_err(|error| LinkError::from_request(&error))?;
+        .map_err(|error| LinkError::from_request_to(&error, host))?;
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
     if status == StatusCode::UNAUTHORIZED {
@@ -644,18 +665,22 @@ async fn request_pair_key(
     Ok(text.trim().to_string())
 }
 
-/// Asks the host at `base` for its role and epoch.
-async fn fetch_host_status(client: &reqwest::Client, base: &str) -> Result<HostStatus, LinkError> {
+/// Asks the host at `base`, called `host` in errors, for its role and epoch.
+async fn fetch_host_status(
+    client: &reqwest::Client,
+    base: &str,
+    host: &str,
+) -> Result<HostStatus, LinkError> {
     let response = client
         .get(format!("{base}{HOST_STATUS_PATH}"))
         .send()
         .await
-        .map_err(|error| LinkError::from_request(&error))?;
+        .map_err(|error| LinkError::from_request_to(&error, host))?;
     let body = check_status(response)
         .await?
         .bytes()
         .await
-        .map_err(|error| LinkError::from_request(&error))?;
+        .map_err(|error| LinkError::from_request_to(&error, host))?;
     serde_json::from_slice(&body).map_err(|error| {
         LinkError::Failed(format!(
             "The host sent a status this version cannot read: {error}"
@@ -670,7 +695,7 @@ async fn follow_heartbeat(base: &str, shared: &Mutex<LinkShared>) {
         return std::future::pending().await;
     };
     loop {
-        match fetch_host_status(&client, base).await {
+        match fetch_host_status(&client, base, "the primary").await {
             Ok(status) => {
                 if let Ok(mut shared) = shared.lock() {
                     shared.heartbeat = Some((Instant::now(), status));
@@ -706,14 +731,20 @@ enum LinkError {
 }
 
 impl LinkError {
-    /// Describes a transport failure without exposing request internals.
+    /// Describes a transport failure talking to the primary without exposing request internals.
     fn from_request(error: &reqwest::Error) -> Self {
+        Self::from_request_to(error, "the primary")
+    }
+
+    /// Describes a transport failure talking to `host`, such as "the primary" or an address,
+    /// without exposing request internals.
+    fn from_request_to(error: &reqwest::Error, host: &str) -> Self {
         let message = if error.is_timeout() {
-            "The primary did not answer in time.".to_string()
+            format!("No answer from {host} in time.")
         } else if error.is_connect() {
-            "Could not connect to the primary.".to_string()
+            format!("Could not connect to {host}.")
         } else {
-            format!("Request to the primary failed: {error}")
+            format!("Request to {host} failed: {error}")
         };
         Self::Failed(message)
     }
@@ -1251,6 +1282,41 @@ mod tests {
             cookie_value("nightfall_pairing_4000=abc; Path=/", &name),
             None
         );
+    }
+
+    /// A primary that answers its heartbeat without a show open reads as waiting for its show
+    /// rather than unreachable, and as unreachable again once its answers stop or it opens one.
+    #[test]
+    fn a_primary_without_a_show_reads_as_waiting() {
+        let link = BackupLink {
+            target: watch::channel(None).0,
+            shared: Arc::new(Mutex::new(LinkShared::default())),
+        };
+        let primary = |show_open| HostStatus {
+            show_open,
+            ..HostStatus::default()
+        };
+        set_report(
+            &link.shared,
+            LinkReport {
+                status: BackupLinkStatus::Unreachable,
+                error: Some("The primary has no show open yet.".into()),
+                ..LinkReport::default()
+            },
+        );
+        link.shared.lock().unwrap().heartbeat = Some((Instant::now(), primary(false)));
+        let report = link.report();
+        assert_eq!(report.status, BackupLinkStatus::WaitingForShow);
+        assert_eq!(report.error, None);
+
+        link.shared.lock().unwrap().heartbeat = Some((Instant::now(), primary(true)));
+        assert_eq!(link.report().status, BackupLinkStatus::Unreachable);
+
+        // A clock younger than the timeout cannot hold an answer that old.
+        if let Some(heard_at) = Instant::now().checked_sub(failover::FAILOVER_TIMEOUT) {
+            link.shared.lock().unwrap().heartbeat = Some((heard_at, primary(false)));
+            assert_eq!(link.report().status, BackupLinkStatus::Unreachable);
+        }
     }
 
     /// Restating the stored primary keeps the connection, while a new pairing token or another

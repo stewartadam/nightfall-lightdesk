@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { rmSync } from "node:fs";
 import type { Browser, Page } from "@playwright/test";
 import {
   startPlaywrightTestBackend,
@@ -108,13 +109,16 @@ async function enterPriority(page: Page, priority: number): Promise<void> {
 
 /**
  * Opens a browser page on another backend through the run's shared dev server. `path` defaults
- * to the test mode, which hides the connection-lost overlay.
+ * to the test mode, which hides the connection-lost overlay. Unless `waitForApp` is off, it opens
+ * the default show at the startup prompt and waits for the app; with it off, the page stays at
+ * whatever startup shows.
  */
 async function openBackendPage(
   browser: Browser,
   baseURL: string,
   backendPort: number,
   path = "/?e2e=1",
+  { waitForApp = true }: { waitForApp?: boolean } = {},
 ): Promise<Page> {
   const { hostname } = new URL(baseURL);
   const context = await browser.newContext({
@@ -135,7 +139,14 @@ async function openBackendPage(
         {
           origin: baseURL,
           localStorage: [
-            { name: "nightfall.e2eAutoOpenStartupShowfile", value: "default" },
+            ...(waitForApp
+              ? [
+                  {
+                    name: "nightfall.e2eAutoOpenStartupShowfile",
+                    value: "default",
+                  },
+                ]
+              : []),
             { name: "nightfall.guide.v1.dismissed", value: "true" },
           ],
         },
@@ -144,21 +155,24 @@ async function openBackendPage(
   });
   const page = await context.newPage();
   await page.goto(`${baseURL}${path}`);
-  await waitForDockviewApp(page);
+  if (waitForApp) await waitForDockviewApp(page);
   return page;
 }
 
-/** Starts a second backend for the primary, on its own port and data directory. */
-async function startPrimary(backup: BackendSlot) {
+/**
+ * Starts another backend beside the test's own, on its own port and data directory. `offset`
+ * keeps the worker slots of several such backends apart.
+ */
+async function startHost(slot: BackendSlot, name: string, offset: number) {
   const workerSlot = await startPlaywrightWorkerSlot({
-    baseURL: backup.baseURL,
-    runRoot: backup.runRoot,
-    workerIndex: backup.workerIndex + 100,
+    baseURL: slot.baseURL,
+    runRoot: slot.runRoot,
+    workerIndex: slot.workerIndex + offset,
   });
   try {
     const backend = await startPlaywrightTestBackend({
       seedDataDir: process.env.NIGHTFALL_PLAYWRIGHT_SEED_DATA_DIR,
-      testId: `${backup.testId}-primary`,
+      testId: `${slot.testId}-${name}`,
       workerSlot,
     });
     return { backend, workerSlot };
@@ -166,6 +180,11 @@ async function startPrimary(backup: BackendSlot) {
     stopPlaywrightWorkerSlot(workerSlot);
     throw error;
   }
+}
+
+/** Starts a second backend for the primary, on its own port and data directory. */
+function startPrimary(backup: BackendSlot) {
+  return startHost(backup, "primary", 100);
 }
 
 /**
@@ -733,5 +752,123 @@ test("a playing timeline leaves the show revision alone", async ({ page }) => {
       type: "StopTimecode",
       data: 1,
     });
+  }
+});
+
+/**
+ * Stopping both computers of a pair and starting them again brings up the Backup server dialog
+ * instead of the show prompt. The primary that was replaced first shows its backup as
+ * unreachable; once the computer that took over starts, the old primary steps down and waits for
+ * its show, and continuing as primary there opens the app on both.
+ */
+test("a restarted pair picks its roles from the backup server dialog", async ({
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(480_000);
+  const first = await startHost(backendSlot, "first", 100);
+  const second = await startHost(backendSlot, "second", 200);
+  const running = new Set([first, second]);
+  /** Stops a host, keeping its data so it can start again. */
+  const stop = async (host: typeof first) => {
+    running.delete(host);
+    await stopPlaywrightTestBackend(host.backend, { keepDataDir: true });
+  };
+  /** Starts a stopped host again with its data, on its port. */
+  const restart = async (host: typeof first) => {
+    host.backend = await startPlaywrightTestBackend({
+      dataDir: host.backend.dataDir,
+      seedDataDir: undefined,
+      testId: host.backend.testId,
+      workerSlot: host.workerSlot,
+    });
+    running.add(host);
+  };
+  const firstAddress = `127.0.0.1:${first.backend.backendPort}`;
+  const secondAddress = `127.0.0.1:${second.backend.backendPort}`;
+  try {
+    const secondPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      second.backend.backendPort,
+    );
+    await followFromShowfiles(secondPage, firstAddress);
+    await expect(secondPage.getByTestId("backup-banner")).toContainText(
+      "In step with the primary's",
+      { timeout: 60_000 },
+    );
+    await stop(first);
+    await expect(secondPage.getByTestId("backup-banner")).toBeHidden({
+      timeout: 30_000,
+    });
+    await secondPage.context().close();
+    await stop(second);
+
+    await restart(first);
+    const firstPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      first.backend.backendPort,
+      "/?e2e=1",
+      { waitForApp: false },
+    );
+    await firstPage.setViewportSize({ width: 1400, height: 900 });
+    await expect(
+      firstPage.getByTestId("backup-pair-startup-peer"),
+    ).toContainText(`Backed up by ${secondAddress}: unreachable`, {
+      timeout: 60_000,
+    });
+    await expect(
+      firstPage.getByRole("dialog", { name: "Open Showfile" }),
+    ).toHaveCount(0);
+    await firstPage.screenshot({
+      path: testInfo.outputPath("17-restarted-primary.png"),
+    });
+
+    await restart(second);
+    const restartedSecond = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      second.backend.backendPort,
+      "/?e2e=1",
+      { waitForApp: false },
+    );
+    await restartedSecond.setViewportSize({ width: 1400, height: 900 });
+    await expect(
+      firstPage.getByTestId("backup-pair-startup-link"),
+    ).toContainText(
+      `Following ${secondAddress}: Waiting for the primary to open a show`,
+      { timeout: 60_000 },
+    );
+    await firstPage.screenshot({
+      path: testInfo.outputPath("18-stepped-down-waits.png"),
+    });
+    await expect(
+      restartedSecond.getByTestId("backup-pair-startup-peer"),
+    ).toContainText(`Backed up by ${firstAddress}: not in step`, {
+      timeout: 30_000,
+    });
+    await restartedSecond.screenshot({
+      path: testInfo.outputPath("19-continue-as-primary.png"),
+    });
+
+    await restartedSecond.getByTestId("backup-pair-startup-continue").click();
+    await waitForDockviewApp(restartedSecond);
+    await waitForDockviewApp(firstPage, { timeoutMs: 90_000 });
+    await expect(firstPage.getByTestId("backup-banner")).toContainText(
+      `Backup of ${secondAddress}: In step with the primary's`,
+      { timeout: 60_000 },
+    );
+    await firstPage.screenshot({
+      path: testInfo.outputPath("20-pair-back-in-step.png"),
+    });
+    await firstPage.context().close();
+    await restartedSecond.context().close();
+  } finally {
+    for (const host of [first, second]) {
+      if (running.has(host)) await stopPlaywrightTestBackend(host.backend);
+      else rmSync(host.backend.dataDir, { force: true, recursive: true });
+      stopPlaywrightWorkerSlot(host.workerSlot);
+    }
   }
 });

@@ -96,6 +96,8 @@ pub enum BackupLinkStatus {
     Off,
     /// The host is reaching the primary for the first time.
     Connecting,
+    /// The primary answers but has no show open yet, as while it waits at startup for one.
+    WaitingForShow,
     /// The host copied the primary's current show and is loading it.
     Loading,
     /// The host holds the primary's current show.
@@ -178,11 +180,25 @@ impl BackupState {
         self.primary_address.is_some()
     }
 
-    /// Takes the stored role, epoch and automatic takeover setting.
+    /// Takes the stored role, epoch, automatic takeover setting and remembered backup.
     fn apply_preferences(&mut self, stored: &preferences::BackupPreferences) {
         self.primary_address = stored.primary_address.clone();
         self.epoch = stored.epoch;
         self.auto_take_over = stored.auto_take_over;
+        // Clients learn at once whether this host belongs to a pair, before its backup is checked.
+        self.backup = match (&stored.primary_address, &stored.backup_peer) {
+            (None, Some(peer)) => Some(
+                self.backup
+                    .take()
+                    .filter(|backup| &backup.address == peer)
+                    .unwrap_or_else(|| BackupPeer {
+                        address: peer.clone(),
+                        state: BackupPeerState::Checking,
+                        last_seen_ms: None,
+                    }),
+            ),
+            _ => None,
+        };
     }
 
     /// Returns the reason shown to clients whose changes a backup refuses.
@@ -214,6 +230,10 @@ pub enum BackupCommand {
     /// Stops following without taking over: this host runs on its own again, remembers no
     /// primary, and keeps its epoch. Opening a show does the same.
     StopFollowing,
+    /// Leaves the backup pair on either computer: this host runs on its own and forgets its
+    /// primary, its backup and the key they share, so neither follows the other again without the
+    /// PIN.
+    LeavePair,
     /// Turns automatic takeover on or off for when this host follows a primary.
     SetAutoTakeOver {
         /// Whether to take over on its own once the primary stops answering.
@@ -305,6 +325,7 @@ fn restore_backup_role(
     mut standby: ResMut<DmxOutputStandby>,
     mut gate: ResMut<ClientIngressGate>,
     port: Option<Res<nightfall_websocket::BackendPort>>,
+    app_state: Option<Res<bevy_state::state::State<nightfall_engine::AppState>>>,
 ) {
     let (stored, error) = preferences::current(preferences::preferences_path().as_deref());
     state.available = true;
@@ -321,6 +342,7 @@ fn restore_backup_role(
         following: state.is_backup(),
         epoch: state.epoch,
         sacn_cid: None,
+        show_open: show_is_open(app_state.as_deref()),
     });
     *standby = DmxOutputStandby(state.is_backup() || awaiting_peer_check());
     gate.set_read_only(state.read_only_reason());
@@ -393,6 +415,7 @@ fn handle_backup_commands(
                 preferences::current(preferences::preferences_path().as_deref()).0,
                 None,
             )),
+            BackupCommand::LeavePair => Ok(stop_following()),
             BackupCommand::TakeOver if state.is_backup() => Ok(take_over()),
             // A host that follows no one has nothing to take over.
             BackupCommand::TakeOver => Ok((
@@ -516,8 +539,9 @@ fn follow_primary(address: String, key: Option<String>) -> RoleChange {
     (stored, save_error)
 }
 
-/// Stops following without taking over and returns the new role: this host runs on its own,
-/// remembers neither its primary nor a backup, and keeps its epoch.
+/// Stops following without taking over, or leaves the pair as a primary, and returns the new
+/// role: this host runs on its own, remembers neither its primary nor a backup nor their shared
+/// key, and keeps its epoch.
 fn stop_following() -> RoleChange {
     let (stored, save_error) =
         preferences::update(preferences::preferences_path().as_deref(), |stored| {
@@ -527,7 +551,7 @@ fn stop_following() -> RoleChange {
         });
     failover::set_backup_peer(None);
     failover::share_pair_key(None);
-    tracing::info!("Stopped following the primary");
+    tracing::info!("Left the backup pair; running on its own");
     let link = link::process_backup_link();
     link.cancel_probe("Stopped following before the primary was checked.");
     link.set_target(None);
@@ -683,6 +707,11 @@ fn rejoin_when_backup_took_over(
     role_error.0 = save_error;
 }
 
+/// Returns whether the world holds an open show, rather than waiting at startup for one.
+fn show_is_open(app_state: Option<&bevy_state::state::State<nightfall_engine::AppState>>) -> bool {
+    app_state.is_some_and(|app_state| *app_state.get() == nightfall_engine::AppState::Ready)
+}
+
 /// Mirrors the link's progress into the client-facing state, applies the output and ingress
 /// restrictions of the backup role, adopts the primary's epoch, publishes this host's status to
 /// other hosts, and hands newly copied shows to the world.
@@ -693,6 +722,7 @@ fn sync_backup_link(
     mut gate: ResMut<ClientIngressGate>,
     mut mirrored: MessageWriter<MirroredShowfileReady>,
     sacn_identity: Option<Res<SacnOutputIdentity>>,
+    app_state: Option<Res<bevy_state::state::State<nightfall_engine::AppState>>>,
     mut peer_checked_at: Local<Option<std::time::Instant>>,
 ) {
     let link = link::process_backup_link();
@@ -740,6 +770,7 @@ fn sync_backup_link(
         following: state.is_backup(),
         epoch: state.epoch,
         sacn_cid: sacn_identity.and_then(|identity| identity.cid),
+        show_open: show_is_open(app_state.as_deref()),
     });
 
     standby.set_if_neq(DmxOutputStandby(state.is_backup() || awaiting_peer_check()));
@@ -879,6 +910,7 @@ impl Plugin for BackupPlugin {
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "FollowPrimary");
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "SetAutoTakeOver");
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "StopFollowing");
+        allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "LeavePair");
         app.add_systems(Startup, restore_backup_role);
         app.add_systems(
             Update,

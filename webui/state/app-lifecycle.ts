@@ -15,6 +15,7 @@ export type AppLifecyclePhase =
   | "startup-checking-draft"
   | "startup-draft-prompt"
   | "startup-showfile-prompt"
+  | "startup-backup-prompt"
   | "startup-loading-draft"
   | "startup-loading-saved"
   | "interactive";
@@ -35,6 +36,7 @@ export type AppLifecycleTransition =
       recoveryError?: string | null;
     }
   | { type: "showfile-prompt"; recoveryError?: string | null }
+  | { type: "backup-prompt" }
   | { type: "loading-draft" }
   | { type: "loading-saved" }
   | { type: "interactive" };
@@ -58,6 +60,7 @@ function isAppLifecyclePhase(value: unknown): value is AppLifecyclePhase {
     value === "startup-checking-draft" ||
     value === "startup-draft-prompt" ||
     value === "startup-showfile-prompt" ||
+    value === "startup-backup-prompt" ||
     value === "startup-loading-draft" ||
     value === "startup-loading-saved" ||
     value === "interactive"
@@ -241,6 +244,15 @@ export function transitionAppLifecycle(
         phase: "startup-showfile-prompt",
         draftRecovery: null,
         recoveryError: transition.recoveryError ?? null,
+        startupDraftRecoveryChecked: true,
+      });
+      break;
+    case "backup-prompt":
+      appLifecycle.set({
+        ...current,
+        phase: "startup-backup-prompt",
+        draftRecovery: null,
+        recoveryError: null,
         startupDraftRecoveryChecked: true,
       });
       break;

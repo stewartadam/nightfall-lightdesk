@@ -73,7 +73,11 @@ export type TestReadiness = {
 };
 
 /** Where startup stands once it no longer advances without the user. */
-export type StartupOutcome = "interactive" | "draft-prompt" | "showfile-prompt";
+export type StartupOutcome =
+  | "interactive"
+  | "draft-prompt"
+  | "showfile-prompt"
+  | "backup-prompt";
 
 /** Options shared by every lifecycle wait. */
 export type WaitOptions = {
@@ -248,6 +252,7 @@ function startupOutcome(state: TestReadiness): StartupOutcome | undefined {
   if (state.lifecyclePhase === "startup-showfile-prompt") {
     return "showfile-prompt";
   }
+  if (state.lifecyclePhase === "startup-backup-prompt") return "backup-prompt";
   return undefined;
 }
 
