@@ -38,15 +38,13 @@ import {
   type GridSelection,
 } from "../../lib/data-grid-types";
 import { getLogger } from "../../lib/logger";
-import { fixtureLibrary, unloadableFixtureFiles } from "../../state/appStores";
+import { fixtureLibrary } from "../../state/appStores";
 import { activeShellDialog } from "../../state/shell-dialog";
 import type {
   AvailableFixtureInfo,
   GdtfShareDownloadProgress,
   GdtfShareFixture,
-  GdtfShareInstall,
   GdtfShareSearchResults,
-  UnloadableFixtureFile,
 } from "../../types";
 import { requestGdtfShareAccount } from "./account";
 import {
@@ -54,6 +52,7 @@ import {
   libraryCopiesOf,
   refreshGdtfShare,
   searchGdtfShare,
+  waitForInstalledFile,
 } from "./fixtures";
 import { GdtfShareRequestError } from "./request";
 
@@ -61,9 +60,6 @@ const log = getLogger(import.meta.url);
 
 /** Pause after the last keystroke before searching, so typing sends one request. */
 const SEARCH_DELAY_MS = 250;
-
-/** How long to wait for the library to list an install before giving up on finding it. */
-const LIBRARY_WAIT_MS = 8000;
 
 const COLUMNS: GridColumn[] = [
   { id: "manufacturer", title: "Make", width: 140, minWidth: 96 },
@@ -122,65 +118,6 @@ function resultCell(
     default:
       return text(inLibrary ? "In library" : "");
   }
-}
-
-/** What the library made of an installed file: a listed entry, or a file it could not load. */
-type InstalledOutcome =
-  | { kind: "listed"; entry: AvailableFixtureInfo }
-  | { kind: "unloadable"; file: UnloadableFixtureFile };
-
-/**
- * Waits for the library to take up an installed file. Resolves with the entry whose
- * fingerprint is `installed.asset_etag` at once when the library already lists it, as it does
- * for a download identical to an installed copy, or as soon as the library picks the new file
- * up. A listing that reports `installed.file_name` as unloadable resolves with that failure
- * instead; only listings that arrive while waiting count, since an earlier one may describe a
- * file the download replaced, though the latest listing is checked once more on timeout.
- *
- * Resolves with `undefined` when none appears in time, or when `signal` aborts the wait.
- */
-function waitForInstalledFile(
-  installed: GdtfShareInstall,
-  signal: AbortSignal,
-): Promise<InstalledOutcome | undefined> {
-  /** Finds the failure the library reports for the installed file, if any. */
-  const unloadable = (): InstalledOutcome | undefined => {
-    const file = unloadableFixtureFiles
-      .get()
-      .find(
-        (candidate) =>
-          !candidate.in_showfile && candidate.file_name === installed.file_name,
-      );
-    return file && { kind: "unloadable", file };
-  };
-  return new Promise((resolve) => {
-    const unsubscribers: (() => void)[] = [];
-    /** Stops waiting and resolves with `outcome`. */
-    const finish = (outcome?: InstalledOutcome) => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
-      queueMicrotask(() => {
-        for (const unsubscribe of unsubscribers) unsubscribe();
-      });
-      resolve(outcome);
-    };
-    /** Gives up when the browser that asked goes away. */
-    const abort = () => finish();
-    const timer = setTimeout(() => finish(unloadable()), LIBRARY_WAIT_MS);
-    signal.addEventListener("abort", abort);
-    unsubscribers.push(
-      fixtureLibrary.subscribe((library) => {
-        const entry = library.find(
-          (candidate) => candidate.asset_etag === installed.asset_etag,
-        );
-        if (entry) finish({ kind: "listed", entry });
-      }),
-      unloadableFixtureFiles.listen(() => {
-        const failure = unloadable();
-        if (failure) finish(failure);
-      }),
-    );
-  });
 }
 
 /** Formats a byte count in whole kilobytes, at least 1, for download progress. */
