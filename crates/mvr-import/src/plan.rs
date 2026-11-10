@@ -37,6 +37,12 @@ pub trait LibraryLookup {
     /// Returns the mode names of a library fixture revision (the default revision when
     /// `revision` is `None`), or `None` when the library does not have it.
     fn modes(&self, make: &str, model: &str, revision: Option<&str>) -> Option<Vec<String>>;
+
+    /// Whether a library fixture revision is a GDTF without a 3D model mesh. Lookups that
+    /// don't know say no, so nothing is flagged by mistake.
+    fn missing_3d_model(&self, _make: &str, _model: &str, _revision: Option<&str>) -> bool {
+        false
+    }
 }
 
 impl LibraryLookup for nightfall_fixture_library::FixtureLibraryManager {
@@ -44,6 +50,17 @@ impl LibraryLookup for nightfall_fixture_library::FixtureLibraryManager {
     fn modes(&self, make: &str, model: &str, revision: Option<&str>) -> Option<Vec<String>> {
         self.find_revision(make, model, revision)
             .map(|profile| profile.mode_names())
+    }
+
+    /// Reads the 3D model check the library made when it scanned the GDTF.
+    fn missing_3d_model(&self, make: &str, model: &str, revision: Option<&str>) -> bool {
+        self.find_revision(make, model, revision)
+            .is_some_and(|profile| {
+                matches!(
+                    &profile.source,
+                    nightfall_fixture_library::FixtureSource::Gdtf(metadata) if !metadata.has_models
+                )
+            })
     }
 }
 
@@ -593,6 +610,11 @@ fn resolve_type(
                     modes: modes.clone(),
                     status: FixtureTypeStatus::Mapped,
                     fixture_count: 0,
+                    missing_3d_model: library.missing_3d_model(
+                        &mapping.make,
+                        &mapping.model,
+                        revision.as_deref(),
+                    ),
                 };
                 return (
                     preview,
@@ -633,6 +655,7 @@ fn resolve_type(
                     FixtureTypeStatus::Embedded
                 },
                 fixture_count: 0,
+                missing_3d_model: !gdtf.has_models,
             };
             let source = TypeSource {
                 make: gdtf.make.clone(),
@@ -666,6 +689,7 @@ fn unresolved(spec: &str, status: FixtureTypeStatus) -> FixtureTypePreview {
         modes: Vec::new(),
         status,
         fixture_count: 0,
+        missing_3d_model: false,
     }
 }
 

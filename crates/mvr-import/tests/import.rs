@@ -641,6 +641,13 @@ fn plans_capture_demo_show() {
             .iter()
             .all(|ty| ty.status == FixtureTypeStatus::Embedded)
     );
+    // The demo show's GDTFs are cut down to their descriptions, with no model files.
+    assert!(
+        plan.preview
+            .fixture_types
+            .iter()
+            .all(|ty| ty.missing_3d_model)
+    );
     for (planned, fixture) in plan.fixtures.iter().zip(&rig.fixtures) {
         assert_eq!(Some(planned.id), fixture.file_id);
         assert!(!fixture.patch.is_empty());

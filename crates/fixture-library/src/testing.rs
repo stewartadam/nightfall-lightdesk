@@ -161,6 +161,8 @@ pub struct ModelSpec {
     pub primitive_type: String,
     /// Length, width and height in metres.
     pub dimensions: [f64; 3],
+    /// Mesh file name the model's `File` attribute names, without folder or extension.
+    pub file: Option<String>,
 }
 
 /// A `<Slot>` on a wheel.
@@ -558,8 +560,18 @@ impl GdtfBuilder {
             name: name.to_string(),
             primitive_type: primitive_type.to_string(),
             dimensions,
+            file: None,
         });
         self
+    }
+
+    /// Gives the most recently added model a glTF mesh: sets its `File` attribute and adds
+    /// `bytes` to the archive as `models/gltf/{file}.glb`.
+    pub fn mesh(mut self, file: &str, bytes: &[u8]) -> Self {
+        if let Some(model) = self.models.last_mut() {
+            model.file = Some(file.to_string());
+        }
+        self.file(&format!("models/gltf/{file}.glb"), bytes)
     }
 
     /// Adds a top-level geometry.
@@ -622,12 +634,17 @@ impl GdtfBuilder {
         for model in &self.models {
             let _ = writeln!(
                 xml,
-                "<Model Name=\"{}\" Length=\"{}\" Width=\"{}\" Height=\"{}\" PrimitiveType=\"{}\"/>",
+                "<Model Name=\"{}\" Length=\"{}\" Width=\"{}\" Height=\"{}\" PrimitiveType=\"{}\"{}/>",
                 escape(&model.name),
                 model.dimensions[0],
                 model.dimensions[1],
                 model.dimensions[2],
                 escape(&model.primitive_type),
+                model
+                    .file
+                    .as_ref()
+                    .map(|file| format!(" File=\"{}\"", escape(file)))
+                    .unwrap_or_default(),
             );
         }
         xml.push_str("</Models>\n<Geometries>\n");

@@ -110,6 +110,7 @@ function unloadableSourceFormat(file: UnloadableFixtureFile): string {
 /**
  * Returns the text a column shows and filters on for one row. A file that failed to load
  * shows "Failed to load" as its make, its file name as the model and the error as its modes.
+ * A GDTF without 3D model files says so in its source.
  */
 function libraryRowText(row: FixtureLibraryRow, column: string): string {
   if (row.kind === "unloadable") {
@@ -135,7 +136,9 @@ function libraryRowText(row: FixtureLibraryRow, column: string): string {
     case "modes":
       return fixture.modes.join(", ");
     case "source":
-      return fixture.source_format;
+      return fixture.missing_3d_model
+        ? `${fixture.source_format}, no 3D model`
+        : fixture.source_format;
     case "revision":
       return libraryRevisionLabel(fixture.asset_etag);
     default:
@@ -354,7 +357,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     {
       title: "Source",
       id: "source",
-      width: 100,
+      width: 150,
       ...columnVisibilityMeta("Metadata", "Source"),
     },
     {

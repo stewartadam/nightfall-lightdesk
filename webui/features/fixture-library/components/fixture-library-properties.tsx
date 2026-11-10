@@ -297,6 +297,21 @@ export default function FixtureLibraryProperties(
               />
             </div>
 
+            <Show when={fixture().missing_3d_model}>
+              <Alert
+                variant="warning"
+                class="shrink-0"
+                density="compact"
+                title="No 3D model"
+                data-testid="fixture-library-missing-model"
+              >
+                This GDTF has no 3D model files, so the visualizer draws its
+                fixtures from simple shapes or as placeholder boxes. A full
+                revision from the manufacturer or GDTF Share usually includes
+                them.
+              </Alert>
+            </Show>
+
             <div class="border-t border-neutral-700" />
 
             <div>
