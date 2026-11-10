@@ -886,7 +886,6 @@ mod tests {
                 destination: ResolvedInputDestination::Transport {
                     target: crate::routes::ResolvedTransportTarget {
                         target: "sacn".to_string(),
-                        protocol: RouteTransport::Sacn,
                         transport: OutputTransport::Sacn {
                             mode: nightfall_io::SacnDelivery::Multicast,
                         },

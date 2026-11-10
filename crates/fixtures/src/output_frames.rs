@@ -443,7 +443,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -484,7 +483,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -535,7 +533,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -629,7 +626,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 5,
                     address: 1,

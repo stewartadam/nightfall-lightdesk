@@ -128,19 +128,6 @@ impl InputDmxUniverses {
             .and_then(|by_universe| by_universe.get(&universe_id))
     }
 
-    /// Returns a mutable universe buffer, creating it if absent.
-    pub fn get_universe_mut(
-        &mut self,
-        transport: RouteTransport,
-        universe_id: u16,
-    ) -> &mut [ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE] {
-        self.universes
-            .entry(transport)
-            .or_default()
-            .entry(universe_id)
-            .or_insert([0; MAX_CHANNELS_PER_UNIVERSE])
-    }
-
     /// Returns age in milliseconds for the latest frame of a transport + universe.
     pub fn frame_age_ms(
         &self,
@@ -871,24 +858,6 @@ mod tests {
             .frame_age_ms(RouteTransport::Sacn, 1, now)
             .unwrap();
         assert!(age_ms >= 250);
-    }
-
-    #[test]
-    fn input_universe_mut_insert_does_not_mark_received_frame() {
-        let mut input_universes = InputDmxUniverses::default();
-        let now = Instant::now();
-
-        let target = input_universes.get_universe_mut(RouteTransport::ArtNet, 7);
-        target[0] = 123;
-
-        assert_eq!(
-            input_universes.frame_age_ms(RouteTransport::ArtNet, 7, now),
-            None
-        );
-        assert_eq!(
-            input_universes.is_self_frame(RouteTransport::ArtNet, 7),
-            None
-        );
     }
 
     #[test]
