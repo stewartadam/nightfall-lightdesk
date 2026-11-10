@@ -8,6 +8,7 @@
 
 import { crc32 } from "node:zlib";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { testGdtfArchive } from "./gdtf-archive";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -278,12 +279,34 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
     "a type that needs a choice opens the review on its tab",
   ).toHaveAttribute("aria-selected", "true");
   await expect(dialog.getByRole("cell", { name: "Missing" })).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Import", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByTestId("rig-import-blocked"),
+    "the banner says why the import is disabled",
+  ).toContainText("2 fixtures have a fixture type Nightfall can't load");
+  await dialog
+    .getByTestId("rig-import-blocked")
+    .evaluate((alert) =>
+      Promise.all(alert.getAnimations().map((animation) => animation.finished)),
+    );
   await page.screenshot({ path: test.info().outputPath("2-missing-type.png") });
+
+  await dialog.getByRole("button", { name: "Back" }).click();
+  await expect(dialog.getByText("Drop an .mvr file here")).toBeVisible();
+  await dialog.getByTestId("rig-import-file").setInputFiles({
+    name: "wash-rig.mvr",
+    mimeType: "application/octet-stream",
+    buffer: washRig(),
+  });
+  await expect(summary).toContainText("0 of 2 fixtures will be added");
 
   const typeSelect = dialog.getByLabel("Library fixture for Acme@Wash.gdtf");
   await typeSelect.selectOption({ label: "Generic Moving Head RGBW" });
   await expect(summary).toContainText("2 of 2 fixtures will be added");
   await expect(dialog.getByRole("cell", { name: "Stand-in" })).toBeVisible();
+  await expect(dialog.getByTestId("rig-import-blocked")).toBeHidden();
   await dialog.getByRole("tab", { name: "Fixtures (2)" }).click();
   await expect(dialog.getByRole("cell", { name: "200.1" })).toBeVisible();
   await expect(dialog.getByRole("cell", { name: "200.233" })).toBeVisible();
@@ -300,7 +323,7 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
   await settleTabPanel(dialog);
   await page.screenshot({ path: test.info().outputPath("3-ready.png") });
 
-  await dialog.getByRole("button", { name: "Import 2 fixtures" }).click();
+  await dialog.getByRole("button", { name: "Import", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect
     .poll(() => importedFixtureIds(page))
@@ -330,7 +353,7 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
   ).toBeChecked();
   await page.screenshot({ path: test.info().outputPath("5-reimport.png") });
 
-  await dialog.getByRole("button", { name: "Update 1 fixture" }).click();
+  await dialog.getByRole("button", { name: "Import", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect.poll(() => fixtureX(page, SECOND_ID)).toBeCloseTo(3);
   expect(await fixtureX(page, FIRST_ID)).toBeCloseTo(-2);
@@ -415,7 +438,7 @@ test("imports trusses and scenery as scene objects", async ({
   await settleTabPanel(dialog);
   await page.screenshot({ path: test.info().outputPath("1-scenery.png") });
 
-  await dialog.getByRole("button", { name: "Import 2 fixtures" }).click();
+  await dialog.getByRole("button", { name: "Import", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect
     .poll(() => sceneObjectSummaries(page))
@@ -455,5 +478,38 @@ test("imports trusses and scenery as scene objects", async ({
   });
   await dialog.getByRole("tab", { name: "Scenery (2)" }).click();
   await expect(scenery.getByRole("cell", { name: "Unchanged" })).toHaveCount(2);
+  await dialog.getByRole("button", { name: "Close rig import dialog" }).click();
+});
+
+/**
+ * A rig whose fixture type comes as a GDTF without 3D model files gets that type flagged in
+ * the review, so the user knows its fixtures will be drawn as simple shapes.
+ */
+test("flags fixture types without 3D models", async ({ backendSlot, page }) => {
+  await prepareFreshBackendShowfile(backendSlot.backendPort);
+  await page.goto("/?e2e=1");
+  await waitForDockviewApp(page);
+
+  await page.locator("button[title='Menu']").click();
+  await page.getByRole("button", { name: "Import Rig from MVR" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import Rig from MVR" });
+  await dialog.getByTestId("rig-import-file").setInputFiles({
+    name: "bare-rig.mvr",
+    mimeType: "application/octet-stream",
+    buffer: washRig(2000, "200.233", "", {
+      "Acme@Wash.gdtf": testGdtfArchive({
+        manufacturer: "Acme",
+        model: "Bare Wash",
+        fixtureTypeId: "6A1E3C52-7B1D-4F0B-9E57-2C0D5A1B7E01",
+      }),
+    }),
+  });
+  await expect(dialog.getByTestId("rig-import-summary")).toContainText(
+    "2 of 2 fixtures will be added",
+  );
+  await dialog.getByRole("tab", { name: "Fixture types (1)" }).click();
+  await expect(dialog.getByText("No 3D model")).toBeVisible();
+  await settleTabPanel(dialog);
+  await page.screenshot({ path: test.info().outputPath("1-no-3d-model.png") });
   await dialog.getByRole("button", { name: "Close rig import dialog" }).click();
 });
