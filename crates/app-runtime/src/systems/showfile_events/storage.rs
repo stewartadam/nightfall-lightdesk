@@ -249,10 +249,12 @@ pub(super) fn hash_showfile_snapshot_with_metadata(
 /// Hashes a live show's contents for backups, ignoring its metadata, which records when and by
 /// which build the snapshot was taken rather than what the show holds.
 ///
-/// The tempo, bar length and master levels are left out too: they change while the show runs,
-/// and the backup follows them through live state checkpoints instead of reloading the whole
-/// show. Launch quantize stays in, since only a reload carries it to the backup.
+/// The tempo, bar length, master levels and global variables are left out too: they change while
+/// the show runs, such as variables driven by a playing timeline's parameter lanes, and the
+/// backup follows them through live state checkpoints instead of reloading the whole show.
+/// Launch quantize stays in, since only a reload carries it to the backup.
 pub(crate) fn live_showfile_revision(mut snapshot: ShowfileSnapshot) -> Result<u64, String> {
+    snapshot.variables.clear();
     snapshot.tempo.bpm = 0.0;
     snapshot.tempo.beats_per_bar = 0;
     for master in &mut snapshot.masters {
@@ -269,12 +271,19 @@ mod tests {
     };
     use super::*;
 
-    /// A live tempo move leaves the backup revision alone, while a launch quantize change, which
-    /// only a reload carries to the backup, changes it.
+    /// A live tempo move or a variable a timeline lane drives leaves the backup revision alone,
+    /// while a launch quantize change, which only a reload carries to the backup, changes it.
     #[test]
     fn live_revision_ignores_tempo_but_not_launch_quantize() {
         let show = ShowfileSnapshot::default();
         let base = live_showfile_revision(show.clone()).unwrap();
+
+        let mut automated = show.clone();
+        automated.variables.insert(
+            "intensity".into(),
+            nightfall::variables::VariableValue::Float(0.5),
+        );
+        assert_eq!(live_showfile_revision(automated).unwrap(), base);
 
         let mut faster = show.clone();
         faster.tempo.bpm = 140.0;

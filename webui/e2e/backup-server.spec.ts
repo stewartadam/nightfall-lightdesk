@@ -680,3 +680,58 @@ test("a backup stops following, or opens a show instead", async ({
     stopPlaywrightWorkerSlot(primary.workerSlot);
   }
 });
+
+/** Reads the open show's revision, the hash a backup compares to decide whether to copy it. */
+async function showRevision(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/showfiles/current/revision");
+    return (await response.json()).revision as string;
+  });
+}
+
+/**
+ * Playing a timeline changes only live state, so the show revision stays put and a backup does
+ * not copy the show again on every cue the timeline fires.
+ */
+test("a playing timeline leaves the show revision alone", async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.goto("/?e2e=1");
+  await waitForDockviewApp(page);
+  // Give timeline 1 a parameter lane that ramps a variable, so playback changes its value.
+  await page.evaluate(() => {
+    const stores = (window as any).appStores;
+    const timeline = structuredClone(
+      Object.values(stores.timelines.get()).find(
+        (candidate: any) => candidate.identifiers.id === 1,
+      ),
+    ) as any;
+    timeline.tracks[0].automation_lanes.push({
+      id: "backup-ramp",
+      name: "Backup ramp",
+      color: "White",
+      points: [
+        { position: { secs: 0, nanos: 0 }, value: 0 },
+        { position: { secs: 10, nanos: 0 }, value: 1 },
+      ],
+      parameter_type: { type: "GlobalVariable", data: "backup-ramp" },
+    });
+    return stores.sendAndAwait({
+      module: "TimelineCommand",
+      command: { type: "StoreTimeline", data: timeline },
+    });
+  });
+  const before = await showRevision(page);
+  await sendCommand(page, "TimecodeCommand", {
+    type: "StartTimecode",
+    data: 1,
+  });
+  try {
+    await page.waitForTimeout(5_000);
+    expect(await showRevision(page)).toBe(before);
+  } finally {
+    await sendCommand(page, "TimecodeCommand", {
+      type: "StopTimecode",
+      data: 1,
+    });
+  }
+});

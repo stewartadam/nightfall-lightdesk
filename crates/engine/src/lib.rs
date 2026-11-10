@@ -267,6 +267,11 @@ impl Plugin for EnginePlugin {
         app.add_client_feed::<metrics::MetricsFeed>()
             .on_interval(metrics::SEND_INTERVAL);
         app.init_resource::<GlobalVariables>();
+        app.register_live_state(
+            variables::VARIABLES_LIVE_STATE,
+            variables::capture_live_variables,
+            variables::follow_live_variables,
+        );
 
         register_ingress_command::<EngineCommand>(app);
         register_command_deserializer::<EngineCommand>(app, eval::deserialize_engine_command);

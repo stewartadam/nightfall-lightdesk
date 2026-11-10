@@ -45,3 +45,28 @@ impl GlobalVariables {
         self.0.clear();
     }
 }
+
+/// Live state section holding every variable's value, which timeline parameter lanes change
+/// while the show runs.
+pub(crate) const VARIABLES_LIVE_STATE: &str = "variables";
+
+/// Captures every variable's current value for a backup checkpoint.
+pub(crate) fn capture_live_variables(
+    world: &mut World,
+) -> collections::HashMap<String, VariableValue> {
+    world.resource::<GlobalVariables>().get_all()
+}
+
+/// Replaces every variable with the primary's set and values, since the show revision ignores
+/// variables and a reload would never remove one the primary no longer has.
+pub(crate) fn follow_live_variables(
+    world: &mut World,
+    values: collections::HashMap<String, VariableValue>,
+    _restore: crate::live_state::LiveStateRestore,
+) {
+    let variables = world.resource::<GlobalVariables>();
+    variables.0.retain(|key, _| values.contains_key(key));
+    for (key, value) in values {
+        variables.set(&key, value);
+    }
+}

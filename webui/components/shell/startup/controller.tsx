@@ -13,6 +13,7 @@ import { getBackendUrl } from "../../../lib/api";
 import {
   connectionStatus,
   EngineRuntimeStatus,
+  markResyncPending,
 } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
 import { expectedStartupShowfileName } from "../../../lib/showfile-loading";
@@ -28,9 +29,34 @@ import * as types from "../../../types";
 import {
   bypassBackendReadinessForE2E,
   effectiveBackendAppState,
+  waitForBackendReady,
 } from "./readiness";
 
 const log = getLogger(import.meta.url);
+
+/** Longest startup waits for a followed primary's show to copy and load. */
+const BACKUP_SHOW_COPY_TIMEOUT_MS = 60_000;
+
+/**
+ * Shows the loading splash while this computer, as a backup, copies and loads its primary's show,
+ * then opens the app. When the show does not arrive in time, falls back to the showfile prompt,
+ * where opening a show stops following.
+ */
+export async function awaitPrimaryShowAtStartup(): Promise<void> {
+  transitionAppLifecycle({ type: "loading-saved" });
+  try {
+    markResyncPending();
+    await waitForBackendReady(BACKUP_SHOW_COPY_TIMEOUT_MS);
+    transitionAppLifecycle({ type: "interactive" });
+  } catch (error) {
+    log.warn("the primary's show did not load at startup", error);
+    transitionAppLifecycle({
+      type: "showfile-prompt",
+      recoveryError:
+        "Following the primary, but its show has not loaded yet. Open a show to stop following.",
+    });
+  }
+}
 
 interface StartupControllerProps {
   enabled: boolean;
@@ -120,6 +146,14 @@ export function StartupController(props: StartupControllerProps) {
       (!bypassBackendReadinessForE2E() &&
         connectionStatus() !== EngineRuntimeStatus.Connected)
     ) {
+      return;
+    }
+    // A backup takes its show from its primary, so it skips the prompt and waits for the copy.
+    if (props.enabled && backup().primary_address) {
+      draftCheckInFlight = true;
+      void awaitPrimaryShowAtStartup().finally(() => {
+        draftCheckInFlight = false;
+      });
       return;
     }
     if (!props.enabled || state.startupDraftRecoveryChecked) {
