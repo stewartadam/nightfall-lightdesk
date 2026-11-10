@@ -7,6 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
+import { CaretLeftIcon } from "@squidlab/phosphor-solid/caret-left";
 import { CloudArrowUpIcon } from "@squidlab/phosphor-solid/cloud-arrow-up";
 import {
   createEffect,
@@ -19,6 +20,7 @@ import {
   Show,
   Switch,
 } from "solid-js";
+import { Alert } from "../../../components/ui/alert";
 import {
   Dialog,
   DialogBody,
@@ -46,7 +48,7 @@ import {
   formatPatch,
   formatPosition,
   GROUP_SOURCE_OPTIONS,
-  importButtonLabel,
+  importBlockedReason,
   importDoneMessage,
   libraryKey,
   type NumberingChoice,
@@ -269,8 +271,10 @@ export function RigImportDialog() {
     }));
   });
   /** The chosen tab, or the fixtures tab when a new preview no longer has the chosen one. */
-  const activeTab = (): RigImportTab =>
-    tabOptions().some((option) => option.key === tab()) ? tab() : "fixtures";
+  const activeTab = createMemo(
+    (): RigImportTab =>
+      tabOptions().some((option) => option.key === tab()) ? tab() : "fixtures",
+  );
 
   return (
     <Dialog
@@ -394,6 +398,19 @@ export function RigImportDialog() {
                 </Show>
                 .
               </p>
+              <Show when={importBlockedReason(current())}>
+                {(reason) => (
+                  <Alert
+                    variant="warning"
+                    density="compact"
+                    role="status"
+                    class="shrink-0"
+                    data-testid="rig-import-blocked"
+                  >
+                    {reason()}
+                  </Alert>
+                )}
+              </Show>
               <Show when={current().warnings.length > 0}>
                 <ul class="max-h-20 shrink-0 list-disc overflow-y-auto pl-5 text-xs text-amber-300">
                   <For each={current().warnings}>
@@ -617,6 +634,14 @@ export function RigImportDialog() {
                                     }
                                   >
                                     {fixtureTypeStatusLabel(type.status)}
+                                    <Show when={type.missing3dModel}>
+                                      <span
+                                        class="block text-xs text-amber-300"
+                                        title="This GDTF has no 3D model files, so its fixtures are drawn from simple shapes or as placeholder boxes."
+                                      >
+                                        No 3D model
+                                      </span>
+                                    </Show>
                                   </td>
                                   <td class="text-right">
                                     {type.fixtureCount}
@@ -781,8 +806,14 @@ export function RigImportDialog() {
 
       <DialogFooter>
         <Show when={stage() === "preview" || stage() === "import"}>
-          <Button type="button" onClick={reset} disabled={stage() === "import"}>
-            Choose another file
+          <Button
+            type="button"
+            class="mr-auto"
+            onClick={reset}
+            disabled={stage() === "import"}
+          >
+            <CaretLeftIcon class="size-4" aria-hidden />
+            Back
           </Button>
         </Show>
         <DialogCancelButton />
@@ -792,12 +823,7 @@ export function RigImportDialog() {
           disabled={stage() !== "preview" || !canImport()}
           onClick={() => void runImport()}
         >
-          {stage() === "import"
-            ? "Importing…"
-            : (() => {
-                const current = preview();
-                return current ? importButtonLabel(current) : "Next";
-              })()}
+          {stage() === "import" ? "Importing…" : preview() ? "Import" : "Next"}
         </Button>
       </DialogFooter>
     </Dialog>

@@ -158,7 +158,7 @@ function fixtures(count: number): string {
   return `${count} fixture${count === 1 ? "" : "s"}`;
 }
 
-/** What the import button, the change check and the done toast read from a preview. */
+/** What the change check, the blocked-import banner and the done toast read from a preview. */
 type PreviewCounts = {
   newFixtures: number;
   updatedFixtures: number;
@@ -172,19 +172,44 @@ function sceneryObjects(count: number): string {
 }
 
 /**
- * Words for the import button from the engine's counts: what gets added, what gets updated,
- * or that only the scenery or the groups change.
+ * Why a preview has nothing to import, for the banner shown while the import button is
+ * disabled, or undefined when the import would change the show. Fixture types that need a
+ * library fixture come first, since choosing one is what unblocks their fixtures; then
+ * fixtures that differ but are kept because updates are off; then a show that already
+ * matches the file.
  */
-export function importButtonLabel(preview: PreviewCounts): string {
-  const { newFixtures, updatedFixtures } = preview;
-  if (newFixtures > 0 && updatedFixtures > 0) {
-    return `Import ${newFixtures}, update ${updatedFixtures}`;
+export function importBlockedReason(
+  preview: PreviewCounts & {
+    fixtures: readonly { status: types.FixtureImportStatus }[];
+    scenery: readonly { status: types.SceneryImportStatus }[];
+  },
+): string | undefined {
+  if (previewHasChanges(preview)) return undefined;
+  const count = (status: types.FixtureImportStatus) =>
+    preview.fixtures.filter((fixture) => fixture.status === status).length;
+  const needsType = count(types.FixtureImportStatus.NeedsFixtureType);
+  if (needsType > 0) {
+    return `${fixtures(needsType)} ${needsType === 1 ? "has" : "have"} a fixture type Nightfall can't load. Choose a library fixture for ${needsType === 1 ? "it" : "them"} on the Fixture types tab.`;
   }
-  if (newFixtures > 0) return `Import ${fixtures(newFixtures)}`;
-  if (updatedFixtures > 0) return `Update ${fixtures(updatedFixtures)}`;
-  if (preview.sceneryChanges > 0) return "Import scenery";
-  if (preview.groups.length > 0) return "Refresh groups";
-  return "Import";
+  const needsMode = count(types.FixtureImportStatus.NeedsMode);
+  if (needsMode > 0) {
+    return `${fixtures(needsMode)} ${needsMode === 1 ? "uses a mode its" : "use modes their"} fixture type doesn't have, so ${needsMode === 1 ? "it is" : "they are"} left out.`;
+  }
+  const kept = count(types.FixtureImportStatus.AlreadyInShow);
+  if (kept > 0) {
+    return `${fixtures(kept)} in the show ${kept === 1 ? "differs" : "differ"} from the file, but updating fixtures already in the show is turned off.`;
+  }
+  if (
+    preview.scenery.some(
+      (object) => object.status === types.SceneryImportStatus.Skipped,
+    )
+  ) {
+    return "The file's scenery is left out because importing trusses and scenery is turned off.";
+  }
+  if (preview.fixtures.length === 0 && preview.scenery.length === 0) {
+    return "The file has no fixtures or scenery to import.";
+  }
+  return "Nothing to import: the show already matches this file.";
 }
 
 /** Whether committing a preview would change the show at all. */
