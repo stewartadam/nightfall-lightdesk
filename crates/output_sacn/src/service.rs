@@ -181,7 +181,18 @@ impl SacnWorker {
         client: SacnOutputClient,
         period: FixedRatePeriod,
     ) -> Option<Self> {
-        let mut source = init_source(binding)?;
+        let source = init_source(binding)?;
+        Self::start(source, client, period, SACN_PORT)
+    }
+
+    /// Starts ticking every `period` on an already opened source, sending unicast frames to
+    /// `unicast_port`, or returns `None` when the thread cannot be started.
+    fn start(
+        mut source: SacnSource,
+        client: SacnOutputClient,
+        period: FixedRatePeriod,
+        unicast_port: u16,
+    ) -> Option<Self> {
         let source_cid = source.cid().ok().map(|cid| *cid.as_bytes());
         let mut registered_universes = HashSet::<u16>::new();
         // Never replay frames published before output stopped; wait for the next engine frame.
@@ -189,7 +200,12 @@ impl SacnWorker {
         client.set_running(true);
         let tick_client = client.clone();
         let spawned = FixedRateWorker::spawn("sacn-output-service", period, move || {
-            let flow = transmit_tick(&mut source, &mut registered_universes, &tick_client);
+            let flow = transmit_tick(
+                &mut source,
+                &mut registered_universes,
+                &tick_client,
+                unicast_port,
+            );
             if flow.is_break() {
                 tick_client.set_running(false);
             }
@@ -215,7 +231,8 @@ impl SacnWorker {
     }
 }
 
-/// Sends every published frame once and records the outcomes.
+/// Sends every published frame once, unicast frames to `unicast_port`, and records the
+/// outcomes.
 ///
 /// Breaks when the bound address disappears, which disables sACN output until the binding is
 /// reconfigured.
@@ -223,6 +240,7 @@ fn transmit_tick(
     source: &mut SacnSource,
     registered_universes: &mut HashSet<u16>,
     client: &SacnOutputClient,
+    unicast_port: u16,
 ) -> ControlFlow<()> {
     let frames = client
         .shared
@@ -242,7 +260,13 @@ fn transmit_tick(
 
     for frame in frames.iter() {
         let key = (frame.universe, frame.unicast_ip);
-        match send_universe(source, registered_universes, frame, sync_universe) {
+        match send_universe(
+            source,
+            registered_universes,
+            frame,
+            sync_universe,
+            unicast_port,
+        ) {
             Ok(()) => {
                 sent_count += 1;
                 outcomes.push((key, Ok(())));
@@ -282,7 +306,7 @@ fn transmit_tick(
         if let Some(sync_universe) = sync_universe
             && sent_count > 0
         {
-            send_sync_packets(source, sync_universe, &frames);
+            send_sync_packets(source, sync_universe, &frames, unicast_port);
         }
         terminate_unpublished_universes(source, registered_universes, &frames, sync_universe);
     }
@@ -310,12 +334,17 @@ impl StreamTerminator for SacnSource {
 ///
 /// Multicast receivers get the packet on the sync universe's multicast group, which receivers
 /// join on their own once data names it. Unicast receivers never see multicast traffic for
-/// their data, so each unicast destination also gets its own copy.
-fn send_sync_packets(source: &mut SacnSource, sync_universe: u16, frames: &[SacnFrame]) {
+/// their data, so each unicast destination also gets its own copy on `unicast_port`.
+fn send_sync_packets(
+    source: &mut SacnSource,
+    sync_universe: u16,
+    frames: &[SacnFrame],
+    unicast_port: u16,
+) {
     let destinations: BTreeSet<Option<Ipv4Addr>> =
         frames.iter().map(|frame| frame.unicast_ip).collect();
     for destination in destinations {
-        let dst_ip = destination.map(|ip| SocketAddr::new(ip.into(), SACN_PORT));
+        let dst_ip = destination.map(|ip| SocketAddr::new(ip.into(), unicast_port));
         if let Err(error) = source.send_sync_packet(sync_universe, dst_ip) {
             tracing::trace!(
                 ?error,
@@ -384,12 +413,14 @@ fn ensure_registered(
 
 /// Sends one universe, registering it with the source first and once more if the source
 /// reports it was dropped. Data names `sync_universe` as its synchronization address, so
-/// receivers that support sync hold it until the matching sync packet arrives.
+/// receivers that support sync hold it until the matching sync packet arrives. A unicast frame
+/// goes to `unicast_port` on its destination.
 fn send_universe(
     source: &mut SacnSource,
     registered_universes: &mut HashSet<u16>,
     frame: &SacnFrame,
     sync_universe: Option<u16>,
+    unicast_port: u16,
 ) -> Result<(), SacnError> {
     let universe = frame.universe;
     ensure_registered(source, registered_universes, universe)?;
@@ -397,7 +428,7 @@ fn send_universe(
     let payload = with_start_code(&frame.data);
     let dst_ip = frame
         .unicast_ip
-        .map(|ip| SocketAddr::new(ip.into(), SACN_PORT));
+        .map(|ip| SocketAddr::new(ip.into(), unicast_port));
     let result = source.send(&[universe], &payload, Some(100), dst_ip, sync_universe);
     // The source reports a dropped data universe as UniverseNotRegistered and a dropped sync
     // universe as IllegalSyncUniverse; register whichever it lost again and retry once.
@@ -726,11 +757,8 @@ mod tests {
     fn sync_tick_marks_data_and_sends_sync_packet() {
         use sacn::packet::{AcnRootLayerProtocol, E131RootLayerData};
 
-        let receiver = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, SACN_PORT));
-        let Ok(receiver) = receiver else {
-            // Another process owns the sACN port; the unicast path cannot be observed here.
-            return;
-        };
+        let receiver = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind receiver");
+        let port = receiver.local_addr().expect("receiver address").port();
         receiver
             .set_read_timeout(Some(Duration::from_millis(200)))
             .expect("set timeout");
@@ -765,11 +793,11 @@ mod tests {
             packets
         }
 
-        let _ = transmit_tick(&mut source, &mut registered, &client);
+        let _ = transmit_tick(&mut source, &mut registered, &client, port);
         assert_eq!(packets(&receiver), vec![(false, 0), (false, 0)]);
 
         client.set_sync_universe(Some(900));
-        let _ = transmit_tick(&mut source, &mut registered, &client);
+        let _ = transmit_tick(&mut source, &mut registered, &client, port);
         assert_eq!(
             packets(&receiver),
             vec![(false, 900), (false, 900), (true, 900)]
@@ -777,3 +805,6 @@ mod tests {
         assert!(registered.contains(&900));
     }
 }
+
+#[cfg(test)]
+mod packet_timing_tests;

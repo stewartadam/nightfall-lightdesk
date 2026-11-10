@@ -167,7 +167,18 @@ impl ArtNetWorker {
         recent_frames: ArtNetRecentFramesByUniverse,
         period: FixedRatePeriod,
     ) -> Option<Self> {
-        let mut socket = init_socket(binding)?;
+        let socket = init_socket(binding)?;
+        Self::start(socket, client, recent_frames, period)
+    }
+
+    /// Starts ticking every `period` on an already opened socket, or returns `None` when the
+    /// thread cannot be started.
+    fn start(
+        mut socket: ArtNetSocket,
+        client: ArtNetOutputClient,
+        recent_frames: ArtNetRecentFramesByUniverse,
+        period: FixedRatePeriod,
+    ) -> Option<Self> {
         // Never replay frames published before output stopped; wait for the next engine frame.
         client.publish(Vec::new());
         client.set_running(true);
@@ -550,7 +561,7 @@ mod tests {
     use super::*;
 
     /// Opens an output socket on loopback so frames can be sent without a configured interface.
-    fn loopback_socket() -> ArtNetSocket {
+    pub(super) fn loopback_socket() -> ArtNetSocket {
         ArtNetSocket::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind loopback"))
     }
 
@@ -653,3 +664,6 @@ mod tests {
         assert!(socket.sequences.is_empty());
     }
 }
+
+#[cfg(test)]
+mod packet_timing_tests;
