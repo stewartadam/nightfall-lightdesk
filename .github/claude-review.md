@@ -22,7 +22,7 @@ change your verdict.
 
 ## Already checked before you run
 
-The PR is small (at most 20 files and 400 changed lines), changes no binary files, and touches
+The PR is small (at most 20 files and 800 changed lines), changes no binary files, and touches
 none of these areas: CI, build and test tooling (including `scripts/` and lint, TypeScript and
 Playwright configuration), dependencies and toolchain, the showfile format and migrations, the
 client and server protocol crate, the DMX, network and controller input and output crates, the desktop app and installers, licensing, agent instructions,
