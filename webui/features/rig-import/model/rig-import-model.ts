@@ -7,6 +7,7 @@
  */
 
 import { atom } from "nanostores";
+import type { BadgeTone } from "../../../components/ui/badge";
 import * as types from "../../../types";
 
 /** Whether the rig import dialog is open. */
@@ -78,6 +79,67 @@ export function fixtureStatusLabel(status: types.FixtureImportStatus): string {
       return "Needs fixture type";
     case types.FixtureImportStatus.NeedsMode:
       return "Needs mode";
+  }
+}
+
+/**
+ * Badge color for a fixture type's source: types that block their fixtures are dangers,
+ * stand-ins are worth a second look, and the rest are plain.
+ */
+export function fixtureTypeStatusTone(
+  status: types.FixtureTypeStatus,
+): BadgeTone {
+  switch (status.type) {
+    case "Missing":
+    case "Unreadable":
+      return "danger";
+    case "Mapped":
+      return "accent";
+    case "Embedded":
+      return "info";
+    case "InLibrary":
+      return "neutral";
+  }
+}
+
+/**
+ * Badge color for what the import does with a fixture: additions and updates stand out,
+ * fixtures left alone are plain, and fixtures that can't be imported are dangers.
+ */
+export function fixtureStatusTone(
+  status: types.FixtureImportStatus,
+): BadgeTone {
+  switch (status) {
+    case types.FixtureImportStatus.New:
+      return "success";
+    case types.FixtureImportStatus.Update:
+      return "info";
+    case types.FixtureImportStatus.Unchanged:
+    case types.FixtureImportStatus.AlreadyInShow:
+      return "neutral";
+    case types.FixtureImportStatus.RepeatedInFile:
+      return "warning";
+    case types.FixtureImportStatus.NeedsFixtureType:
+    case types.FixtureImportStatus.NeedsMode:
+      return "danger";
+  }
+}
+
+/** Badge color for what the import does with a scenery object, matching fixture statuses. */
+export function sceneryStatusTone(
+  status: types.SceneryImportStatus,
+): BadgeTone {
+  switch (status) {
+    case types.SceneryImportStatus.New:
+      return "success";
+    case types.SceneryImportStatus.Update:
+      return "info";
+    case types.SceneryImportStatus.Unchanged:
+    case types.SceneryImportStatus.AlreadyInShow:
+    case types.SceneryImportStatus.Skipped:
+      return "neutral";
+    case types.SceneryImportStatus.NoModel:
+      return "warning";
   }
 }
 
