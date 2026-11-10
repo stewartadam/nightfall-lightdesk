@@ -118,8 +118,11 @@ pub enum FixtureTypeStatus {
     Embedded,
     /// A library fixture chosen in the options stands in for it.
     Mapped,
+    /// The file names the type without including it, and a library fixture with the same
+    /// manufacturer and name stands in for it.
+    FoundInLibrary,
     /// The file names the type but does not include it, so a library fixture must be
-    /// chosen.
+    /// chosen. The preview's make and model are then the names the file gives it.
     Missing,
     /// The file includes the type, but it cannot be read.
     Unreadable {

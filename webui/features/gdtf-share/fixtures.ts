@@ -10,8 +10,10 @@ import type {
   AvailableFixtureInfo,
   GdtfShareDownloadProgress,
   GdtfShareFixture,
+  GdtfShareFixtureName,
   GdtfShareInstall,
   GdtfShareInstallEvent,
+  GdtfShareMatches,
   GdtfShareSearchResults,
 } from "../../types";
 import {
@@ -23,6 +25,28 @@ import {
 
 /** Path of the fixture search on the backend. */
 const FIXTURES_PATH = "/api/gdtf-share/fixtures";
+
+/**
+ * Looks fixture types up on GDTF Share by manufacturer and fixture name, resolving with the
+ * newest revision listed under each name, or `null`, in the order of `names`. The engine
+ * answers from its saved list even while signed out, and with no saved list every answer
+ * is `null`.
+ */
+export async function matchGdtfShare(
+  names: readonly GdtfShareFixtureName[],
+  signal?: AbortSignal,
+): Promise<(GdtfShareFixture | null)[]> {
+  const reply = await requestGdtfShare<GdtfShareMatches>(
+    `${FIXTURES_PATH}/match`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fixtures: names }),
+      signal,
+    },
+  );
+  return reply.matches.map((match) => match.fixture ?? null);
+}
 
 /**
  * Searches the engine's saved GDTF Share list for every fixture matching every word of

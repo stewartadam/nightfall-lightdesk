@@ -14,6 +14,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use nightfall_fixture_model::prelude::fixture_name_key;
 use nightfall_fixtures::prelude::FixturePlacement;
 use uuid::Uuid;
 
@@ -43,6 +44,13 @@ pub trait LibraryLookup {
     fn missing_3d_model(&self, _make: &str, _model: &str, _revision: Option<&str>) -> bool {
         false
     }
+
+    /// Finds the library fixture a `GDTFSpec` names when the file leaves the GDTF out, by
+    /// manufacturer and fixture name, ignoring case, spacing and punctuation. Returns its
+    /// make and model as the library spells them. Lookups that can't search say none.
+    fn find_by_name(&self, _manufacturer: &str, _fixture: &str) -> Option<(String, String)> {
+        None
+    }
 }
 
 impl LibraryLookup for nightfall_fixture_library::FixtureLibraryManager {
@@ -50,6 +58,20 @@ impl LibraryLookup for nightfall_fixture_library::FixtureLibraryManager {
     fn modes(&self, make: &str, model: &str, revision: Option<&str>) -> Option<Vec<String>> {
         self.find_revision(make, model, revision)
             .map(|profile| profile.mode_names())
+    }
+
+    /// Scans the library's profiles for ones whose make and model match the names. When
+    /// several spellings match, the alphabetically first wins, so every preview picks the same.
+    fn find_by_name(&self, manufacturer: &str, fixture: &str) -> Option<(String, String)> {
+        let (manufacturer, fixture) = (fixture_name_key(manufacturer), fixture_name_key(fixture));
+        self.list_fixtures()
+            .into_iter()
+            .filter(|profile| {
+                fixture_name_key(&profile.model) == fixture
+                    && fixture_name_key(&profile.make) == manufacturer
+            })
+            .map(|profile| (profile.make.clone(), profile.model.clone()))
+            .min()
     }
 
     /// Reads the 3D model check the library made when it scanned the GDTF.
@@ -62,6 +84,25 @@ impl LibraryLookup for nightfall_fixture_library::FixtureLibraryManager {
                 )
             })
     }
+}
+
+/// Reads the manufacturer and fixture name from a `GDTFSpec` such as
+/// `Clay Paky@Alpha Spot QWO 800@r3048.gdtf`: the file name's first two `@`-separated
+/// parts, with `_` read as a space, as GDTF Share names its downloads. Returns `None` when
+/// the spec doesn't follow that naming.
+pub fn spec_names(spec: &str) -> Option<(String, String)> {
+    let name = spec.rsplit(['/', '\\']).next().unwrap_or(spec);
+    let name = if name.to_ascii_lowercase().ends_with(".gdtf") {
+        &name[..name.len() - ".gdtf".len()]
+    } else {
+        name
+    };
+    let mut parts = name
+        .split('@')
+        .map(|part| part.replace('_', " ").trim().to_string());
+    let manufacturer = parts.next().filter(|part| !part.is_empty())?;
+    let fixture = parts.next().filter(|part| !part.is_empty())?;
+    Some((manufacturer, fixture))
 }
 
 /// A fixture already in the show, as the planner compares it with the file.
@@ -667,7 +708,49 @@ fn resolve_type(
             };
             (preview, Some(source))
         }
-        RigTypeSource::Missing => (unresolved(spec, FixtureTypeStatus::Missing), None),
+        RigTypeSource::Missing => {
+            let names = spec_names(spec);
+            let found = names.as_ref().and_then(|(manufacturer, fixture)| {
+                let (make, model) = library.find_by_name(manufacturer, fixture)?;
+                let modes = library.modes(&make, &model, None)?;
+                Some((make, model, modes))
+            });
+            match found {
+                Some((make, model, modes)) => {
+                    let preview = FixtureTypePreview {
+                        spec: spec.to_string(),
+                        make: Some(make.clone()),
+                        model: Some(model.clone()),
+                        modes: modes.clone(),
+                        status: FixtureTypeStatus::FoundInLibrary,
+                        fixture_count: 0,
+                        missing_3d_model: library.missing_3d_model(&make, &model, None),
+                    };
+                    let source = TypeSource {
+                        make,
+                        model,
+                        revision: None,
+                        install: None,
+                        forced_mode: None,
+                        modes,
+                    };
+                    (preview, Some(source))
+                }
+                // The names the spec gives let the review look the type up elsewhere,
+                // such as on GDTF Share.
+                None => {
+                    let (make, model) = names.unzip();
+                    (
+                        FixtureTypePreview {
+                            make,
+                            model,
+                            ..unresolved(spec, FixtureTypeStatus::Missing)
+                        },
+                        None,
+                    )
+                }
+            }
+        }
         RigTypeSource::Unreadable(reason) => (
             unresolved(
                 spec,
@@ -816,6 +899,26 @@ mod tests {
     /// Returns a set of taken IDs.
     fn taken(ids: &[u32]) -> HashSet<u32> {
         ids.iter().copied().collect()
+    }
+
+    /// A `GDTFSpec` gives its manufacturer and fixture name from the file name, with or
+    /// without the revision, extension or a folder, and with `_` read as a space; specs
+    /// without both names give none.
+    #[test]
+    fn spec_names_read_the_gdtf_file_name() {
+        let names = |spec| spec_names(spec);
+        let pair = |make: &str, model: &str| Some((make.to_string(), model.to_string()));
+        assert_eq!(
+            names("Clay Paky@Alpha Spot QWO 800@r3048.gdtf"),
+            pair("Clay Paky", "Alpha Spot QWO 800")
+        );
+        assert_eq!(
+            names("Robe_Lighting@Spiider.GDTF"),
+            pair("Robe Lighting", "Spiider")
+        );
+        assert_eq!(names("fixtures/Acme@Wash"), pair("Acme", "Wash"));
+        assert_eq!(names("Wash.gdtf"), None);
+        assert_eq!(names("@Wash.gdtf"), None);
     }
 
     /// File IDs are kept; missing, repeated and taken ones go after the highest ID.

@@ -16,7 +16,8 @@
 //! cannot restore.
 //!
 //! `GET /api/gdtf-share/fixtures?query=` searches the saved fixture list,
-//! `POST /api/gdtf-share/fixtures/refresh` fetches it again, and
+//! `POST /api/gdtf-share/fixtures/refresh` fetches it again,
+//! `POST /api/gdtf-share/fixtures/match` looks fixture types up by name, and
 //! `POST /api/gdtf-share/fixtures/{rid}/install` downloads a revision into the fixture
 //! library, streaming its progress. `POST /api/gdtf-share/updates` lists newer revisions
 //! of the library files a client names. Any paired device may search, install and check
@@ -45,7 +46,10 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::account::{AccountError, GdtfShareAccount, GdtfShareAccountStatus};
-use crate::catalog::{GdtfShareCatalog, GdtfShareSearchResults};
+use crate::catalog::{
+    GdtfShareCatalog, GdtfShareMatch, GdtfShareMatchRequest, GdtfShareMatches,
+    GdtfShareSearchResults,
+};
 use crate::client::ShareError;
 use crate::credentials::Credentials;
 use crate::install::{
@@ -63,6 +67,8 @@ const SIGN_OUT_PATH: &str = "/api/gdtf-share/account/sign-out";
 const FIXTURES_PATH: &str = "/api/gdtf-share/fixtures";
 /// Path that fetches the fixture list again.
 const REFRESH_PATH: &str = "/api/gdtf-share/fixtures/refresh";
+/// Path that looks fixture types up by manufacturer and fixture name.
+const MATCH_PATH: &str = "/api/gdtf-share/fixtures/match";
 /// Path that installs one revision into the fixture library.
 const INSTALL_PATH: &str = "/api/gdtf-share/fixtures/{rid}/install";
 /// Path that lists newer revisions of library files.
@@ -124,7 +130,7 @@ pub fn register_routes(
 }
 
 /// Builds every route around `share`, keyed by path.
-fn routes(share: GdtfShare) -> [(&'static str, axum::routing::MethodRouter); 6] {
+fn routes(share: GdtfShare) -> [(&'static str, axum::routing::MethodRouter); 7] {
     [
         (
             ACCOUNT_PATH,
@@ -133,6 +139,7 @@ fn routes(share: GdtfShare) -> [(&'static str, axum::routing::MethodRouter); 6] 
         (SIGN_OUT_PATH, post(sign_out).with_state(share.clone())),
         (FIXTURES_PATH, get(search).with_state(share.clone())),
         (REFRESH_PATH, post(refresh).with_state(share.clone())),
+        (MATCH_PATH, post(match_names).with_state(share.clone())),
         (
             INSTALL_PATH,
             post(install_fixture).with_state(share.clone()),
@@ -244,6 +251,45 @@ async fn search(
         .await
         .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
     Ok(Json(results))
+}
+
+/// Looks each posted name up in the fixture list, answering the newest revision listed under
+/// it or none, in request order.
+///
+/// Signed in, this uses the list as a search does, fetching it when none is saved. Signed
+/// out, it uses the saved list alone, so a rig import can still say which missing fixture
+/// types GDTF Share has before the user signs in to install them; with no saved list every
+/// answer is none.
+async fn match_names(
+    State(share): State<GdtfShare>,
+    Json(request): Json<GdtfShareMatchRequest>,
+) -> Result<Json<GdtfShareMatches>, RouteError> {
+    let catalog = if share.account.is_signed_in().await {
+        let (catalog, stale) = share
+            .catalog
+            .for_search(&share.account)
+            .await
+            .map_err(route_error)?;
+        if stale {
+            share
+                .catalog
+                .refresh_in_background(share.account.clone(), catalog.fetched_at());
+        }
+        Some(catalog)
+    } else {
+        share.catalog.current().await
+    };
+    let matches = request
+        .fixtures
+        .iter()
+        .map(|name| GdtfShareMatch {
+            fixture: catalog
+                .as_ref()
+                .and_then(|catalog| catalog.find(&name.manufacturer, &name.fixture))
+                .cloned(),
+        })
+        .collect();
+    Ok(Json(GdtfShareMatches { matches }))
 }
 
 /// Fetches the fixture list again now, and returns its size and fetch time.

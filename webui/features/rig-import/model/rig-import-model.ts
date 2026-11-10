@@ -48,6 +48,8 @@ export function fixtureTypeStatusLabel(
       return "From file";
     case "Mapped":
       return "Stand-in";
+    case "FoundInLibrary":
+      return "Library match";
     case "Missing":
       return "Missing";
     case "Unreadable":
@@ -94,6 +96,7 @@ export function fixtureTypeStatusTone(
     case "Unreadable":
       return "danger";
     case "Mapped":
+    case "FoundInLibrary":
       return "accent";
     case "Embedded":
       return "info";
@@ -375,4 +378,32 @@ export function sceneryKindLabel(kind: types.RigSceneryKind): string {
     case types.RigSceneryKind.Layer:
       return "Layer scenery";
   }
+}
+
+/** A fixture type the file leaves out, with the names to look it up by on GDTF Share. */
+export interface MissingTypeName {
+  /** `GDTFSpec` of the type in the file. */
+  spec: string;
+  /** Manufacturer and fixture name the file gives it. */
+  name: types.GdtfShareFixtureName;
+}
+
+/**
+ * Lists the fixture types the file leaves out and no library fixture stands in for, with the
+ * manufacturer and fixture names the engine read from their specs. Types whose spec names
+ * neither are left out, since there is nothing to look up.
+ */
+export function missingTypeNames(
+  preview: types.RigImportPreview,
+): MissingTypeName[] {
+  return preview.fixtureTypes.flatMap((type) =>
+    type.status.type === "Missing" && type.make && type.model
+      ? [
+          {
+            spec: type.spec,
+            name: { manufacturer: type.make, fixture: type.model },
+          },
+        ]
+      : [],
+  );
 }
