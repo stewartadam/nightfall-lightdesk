@@ -222,7 +222,7 @@ pub(crate) fn route_transport_label(transport: RouteTransport) -> &'static str {
     match transport {
         RouteTransport::Sacn => "sACN",
         RouteTransport::ArtNet => "Art-Net",
-        RouteTransport::Udmx => "USB",
+        RouteTransport::Usb => "USB",
     }
 }
 
@@ -231,7 +231,7 @@ fn input_transport_rank(transport: RouteTransport) -> u8 {
     match transport {
         RouteTransport::Sacn => 0,
         RouteTransport::ArtNet => 1,
-        RouteTransport::Udmx => 2,
+        RouteTransport::Usb => 2,
     }
 }
 

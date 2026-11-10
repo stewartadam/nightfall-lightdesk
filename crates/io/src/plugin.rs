@@ -125,7 +125,7 @@ pub(crate) fn forward_io_runtime_notifications(
                 let protocol = match transport {
                     RouteTransport::ArtNet => "Art-Net",
                     RouteTransport::Sacn => "sACN",
-                    RouteTransport::Udmx => "uDMX",
+                    RouteTransport::Usb => "USB",
                 };
                 ui_notifications.write(UiNotification::toast(
                     ToastLevel::Warning,

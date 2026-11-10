@@ -418,7 +418,13 @@ pub fn usb_dmx_device_label(
         (Some(manufacturer), Some(product)) => format!("{manufacturer} {product}"),
         (Some(manufacturer), None) => manufacturer.to_string(),
         (None, Some(product)) => product.to_string(),
-        (None, None) => "uDMX adapter".to_string(),
+        (None, None) => match (vendor_id, product_id) {
+            (crate::UDMX_VENDOR_ID, crate::UDMX_PRODUCT_ID) => "uDMX adapter".to_string(),
+            (crate::FTDI_VENDOR_ID, crate::FTDI_FT232R_PRODUCT_ID) => {
+                "FTDI USB serial adapter".to_string()
+            }
+            _ => "USB DMX adapter".to_string(),
+        },
     };
     let identity = serial_number
         .map(str::trim)
@@ -663,6 +669,27 @@ mod tests {
                 Some("bus 20 port 1.2")
             ),
             "Anyma uDMX (16c0:05dc) - bus 20 port 1.2"
+        );
+    }
+
+    /// Verifies devices without USB name strings are labelled by the interface family their IDs
+    /// belong to.
+    #[test]
+    fn usb_dmx_device_label_names_family_when_descriptors_are_missing() {
+        assert_eq!(
+            usb_dmx_device_label(UDMX_VENDOR_ID, UDMX_PRODUCT_ID, None, None, None, None),
+            "uDMX adapter (16c0:05dc)"
+        );
+        assert_eq!(
+            usb_dmx_device_label(
+                crate::FTDI_VENDOR_ID,
+                crate::FTDI_FT232R_PRODUCT_ID,
+                None,
+                None,
+                Some("EN123456"),
+                None
+            ),
+            "FTDI USB serial adapter (0403:6001) - serial EN123456"
         );
     }
 }

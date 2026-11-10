@@ -107,7 +107,7 @@ export function formatUniverseAddress(
 export const TRANSPORT_LABELS: Record<types.RouteTransport, string> = {
   [types.RouteTransport.Sacn]: "sACN",
   [types.RouteTransport.ArtNet]: "Art-Net",
-  [types.RouteTransport.Udmx]: "USB",
+  [types.RouteTransport.Usb]: "USB",
 };
 
 export function normalizeRouteTransport(
@@ -124,8 +124,8 @@ export function normalizeRouteTransport(
   if (value === types.RouteTransport.ArtNet) {
     return types.RouteTransport.ArtNet;
   }
-  if (value === types.RouteTransport.Udmx) {
-    return types.RouteTransport.Udmx;
+  if (value === types.RouteTransport.Usb) {
+    return types.RouteTransport.Usb;
   }
   return null;
 }

@@ -28,8 +28,8 @@ pub enum RouteTransport {
     Sacn,
     /// Art-Net protocol.
     ArtNet,
-    /// uDMX USB interface.
-    Udmx,
+    /// USB DMX interface.
+    Usb,
 }
 
 /// Metadata about the local sACN output source identity.

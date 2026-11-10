@@ -335,7 +335,7 @@ fn output_protocol_for_transport(transport: &OutputTransport) -> RouteTransport 
     match transport {
         OutputTransport::Sacn { .. } => RouteTransport::Sacn,
         OutputTransport::ArtNet { .. } => RouteTransport::ArtNet,
-        OutputTransport::Udmx { .. } | OutputTransport::Disabled => RouteTransport::Udmx,
+        OutputTransport::Usb { .. } | OutputTransport::Disabled => RouteTransport::Usb,
     }
 }
 
