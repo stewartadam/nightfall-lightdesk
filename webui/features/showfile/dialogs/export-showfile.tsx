@@ -23,20 +23,21 @@ import {
 import { RadioCard } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getLogger } from "../../../lib/logger";
-import {
-  exportShowfile,
-  type ShowfileExportResult,
-} from "../../../lib/showfile-export";
+import { exportShowfile } from "../../../lib/showfile-export";
 import {
   type ShowfileExportPolicy,
   showfileExportOptions,
 } from "../../../lib/showfile-export-options";
 import { currentShowfileName } from "../../../lib/showfile-loading";
 import { isTauriRuntime } from "../../../lib/tauri";
+import { pushToast } from "../../../state/notifications";
 
 const log = getLogger(import.meta.url);
 
-/** Exports an independent showfile copy with selectable assets and visible completion or failure details. */
+/**
+ * Exports an independent showfile copy with selectable assets. A completed export closes the
+ * dialog (warnings follow as a toast), while a failure keeps it open with the error in place.
+ */
 export function ExportShowfileModal(props: {
   open: boolean;
   onClose: () => void;
@@ -49,7 +50,6 @@ export function ExportShowfileModal(props: {
     createSignal<ShowfileExportPolicy>("allReferences");
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
-  const [result, setResult] = createSignal<ShowfileExportResult | null>(null);
 
   /** Starts each export with the current show's name and the complete reference policy. */
   createEffect(() => {
@@ -57,7 +57,6 @@ export function ExportShowfileModal(props: {
     setName(`${currentShowfileName.get()}-export`);
     setPolicy("allReferences");
     setError("");
-    setResult(null);
   });
 
   /** Keeps the export dialog present until native selection and disk writes have finished. */
@@ -76,20 +75,31 @@ export function ExportShowfileModal(props: {
     );
   };
 
-  /** Runs the export once, treating native picker cancellation as an unchanged dialog. */
+  /**
+   * Runs the export once. Native picker cancellation leaves the dialog unchanged, success closes
+   * it and reports any warnings as a toast, and failure keeps it open showing the error.
+   */
   const submit = async () => {
     if (busy() || !validName()) return;
     setBusy(true);
     setError("");
-    setResult(null);
+    let completed: Awaited<ReturnType<typeof exportShowfile>>;
     try {
-      setResult(await exportShowfile(name().trim(), policy()));
+      completed = await exportShowfile(name().trim(), policy());
     } catch (error) {
       log.error("Could not export showfile", { error });
       setError(String(error));
+      return;
     } finally {
       setBusy(false);
     }
+    if (!completed) return;
+    if (completed.warnings.length > 0) {
+      pushToast("warning", completed.warnings.join("; "), undefined, [], {
+        title: "Showfile exported with warnings",
+      });
+    }
+    props.onClose();
   };
 
   return (
@@ -155,41 +165,15 @@ export function ExportShowfileModal(props: {
               <p>{error()}</p>
             </Alert>
           </Show>
-          <Show when={result()}>
-            {(completed) => (
-              <div role="status" class="space-y-2 text-sm">
-                <p class="break-all text-green-400">
-                  {desktop ? "Exported to " : "Download started: "}
-                  {completed().path}
-                </p>
-                <Show when={completed().warnings.length > 0}>
-                  <Alert variant="warning" density="compact">
-                    <p>The export completed with warnings:</p>
-                    <ul class="list-disc space-y-1 pl-5">
-                      <For each={completed().warnings}>
-                        {(warning) => <li class="break-words">{warning}</li>}
-                      </For>
-                    </ul>
-                  </Alert>
-                </Show>
-              </div>
-            )}
-          </Show>
         </DialogBody>
         <DialogFooter>
-          <DialogCancelButton>
-            {result() ? "Close" : "Cancel"}
-          </DialogCancelButton>
+          <DialogCancelButton />
           <Button
             type="submit"
             variant="primary"
             disabled={busy() || !validName()}
           >
-            {busy()
-              ? "Exporting…"
-              : desktop
-                ? "Choose Folder…"
-                : "Download Showfile"}
+            {busy() ? "Exporting…" : desktop ? "Save" : "Download Showfile"}
           </Button>
         </DialogFooter>
       </form>
