@@ -69,6 +69,9 @@ export const DEFAULT_SETTINGS: SettingsSections = {
     input_signal_loss_timeout: { secs: 2, nanos: 0 },
     input_universe_visibility_mode: InputUniverseVisibilityMode.ExternalOnly,
     dmx_output_rate_hz: 44,
+    artnet_sync_enabled: false,
+    sacn_sync_enabled: false,
+    sacn_sync_universe: 1,
   },
 };
 

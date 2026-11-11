@@ -104,6 +104,7 @@ async-channel.workspace = true
 criterion.workspace = true
 nightfall-fixture-library = { path = "../fixture-library", features = ["test-support"] }
 nightfall-park = { path = "../park" }
+nightfall-service-host = { path = "../service_host" }
 nightfall-tempo = { path = "../tempo" }
 
 [[bench]]

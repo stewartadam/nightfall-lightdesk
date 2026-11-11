@@ -34,6 +34,7 @@
     "playwright:install": "node scripts/run-playwright.mjs install chromium firefox",
     "tauri": "tauri",
     "test": "pnpm run test:scripts && pnpm run test:webui-node",
+    "test:packet-timing": "cargo nextest run --tests -p app-runtime --run-ignored only -E 'test(output_stays_on_grid_while_a_timeline_plays)' --no-capture",
     "test:scripts": "node --test scripts/*.node.test.mjs",
     "test:webui-hmr": "pnpm run test:webui-playwright --vite-mode dev webui/e2e/design-lab-hmr.spec.ts webui/e2e/connection-overlay-layering.spec.ts",
     "test:webui-node": "node scripts/run-webui-node-tests.mjs",

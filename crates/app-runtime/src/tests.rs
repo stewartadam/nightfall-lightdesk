@@ -2621,4 +2621,6 @@ async fn automation_programmer_clear_completes() {
 mod cue_undo;
 mod desk_harness;
 mod macros;
+#[cfg(all(feature = "artnet", feature = "sacn"))]
+mod packet_timing;
 mod park;
