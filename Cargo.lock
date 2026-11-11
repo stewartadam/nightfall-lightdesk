@@ -8533,8 +8533,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 [[package]]
 name = "sacn"
 version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fa6b27099bea4cf80b420fe02b1e2101721b1e13197e0a34a9f3811dd26d63f"
+source = "git+https://github.com/stewartadam/sacn?rev=421e3f74dfca6cbfa0ebaf5d6d383bbf4304eb45#421e3f74dfca6cbfa0ebaf5d6d383bbf4304eb45"
 dependencies = [
  "byteorder",
  "libc",

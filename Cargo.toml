@@ -112,8 +112,11 @@ debug = true
 [workspace.lints.clippy]
 collapsible_if = { level = "allow", priority = 0 }
 
+[patch.crates-io]
 # Fork of gdtf 0.3.0 with GDTF round-trip writing fixes (cpdt/gdtf-rs#6) and
 # zip 9, since crates.io gdtf requires zip ^8.6, which has security advisories
 # fixed only in zip 9 (GHSA-m665-v7pm-7grj and others).
-[patch.crates-io]
 gdtf = { git = "https://github.com/stewartadam/gdtf-rs", rev = "c3259e4fde83c3c92f51a0b2aaed0f8cfd1570b1" }
+# Fork of sacn 0.11.1 that sends sync packets without registering the sync
+# universe, so a sync-only universe isn't listed in universe discovery.
+sacn = { git = "https://github.com/stewartadam/sacn", rev = "421e3f74dfca6cbfa0ebaf5d6d383bbf4304eb45" }
