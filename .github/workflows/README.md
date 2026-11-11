@@ -171,9 +171,8 @@ for review, or gets new commits while ready, and is not part of a stack:
 
 1. A size and path check (`scripts/merge-policy.mjs`) rejects PRs over 20 files or 800 changed
    lines, PRs changing binary files, and PRs touching risky areas: CI, build and test tooling
-   (which the required checks run from the PR itself), dependencies and toolchain, the showfile
-   format, the websocket protocol crate, the desktop app, licensing, agent instructions (any
-   `CLAUDE.md`, since the review would load it) and Git attributes. Those get a "needs a human"
+   (which the required checks run from the PR itself), dependencies and toolchain, licensing,
+   agent instructions (any `CLAUDE.md`, since the review would load it) and Git attributes. Those get a "needs a human"
    comment without spending a Claude review.
 2. Otherwise Claude reviews the PR against the rubric in `.github/claude-review.md`: no likely
    bugs, low risk, tests for behavior changes, a description that matches the diff with release

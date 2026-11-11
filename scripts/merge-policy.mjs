@@ -47,18 +47,6 @@ export const riskyAreas = [
     ],
   },
   {
-    area: "showfile format and migrations",
-    patterns: [/^crates\/showfile\//],
-  },
-  {
-    area: "client and server protocol",
-    patterns: [/^crates\/websocket\//],
-  },
-  {
-    area: "desktop app, installers and updates",
-    patterns: [/^desktop\//],
-  },
-  {
     area: "licensing",
     patterns: [
       /^LICENSE$/,
