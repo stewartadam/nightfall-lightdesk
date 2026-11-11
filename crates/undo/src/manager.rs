@@ -53,6 +53,14 @@ pub struct UndoGroup {
     pub undo_id: UndoId,
 }
 
+/// A group waiting on the redo stack, kept with the undo group whose replay produced it.
+pub struct RedoGroup {
+    /// Commands that redo the undone work.
+    pub group: UndoGroup,
+    /// The undo group that was replayed, returned to history when GURQ collapses this redo.
+    pub undone: UndoGroup,
+}
+
 /// Operations accumulated until their owning command reaches a terminal outcome.
 struct PendingUndoGroup {
     entries: Vec<UndoEntry>,
@@ -69,7 +77,7 @@ struct PendingUndoGroup {
 #[derive(Resource)]
 pub struct UndoManager {
     undo_stack: VecDeque<UndoGroup>,
-    redo_stack: Vec<UndoGroup>,
+    redo_stack: Vec<RedoGroup>,
     pending_groups: HashMap<UndoId, PendingUndoGroup>,
     next_insertion_order: u64,
     config: UndoConfig,
@@ -190,13 +198,25 @@ impl UndoManager {
 
     /// GURQ: Collapse redo stack into undo history before new changes.
     ///
-    /// This makes all previous states reachable via undo, implementing
-    /// the linear-time history model where no states are ever lost.
+    /// Every state the desk passed through stays reachable by undo. The undone groups go back
+    /// in the order they were first made, then the redo groups in the order they were undone,
+    /// so the most recently undone work is redone first. After `G1 G2 G3`, two undos and a new
+    /// edit `N`, the history reads `G1 G2 G3 R3 R2 N`: undo steps back through `N`, re-applies
+    /// `G2` then `G3`, and continues back through `G3`, `G2` and `G1`.
     fn collapse_redo_stack_for_gurq(&mut self) {
-        for redo_group in self.redo_stack.drain(..).rev() {
-            let mut instant_group = redo_group;
-            instant_group.is_gurq_preserved = true;
-            self.undo_stack.push_back(instant_group);
+        let (redo_groups, undone_groups): (Vec<_>, Vec<_>) = self
+            .redo_stack
+            .drain(..)
+            .map(|redo| (redo.group, redo.undone))
+            .unzip();
+        self.undo_stack.extend(undone_groups.into_iter().rev());
+        self.undo_stack
+            .extend(redo_groups.into_iter().map(|mut group| {
+                group.is_gurq_preserved = true;
+                group
+            }));
+        while self.undo_stack.len() > self.config.max_history {
+            self.undo_stack.pop_front();
         }
     }
 
@@ -217,7 +237,7 @@ impl UndoManager {
 
     /// Peek at the next group to redo without removing it.
     pub fn peek_redo(&self) -> Option<&UndoGroup> {
-        self.redo_stack.last()
+        self.redo_stack.last().map(|redo| &redo.group)
     }
 
     /// Iterate over undo groups from oldest to newest.
@@ -227,7 +247,7 @@ impl UndoManager {
 
     /// Iterate over redo groups from oldest to newest.
     pub fn redo_stack(&self) -> impl DoubleEndedIterator<Item = &UndoGroup> {
-        self.redo_stack.iter()
+        self.redo_stack.iter().map(|redo| &redo.group)
     }
 
     /// Pop and return the next group to undo.
@@ -247,12 +267,12 @@ impl UndoManager {
     }
 
     /// Push a group onto the redo stack.
-    pub fn push_redo(&mut self, group: UndoGroup) {
-        self.redo_stack.push(group);
+    pub fn push_redo(&mut self, redo: RedoGroup) {
+        self.redo_stack.push(redo);
     }
 
     /// Pop and return the next group to redo.
-    pub fn pop_redo(&mut self) -> Option<UndoGroup> {
+    pub fn pop_redo(&mut self) -> Option<RedoGroup> {
         self.redo_stack.pop()
     }
 
@@ -361,6 +381,81 @@ mod tests {
         manager.finish_group(other_undo_id, true);
         assert_eq!(manager.undo_depth(), 2);
         assert!(!manager.has_pending_groups());
+    }
+
+    /// Commits a one-entry group under a fresh undo ID, standing in for a finished edit.
+    fn commit_edit(manager: &mut UndoManager, description: &str) {
+        let undo_id = UndoId::new();
+        manager.push(test_entry(description), undo_id, true);
+        manager.finish_group(undo_id, true);
+    }
+
+    /// Moves the newest undo group to the redo stack the way the undo command does, with a
+    /// stand-in redo group described as `redo <description>`.
+    fn undo_once(manager: &mut UndoManager) {
+        let undone = manager.pop_undo().expect("expected a group to undo");
+        manager.push_redo(RedoGroup {
+            group: UndoGroup {
+                entries: vec![test_entry(&format!("redo {}", undone.description))],
+                description: format!("redo {}", undone.description),
+                timestamp: Instant::now(),
+                is_gurq_preserved: undone.is_gurq_preserved,
+                undo_id: UndoId::new(),
+            },
+            undone,
+        });
+    }
+
+    /// Lists the undo stack's descriptions from oldest to newest.
+    fn undo_descriptions(manager: &UndoManager) -> Vec<String> {
+        manager
+            .undo_stack()
+            .map(|group| group.description.clone())
+            .collect()
+    }
+
+    /// Verifies an edit after two undos keeps every state reachable in the order the desk
+    /// passed through them: back through the new edit, forward through the undone edits
+    /// oldest first, then back through the original history.
+    #[test]
+    fn new_edit_after_undos_keeps_history_in_order() {
+        let mut manager = UndoManager::new();
+        for description in ["g1", "g2", "g3"] {
+            commit_edit(&mut manager, description);
+        }
+        undo_once(&mut manager);
+        undo_once(&mut manager);
+
+        commit_edit(&mut manager, "n");
+
+        assert_eq!(
+            undo_descriptions(&manager),
+            ["g1", "g2", "g3", "redo g3", "redo g2", "n"]
+        );
+        assert_eq!(manager.redo_depth(), 0);
+        let preserved = manager
+            .undo_stack()
+            .map(|group| group.is_gurq_preserved)
+            .collect::<Vec<_>>();
+        assert_eq!(preserved, [false, false, false, true, true, false]);
+    }
+
+    /// Verifies the collapse that restores undone history still respects the history limit.
+    #[test]
+    fn collapse_keeps_history_within_its_limit() {
+        let mut manager = UndoManager::with_config(UndoConfig { max_history: 4 });
+        for description in ["g1", "g2", "g3", "g4"] {
+            commit_edit(&mut manager, description);
+        }
+        undo_once(&mut manager);
+        undo_once(&mut manager);
+
+        commit_edit(&mut manager, "n");
+
+        assert_eq!(
+            undo_descriptions(&manager),
+            ["g4", "redo g4", "redo g3", "n"]
+        );
     }
 
     /// Verifies that a failed command discards inverses captured before its mutation attempt.

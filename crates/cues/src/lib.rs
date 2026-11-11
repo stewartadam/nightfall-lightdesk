@@ -216,6 +216,9 @@ pub enum CueOperation {
     StoreCue(Box<cue::Cue>),
     /// Store a sequence payload prepared by a planner/runtime command handler.
     StoreSequence(Box<cue::Sequence>),
+    /// Remove a cue definition by UID, leaving sequence steps untouched. Undoes storing a cue
+    /// that did not exist before.
+    RemoveCue(uuid::Uuid),
     /// Store a cue into a sequence, resolving append targets at mutation time.
     StoreCueInSequence {
         /// Sequence ID that should contain the cue after storing.

@@ -173,6 +173,7 @@ pub fn handle_restore_sequence_position(
     mut events: MessageReader<EngineOperationEnvelope<RestoreSequencePosition>>,
     instance_index: Res<InstanceIndex>,
     mut msequence_query: Query<&mut MaterializedSequence>,
+    materialization: SequenceMaterializationParams,
     mut responder: CommandResponder,
 ) {
     for event in events.read() {
@@ -215,6 +216,34 @@ pub fn handle_restore_sequence_position(
             }
             continue;
         };
+
+        // Edits since the snapshot can shrink the materialized prefix or the sequence itself, so
+        // materialize through the saved position again and refuse one the sequence no longer has.
+        let restorable = materialization
+            .materialize_through(&mut msequence, snapshot.position)
+            .map_err(str::to_owned)
+            .and_then(|()| {
+                msequence
+                    .can_set_position(snapshot.position)
+                    .then_some(())
+                    .ok_or_else(|| {
+                        format!(
+                            "Cue position {} is no longer in this sequence",
+                            snapshot.position
+                        )
+                    })
+            });
+        if let Err(reason) = restorable {
+            if let Some(command_id) = event.command_id
+                && let Err(error) = responder.fail(
+                    command_id,
+                    CommandError::new("cues.restore_sequence_position_failed", reason),
+                )
+            {
+                tracing::error!(%command_id, %error, "sequence_restore_failure_failed");
+            }
+            continue;
+        }
 
         msequence.set_position(snapshot.position);
         tracing::debug!(

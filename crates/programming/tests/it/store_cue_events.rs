@@ -390,6 +390,12 @@ fn apply_cue_actions(app: &mut App, actions: &[CueOperation]) {
                     .add(sequence.as_ref().clone())
                     .expect("sequence should store");
             }
+            CueOperation::RemoveCue(cue_uid) => {
+                let _ = app
+                    .world_mut()
+                    .resource_mut::<DataProvider<Cue>>()
+                    .remove(cue_uid);
+            }
             CueOperation::StoreCueInSequence {
                 sequence_id,
                 cue_id,

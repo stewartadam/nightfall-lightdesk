@@ -36,7 +36,7 @@ pub mod prelude {
     pub use crate::commands::UndoCommand;
     pub use crate::context::UndoContext;
     pub use crate::dispatcher::UndoRegistry;
-    pub use crate::manager::{UndoConfig, UndoEntry, UndoGroup, UndoManager};
+    pub use crate::manager::{RedoGroup, UndoConfig, UndoEntry, UndoGroup, UndoManager};
     pub use crate::traits::Undoable;
 }
 
