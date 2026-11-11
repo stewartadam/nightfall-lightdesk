@@ -46,6 +46,9 @@ Choose a detected USB device for an output target, give the target a unique ID, 
 Nightfall supports these USB DMX interfaces:
 
 - **uDMX** and compatible clones. The built-in `udmx` target uses the first uDMX it finds.
-- **Enttec DMX USB Pro** and compatible clones. These appear as an FTDI USB serial adapter. Add a target for the device; Nightfall checks it is a USB Pro before sending DMX to it.
+- **Enttec DMX USB Pro** and compatible clones. These appear as an FTDI USB serial adapter. Add a target for the device; Nightfall checks whether it is a USB Pro before sending DMX to it.
+- **Open DMX** dongles (Enttec Open DMX USB and clones such as the DoReMiDi USB-DMX). These also appear as an FTDI USB serial adapter. An FTDI device that does not answer as a USB Pro is driven as Open DMX, so only select one that is a DMX interface, not a generic USB serial cable.
+
+A target remembers both the serial number and the USB port of its device. Some clones all ship with the same serial number; keep each of those plugged into the same USB port (and hub) so every target finds its own dongle. A device whose serial number is unique still follows its target to another port.
 
 Keep physical output off while rehearsing changes that should only affect the visualizer. Test one fixture and destination first, then expand the routing. Use [Console DMX](console-dmx.md) to separate programming problems from transport problems.

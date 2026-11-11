@@ -23,6 +23,7 @@ use nightfall_io::prelude::{IoRuntimeSettings, TransportRuntimePolicy};
 mod device_list;
 mod discovery;
 mod driver;
+mod open_dmx;
 mod output;
 mod serial_port;
 mod service;

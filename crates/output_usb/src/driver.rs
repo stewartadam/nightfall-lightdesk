@@ -19,6 +19,7 @@ use nightfall_io::prelude::{
 };
 
 use crate::discovery::DiscoveredDevice;
+use crate::open_dmx::OpenDmxPort;
 use crate::udmx::UdmxInterface;
 use crate::usb_pro::UsbProPort;
 
@@ -74,16 +75,37 @@ pub(crate) enum UsbDmxConnection {
     Udmx(UdmxInterface),
     /// Enttec DMX USB Pro, or a clone speaking its protocol.
     EnttecUsbPro(UsbProPort),
+    /// Open DMX dongle: a bare FTDI chip the host generates the DMX signal through.
+    OpenDmx(OpenDmxPort),
 }
 
 impl UsbDmxConnection {
     /// Opens a discovered device with the driver for the protocol it speaks.
-    pub(crate) fn open(device: &DiscoveredDevice) -> Result<Self, OpenError> {
+    ///
+    /// An FTDI device that does not answer the USB Pro probe is driven as an Open DMX dongle,
+    /// which has no firmware to answer one. `skip_usb_pro_probe` opens it as Open DMX straight
+    /// away, for a device that already failed the probe since it was plugged in.
+    pub(crate) fn open(
+        device: &DiscoveredDevice,
+        skip_usb_pro_probe: bool,
+    ) -> Result<Self, OpenError> {
         match device.family {
             UsbDmxFamily::Udmx => UdmxInterface::open(&device.info)
                 .map(Self::Udmx)
                 .ok_or(OpenError::Unavailable),
-            UsbDmxFamily::FtdiSerial => UsbProPort::open(&device.info).map(Self::EnttecUsbPro),
+            UsbDmxFamily::FtdiSerial if skip_usb_pro_probe => {
+                OpenDmxPort::open(&device.info).map(Self::OpenDmx)
+            }
+            UsbDmxFamily::FtdiSerial => match UsbProPort::open(&device.info) {
+                Err(OpenError::Unsupported) => {
+                    tracing::info!(
+                        "USB serial device did not answer as an Enttec DMX USB Pro; driving it as \
+                         Open DMX until it is unplugged"
+                    );
+                    OpenDmxPort::open(&device.info).map(Self::OpenDmx)
+                }
+                result => result.map(Self::EnttecUsbPro),
+            },
         }
     }
 
@@ -92,6 +114,7 @@ impl UsbDmxConnection {
         match self {
             Self::Udmx(_) => "uDMX",
             Self::EnttecUsbPro(_) => "Enttec DMX USB Pro",
+            Self::OpenDmx(_) => "Open DMX",
         }
     }
 
@@ -100,6 +123,7 @@ impl UsbDmxConnection {
         match self {
             Self::Udmx(interface) => interface.write(written, next),
             Self::EnttecUsbPro(port) => port.write(next),
+            Self::OpenDmx(port) => port.write(next),
         }
     }
 }

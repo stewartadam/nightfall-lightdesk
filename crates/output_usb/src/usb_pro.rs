@@ -149,7 +149,7 @@ impl UsbProPort {
                 })
             }
             Ok(None) => {
-                tracing::warn!(
+                tracing::debug!(
                     port_name,
                     "USB serial device did not answer as an Enttec DMX USB Pro"
                 );
