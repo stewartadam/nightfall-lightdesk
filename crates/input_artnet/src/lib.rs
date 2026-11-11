@@ -15,6 +15,7 @@
 
 #![warn(missing_docs)]
 
+use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
 use bevy_app::prelude::*;
@@ -150,37 +151,78 @@ struct ArtNetInputStartup {
     grace_start_at: Option<Instant>,
 }
 
-/// Drain decoded Art-Net frames, publishing only frames accepted by input policy.
+/// Live Art-Net senders per universe, keyed by IP address like Art-Net node merging, HTP.
+struct ArtnetSources(UniverseSourceMerge<IpAddr>);
+
+impl Default for ArtnetSources {
+    /// Starts with no known senders and the Art-Net 4 ten-second merge timeout.
+    fn default() -> Self {
+        Self(UniverseSourceMerge::new(ARTNET_SOURCE_TIMEOUT))
+    }
+}
+
+/// Every Art-Net sender arbitrates at the same priority, since ArtDmx carries none.
+const ARTNET_SOURCE_PRIORITY: u8 = 0;
+
+/// Drain decoded Art-Net frames, publishing each universe as the HTP merge of its live senders.
+///
+/// ArtDmx has no priority field, so Art-Net nodes merge concurrent senders highest-takes-
+/// precedence; doing the same keeps two senders on one universe from flickering between them.
 fn artnet_event_system(
     mut artnet_rx: ResMut<ArtnetEventReceiver>,
     artnet_recent_frames: Option<Res<ArtNetRecentFramesByUniverse>>,
     input_universe_visibility_mode: Option<Res<InputUniverseVisibilityMode>>,
     mut startup: Option<ResMut<ArtNetInputStartup>>,
+    mut sources: Local<ArtnetSources>,
     mut frames: MessageWriter<AcceptedDmxFrame>,
 ) {
+    let visibility_mode = input_universe_visibility_mode
+        .as_deref()
+        .copied()
+        .unwrap_or_default();
     while let Ok(frame) = artnet_rx.0.try_recv() {
-        if let Some(frame) = accept_frame(
+        let Some(is_self_frame) = classify_frame(
             artnet_recent_frames.as_deref(),
-            input_universe_visibility_mode
-                .as_deref()
-                .copied()
-                .unwrap_or_default(),
+            visibility_mode,
             startup.as_deref_mut(),
-            frame,
-        ) {
-            frames.write(frame);
-        }
+            &frame,
+        ) else {
+            continue;
+        };
+        // Local loopback is shown as-is and never merges with external senders: merged in, our
+        // own output would feed back into itself and hold channels up.
+        let data = if is_self_frame {
+            frame.data
+        } else {
+            sources.0.accept(
+                frame.universe_id,
+                frame.source_addr.ip(),
+                ARTNET_SOURCE_PRIORITY,
+                &frame.data,
+                frame.received_at,
+            )
+        };
+        frames.write(AcceptedDmxFrame {
+            transport: RouteTransport::ArtNet,
+            universe: frame.universe_id,
+            data,
+            received_at: frame.received_at,
+            is_self_frame,
+        });
     }
 }
 
-/// Classifies local output and applies Art-Net visibility policy before publishing a frame.
-fn accept_frame(
+/// Applies Art-Net visibility policy to a frame and reports whether it is local loopback.
+///
+/// Returns `None` when the frame must be dropped before merging, otherwise whether it came
+/// from this process' own Art-Net output.
+fn classify_frame(
     artnet_recent_frames: Option<&ArtNetRecentFramesByUniverse>,
     input_universe_visibility_mode: InputUniverseVisibilityMode,
     startup: Option<&mut ArtNetInputStartup>,
-    frame: RawArtnetFrame,
-) -> Option<AcceptedDmxFrame> {
-    let is_self_frame = is_frame_from_local_artnet_output_source(&frame, artnet_recent_frames);
+    frame: &RawArtnetFrame,
+) -> Option<bool> {
+    let is_self_frame = is_frame_from_local_artnet_output_source(frame, artnet_recent_frames);
 
     if input_universe_visibility_mode == InputUniverseVisibilityMode::ExternalOnly {
         const ARTNET_INPUT_STARTUP_GRACE: Duration = Duration::from_millis(250);
@@ -203,13 +245,7 @@ fn accept_frame(
         received_at = ?frame.received_at,
         "Applying Art-Net frame"
     );
-    Some(AcceptedDmxFrame {
-        transport: RouteTransport::ArtNet,
-        universe: frame.universe_id,
-        data: frame.data,
-        received_at: frame.received_at,
-        is_self_frame,
-    })
+    Some(is_self_frame)
 }
 
 /// Return true when a frame matches recent local Art-Net output and should be ignored.
@@ -1151,6 +1187,44 @@ mod tests {
         assert_eq!(
             received_count, 2,
             "both shared listeners should receive broadcast traffic"
+        );
+    }
+
+    /// Two Art-Net senders on one universe merge HTP, and a silent sender leaves after 10 s.
+    #[test]
+    fn concurrent_artnet_senders_merge_htp_until_one_times_out() {
+        let mut app = App::new();
+        add_render_schedule(&mut app);
+        app.add_plugins(TransportInputPlugin);
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawArtnetFrame>();
+        app.insert_resource(ArtnetEventReceiver(rx));
+        app.add_systems(Render, artnet_event_system.in_set(DmxInputSet::Ingress));
+
+        let sender_a = SocketAddr::new(Ipv4Addr::new(10, 0, 0, 1).into(), 6454);
+        let sender_b = SocketAddr::new(Ipv4Addr::new(10, 0, 0, 2).into(), 6454);
+        let start = Instant::now();
+        let mut deliver = |source_addr, channels: &[(u16, u8)], received_at| {
+            tx.send(RawArtnetFrame {
+                received_at,
+                ..make_frame_with_source_addr(1, channels, source_addr)
+            })
+            .expect("failed to enqueue frame");
+            app.update();
+            let universe = app
+                .world()
+                .resource::<InputDmxUniverses>()
+                .get_universe(RouteTransport::ArtNet, 1);
+            [universe[0], universe[1]]
+        };
+
+        assert_eq!(deliver(sender_a, &[(1, 200), (2, 5)], start), [200, 5]);
+        let later = start + Duration::from_millis(25);
+        assert_eq!(deliver(sender_b, &[(1, 10), (2, 80)], later), [200, 80]);
+
+        let after_timeout = start + Duration::from_millis(10_100);
+        assert_eq!(
+            deliver(sender_b, &[(1, 10), (2, 80)], after_timeout),
+            [10, 80]
         );
     }
 }

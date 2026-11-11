@@ -8,6 +8,8 @@ I/O Transports configures the physical transport targets used by patch routing. 
 
 **Network input** and **Network output** enable the respective network DMX directions. Add an output target with a unique ID, select its protocol and delivery mode, and enter an IP when that mode requires one. Review the validation/status cell before adding it. The interface summary helps identify the available network adapters.
 
+When several devices send the same input universe, Nightfall combines them the way lighting nodes do instead of following whichever packet arrived last. For sACN, the sender with the highest priority wins, and senders sharing that priority merge highest-takes-precedence per channel. A sender that goes quiet for 2.5 seconds, or stops its stream, drops out so the next one takes over: a backup console at a lower priority takes control when the main console stops. Art-Net carries no priority, so all Art-Net senders on a universe merge highest-takes-precedence, and one that stays quiet for 10 seconds drops out.
+
 Art-Net and sACN targets are destinations for DMX data. Connect them to the appropriate console channels through [Patch](patch.md) DMX routes. A configured target does not by itself route every universe to it. Check send failures and output status when diagnosing a destination.
 
 ## External control

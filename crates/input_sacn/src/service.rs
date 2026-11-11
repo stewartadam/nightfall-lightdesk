@@ -34,6 +34,12 @@ pub struct SacnInputFrame {
     pub data: [u8; MAX_CHANNELS_PER_UNIVERSE],
     /// Source CID of sender.
     pub source_cid: Option<[u8; 16]>,
+    /// Universe priority the sender declared (0-200, E1.31 default 100).
+    pub priority: u8,
+    /// Whether the sender announced it stopped transmitting this universe.
+    ///
+    /// A terminated frame carries no usable data; receivers drop the sender at once.
+    pub stream_terminated: bool,
     /// Timestamp when frame was received.
     pub received_at: Instant,
 }
@@ -165,6 +171,8 @@ impl SacnInputWorker {
             }
         };
 
+        receiver.set_announce_stream_termination(true);
+
         let universes: Vec<u16> = (1..=DEFAULT_UNIVERSE_MAX).collect();
         if let Err(error) = receiver.listen_universes(&universes) {
             tracing::warn!(?error, "Could not listen to sACN universes");
@@ -205,9 +213,21 @@ impl SacnInputWorker {
                                     universe_id: frame.universe,
                                     data,
                                     source_cid: frame.src_cid.map(|cid| *cid.as_bytes()),
+                                    priority: frame.priority,
+                                    stream_terminated: false,
                                     received_at: frame.recv_timestamp,
                                 });
                             }
+                        }
+                        Err(SacnError::UniverseTerminated(cid, universe_id)) => {
+                            let _ = frame_tx_for_thread.send(SacnInputFrame {
+                                universe_id,
+                                data: [0u8; MAX_CHANNELS_PER_UNIVERSE],
+                                source_cid: Some(*cid.as_bytes()),
+                                priority: 0,
+                                stream_terminated: true,
+                                received_at: Instant::now(),
+                            });
                         }
                         Err(SacnError::Io(error))
                             if error.kind() == std::io::ErrorKind::WouldBlock

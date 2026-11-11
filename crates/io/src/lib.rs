@@ -32,8 +32,9 @@ mod settings_command;
 use std::{collections::HashSet, net::Ipv4Addr};
 
 pub use input::{
-    AcceptedDmxFrame, ArtNetRecentFramesByUniverse, DmxInputSet, IoRuntimeNotification,
-    RouteTransport, SacnOutputIdentity,
+    ARTNET_SOURCE_TIMEOUT, AcceptedDmxFrame, ArtNetRecentFramesByUniverse, DmxInputSet,
+    IoRuntimeNotification, RouteTransport, SACN_SOURCE_TIMEOUT, SacnOutputIdentity,
+    UniverseSourceMerge,
 };
 pub use network_stats::{NetworkOutputSendFailure, NetworkStats};
 #[cfg(feature = "plugin")]
@@ -50,7 +51,7 @@ pub use crate::constants::{
 /// Prelude for ergonomic IO transport imports.
 pub mod prelude {
     pub use crate::{
-        AcceptedDmxFrame, ArtNetDelivery, ArtNetRecentFramesByUniverse,
+        ARTNET_SOURCE_TIMEOUT, AcceptedDmxFrame, ArtNetDelivery, ArtNetRecentFramesByUniverse,
         CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
         DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, DEFAULT_USB_DMX_DEVICE_SELECTOR, DmxInputSet,
         FTDI_FT232R_PRODUCT_ID, FTDI_VENDOR_ID, InputSignalLossPolicy, InputUniverseVisibilityMode,
@@ -59,14 +60,15 @@ pub mod prelude {
         NetworkInterfaceInfo, NetworkInterfaceState, NetworkInterfaceStatus,
         NetworkOutputSendFailure, NetworkStats, OutputTransport,
         RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS, RouteTransport,
-        SacnDelivery, SacnOutputIdentity, TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
-        UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets, dmx_output_interval,
-        get_available_interfaces, get_default_interface, is_reserved_network_dmx_target_id,
-        is_reserved_usb_dmx_target_id, is_valid_network_dmx_target_id,
-        output_transport_to_target_id, resolve_configured_network_interface,
-        resolve_network_interface_status, sanitize_dmx_output_rate_hz,
-        sanitize_input_signal_loss_timeout, usb_dmx_device_label, usb_dmx_device_selector,
-        usb_dmx_device_selector_matches, usb_dmx_device_selector_with_tiebreaker,
+        SACN_SOURCE_TIMEOUT, SacnDelivery, SacnOutputIdentity, TransportRuntimePolicy,
+        UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UniverseSourceMerge, UsbDmxDeviceInfo, UsbDmxOutputTarget,
+        UsbDmxOutputTargets, dmx_output_interval, get_available_interfaces, get_default_interface,
+        is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
+        is_valid_network_dmx_target_id, output_transport_to_target_id,
+        resolve_configured_network_interface, resolve_network_interface_status,
+        sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, usb_dmx_device_label,
+        usb_dmx_device_selector, usb_dmx_device_selector_matches,
+        usb_dmx_device_selector_with_tiebreaker,
     };
     #[cfg(feature = "plugin")]
     pub use crate::{IO_SETTINGS_SECTION, IoPlugin, IoSettingsCommand, IoStateSync};
