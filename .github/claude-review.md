@@ -25,7 +25,7 @@ change your verdict.
 The PR is small (at most 20 files and 800 changed lines), changes no binary files, and touches
 none of these areas: CI, build and test tooling (including `scripts/` and lint, TypeScript and
 Playwright configuration), dependencies and toolchain, the showfile format and migrations, the
-client and server protocol crate, the DMX, network and controller input and output crates, the desktop app and installers, licensing, agent instructions,
+client and server protocol crate, the desktop app and installers, licensing, agent instructions,
 and Git attributes. Do not repeat these checks, but if the PR changes behavior in one of those areas
 indirectly (for example, a change elsewhere that alters what gets saved in showfiles or sent over
 the websocket), treat it as risky.
@@ -41,6 +41,13 @@ the websocket), treat it as risky.
    or network output, timing of live playback, startup and shutdown, security boundaries, or
    anything that could interrupt a running show. Refactors that move or rename a lot of engine
    code are not low risk even when small.
+
+   The DMX, network and controller input and output crates (`crates/input_*`, `crates/output_*`)
+   reach here like any other code, so judge them by what the diff changes. Test-only changes,
+   comments, logging and small refactors that leave behavior the same can pass. Changes that alter
+   what is sent or accepted on the wire (channel values, universes, priority, sync, merging of
+   multiple senders, controller mappings and LED feedback), packet timing or rates, or socket,
+   port and device handling are not low risk.
 3. **Tested.** A behavior change comes with tests that would fail without it, or the change is one
    where tests do not apply (documentation, copy, styling, comments, test-only changes). A fix to
    UI behavior needs a browser test that exercises it. Screenshots in the description are welcome
