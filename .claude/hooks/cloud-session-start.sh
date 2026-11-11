@@ -35,6 +35,16 @@ export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-Wl,--compre
 EOF
 fi
 
+# Containers have no GPU, so Chromium falls back to SwiftShader and the
+# visualizer renders at about 1 FPS, timing out its specs. ANGLE on Mesa's
+# llvmpipe (through EGL) reaches about 10 FPS on the same cores. Leave WebGPU
+# off: Dawn only offers SwiftShader there, which is slower still.
+if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+  cat >>"$CLAUDE_ENV_FILE" <<'EOF'
+export NIGHTFALL_PLAYWRIGHT_CHROMIUM_ARGS="--use-angle=gl-egl --ignore-gpu-blocklist"
+EOF
+fi
+
 # The clone carries LFS pointers only; lint and the demo show need the files.
 git lfs pull
 
@@ -42,10 +52,12 @@ git lfs pull
 # targets) once, before anything can trigger concurrent auto-installs.
 rustup toolchain install
 
-# Native backend builds link alsa-sys.
-if ! dpkg -s libasound2-dev >/dev/null 2>&1; then
+# Native backend builds link alsa-sys; ANGLE loads Mesa's EGL and GLES
+# libraries for the llvmpipe launch flags above.
+apt_packages=(libasound2-dev libegl1 libegl-mesa0 libgles2)
+if ! dpkg -s "${apt_packages[@]}" >/dev/null 2>&1; then
   apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libasound2-dev
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${apt_packages[@]}"
 fi
 
 pnpm install --frozen-lockfile
