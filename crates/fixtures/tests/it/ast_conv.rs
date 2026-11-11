@@ -900,6 +900,26 @@ fn test_store_fixture_strobe_316ch_conversion() {
     }
 }
 
+/// Verifies store-fixture commands written for the retired 312ch strobe model create the
+/// Strobe Matrix in its 312ch mode, so saved macros and typed commands keep working.
+#[test]
+fn test_store_fixture_retired_strobe_model_conversion() {
+    let ast = generate_ast("store fix 6 \"Generic\" \"Strobe Matrix 312ch\" Strobe")
+        .expect("Failed to parse the retired 312-channel strobe store command");
+    let commands = FixtureAstConverter::convert(&ast).expect("Failed to convert AST");
+
+    assert_eq!(commands.len(), 1);
+    match commands[0].as_any().downcast_ref::<FixtureCommand>() {
+        Some(FixtureCommand::StoreFixture(fixture)) => {
+            assert_eq!(fixture.identifiers.id, 6);
+            assert_eq!(fixture.model, "Strobe Matrix");
+            assert_eq!(fixture.mode, "312ch");
+            assert_eq!(fixture.elements.len(), 119);
+        }
+        other => panic!("Expected StoreFixture command, got {:?}", other),
+    }
+}
+
 #[test]
 fn test_store_fixture_rgb_strobe_bar_conversion() {
     let ast = generate_ast("store fix 5 \"Generic\" \"RGB Strobe Bar 168ch\" Strobe")

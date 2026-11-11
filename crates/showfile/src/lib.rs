@@ -28,7 +28,7 @@ pub use apply::{
     apply_showfile_snapshot_to_world, initialize_showfile_resources, ordered_showfile_load_domains,
 };
 /// Current schema version written into newly saved showfile metadata.
-pub const CURRENT_SHOWFILE_VERSION: u32 = 25;
+pub const CURRENT_SHOWFILE_VERSION: u32 = 26;
 pub use ast_conv::ShowfileAstConverter;
 pub use command::{
     NewShowfileOptions, ShowfileCommand, ShowfileImportOptions, ShowfileImportPolicy,
@@ -279,6 +279,61 @@ mod tests {
             3
         );
         assert_eq!(parsed.settings["io"]["dmx_output_rate_hz"], 30);
+    }
+
+    /// A schema 25 show patched with the retired 308ch and 312ch strobe models loads them as
+    /// the matching modes of the Strobe Matrix profile, with their saved elements intact.
+    #[test]
+    fn schema_25_showfile_with_retired_strobe_models_loads() {
+        let mut snapshot = contributors::collect_save_contributions(&[]);
+        for (id, mode) in [(1, "308ch"), (2, "312ch")] {
+            let mut fixture = nightfall_fixtures::library::create_fixture_from_library(
+                id,
+                "Generic",
+                "Strobe Matrix",
+                mode,
+            )
+            .unwrap();
+            fixture.model = format!("Strobe Matrix {mode}");
+            fixture.mode = "Strobe".to_string();
+            fixture.library_asset_etag = Some(format!("builtin:generic-strobe-matrix-{mode}:v1"));
+            snapshot.fixtures.push(fixture);
+        }
+        let mut showfile = serde_json::to_value(&snapshot).unwrap();
+        showfile["metadata"]["showfileVersion"] = 25.into();
+
+        let parsed = parse_showfile_snapshot_json(&showfile.to_string(), "schema-25").unwrap();
+
+        let migrated = parsed
+            .fixtures
+            .iter()
+            .map(|fixture| {
+                (
+                    fixture.model.as_str(),
+                    fixture.mode.as_str(),
+                    fixture.library_asset_etag.as_deref(),
+                    fixture.elements.len(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            migrated,
+            vec![
+                (
+                    "Strobe Matrix",
+                    "308ch",
+                    Some("builtin:generic-strobe-matrix:v1"),
+                    115
+                ),
+                (
+                    "Strobe Matrix",
+                    "312ch",
+                    Some("builtin:generic-strobe-matrix:v1"),
+                    119
+                ),
+            ]
+        );
+        validate_showfile_asset_versions(&parsed).unwrap();
     }
 
     /// Reject absent and malformed schema metadata instead of assuming a legacy version.

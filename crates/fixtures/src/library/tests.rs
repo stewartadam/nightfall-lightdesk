@@ -19,6 +19,7 @@ use nightfall_fixture_model::prelude::PhysicalUnit;
 
 use super::catalog::{
     BUILTIN_SOURCE_FORMAT, builtin_fixture_profiles, find_builtin_fixture_profile,
+    retired_builtin_models,
 };
 use super::commands::LibraryFixtureInstance;
 use super::instantiate::{LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixtures};
@@ -584,6 +585,46 @@ fn rgbw_bar_offers_segments_and_single_modes() {
     assert_eq!(default.mode, "Segments");
     assert_eq!(footprint(&default), 48);
     assert!(create_fixture_from_library(3, "Generic", "12-segment RGBW Bar", "RGBW").is_none());
+}
+
+/// Verifies the retired 308ch and 312ch strobe models still create fixtures, as the matching
+/// Strobe Matrix mode with the same footprint they had, and only in their old `Strobe` mode.
+#[test]
+fn retired_strobe_models_resolve_to_strobe_matrix_modes() {
+    for (model, mode, channels) in [
+        ("Strobe Matrix 308ch", "308ch", 308),
+        ("Strobe Matrix 312ch", "312ch", 312),
+    ] {
+        for requested_mode in ["Strobe", ""] {
+            let fixture = create_fixture_from_library(5, "Generic", model, requested_mode)
+                .unwrap_or_else(|| panic!("{model} {requested_mode:?} should resolve"));
+            assert_eq!(fixture.model, "Strobe Matrix");
+            assert_eq!(fixture.mode, mode);
+            assert_eq!(footprint(&fixture), channels);
+        }
+        assert!(create_fixture_from_library(5, "Generic", model, "316ch").is_none());
+        assert!(create_fixture_from_library(5, "Other", model, "Strobe").is_none());
+    }
+}
+
+/// Verifies every retired built-in names a replacement mode its replacement profile offers,
+/// and that no retired name shadows a current catalog entry.
+#[test]
+fn retired_builtin_models_point_at_offered_modes() {
+    for retired in retired_builtin_models() {
+        assert!(find_builtin_fixture_profile(retired.make, retired.model).is_none());
+        let replacement = find_builtin_fixture_profile(retired.make, retired.replacement_model)
+            .unwrap_or_else(|| panic!("{} replacement should be cataloged", retired.model));
+        assert!(
+            replacement
+                .mode_names()
+                .iter()
+                .any(|mode| mode == retired.replacement_mode),
+            "{} should map to an offered mode",
+            retired.model
+        );
+        assert_ne!(retired.asset_etag, replacement.asset_etag);
+    }
 }
 
 /// Verifies a built-in profile refuses modes it never advertised.

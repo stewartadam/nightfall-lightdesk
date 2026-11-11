@@ -1,7 +1,7 @@
 {
   "metadata": {
     "nightfallVersion": "0.1.0-alpha.5",
-    "showfileVersion": 25,
+    "showfileVersion": 26,
     "lastSavedUnixSec": 1800000000
   },
   "fixtures": [
@@ -1117,5 +1117,6 @@
     }
   ],
   "boards": [],
-  "macros": []
+  "macros": [],
+  "parked": []
 }
