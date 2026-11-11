@@ -184,6 +184,55 @@ test("desktop app offers a downloaded update without installing it", async ({
   await expect.poll(() => updateCalls(page)).toEqual(["restart_to_update"]);
 });
 
+/**
+ * Verifies the ready notice stays through a routine check, closes while a newer version replaces
+ * the downloaded one, and comes back for the replacement alone, so its Restart never targets an
+ * update that is no longer waiting.
+ */
+test("update notice closes when its update stops being ready", async ({
+  page,
+  backendSlot,
+}) => {
+  const ready = { ...idle, phase: "ready", version: "0.1.0-alpha.4" } as const;
+  await openDesktopApp(page, backendSlot.backendPort, ready);
+  const notice = page
+    .locator('[data-component="Toast"]')
+    .filter({ hasText: "Update ready" });
+  await expect(notice).toContainText("Nightfall 0.1.0-alpha.4");
+
+  await page.evaluate((state) => (window as any).emitUpdateState(state), {
+    ...ready,
+    phase: "checking",
+  });
+  await expect(notice).toContainText("Nightfall 0.1.0-alpha.4");
+
+  await page.evaluate((state) => (window as any).emitUpdateState(state), {
+    ...ready,
+    phase: "downloading",
+    version: "0.1.0-alpha.5",
+  });
+  await expect(notice).toHaveCount(0);
+
+  await page.evaluate((state) => (window as any).emitUpdateState(state), {
+    ...ready,
+    version: "0.1.0-alpha.5",
+  });
+  await expect(notice).toHaveCount(1);
+  await expect(notice).toContainText("Nightfall 0.1.0-alpha.5");
+
+  await page.evaluate((state) => (window as any).emitUpdateState(state), {
+    ...ready,
+    version: "0.1.0-alpha.6",
+  });
+  await expect(notice.filter({ hasText: "0.1.0-alpha.5" })).toHaveCount(0);
+  await expect(notice).toHaveCount(1);
+  await expect(notice).toContainText("Nightfall 0.1.0-alpha.6");
+
+  await page.evaluate((state) => (window as any).emitUpdateState(state), idle);
+  await expect(notice).toHaveCount(0);
+  expect(await updateCalls(page)).toEqual([]);
+});
+
 /** Later puts off a version's notice for a day, across reloads, while newer versions still show. */
 test("later snoozes the update notice for that version", async ({
   page,
