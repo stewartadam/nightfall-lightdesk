@@ -14,7 +14,7 @@ export default definePanel({
   panelId: "panel-Visualizer",
   componentName: "Visualizer",
   title: "3D Visualizer",
-  minWidth: 420,
+  minWidth: 320,
   minHeight: 240,
   icon: ThreeDIcon,
   loadComponent: () => import("./visualizer-panel"),

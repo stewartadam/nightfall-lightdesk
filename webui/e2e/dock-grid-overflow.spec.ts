@@ -53,12 +53,12 @@ async function waitForVisualizerRedraw(page: Page) {
 }
 
 /**
- * Docking a wide Timeline editor next to the Visualizer while the Clips edge
- * is open asks for more width than a 1440px window has; the grid panels must
- * shrink to fit the dock instead of pushing the Visualizer off screen, and
- * grow back to their minimums once the edge collapses.
+ * Docking a Timeline editor beside the Visualizer while the Clips edge is
+ * open at 1440px must fit the dock at the panels' declared minimums, which
+ * the dock enforces. Toolbars too narrow for their controls keep one row and
+ * fold the rest behind "More actions".
  */
-test("grid panels shrink to fit when their minimums exceed the dock", async ({
+test("Timeline editor and Visualizer fit beside the open Clips edge", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -99,23 +99,41 @@ test("grid panels shrink to fit when their minimums exceed the dock", async ({
   await expect
     .poll(async () => (await gridOverflow(page)).editorMinimum)
     .toBeGreaterThan(116);
-
   await expect.poll(async () => (await gridOverflow(page)).overflow).toBe(0);
-  const squeezed = await gridOverflow(page);
-  expect(squeezed.clipsExpanded).toBe(true);
-  expect(squeezed.editorWidth).toBeLessThan(640);
-  await waitForVisualizerRedraw(page);
-  await page.screenshot({ path: testInfo.outputPath("grid-fits-dock.png") });
+  const fitted = await gridOverflow(page);
+  expect(fitted.clipsExpanded).toBe(true);
+  expect(fitted.editorWidth).toBeGreaterThanOrEqual(480);
 
-  await page.evaluate(() =>
-    (window as any).appStores.dockApi.get().getEdgeGroup("left").collapse(),
-  );
+  const toolbar = page.locator("[data-timeline-toolbar]:visible").first();
+  const frame = toolbar.locator("xpath=..");
+  const more = frame.locator("> .nf-panel-toolbar-more button");
+  await expect(more).toBeVisible();
+  // One row of 32px controls plus the toolbar's padding and border.
   await expect
-    .poll(async () => (await gridOverflow(page)).editorWidth)
-    .toBeGreaterThanOrEqual(640);
-  expect((await gridOverflow(page)).overflow).toBe(0);
+    .poll(() => frame.evaluate((element) => element.clientHeight))
+    .toBeLessThanOrEqual(48);
   await waitForVisualizerRedraw(page);
-  await page.screenshot({
-    path: testInfo.outputPath("grid-after-collapse.png"),
-  });
+  await page.screenshot({ path: testInfo.outputPath("toolbar-one-row.png") });
+
+  await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+  await expect(toolbar.locator("[inert]")).toHaveCount(0);
+  // The last unfolded control is the topmost element where it is drawn.
+  expect(
+    await toolbar.evaluate((element) => {
+      const last = element.querySelector<HTMLElement>(
+        ":scope > .nf-toolbar-group:last-child > :last-child",
+      )!;
+      const rect = last.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      );
+      return hit !== null && last.contains(hit);
+    }),
+  ).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("toolbar-unfolded.png") });
+  await page.keyboard.press("Escape");
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await expect(toolbar.locator("[inert]").first()).toBeAttached();
 });

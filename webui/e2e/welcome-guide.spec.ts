@@ -162,9 +162,7 @@ test("guide preserves divider grips at panel minimum widths", async ({
   page,
 }, testInfo) => {
   await openSample(page);
-  // Narrow enough that, beside the guide, the grid panels reach the smallest
-  // size they shrink to and their dividers stop moving.
-  await page.setViewportSize({ width: 860, height: 1000 });
+  await page.setViewportSize({ width: 1200, height: 1000 });
   await openWelcomeGuide(page);
   const divider = page
     .locator(
@@ -2223,9 +2221,9 @@ test("covered prerequisite panels offer Show and make room", async ({
   page,
 }, testInfo) => {
   await openSample(page);
-  // Too narrow for the grid to fit even at its smallest beside both open edge
-  // panels, so they still cover the Visualizer.
-  await page.setViewportSize({ width: 900, height: 1000 });
+  // Too narrow for the grid panels' minimums beside both open edge panels,
+  // so the edge panels cover the Visualizer.
+  await page.setViewportSize({ width: 1100, height: 1000 });
   const guide = await startLesson(page, /Your first lights/);
   await reachStep(page, "Select lights");
   await page.getByRole("tab", { name: "Clips", exact: true }).click();

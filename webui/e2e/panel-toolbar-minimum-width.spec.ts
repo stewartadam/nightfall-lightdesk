@@ -14,10 +14,10 @@ import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
 const panels = [
   {
     component: "Visualizer",
-    width: 420,
+    width: 320,
     selector: '[aria-label="Visualizer toolbar"]',
   },
-  { component: "Timeline", width: 640, selector: "[data-timeline-toolbar]" },
+  { component: "Timeline", width: 480, selector: "[data-timeline-toolbar]" },
   {
     component: "StatusDisplay",
     width: 360,
@@ -26,7 +26,11 @@ const panels = [
 ];
 
 for (const panel of panels) {
-  /** Checks real docking constraints and visible controls at the smallest supported panel width. */
+  /**
+   * Checks real docking constraints at the smallest supported panel width:
+   * the controls shown keep one row inside the panel, and any that do not fit
+   * stay reachable through the toolbar's "More actions" button.
+   */
   test(`${panel.component} controls fit at the panel minimum`, async ({
     page,
   }, testInfo) => {
@@ -81,18 +85,21 @@ for (const panel of panels) {
     expect(renderedWidth).toBeLessThanOrEqual(panel.width + 16);
 
     const geometry = await chrome.evaluate((element) => {
+      // Controls folded behind "More actions" are inert and clipped away.
       const bounds = element.getBoundingClientRect();
       const controls = Array.from(
         element.querySelectorAll("button, input, select, h2, [role=switch]"),
-      ).map((control) => {
-        const rect = control.getBoundingClientRect();
-        return {
-          label: control.getAttribute("aria-label") ?? control.textContent,
-          left: rect.left,
-          right: rect.right,
-          centerY: rect.top + rect.height / 2,
-        };
-      });
+      )
+        .filter((control) => !control.closest("[inert]"))
+        .map((control) => {
+          const rect = control.getBoundingClientRect();
+          return {
+            label: control.getAttribute("aria-label") ?? control.textContent,
+            left: rect.left,
+            right: rect.right,
+            centerY: rect.top + rect.height / 2,
+          };
+        });
       return {
         left: bounds.left,
         right: bounds.right,
@@ -117,11 +124,48 @@ for (const panel of panels) {
       expect(
         await page
           .locator("[data-timeline-footer-toolbar]")
-          .evaluate((element) => element.clientHeight),
+          .evaluate((element) => element.parentElement!.clientHeight),
       ).toBeLessThanOrEqual(46);
     }
     await page.screenshot({
       path: testInfo.outputPath(`${panel.component}-minimum.png`),
     });
+
+    const more = chrome.locator(
+      "xpath=following-sibling::*//button[@data-toolbar-more]",
+    );
+    if ((await more.count()) === 0) return;
+    await more.click();
+    await expect(chrome.locator("[inert]")).toHaveCount(0);
+    const unfolded = await chrome.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return Array.from(element.querySelectorAll("button, input, select")).map(
+        (control) => {
+          const rect = control.getBoundingClientRect();
+          const hit = document.elementFromPoint(
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2,
+          );
+          return {
+            left: rect.left,
+            right: rect.right,
+            boundsLeft: bounds.left,
+            boundsRight: bounds.right,
+            onTop: hit !== null && (control === hit || control.contains(hit)),
+          };
+        },
+      );
+    });
+    for (const control of unfolded) {
+      expect(control.left).toBeGreaterThanOrEqual(control.boundsLeft);
+      expect(control.right).toBeLessThanOrEqual(control.boundsRight);
+      // Unfolded rows draw above the panel content they cover.
+      expect(control.onTop).toBe(true);
+    }
+    await page.screenshot({
+      path: testInfo.outputPath(`${panel.component}-more-actions.png`),
+    });
+    await page.keyboard.press("Escape");
+    await expect(more).toHaveAttribute("aria-expanded", "false");
   });
 }

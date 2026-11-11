@@ -17,7 +17,7 @@ export default definePanel({
   panelId: "panel-FlowList",
   componentName: "FlowList",
   title: "Flows",
-  minWidth: 515,
+  minWidth: 360,
   minHeight: 160,
   icon: ShareIcon,
   loadComponent: () => import("./flow-list-panel"),
