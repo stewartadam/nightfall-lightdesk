@@ -169,7 +169,7 @@ impl FeatureIntegrationExt for PluginGroupBuilder {
 
     #[cfg(feature = "usb")]
     fn maybe_usb_output(self) -> Self {
-        self.add(OutputUdmxUsbPlugin)
+        self.add(OutputUsbDmxPlugin)
     }
 
     #[cfg(not(feature = "usb"))]

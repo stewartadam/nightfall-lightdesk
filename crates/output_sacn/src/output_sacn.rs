@@ -212,7 +212,7 @@ mod tests {
                 5,
             ),
             frame(
-                OutputTransport::Udmx {
+                OutputTransport::Usb {
                     device: "any".to_string(),
                 },
                 1,

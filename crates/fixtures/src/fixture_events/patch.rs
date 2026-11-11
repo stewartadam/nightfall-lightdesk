@@ -319,7 +319,7 @@ fn route_transport_from_target_id(target: &str) -> Option<RouteTransport> {
     match target {
         "sacn" => Some(RouteTransport::Sacn),
         "artnet" => Some(RouteTransport::ArtNet),
-        "udmx" => Some(RouteTransport::Udmx),
+        "udmx" => Some(RouteTransport::Usb),
         _ => None,
     }
 }

@@ -43,8 +43,8 @@ use serde::{Deserialize, Serialize};
 pub use settings_command::IoSettingsCommand;
 
 pub use crate::constants::{
-    RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS, UDMX_PRODUCT_ID,
-    UDMX_VENDOR_ID,
+    FTDI_FT232R_PRODUCT_ID, FTDI_VENDOR_ID, RESERVED_NETWORK_DMX_TARGET_KEYWORDS,
+    RESERVED_USB_DMX_TARGET_KEYWORDS, UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
 };
 
 /// Prelude for ergonomic IO transport imports.
@@ -53,20 +53,20 @@ pub mod prelude {
         AcceptedDmxFrame, ArtNetDelivery, ArtNetRecentFramesByUniverse,
         CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
         DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, DEFAULT_USB_DMX_DEVICE_SELECTOR, DmxInputSet,
-        InputSignalLossPolicy, InputUniverseVisibilityMode, IoRuntimeNotification,
-        IoRuntimeSettings, MAX_DMX_OUTPUT_RATE_HZ, MIN_DMX_OUTPUT_RATE_HZ, NetworkDmxDelivery,
-        NetworkDmxOutputTarget, NetworkDmxOutputTargets, NetworkDmxProtocol, NetworkInterfaceInfo,
-        NetworkInterfaceState, NetworkInterfaceStatus, NetworkOutputSendFailure, NetworkStats,
-        OutputTransport, RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS,
-        RouteTransport, SacnDelivery, SacnOutputIdentity, TransportRuntimePolicy, UDMX_PRODUCT_ID,
-        UDMX_VENDOR_ID, UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets,
-        dmx_output_interval, get_available_interfaces, get_default_interface,
-        is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
-        is_valid_network_dmx_target_id, output_transport_to_target_id,
-        resolve_configured_network_interface, resolve_network_interface_status,
-        sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, usb_dmx_device_label,
-        usb_dmx_device_selector, usb_dmx_device_selector_matches,
-        usb_dmx_device_selector_with_tiebreaker,
+        FTDI_FT232R_PRODUCT_ID, FTDI_VENDOR_ID, InputSignalLossPolicy, InputUniverseVisibilityMode,
+        IoRuntimeNotification, IoRuntimeSettings, MAX_DMX_OUTPUT_RATE_HZ, MIN_DMX_OUTPUT_RATE_HZ,
+        NetworkDmxDelivery, NetworkDmxOutputTarget, NetworkDmxOutputTargets, NetworkDmxProtocol,
+        NetworkInterfaceInfo, NetworkInterfaceState, NetworkInterfaceStatus,
+        NetworkOutputSendFailure, NetworkStats, OutputTransport,
+        RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS, RouteTransport,
+        SacnDelivery, SacnOutputIdentity, TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID,
+        UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets, dmx_output_interval,
+        get_available_interfaces, get_default_interface, is_reserved_network_dmx_target_id,
+        is_reserved_usb_dmx_target_id, is_valid_network_dmx_target_id,
+        output_transport_to_target_id, resolve_configured_network_interface,
+        resolve_network_interface_status, sanitize_dmx_output_rate_hz,
+        sanitize_input_signal_loss_timeout, usb_dmx_device_label, usb_dmx_device_selector,
+        usb_dmx_device_selector_matches, usb_dmx_device_selector_with_tiebreaker,
     };
     #[cfg(feature = "plugin")]
     pub use crate::{IO_SETTINGS_SECTION, IoPlugin, IoSettingsCommand, IoStateSync};
@@ -206,9 +206,9 @@ pub enum OutputTransport {
         /// Delivery mode (multicast or unicast).
         mode: SacnDelivery,
     },
-    /// uDMX USB interface.
-    Udmx {
-        /// USB device selector used by the uDMX worker.
+    /// USB DMX interface, driven by the protocol its device speaks.
+    Usb {
+        /// USB device selector used by the USB DMX output worker.
         device: String,
     },
     /// Art-Net protocol.
@@ -218,7 +218,7 @@ pub enum OutputTransport {
     },
 }
 
-/// Default USB DMX device selector for automatic uDMX output.
+/// Default USB DMX device selector for the first uDMX interface found.
 pub const DEFAULT_USB_DMX_DEVICE_SELECTOR: &str = "default";
 
 /// One named network DMX output target.
@@ -358,9 +358,9 @@ pub struct UsbDmxOutputTarget {
 }
 
 impl UsbDmxOutputTarget {
-    /// Returns the target as the concrete uDMX output transport.
+    /// Returns the target as the concrete USB output transport.
     pub fn output_transport(&self) -> OutputTransport {
-        OutputTransport::Udmx {
+        OutputTransport::Usb {
             device: self.device.clone(),
         }
     }
@@ -585,7 +585,7 @@ pub fn output_transport_to_target_id(
         OutputTransport::ArtNet { .. } => {
             Err("Art-Net output transport is not configured as a patch target".to_string())
         }
-        OutputTransport::Udmx { device } => {
+        OutputTransport::Usb { device } => {
             Err(format!("USB output device '{device}' is not configured"))
         }
         OutputTransport::Disabled => Err("Output transport is disabled".to_string()),
@@ -668,7 +668,7 @@ mod tests {
         assert_eq!(target.device_label, None);
         assert_eq!(
             target.output_transport(),
-            OutputTransport::Udmx {
+            OutputTransport::Usb {
                 device: DEFAULT_USB_DMX_DEVICE_SELECTOR.to_string()
             }
         );
@@ -834,7 +834,7 @@ mod tests {
         );
         assert_eq!(
             output_transport_to_target_id(
-                &OutputTransport::Udmx {
+                &OutputTransport::Usb {
                     device: DEFAULT_USB_DMX_DEVICE_SELECTOR.to_string(),
                 },
                 &network_outputs,
@@ -886,7 +886,7 @@ mod tests {
 
         assert_eq!(
             output_transport_to_target_id(
-                &OutputTransport::Udmx {
+                &OutputTransport::Usb {
                     device: "id-16c0:05dc,serial-booth".to_string(),
                 },
                 &network_outputs,
@@ -904,7 +904,7 @@ mod tests {
 
         assert_eq!(
             output_transport_to_target_id(
-                &OutputTransport::Udmx {
+                &OutputTransport::Usb {
                     device: "missing".to_string(),
                 },
                 &network_outputs,

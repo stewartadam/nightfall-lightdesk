@@ -32,4 +32,9 @@ The PIN keeps casual visitors on your network out; it does not protect against a
 
 Choose a detected USB device for an output target, give the target a unique ID, and enable **USB output** when ready. Review Missing device or duplicate-device status before attempting output. If no device is listed, check the physical connection and host access to the device.
 
+Nightfall supports these USB DMX interfaces:
+
+- **uDMX** and compatible clones. The built-in `udmx` target uses the first uDMX it finds.
+- **Enttec DMX USB Pro** and compatible clones. These appear as an FTDI USB serial adapter. Add a target for the device; Nightfall checks it is a USB Pro before sending DMX to it.
+
 Keep physical output off while rehearsing changes that should only affect the visualizer. Test one fixture and destination first, then expand the routing. Use [Console DMX](console-dmx.md) to separate programming problems from transport problems.

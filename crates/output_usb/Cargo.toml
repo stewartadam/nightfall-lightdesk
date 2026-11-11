@@ -15,6 +15,7 @@ nightfall-fixtures = { path = "../fixtures" }
 nightfall-io = { path = "../io" }
 nightfall-service-host = { path = "../service_host" }
 serde.workspace = true
+serialport = { version = "4.10", default-features = false, features = ["usbportinfo-location"] }
 tokio.workspace = true
 tracing.workspace = true
 typeshare.workspace = true

@@ -150,11 +150,11 @@ impl ShowSummary {
             ),
             (
                 "output_usb_dmx",
-                output_uses(|transport| matches!(transport, OutputTransport::Udmx { .. })),
+                output_uses(|transport| matches!(transport, OutputTransport::Usb { .. })),
             ),
             ("input_sacn", input_uses(RouteTransport::Sacn)),
             ("input_artnet", input_uses(RouteTransport::ArtNet)),
-            ("input_usb_dmx", input_uses(RouteTransport::Udmx)),
+            ("input_usb_dmx", input_uses(RouteTransport::Usb)),
             (
                 "timecode_midi",
                 timecode_uses(|source| matches!(source, TimecodeSource::MidiMtc)),
@@ -292,7 +292,7 @@ impl NetworkOutputs {
                         }
                     }
                 }
-                OutputTransport::Udmx { .. } => {
+                OutputTransport::Usb { .. } => {
                     network.usb_dmx_universes.insert(*universe);
                 }
                 OutputTransport::Disabled => {}
@@ -425,7 +425,7 @@ mod tests {
                     1,
                 ),
                 (
-                    OutputTransport::Udmx {
+                    OutputTransport::Usb {
                         device: "id-16c0:05dc".into(),
                     },
                     1,

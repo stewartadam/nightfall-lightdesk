@@ -1281,7 +1281,7 @@ fn resolve_output_routes_resolves_named_usb_targets() {
     assert_eq!(
         destinations.destinations,
         vec![OutputDestination {
-            transport: OutputTransport::Udmx {
+            transport: OutputTransport::Usb {
                 device: "usb-serial-1".to_string(),
             },
             universe: 1,
