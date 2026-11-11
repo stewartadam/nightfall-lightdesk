@@ -9,11 +9,11 @@
 //! Enumerates the USB DMX interfaces the host can see and resolves saved device selectors to
 //! them.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use nightfall_io::prelude::{
-    DEFAULT_USB_DMX_DEVICE_SELECTOR, UsbDmxDeviceInfo, usb_dmx_device_label,
-    usb_dmx_device_selector_matches, usb_dmx_device_selector_with_tiebreaker,
+    DEFAULT_USB_DMX_DEVICE_SELECTOR, UsbDmxDeviceIdentity, UsbDmxDeviceInfo,
+    resolve_usb_dmx_selectors, usb_dmx_device_label,
 };
 use nusb::MaybeFuture;
 
@@ -34,42 +34,23 @@ pub(crate) struct DiscoveredDevice {
     pub(crate) location: Option<String>,
     /// OS device ID, used for the selector when neither serial nor location is known.
     pub(crate) fallback_id: String,
-    /// Whether another visible device of the same model reports the same serial number, in which
-    /// case the selector also names the physical location.
-    pub(crate) duplicate_serial: bool,
 }
 
 impl DiscoveredDevice {
-    /// Returns the selector this device is saved under in output targets.
-    pub(crate) fn selector(&self) -> String {
-        usb_dmx_device_selector_with_tiebreaker(
-            self.info.vendor_id(),
-            self.info.product_id(),
-            self.serial_number.as_deref(),
-            self.location_key.as_deref(),
-            &self.fallback_id,
-            self.duplicate_serial,
-        )
+    /// Returns the identity saved selectors are resolved against.
+    fn identity(&self) -> UsbDmxDeviceIdentity<'_> {
+        UsbDmxDeviceIdentity {
+            vendor_id: self.info.vendor_id(),
+            product_id: self.info.product_id(),
+            serial_number: self.serial_number.as_deref(),
+            location_key: self.location_key.as_deref(),
+            fallback_id: &self.fallback_id,
+        }
     }
 
-    /// Returns whether a saved selector names this device.
-    ///
-    /// The automatic selector takes the first uDMX interface only: the FTDI chips used by other
-    /// interface families also sit in generic USB serial adapters, so those must be picked
-    /// explicitly.
-    pub(crate) fn matches_selector(&self, selector: &str) -> bool {
-        if selector == DEFAULT_USB_DMX_DEVICE_SELECTOR {
-            return self.family == UsbDmxFamily::Udmx;
-        }
-        usb_dmx_device_selector_matches(
-            selector,
-            self.info.vendor_id(),
-            self.info.product_id(),
-            self.serial_number.as_deref(),
-            self.location_key.as_deref(),
-            &self.fallback_id,
-            self.duplicate_serial,
-        )
+    /// Returns the selector this device is saved under in output targets.
+    pub(crate) fn selector(&self) -> String {
+        self.identity().selector()
     }
 
     /// Describes the device for the client device list.
@@ -110,7 +91,7 @@ pub(crate) fn discover_devices() -> Option<Vec<DiscoveredDevice>> {
         }
     };
 
-    let mut devices = devices
+    let devices = devices
         .filter_map(|info| {
             let family = UsbDmxFamily::from_usb_id(info.vendor_id(), info.product_id())?;
             let (location_key, location) = usb_device_location(&info);
@@ -120,35 +101,54 @@ pub(crate) fn discover_devices() -> Option<Vec<DiscoveredDevice>> {
                 location_key,
                 location,
                 fallback_id: format!("{:?}", info.id()),
-                duplicate_serial: false,
                 info,
             })
         })
         .collect::<Vec<_>>();
 
-    let mut serial_counts = HashMap::<(u16, u16, String), usize>::new();
-    for device in &devices {
-        if let Some(key) = serial_identity_key(device) {
-            *serial_counts.entry(key).or_default() += 1;
-        }
-    }
-    for device in &mut devices {
-        device.duplicate_serial = serial_identity_key(device)
-            .and_then(|key| serial_counts.get(&key).copied())
-            .is_some_and(|count| count > 1);
-    }
     Some(devices)
 }
 
-/// Returns the model-and-serial key two devices share when they report the same serial number.
-fn serial_identity_key(device: &DiscoveredDevice) -> Option<(u16, u16, String)> {
-    device.serial_number.clone().map(|serial_number| {
-        (
-            device.info.vendor_id(),
-            device.info.product_id(),
-            serial_number,
-        )
-    })
+/// Resolves saved selectors to `devices`, returning for each selector the index of its device.
+/// Each device resolves at most one selector, and devices `available` rejects resolve none.
+///
+/// Named selectors follow [`resolve_usb_dmx_selectors`]. The automatic selector then takes the
+/// first remaining uDMX interface only: the FTDI chips used by other interface families also sit
+/// in generic USB serial adapters, so those must be picked explicitly.
+pub(crate) fn resolve_selectors(
+    selectors: &[String],
+    devices: &[DiscoveredDevice],
+    available: impl Fn(&DiscoveredDevice) -> bool,
+) -> Vec<Option<usize>> {
+    let candidates = devices
+        .iter()
+        .enumerate()
+        .filter(|(_, device)| available(device))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let identities = candidates
+        .iter()
+        .map(|&index| devices[index].identity())
+        .collect::<Vec<_>>();
+    let selector_refs = selectors.iter().map(String::as_str).collect::<Vec<_>>();
+    let mut resolved = resolve_usb_dmx_selectors(&selector_refs, &identities)
+        .into_iter()
+        .map(|candidate| candidate.map(|candidate| candidates[candidate]))
+        .collect::<Vec<_>>();
+
+    let mut claimed = resolved.iter().flatten().copied().collect::<HashSet<_>>();
+    for (selector, resolved) in selectors.iter().zip(resolved.iter_mut()) {
+        if selector != DEFAULT_USB_DMX_DEVICE_SELECTOR {
+            continue;
+        }
+        *resolved = candidates.iter().copied().find(|&index| {
+            devices[index].family == UsbDmxFamily::Udmx && !claimed.contains(&index)
+        });
+        if let Some(index) = *resolved {
+            claimed.insert(index);
+        }
+    }
+    resolved
 }
 
 /// Trims a USB string descriptor and treats empty descriptors as missing.

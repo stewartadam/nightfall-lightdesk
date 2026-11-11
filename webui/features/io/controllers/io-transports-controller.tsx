@@ -57,6 +57,7 @@ import {
   DEFAULT_USB_DEVICE_ID,
   isBuiltInUsbTarget,
   replaceUsbTarget,
+  resolveUsbTargetDevices,
   usbDeviceOptionLabel,
   usbDeviceSelectorLabel,
   usbDeviceSerialConflictKeys,
@@ -104,12 +105,26 @@ export function IoTransportsController() {
   const usbSerialConflictKeys = createMemo(() =>
     usbDeviceSerialConflictKeys(usbDevices()),
   );
+  /** Returns the attached device each USB target currently outputs to, keyed by target id. */
+  const usbTargetDevices = createMemo(() =>
+    resolveUsbTargetDevices(usbTargets(), usbDevices()),
+  );
   /** Returns discovered USB DMX device ids that are not already mapped. */
   const availableNewUsbDeviceIds = createMemo(() => {
     const usedDevices = new Set(usbTargets().map((target) => target.device));
+    // A device only the automatic target holds stays on offer, so it can be given a named
+    // target of its own.
+    const resolvedDeviceIds = new Set(
+      usbTargets()
+        .filter((target) => target.device.trim() !== DEFAULT_USB_DEVICE_ID)
+        .flatMap((target) => usbTargetDevices().get(target.id)?.id ?? []),
+    );
     const availableDeviceIds = usbDevices()
       .map((device) => device.id)
-      .filter((deviceId) => !usedDevices.has(deviceId));
+      .filter(
+        (deviceId) =>
+          !usedDevices.has(deviceId) && !resolvedDeviceIds.has(deviceId),
+      );
     return usedDevices.has(DEFAULT_USB_DEVICE_ID)
       ? availableDeviceIds
       : [DEFAULT_USB_DEVICE_ID, ...availableDeviceIds];
@@ -421,7 +436,9 @@ export function IoTransportsController() {
   /** Returns whether a saved USB selector currently points at available hardware. */
   const usbTargetDeviceAvailable = (target: types.UsbDmxOutputTarget) => {
     const device = target.device.trim();
-    return device === DEFAULT_USB_DEVICE_ID || usbDeviceById().has(device);
+    return (
+      device === DEFAULT_USB_DEVICE_ID || usbTargetDevices().has(target.id)
+    );
   };
 
   /** Returns the status text for a configured USB mapping row. */
@@ -433,7 +450,7 @@ export function IoTransportsController() {
     if (device === DEFAULT_USB_DEVICE_ID) {
       return { label: "Auto", kind: "valid" as const };
     }
-    if (usbDeviceById().has(device)) {
+    if (usbTargetDevices().has(target.id)) {
       return { label: "Configured", kind: "valid" as const };
     }
     return { label: "Missing", kind: "invalid" as const };
@@ -454,8 +471,15 @@ export function IoTransportsController() {
         target.device_label,
       ),
     };
+    // A saved selector that resolves to a device by serial fallback stands in for that device's
+    // own option, so the select shows the device output goes to. The automatic selector keeps
+    // its own option instead.
+    const resolvedDevice =
+      savedDevice === DEFAULT_USB_DEVICE_ID
+        ? undefined
+        : usbTargetDevices().get(target.id);
     const options = usbDevices().map((device) => ({
-      id: device.id,
+      id: device === resolvedDevice ? savedDevice : device.id,
       label: usbDeviceOptionLabel(device, usbSerialConflictKeys()),
     }));
     const selectableOptions =
@@ -466,7 +490,7 @@ export function IoTransportsController() {
     if (
       savedDevice !== "" &&
       savedDevice !== DEFAULT_USB_DEVICE_ID &&
-      !usbDeviceById().has(savedDevice)
+      resolvedDevice === undefined
     ) {
       return [
         {

@@ -26,7 +26,7 @@ use nightfall_service_host::prelude::{
     FixedRatePeriod, FixedRateWorker, WorkerSlot, process_singleton,
 };
 
-use crate::discovery::discover_devices;
+use crate::discovery::{discover_devices, resolve_selectors};
 use crate::driver::{OpenError, Universe, UsbDmxConnection, UsbDmxFamily, WriteOutcome};
 
 /// One universe the worker writes to its USB device on every tick.
@@ -168,8 +168,10 @@ struct UsbDmxDevices {
     /// Channel values each open device is known to hold, by normalized selector. Missing
     /// after a device opens or a write fails, so the next write sends every channel.
     written: HashMap<String, Universe>,
-    /// Attached devices that answered as no supported protocol, skipped until unplugged.
-    unsupported: HashSet<nusb::DeviceId>,
+    /// Attached FTDI devices that did not answer the USB Pro probe and were opened as Open DMX,
+    /// reopened without probing again until unplugged, since each probe writes to the device and
+    /// blocks the worker for the probe timeout.
+    usb_pro_probe_failed: HashSet<nusb::DeviceId>,
     /// Selectors whose device was found but could not be opened, already reported once.
     unavailable_reported: HashSet<String>,
     /// Device attach and detach notifications from the hotplug watcher.
@@ -183,7 +185,7 @@ impl UsbDmxDevices {
             open: HashMap::new(),
             next_retry_at: HashMap::new(),
             written: HashMap::new(),
-            unsupported: HashSet::new(),
+            usb_pro_probe_failed: HashSet::new(),
             unavailable_reported: HashSet::new(),
             hotplug_event_rx,
         }
@@ -196,11 +198,12 @@ impl UsbDmxDevices {
     /// turned off, are closed so other programs can use them. A write that runs past the next
     /// tick makes the worker skip that tick instead of queueing frames.
     fn write(&mut self, frames: &[UsbDmxFrame]) {
-        if handle_hotplug_events(
+        let devices_changed = handle_hotplug_events(
             &mut self.open,
-            &mut self.unsupported,
+            &mut self.usb_pro_probe_failed,
             &self.hotplug_event_rx,
-        ) {
+        );
+        if devices_changed {
             self.next_retry_at.clear();
         }
         let selectors = frames
@@ -210,7 +213,7 @@ impl UsbDmxDevices {
         self.open.retain(|selector, _| selectors.contains(selector));
         self.written
             .retain(|selector, _| self.open.contains_key(selector));
-        self.open_due(&selectors);
+        self.open_due(&selectors, devices_changed);
 
         for (frame, selector) in frames.iter().zip(selectors) {
             let Some(device) = self.open.get_mut(&selector) else {
@@ -243,61 +246,72 @@ impl UsbDmxDevices {
     /// Opens the devices for every selector that is not open and whose retry time has come,
     /// enumerating USB devices once for all of them.
     ///
-    /// A device that answered as no supported protocol is skipped until it is unplugged, since
-    /// probing it again would write to it and block the worker for the probe timeout.
-    fn open_due(&mut self, selectors: &[String]) {
+    /// Every selector resolves together against every attached device, so a selector naming a
+    /// device exactly wins over another selector's serial fallback. When devices were attached
+    /// or removed, open selectors that now resolve to a different device are closed and reopened,
+    /// so a target that fell back to a clone hands it over once its own device appears.
+    fn open_due(&mut self, selectors: &[String], devices_changed: bool) {
         let now = Instant::now();
-        let due = selectors
-            .iter()
-            .filter(|selector| {
-                !self.open.contains_key(*selector)
-                    && self
-                        .next_retry_at
-                        .get(*selector)
-                        .is_none_or(|retry_at| now >= *retry_at)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if due.is_empty() {
+        let is_due = |devices: &Self, selector: &String| {
+            !devices.open.contains_key(selector)
+                && devices
+                    .next_retry_at
+                    .get(selector)
+                    .is_none_or(|retry_at| now >= *retry_at)
+        };
+        if !devices_changed && !selectors.iter().any(|selector| is_due(self, selector)) {
             return;
         }
-        for selector in &due {
-            self.next_retry_at
-                .insert(selector.clone(), now + OPEN_RETRY_INTERVAL);
-        }
-
         let Some(devices) = discover_devices() else {
             return;
         };
-        for selector in due {
-            let Some(device) = devices.iter().find(|device| {
-                let id = device.info.id();
-                device.matches_selector(&selector)
-                    && !self.unsupported.contains(&id)
-                    && !self.open.values().any(|opened| opened.id == id)
-            }) else {
+        let resolved = resolve_selectors(selectors, &devices, |_| true);
+
+        for (selector, resolved) in selectors.iter().zip(&resolved) {
+            let resolved_id = resolved.map(|index| devices[index].info.id());
+            if self
+                .open
+                .get(selector)
+                .is_some_and(|opened| Some(opened.id) != resolved_id)
+            {
+                tracing::info!(
+                    selector,
+                    "USB DMX target resolves to another device; reopening"
+                );
+                self.open.remove(selector);
+                self.written.remove(selector);
+                self.next_retry_at.remove(selector);
+            }
+        }
+
+        for (selector, resolved) in selectors.iter().zip(resolved) {
+            if !is_due(self, selector) {
+                continue;
+            }
+            self.next_retry_at
+                .insert(selector.clone(), now + OPEN_RETRY_INTERVAL);
+            let Some(device) = resolved.map(|index| &devices[index]) else {
                 continue;
             };
-            match UsbDmxConnection::open(device) {
+            let id = device.info.id();
+            if self.open.values().any(|opened| opened.id == id) {
+                continue;
+            }
+            match UsbDmxConnection::open(device, self.usb_pro_probe_failed.contains(&id)) {
                 Ok(connection) => {
                     tracing::info!(
                         selector,
                         protocol = connection.protocol_name(),
                         "USB DMX device connected"
                     );
-                    self.unavailable_reported.remove(&selector);
-                    self.open.insert(
-                        selector,
-                        OpenedDevice {
-                            id: device.info.id(),
-                            connection,
-                        },
-                    );
+                    if matches!(connection, UsbDmxConnection::OpenDmx(_)) {
+                        self.usb_pro_probe_failed.insert(id);
+                    }
+                    self.unavailable_reported.remove(selector);
+                    self.open
+                        .insert(selector.clone(), OpenedDevice { id, connection });
                 }
-                Err(OpenError::Unsupported) => {
-                    self.unsupported.insert(device.info.id());
-                }
-                Err(OpenError::Unavailable) => {
+                Err(OpenError::Unavailable | OpenError::Unsupported) => {
                     if self.unavailable_reported.insert(selector.clone()) {
                         tracing::warn!(
                             selector,
@@ -392,13 +406,13 @@ fn notify_hotplug_subscribers(hotplug_subscribers: &UsbHotplugSubscribers) {
 }
 
 /// Applies pending hotplug events to the open devices, closing any that were unplugged and
-/// forgetting that an unplugged device failed its probe.
+/// forgetting that an unplugged device failed the USB Pro probe.
 ///
 /// Returns whether a supported device appeared or an open one went away, in which case pending
 /// open retries should run right away.
 fn handle_hotplug_events<DeviceId: Eq + Hash, Connection>(
     devices: &mut HashMap<String, OpenedDevice<DeviceId, Connection>>,
-    unsupported: &mut HashSet<DeviceId>,
+    usb_pro_probe_failed: &mut HashSet<DeviceId>,
     hotplug_event_rx: &Option<std::sync::mpsc::Receiver<UsbHotplugEvent<DeviceId>>>,
 ) -> bool {
     let Some(hotplug_event_rx) = hotplug_event_rx.as_ref() else {
@@ -412,7 +426,7 @@ fn handle_hotplug_events<DeviceId: Eq + Hash, Connection>(
                 changed = true;
             }
             UsbHotplugEvent::DeviceDisconnected(device_id) => {
-                unsupported.remove(&device_id);
+                usb_pro_probe_failed.remove(&device_id);
                 let removed_selectors = devices
                     .iter()
                     .filter(|(_, current_device)| current_device.id == device_id)
@@ -554,10 +568,10 @@ mod tests {
         assert!(devices.is_empty());
     }
 
-    /// Verifies unplugging a device that failed its probe makes it eligible for a new probe,
-    /// while other unsupported devices stay skipped.
+    /// Verifies unplugging a device that failed the USB Pro probe makes it probed again when
+    /// next opened, while other devices that failed it are still opened without probing.
     #[test]
-    fn handle_hotplug_events_forgets_unplugged_unsupported_device() {
+    fn handle_hotplug_events_forgets_unplugged_probe_failure() {
         let (event_tx, event_rx) = std::sync::mpsc::channel();
         event_tx
             .send(UsbHotplugEvent::DeviceDisconnected("ftdi-1"))
@@ -565,10 +579,10 @@ mod tests {
         drop(event_tx);
 
         let mut devices: HashMap<String, OpenedDevice<&'static str, &'static str>> = HashMap::new();
-        let mut unsupported = HashSet::from(["ftdi-1", "ftdi-2"]);
-        handle_hotplug_events(&mut devices, &mut unsupported, &Some(event_rx));
+        let mut usb_pro_probe_failed = HashSet::from(["ftdi-1", "ftdi-2"]);
+        handle_hotplug_events(&mut devices, &mut usb_pro_probe_failed, &Some(event_rx));
 
-        assert_eq!(unsupported, HashSet::from(["ftdi-2"]));
+        assert_eq!(usb_pro_probe_failed, HashSet::from(["ftdi-2"]));
     }
 
     /// Verifies an unplugged device is closed.

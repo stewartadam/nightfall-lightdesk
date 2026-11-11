@@ -8,8 +8,11 @@ This crate sends DMX to USB DMX interfaces. Each output target names a USB devic
 |-----------|--------|----------------|-----------|
 | uDMX and clones | `16c0:05dc` | Raw USB vendor control transfers | USB ID |
 | Enttec DMX USB Pro and clones | `0403:6001` (FTDI) | The OS serial driver | USB ID, then a widget parameters probe |
+| Open DMX dongles and clones | `0403:6001` (FTDI) | The OS serial driver | USB ID, and no answer to the USB Pro probe |
 
-The automatic `default` device selector, used by the built-in `udmx` target, only takes uDMX interfaces. FTDI chips also sit in Open DMX dongles and generic USB serial adapters, so an FTDI device is only driven when a target selects it explicitly, and only after it answers the USB Pro probe.
+The automatic `default` device selector, used by the built-in `udmx` target, only takes uDMX interfaces. FTDI chips also sit in generic USB serial adapters, so an FTDI device is only driven when a target selects it explicitly. It is driven as a USB Pro when it answers the USB Pro probe and as Open DMX otherwise, since an Open DMX dongle has no firmware to answer anything.
+
+Saved selectors name a device by serial number and physical location together. Targets resolve in one pass (`resolve_usb_dmx_selectors` in `nightfall-io`, mirrored by the I/O Transports panel): a selector first takes the device it names exactly, then falls back to the only attached device with its serial when no other target holds that device. A device with a unique serial follows its target to another port, while clones sharing a serial stay on the targets saved for their ports.
 
 ## Code layout
 
@@ -19,6 +22,7 @@ The automatic `default` device selector, used by the built-in `udmx` target, onl
 | `driver` | Maps USB IDs to interface families and dispatches to the protocol drivers |
 | `udmx` | uDMX protocol driver |
 | `usb_pro` | Enttec DMX USB Pro protocol driver |
+| `open_dmx` | Open DMX protocol driver |
 | `serial_port` | Finds the OS serial port of an FTDI USB device |
 | `service` | Output worker, open-device bookkeeping, and hotplug watcher |
 | `output` | ECS system that hands composed frames to the worker |
@@ -68,9 +72,17 @@ The USB Pro runs its own firmware behind an FTDI FT245R and keeps transmitting t
 | `3` | Get widget parameters | Probe. The request carries the user configuration length (`0`); the reply carries the firmware version, break time, mark-after-break time, and output rate. |
 | `6` | Output only send DMX packet | Start code `0` followed by all 512 channels |
 
-The driver opens the device's serial port, sends the label 3 request, and waits up to 300 ms for the reply, skipping other messages such as received DMX. A device that does not answer is reported as unsupported and is not probed again until it is unplugged, since each probe writes to the device and blocks the worker. A packet the port only partly took is finished before the next one starts, so the widget never sees a cut-off frame. After each DMX packet the driver discards anything the widget sent back unasked.
+The driver opens the device's serial port, sends the label 3 request, and waits up to 300 ms for the reply, skipping other messages such as received DMX. A device that does not answer is handed to the Open DMX driver. A packet the port only partly took is finished before the next one starts, so the widget never sees a cut-off frame. Before each DMX packet the driver discards anything the widget sent back unasked.
 
 Enttec's DMX USB Pro API specification documents the full message set.
+
+## Open DMX protocol
+
+An Open DMX dongle is a bare FTDI UART behind an RS-485 line driver, so the host generates the DMX512 signal: a break, a mark-after-break, then the null start code and 512 channels at 250 kbaud 8N2. Fixtures only hold a frame briefly, so the line must be refreshed continuously. Each open port gets a writer thread that repeats the latest universe; the worker's `write` only replaces that universe.
+
+- The break and mark-after-break are raised with the serial driver's break control. The USB control transfers stretch the break to a few hundred microseconds, which receivers accept.
+- The next break waits until the previous frame has left the wire. Some OS drivers return from a drain once the bytes reach the chip rather than once its FIFO is empty, so the wait also covers the packet's wire time (about 22.6 ms) from when it was written. Frames go out at about 36 Hz.
+- The USB Pro probe sent before falling back to Open DMX puts a few bytes on the line without a break, which DMX receivers ignore.
 
 ## Troubleshooting
 
@@ -78,9 +90,9 @@ Enttec's DMX USB Pro API specification documents the full message set.
 
 Repeated "uDMX USB transfer failed" warnings mean the device may be in a bad state. Unplug the uDMX and plug it in again to reset the USB connection.
 
-### USB serial device did not answer as an Enttec DMX USB Pro
+### A USB Pro is driven as Open DMX
 
-The selected FTDI device is not a USB Pro, or another program was using its serial port during the probe. Close other lighting software, then unplug the device and plug it in again to probe it.
+The "USB DMX device connected" log names the protocol. A USB Pro reported as Open DMX did not answer the probe, usually because another program was using its serial port at the time. Close other lighting software, then unplug the device and plug it in again to probe it.
 
 ### USB DMX device is present but could not be opened
 
@@ -92,3 +104,4 @@ The device is attached but its port could not be opened, usually because another
 - [anyma uDMX firmware](https://github.com/mirdej/udmx)
 - [uDMX protocol documentation](https://www.anyma.ch/research/udmx/)
 - [OLA USB Pro plugin](https://github.com/OpenLightingProject/ola/tree/master/plugins/usbpro)
+- [OLA Open DMX plugin](https://github.com/OpenLightingProject/ola/tree/master/plugins/opendmx)
