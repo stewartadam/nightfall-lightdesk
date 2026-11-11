@@ -194,7 +194,11 @@ const ConnectionOverlay = () => {
 
   // A modal dialog of its own, so it covers the app and any dialog already open.
   return (
-    <Modal isOpen={isOverlayPresented()} closeOnEscape={false}>
+    <Modal
+      isOpen={isOverlayPresented()}
+      closeOnEscape={false}
+      blockBrowserClose
+    >
       <DialogBackdrop
         class={`pointer-events-auto ${
           hasStateChanged()
