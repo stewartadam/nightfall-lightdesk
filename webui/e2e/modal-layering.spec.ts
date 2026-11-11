@@ -207,9 +207,29 @@ test("toasts render above open modal dialogs", async ({ page }, testInfo) => {
     path: testInfo.outputPath("toasts-over-settings.png"),
   });
 
-  // Clicking requires the close button to be the hit target, so it proves the toast is not inert.
-  await later.getByRole("button", { name: "Dismiss notification" }).click();
+  // Escape on a focused toast control stays with the toast instead of closing Settings.
+  const laterDismiss = later.getByRole("button", {
+    name: "Dismiss notification",
+  });
+  await laterDismiss.focus();
+  await page.keyboard.press("Escape");
+  await expect(settingsDialog).toBeVisible();
+  await expect(later).toBeVisible();
+
+  // Enter activates the focused toast control and never reaches the dialog behind it.
+  await page.keyboard.press("Enter");
   await expect(later).toHaveCount(0);
+  await expect(settingsDialog).toBeVisible();
+
+  // Clicking requires the close button to be the hit target, so it proves the toast is not inert.
+  await page.evaluate(() => {
+    (window as any).appStores.pushToast("info", "Clicked over Settings", 0);
+  });
+  const clicked = page
+    .locator('[data-component="Toast"]')
+    .filter({ hasText: "Clicked over Settings" });
+  await clicked.getByRole("button", { name: "Dismiss notification" }).click();
+  await expect(clicked).toHaveCount(0);
   await expect(settingsDialog).toBeVisible();
 
   await page.keyboard.press("Escape");
