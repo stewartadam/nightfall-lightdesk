@@ -26,6 +26,14 @@ const PRECISE_TAIL: Duration = Duration::from_millis(20);
 /// Longest native sleep between stop-flag and period checks while far from the next tick.
 const STOP_POLL_INTERVAL: Duration = Duration::from_millis(20);
 
+/// Longest a worker computes without blocking, promised when it asks for real-time scheduling.
+///
+/// Where Linux grants real time through rtkit or the desktop portal, the kernel enforces this as
+/// the soft `RLIMIT_RTTIME`, whose `SIGXCPU` terminates the process because nothing handles it.
+/// The broker's hard limit (200 ms by default) caps it anyway. A tick blocks in its sleep every
+/// period and its sends take well under a millisecond, so the margin is large.
+const REALTIME_BUDGET: Duration = Duration::from_millis(200);
+
 /// Shared, adjustable tick period for a [`FixedRateWorker`].
 ///
 /// Cloning shares the period, so the owner of the worker can change the rate without respawning
@@ -62,6 +70,10 @@ impl FixedRatePeriod {
 /// finish with `spin_sleep`, which spins the final stretch, so ticks fire within microseconds of
 /// the grid even where native sleep is coarse (Windows). Ticks missed while a callback overran
 /// are skipped rather than run back to back. Dropping the worker shuts it down.
+///
+/// The thread asks for real-time scheduling, so a tick runs as soon as it is due even when every
+/// core is busy. Ordinary priority, even the highest nice level, still waits for a busy thread's
+/// time slice to end, which on Linux costs several milliseconds per tick under load.
 pub struct FixedRateWorker {
     stop: Arc<AtomicBool>,
     join_handle: Option<JoinHandle<()>>,
@@ -81,29 +93,29 @@ impl FixedRateWorker {
     ) -> std::io::Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = Arc::clone(&stop);
-        let join_handle = std::thread::Builder::new()
-            .name(name.into())
-            .spawn(move || {
-                let mut scheduled_period = period.get();
-                let mut next_tick = next_grid_tick(scheduled_period, Instant::now());
-                loop {
-                    match sleep_until(next_tick, &thread_stop, &period, scheduled_period) {
-                        Wake::Stop => break,
-                        Wake::Retime => {
-                            scheduled_period = period.get();
-                            next_tick = next_grid_tick(scheduled_period, Instant::now());
+        let name = name.into();
+        let thread_name = name.clone();
+        let join_handle = std::thread::Builder::new().name(name).spawn(move || {
+            promote_to_realtime(&thread_name);
+            let mut scheduled_period = period.get();
+            let mut next_tick = next_grid_tick(scheduled_period, Instant::now());
+            loop {
+                match sleep_until(next_tick, &thread_stop, &period, scheduled_period) {
+                    Wake::Stop => break,
+                    Wake::Retime => {
+                        scheduled_period = period.get();
+                        next_tick = next_grid_tick(scheduled_period, Instant::now());
+                    }
+                    Wake::Tick => {
+                        if tick().is_break() {
+                            break;
                         }
-                        Wake::Tick => {
-                            if tick().is_break() {
-                                break;
-                            }
-                            scheduled_period = period.get();
-                            next_tick =
-                                next_grid_tick(scheduled_period, next_tick.max(Instant::now()));
-                        }
+                        scheduled_period = period.get();
+                        next_tick = next_grid_tick(scheduled_period, next_tick.max(Instant::now()));
                     }
                 }
-            })?;
+            }
+        })?;
         Ok(Self {
             stop,
             join_handle: Some(join_handle),
@@ -125,6 +137,33 @@ impl FixedRateWorker {
             .is_some_and(|join_handle| !join_handle.is_finished())
     }
 }
+
+/// Moves the calling worker thread to the platform's real-time tier and logs what it got.
+///
+/// A denied promotion leaves the thread at normal priority, where ticks still run but can fall
+/// several milliseconds behind the grid while other threads keep every core busy.
+#[cfg(not(all(target_os = "macos", not(target_arch = "aarch64"))))]
+fn promote_to_realtime(worker: &str) {
+    match gdt_cpus::promote_thread_to_realtime(REALTIME_BUDGET) {
+        Ok(applied) if !applied.degraded() => {
+            tracing::info!(worker, priority = %applied, "Worker runs at real-time priority");
+        }
+        Ok(applied) => tracing::warn!(
+            worker,
+            priority = %applied,
+            "Real-time priority was denied; ticks may run late while the CPU is busy"
+        ),
+        Err(error) => tracing::warn!(
+            worker,
+            %error,
+            "Could not request real-time priority; ticks may run late while the CPU is busy"
+        ),
+    }
+}
+
+/// Leaves the worker at the OS default priority on Intel macOS, which gdt-cpus does not support.
+#[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
+fn promote_to_realtime(_worker: &str) {}
 
 /// Why a worker's wait for its next tick ended.
 enum Wake {

@@ -80,7 +80,7 @@ nightfall-fixture-model = { path = "../fixture-model" }
 
 # gdt-cpus deliberately rejects Intel macOS; that target uses OS-default scheduling.
 [target.'cfg(not(all(target_os = "macos", not(target_arch = "aarch64"))))'.dependencies]
-gdt-cpus = "0.2606.1"
+gdt-cpus.workspace = true
 
 [features]
 default = ["full", "beat-detection", "telemetry"]
