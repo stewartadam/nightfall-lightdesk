@@ -7191,7 +7191,9 @@ dependencies = [
 name = "open-fixture-library"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "indexmap 2.14.2",
  "nightfall-workspace-hack",
+ "regex",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

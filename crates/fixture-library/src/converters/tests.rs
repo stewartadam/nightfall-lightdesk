@@ -400,9 +400,8 @@ mod ofl_tests {
             },
             "matrix": {
                 "pixelKeys": [
-                    ["1", "2", "3", "4"]
-                ],
-                "pixelCount": [4, 1, 1]
+                    [["1", "2", "3", "4"]]
+                ]
             },
             "templateChannels": {
                 "$pixelKey Red": {
@@ -628,9 +627,10 @@ mod ofl_tests {
         );
     }
 
-    /// Verifies OFL focus metadata turns raw position channels into degree-valued parameters.
+    /// Verifies Pan and Tilt take their degree range from the capabilities' angles, a
+    /// reversed range inverts the parameter, and percentage angles stay unitless.
     #[test]
-    fn test_position_channels_use_declared_focus_ranges() {
+    fn position_channels_use_capability_angles() {
         use open_fixture_library::OflFixture;
 
         use super::super::ofl::*;
@@ -639,52 +639,179 @@ mod ofl_tests {
             "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture.json",
             "name": "Test Moving Head",
             "categories": ["Moving Head"],
-            "meta": {
-                "authors": ["Test"],
-                "createDate": "2024-01-01",
-                "lastModifyDate": "2024-01-01"
-            },
-            "physical": {
-                "focus": {
-                    "type": "Head",
-                    "panMax": 540,
-                    "tiltMax": 270
-                }
-            },
+            "meta": { "authors": ["Test"], "createDate": "2024-01-01", "lastModifyDate": "2024-01-01" },
             "availableChannels": {
                 "Pan": {
-                    "dmxValueResolution": 16,
-                    "capabilities": [{ "type": "Pan", "dmxRange": [0, 65535] }]
+                    "fineChannelAliases": ["Pan fine"],
+                    "dmxValueResolution": "16bit",
+                    "capability": { "type": "Pan", "angleStart": "0deg", "angleEnd": "540deg" }
                 },
                 "Tilt": {
-                    "dmxValueResolution": 16,
-                    "capabilities": [{ "type": "Tilt", "dmxRange": [0, 65535] }]
+                    "fineChannelAliases": ["Tilt fine"],
+                    "capabilities": [
+                        { "dmxRange": [0, 32767], "type": "Tilt", "angleStart": "270deg", "angleEnd": "135deg" },
+                        { "dmxRange": [32768, 65535], "type": "Tilt", "angleStart": "135deg", "angleEnd": "0deg" }
+                    ]
+                },
+                "Pan 2": {
+                    "capability": { "type": "Pan", "angleStart": "0%", "angleEnd": "100%" }
                 }
             },
             "modes": [{
                 "name": "16-bit",
-                "physical": {
-                    "focus": {
-                        "type": "Head",
-                        "panMax": 360
-                    }
-                },
-                "channels": ["Pan", "Tilt"]
+                "channels": ["Pan", "Pan fine", "Tilt", "Tilt fine", "Pan 2"]
             }]
         }"#;
 
         let ofl = OflFixture::from_json(fixture_json).expect("fixture JSON should parse");
         let (fixture, _) =
             convert_ofl_to_fixture(&ofl, "16-bit", 1).expect("fixture should convert");
-        let pan = &fixture.elements[0].parameters[0];
-        let tilt = &fixture.elements[0].parameters[1];
+        let [pan, tilt, relative_pan] = &fixture.elements[0].parameters[..] else {
+            panic!("expected three parameters");
+        };
 
         assert_eq!(pan.native_unit, ParameterUnit::Degrees);
-        assert_eq!(pan.logical_min(), -180.0);
-        assert_eq!(pan.logical_max(), 180.0);
+        assert_eq!(pan.resolution, DmxValueResolution::Fine);
+        assert_eq!(pan.logical_min(), -270.0);
+        assert_eq!(pan.logical_max(), 270.0);
+        assert!(!pan.is_inverted);
         assert_eq!(tilt.native_unit, ParameterUnit::Degrees);
         assert_eq!(tilt.logical_min(), -135.0);
         assert_eq!(tilt.logical_max(), 135.0);
+        assert!(tilt.is_inverted);
+        assert_eq!(relative_pan.native_unit, ParameterUnit::Percent);
+    }
+
+    /// Verifies a channel with a single `capability` takes its attribute from it, and that
+    /// declared default and highlight values reach the parameter at the mode's width.
+    #[test]
+    fn single_capability_and_default_values_convert() {
+        use open_fixture_library::OflFixture;
+
+        let fixture_json = r#"{
+            "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture.json",
+            "name": "Test Par",
+            "categories": ["Color Changer"],
+            "meta": { "authors": ["Test"], "createDate": "2024-01-01", "lastModifyDate": "2024-01-01" },
+            "availableChannels": {
+                "Ch A": {
+                    "fineChannelAliases": ["Ch A fine"],
+                    "defaultValue": 32768,
+                    "highlightValue": "100%",
+                    "capability": { "type": "ColorIntensity", "color": "Red" }
+                },
+                "Ch B": { "capability": { "type": "Intensity" } }
+            },
+            "modes": [
+                { "name": "16-bit", "channels": ["Ch A", "Ch A fine", "Ch B"] },
+                { "name": "8-bit", "channels": ["Ch A", "Ch B"] }
+            ]
+        }"#;
+        let ofl = OflFixture::from_json(fixture_json).expect("fixture JSON should parse");
+
+        let (fixture, _) = convert_ofl_to_fixture(&ofl, "16-bit", 1).expect("16-bit mode");
+        let red = &fixture.elements[0].parameters[0];
+        assert_eq!(red.attribute, Attribute::Red);
+        assert_eq!(red.default_dmx, Some(32768));
+        assert_eq!(red.highlight_dmx, Some(65535));
+        let dimmer = &fixture.elements[0].parameters[1];
+        assert_eq!(dimmer.attribute, Attribute::Intensity);
+        assert_eq!((dimmer.default_dmx, dimmer.highlight_dmx), (None, None));
+
+        let (fixture, _) = convert_ofl_to_fixture(&ofl, "8-bit", 1).expect("8-bit mode");
+        let red = &fixture.elements[0].parameters[0];
+        assert_eq!(red.default_dmx, Some(128));
+        assert_eq!(red.highlight_dmx, Some(255));
+    }
+
+    /// Verifies switching channel aliases become parameters of the channel their trigger
+    /// selects by default, falling back to the first channel when the default selects
+    /// none, and that a fine alias listed beside a switching alias widens it.
+    #[test]
+    fn switching_aliases_resolve_to_their_default_channel() {
+        use open_fixture_library::OflFixture;
+
+        let fixture_json = r#"{
+            "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture.json",
+            "name": "Test Mover",
+            "categories": ["Moving Head"],
+            "meta": { "authors": ["Test"], "createDate": "2024-01-01", "lastModifyDate": "2024-01-01" },
+            "availableChannels": {
+                "Mode": {
+                    "capabilities": [
+                        { "dmxRange": [0, 127], "type": "Generic", "switchChannels": { "Red / Speed": "Red", "Macro": null } },
+                        { "dmxRange": [128, 255], "type": "Generic", "switchChannels": { "Red / Speed": "Speed", "Macro": "Shutter" } }
+                    ]
+                },
+                "Red": {
+                    "fineChannelAliases": ["Red fine"],
+                    "capability": { "type": "ColorIntensity", "color": "Red" }
+                },
+                "Speed": { "capability": { "type": "Speed" } },
+                "Shutter": { "capability": { "type": "ShutterStrobe" } }
+            },
+            "modes": [{ "name": "5-channel", "channels": ["Mode", "Red / Speed", "Red fine", "Macro", "Shutter"] }]
+        }"#;
+        let ofl = OflFixture::from_json(fixture_json).expect("fixture JSON should parse");
+        let (fixture, _) = convert_ofl_to_fixture(&ofl, "5-channel", 1).expect("mode");
+        let main = "Main".to_string();
+        assert_eq!(
+            slot_layout(&fixture),
+            vec![
+                (
+                    main.clone(),
+                    Attribute::Custom {
+                        label: "Generic".into()
+                    },
+                    vec![1]
+                ),
+                (main.clone(), Attribute::Red, vec![2, 3]),
+                (main.clone(), Attribute::StrobeShutter, vec![4]),
+                (main, Attribute::StrobeShutter, vec![5]),
+            ]
+        );
+    }
+
+    /// Verifies a template-only matrix built from `pixelCount` and `matrixChannels`
+    /// inserts converts to one element per pixel and per pixel group, on the addresses
+    /// the inserts lay out.
+    #[test]
+    fn matrix_inserts_create_pixel_and_group_elements() {
+        use open_fixture_library::OflFixture;
+
+        let fixture_json = r#"{
+            "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture.json",
+            "name": "Test Panel",
+            "categories": ["Matrix"],
+            "meta": { "authors": ["Test"], "createDate": "2024-01-01", "lastModifyDate": "2024-01-01" },
+            "matrix": {
+                "pixelCount": [2, 2, 1],
+                "pixelGroups": { "Top": { "y": ["=1"] } }
+            },
+            "templateChannels": {
+                "Dimmer $pixelKey": { "capability": { "type": "Intensity" } },
+                "Red $pixelKey": { "capability": { "type": "ColorIntensity", "color": "Red" } }
+            },
+            "modes": [{
+                "name": "Grid",
+                "channels": [
+                    { "insert": "matrixChannels", "repeatFor": "eachPixelGroup", "channelOrder": "perPixel", "templateChannels": ["Dimmer $pixelKey"] },
+                    { "insert": "matrixChannels", "repeatFor": "eachPixelYXZ", "channelOrder": "perChannel", "templateChannels": ["Red $pixelKey", null] }
+                ]
+            }]
+        }"#;
+        let ofl = OflFixture::from_json(fixture_json).expect("fixture JSON should parse");
+        let (fixture, _) = convert_ofl_to_fixture(&ofl, "Grid", 1).expect("grid mode");
+        assert_eq!(
+            slot_layout(&fixture),
+            vec![
+                ("Pixel 1-1".into(), Attribute::Red, vec![2]),
+                ("Pixel 1-2".into(), Attribute::Red, vec![4]),
+                ("Pixel 2-1".into(), Attribute::Red, vec![3]),
+                ("Pixel 2-2".into(), Attribute::Red, vec![5]),
+                ("Top".into(), Attribute::Intensity, vec![1]),
+            ]
+        );
     }
 
     /// Returns each parameter's attribute and explicit footprint slots, element by element.
@@ -780,7 +907,7 @@ mod ofl_tests {
             "name": "Test Bar",
             "categories": ["Pixel Bar"],
             "meta": { "authors": ["Test"], "createDate": "2024-01-01", "lastModifyDate": "2024-01-01" },
-            "matrix": { "pixelKeys": [["1", "2"]], "pixelCount": [2, 1, 1] },
+            "matrix": { "pixelKeys": [[["1", "2"]]] },
             "templateChannels": {
                 "Red $pixelKey": { "capabilities": [{ "type": "ColorIntensity", "color": "Red", "dmxRange": [0, 255] }] },
                 "Green $pixelKey": { "capabilities": [{ "type": "ColorIntensity", "color": "Green", "dmxRange": [0, 255] }] },

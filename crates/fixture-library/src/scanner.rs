@@ -93,7 +93,7 @@ impl FixtureScanner {
 
         match extension.as_deref() {
             Some("gdtf") => self.parse_gdtf(path).map(Some),
-            Some("json") if is_visualizer_definition(path)? => Ok(None),
+            Some("json") if is_non_fixture_json(path)? => Ok(None),
             Some("json") => self.parse_ofl(path).map(Some),
             _ => Ok(None),
         }
@@ -133,13 +133,21 @@ impl FixtureScanner {
     }
 }
 
-/// Identify Nightfall visualizer JSON without accepting it as an OFL profile.
-/// Files declaring an OFL schema always go through the OFL parser so malformed
+/// Identify JSON files that are not fixture profiles: Nightfall visualizer definitions
+/// and OFL redirects, which only point a renamed fixture at its new file.
+/// Other files declaring an OFL schema always go through the OFL parser so malformed
 /// fixture definitions still produce the scanner's normal warning.
-fn is_visualizer_definition(path: &Path) -> Result<bool> {
+fn is_non_fixture_json(path: &Path) -> Result<bool> {
     let content = std::fs::read_to_string(path)?;
     let definition: serde_json::Value =
         serde_json::from_str(&content).map_err(open_fixture_library::OflError::from)?;
+
+    if definition["$schema"]
+        .as_str()
+        .is_some_and(|schema| schema.ends_with("/fixture-redirect.json"))
+    {
+        return Ok(true);
+    }
 
     Ok(definition.get("$schema").is_none()
         && definition["schemaVersion"].is_u64()
@@ -197,6 +205,24 @@ mod tests {
         assert_eq!(profiles[0].make, "Test Maker");
         assert_eq!(profiles[0].model, "Test Fixture");
         assert_eq!(profiles[0].file_path, ofl_path);
+    }
+
+    /// OFL redirect files, which only point a renamed fixture at its new file, are skipped
+    /// instead of being reported as fixtures that fail to load.
+    #[test]
+    fn scan_skips_ofl_redirects() {
+        let library = tempfile::tempdir().unwrap();
+        let redirect = serde_json::json!({
+            "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture-redirect.json",
+            "name": "ts60",
+            "redirectTo": "cameo/ts-60-rgbw",
+            "reason": "FixtureRenamed"
+        });
+        std::fs::write(library.path().join("cameo@ts60.json"), redirect.to_string()).unwrap();
+
+        let scan = FixtureScanner::new(library.path()).scan().unwrap();
+        assert!(scan.profiles.is_empty());
+        assert!(scan.unloadable.is_empty());
     }
 
     /// A scan reports each definition file that fails to load by name with its parse error,
