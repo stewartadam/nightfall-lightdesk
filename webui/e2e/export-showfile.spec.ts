@@ -71,6 +71,9 @@ test("exports named copies from the menu, palette, and native File menu", async 
   await expect(
     dialog.getByRole("radio", { name: "All references", exact: true }),
   ).toBeChecked();
+  await expect(
+    dialog.getByRole("radio", { name: "Showfile only", exact: true }),
+  ).toHaveAccessibleDescription(/without supporting files/);
   await expect(dialog.getByLabel("Export name")).toHaveValue(/-export$/);
   await dialog.getByLabel("Export name").fill("Tour");
   await page.screenshot({ path: testInfo.outputPath("export-showfile.png") });
