@@ -66,12 +66,12 @@ pub mod prelude {
         SACN_SOURCE_TIMEOUT, SacnDelivery, SacnOutputIdentity, TransportRuntimePolicy,
         UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UniverseSourceMerge, UsbDmxDeviceIdentity,
         UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets, dmx_output_interval,
-        get_available_interfaces, get_default_interface, is_reserved_network_dmx_target_id,
-        is_reserved_usb_dmx_target_id, is_valid_network_dmx_target_id,
-        output_transport_to_target_id, resolve_configured_network_interface,
-        resolve_network_interface_status, resolve_usb_dmx_selectors, sanitize_dmx_output_rate_hz,
-        sanitize_input_signal_loss_timeout, sanitize_sacn_sync_universe, usb_dmx_device_label,
-        usb_dmx_device_selector,
+        get_available_interfaces, get_default_interface, ipv4_directed_broadcast,
+        is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
+        is_valid_network_dmx_target_id, output_transport_to_target_id,
+        resolve_configured_network_interface, resolve_network_interface_status,
+        resolve_usb_dmx_selectors, sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout,
+        sanitize_sacn_sync_universe, usb_dmx_device_label, usb_dmx_device_selector,
     };
     #[cfg(feature = "plugin")]
     pub use crate::{IO_SETTINGS_SECTION, IoPlugin, IoSettingsCommand, IoStateSync};
@@ -84,7 +84,7 @@ pub use settings::{
     NetworkInterfaceState, NetworkInterfaceStatus, TransportRuntimePolicy, UsbDmxDeviceInfo,
     default_dmx_output_rate_hz, default_input_signal_loss_timeout, default_network_input_enabled,
     default_network_output_enabled, default_sacn_sync_universe, default_usb_output_enabled,
-    dmx_output_interval, get_available_interfaces, get_default_interface,
+    dmx_output_interval, get_available_interfaces, get_default_interface, ipv4_directed_broadcast,
     resolve_configured_network_interface, resolve_network_interface_status,
     sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, sanitize_sacn_sync_universe,
     usb_dmx_device_label,

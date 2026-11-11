@@ -16,7 +16,7 @@ Art-Net and sACN targets are destinations for DMX data. Connect them to the appr
 
 Nightfall sends every output universe once per output cycle, one after another. Each node applies its universe as soon as the packet arrives, so a pixel effect spread over several universes can briefly show parts of two different frames. Sync fixes this on nodes that support it. Nightfall sends a sync packet after each cycle, and those nodes hold new data until it arrives, then update all their outputs at once. Turn it on in **Settings > Network > Output**:
 
-- **Art-Net sync** broadcasts an ArtSync packet after each cycle. Nodes without sync support ignore it. A node that supports it goes back to applying data on arrival a few seconds after ArtSync stops.
+- **Art-Net sync** broadcasts an ArtSync packet on the output interface's subnet after each cycle. Art-Net only allows ArtSync as a broadcast, so it doesn't reach nodes behind a router. Nodes without sync support ignore it. A node that supports it goes back to applying data on arrival a few seconds after ArtSync stops.
 - **sACN sync** marks sACN data for synchronization on the **sACN sync universe** (1 by default) and sends the sync packet there. Receivers join that universe on their own. Unicast destinations get their own copy of the sync packet.
 
 Leave sync off unless your nodes support it. A receiver that supports sync holds data until the sync packet arrives, so if the network drops sync packets, for example when a switch filters the sync universe's multicast group, its output freezes or stutters.

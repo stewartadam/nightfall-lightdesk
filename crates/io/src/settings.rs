@@ -395,6 +395,28 @@ pub fn get_available_interfaces() -> Vec<NetworkInterfaceInfo> {
     Vec::new()
 }
 
+/// Returns the directed broadcast address of the subnet a host interface holds `address` on,
+/// such as 192.168.1.255 for 192.168.1.20/24.
+///
+/// Art-Net asks controllers to broadcast to this address rather than to the limited broadcast
+/// address 255.255.255.255. Returns `None` when no interface holds `address`, or when its prefix
+/// is /31 or /32 and so has no broadcast address.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn ipv4_directed_broadcast(address: std::net::Ipv4Addr) -> Option<std::net::Ipv4Addr> {
+    netdev::get_interfaces()
+        .into_iter()
+        .flat_map(|interface| interface.ipv4)
+        .find(|network| network.addr() == address)
+        .filter(|network| network.prefix_len() < 31)
+        .map(|network| network.broadcast())
+}
+
+/// Returns no broadcast address when host interfaces cannot be read in WASM.
+#[cfg(target_arch = "wasm32")]
+pub fn ipv4_directed_broadcast(_address: std::net::Ipv4Addr) -> Option<std::net::Ipv4Addr> {
+    None
+}
+
 /// Gets the current default interface when it has a non-loopback IPv4 address.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn get_default_interface() -> Option<NetworkInterfaceInfo> {
@@ -497,6 +519,28 @@ pub fn usb_dmx_device_label(
 mod tests {
     use super::*;
     use crate::{UDMX_PRODUCT_ID, UDMX_VENDOR_ID};
+
+    /// The broadcast address comes from the subnet of the interface holding the address, and an
+    /// address no interface holds has none.
+    #[test]
+    fn directed_broadcast_follows_the_interface_subnet() {
+        use std::net::Ipv4Addr;
+
+        assert_eq!(
+            ipv4_directed_broadcast(Ipv4Addr::new(203, 0, 113, 77)),
+            None
+        );
+        let Some((address, network)) = netdev::get_interfaces()
+            .into_iter()
+            .flat_map(|interface| interface.ipv4)
+            .find(|network| network.prefix_len() < 31)
+            .map(|network| (network.addr(), network))
+        else {
+            // No interface with a broadcast-capable subnet on this host.
+            return;
+        };
+        assert_eq!(ipv4_directed_broadcast(address), Some(network.broadcast()));
+    }
 
     /// Verifies process permissions cap enabled showfile transport preferences.
     #[test]

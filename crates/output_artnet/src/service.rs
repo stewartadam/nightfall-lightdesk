@@ -266,6 +266,9 @@ fn next_sequence(previous: u8) -> u8 {
 }
 
 /// UDP socket and broadcast target used by the Art-Net output worker.
+///
+/// Broadcasts go to the directed broadcast address of the bound interface's subnet, because
+/// Art-Net asks controllers not to use the limited broadcast address 255.255.255.255.
 struct ArtNetSocket {
     socket: UdpSocket,
     broadcast_dest: SocketAddrV4,
@@ -280,10 +283,11 @@ struct ArtNetSocket {
 }
 
 impl ArtNetSocket {
-    fn new(socket: UdpSocket) -> Self {
+    /// Wraps `socket`, sending broadcast ArtDmx and ArtSync packets to `broadcast_ip`.
+    fn new(socket: UdpSocket, broadcast_ip: Ipv4Addr) -> Self {
         Self {
             socket,
-            broadcast_dest: SocketAddrV4::new(Ipv4Addr::BROADCAST, ARTNET_PORT),
+            broadcast_dest: SocketAddrV4::new(broadcast_ip, ARTNET_PORT),
             sequences: HashMap::new(),
         }
     }
@@ -447,13 +451,21 @@ fn init_socket(binding: ArtNetOutputBinding) -> Option<ArtNetSocket> {
         return None;
     }
 
+    let broadcast_ip = nightfall_io::ipv4_directed_broadcast(bind_ip).unwrap_or_else(|| {
+        tracing::warn!(
+            bind_ip = %bind_ip,
+            "Could not find the subnet broadcast address; Art-Net broadcasts use 255.255.255.255"
+        );
+        Ipv4Addr::BROADCAST
+    });
     tracing::info!(
         interface_name = ?binding.interface_name,
         bind_ip = %bind_ip,
+        broadcast_ip = %broadcast_ip,
         "Starting Art-Net output"
     );
 
-    Some(ArtNetSocket::new(socket))
+    Some(ArtNetSocket::new(socket, broadcast_ip))
 }
 
 /// Process-lifetime Art-Net output service host.
@@ -551,7 +563,10 @@ mod tests {
 
     /// Opens an output socket on loopback so frames can be sent without a configured interface.
     fn loopback_socket() -> ArtNetSocket {
-        ArtNetSocket::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind loopback"))
+        ArtNetSocket::new(
+            UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind loopback"),
+            Ipv4Addr::BROADCAST,
+        )
     }
 
     /// Sends one all-zero frame for `universe` to the loopback address.
