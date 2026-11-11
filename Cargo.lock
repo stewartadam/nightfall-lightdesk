@@ -292,6 +292,7 @@ dependencies = [
  "nightfall-references",
  "nightfall-scene-objects",
  "nightfall-selection-runtime",
+ "nightfall-service-host",
  "nightfall-showfile",
  "nightfall-tempo",
  "nightfall-timecode",
@@ -2509,7 +2510,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e0b1fab2ae45819af2d0731d60f2afe17227ebb1a1538a236da84c93e9a60162"
 dependencies = [
  "dispatch2",
- "nix",
+ "nix 0.31.3",
  "windows-sys 0.61.2",
 ]
 
@@ -4274,6 +4275,16 @@ dependencies = [
 
 [[package]]
 name = "io-kit-sys"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "617ee6cf8e3f66f3b4ea67a4058564628cde41901316e19f559e14c7c72c5e7b"
+dependencies = [
+ "core-foundation-sys",
+ "mach2 0.4.3",
+]
+
+[[package]]
+name = "io-kit-sys"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06d3a048d09fbb6597dbf7c69f40d14df4a49487db1487191618c893fc3b1c26"
@@ -4857,6 +4868,15 @@ checksum = "d3d25b0e0b648a86960ac23b7ad4abb9717601dec6f66c165f5b037f3f03065f"
 
 [[package]]
 name = "mach2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d640282b302c0bb0a2a8e0233ead9035e3bed871f0b7e81fe4a1ec829765db44"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "mach2"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a1b95cd5421ec55b445b5ae102f5ea0e768de1f82bd3001e11f426c269c3aea"
@@ -5223,7 +5243,7 @@ dependencies = [
  "android-build",
  "jni 0.22.4",
  "ndk-context",
- "nix",
+ "nix 0.31.3",
  "windows",
 ]
 
@@ -6104,6 +6124,7 @@ dependencies = [
  "nightfall-workspace-hack",
  "nusb",
  "serde",
+ "serialport",
  "tokio",
  "tracing",
  "typeshare",
@@ -6251,8 +6272,10 @@ dependencies = [
 name = "nightfall-service-host"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "gdt-cpus",
  "nightfall-workspace-hack",
  "spin_sleep",
+ "tracing",
 ]
 
 [[package]]
@@ -6332,6 +6355,7 @@ dependencies = [
 name = "nightfall-timeline"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "async-channel",
  "axum",
  "bevy_app",
  "bevy_diagnostic",
@@ -6505,7 +6529,7 @@ dependencies = [
  "log",
  "memchr",
  "mio",
- "nix",
+ "nix 0.31.3",
  "num-complex",
  "num-integer",
  "num-rational",
@@ -6527,6 +6551,7 @@ dependencies = [
  "reqwest",
  "rustix",
  "schemars 0.8.22",
+ "scopeguard",
  "semver",
  "serde",
  "serde_core",
@@ -6561,10 +6586,22 @@ dependencies = [
  "winapi",
  "windows",
  "windows-core",
+ "windows-sys 0.52.0",
  "windows-sys 0.61.2",
  "winnow 1.0.5",
  "zerocopy",
  "zlib-rs",
+]
+
+[[package]]
+name = "nix"
+version = "0.26.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "598beaf3cc6fdd9a5dfb1630c2800c7acd31df7aaf0f565796fba2b53ca1af1b"
+dependencies = [
+ "bitflags 1.3.2",
+ "cfg-if",
+ "libc",
 ]
 
 [[package]]
@@ -6782,7 +6819,7 @@ dependencies = [
  "core-foundation",
  "core-foundation-sys",
  "futures-core",
- "io-kit-sys",
+ "io-kit-sys 0.5.0",
  "js-sys",
  "linux-raw-sys",
  "log",
@@ -7359,7 +7396,7 @@ checksum = "9cf20a545b305cf1da722b236b5155c9bb35f1d5ceb28c048bd96ca842f41b5b"
 dependencies = [
  "android_system_properties",
  "log",
- "nix",
+ "nix 0.31.3",
  "objc2",
  "objc2-foundation",
  "objc2-ui-kit",
@@ -8953,6 +8990,24 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "serialport"
+version = "4.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ba5f8f29aa20853c4e3e85a33ec580eb66be1f057142e77a333834a318bacf2"
+dependencies = [
+ "bitflags 2.13.2",
+ "cfg-if",
+ "core-foundation",
+ "core-foundation-sys",
+ "io-kit-sys 0.4.1",
+ "mach2 0.4.3",
+ "nix 0.26.4",
+ "scopeguard",
+ "unescaper",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -10587,6 +10642,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "unescaper"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7285e83a80ce76f5e7bce79fa41f68d78ba62d1003cf27bf748ab24413808cf4"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "unicase"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12214,7 +12278,7 @@ dependencies = [
  "indexmap 2.14.2",
  "libc",
  "memchr",
- "nix",
+ "nix 0.31.3",
  "typed-path",
  "windows-sys 0.61.2",
  "zopfli",

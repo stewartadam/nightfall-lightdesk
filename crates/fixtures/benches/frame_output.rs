@@ -52,7 +52,7 @@ impl TransportShape {
             Self::ArtNet => OutputTransport::ArtNet {
                 mode: ArtNetDelivery::Broadcast,
             },
-            Self::Udmx => OutputTransport::Udmx {
+            Self::Udmx => OutputTransport::Usb {
                 device: "bench-udmx-device".to_owned(),
             },
         }

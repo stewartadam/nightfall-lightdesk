@@ -104,6 +104,7 @@ fn setup_world() -> World {
     world.insert_resource(CommandTracker::default());
     world.insert_resource(CurrentShowfile::default());
     world.insert_resource(ShowfileCleanSnapshotHash::default());
+    world.insert_resource(DraftSaveStatus::default());
     world
 }
 

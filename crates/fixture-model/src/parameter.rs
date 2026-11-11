@@ -529,23 +529,21 @@ impl ParameterMetadata {
     /// Returns the DMX integer at this parameter's resolution that a logical
     /// `value` outputs, the forward mapping of [`Self::logical_value_from_dmx`].
     pub fn dmx_value(&self, value: ParameterDmxValue) -> u32 {
+        (self.output_level(value) * self.resolution.dmx_max() as ParameterDmxValue).round() as u32
+    }
+
+    /// Returns the 0-1 level a logical `value` outputs, before rounding to a
+    /// DMX integer: its position in the logical range after calibration
+    /// offset and inversion, so an inverted channel at its logical maximum
+    /// outputs level 0.
+    pub fn output_level(&self, value: ParameterDmxValue) -> ParameterDmxValue {
         let min = self.logical_min();
         let range = self.logical_max() - min;
-        let normalized = if range > 0.0 {
+        if range > 0.0 {
             ((self.raw_value(value) - min) / range).clamp(0.0, 1.0)
         } else {
             0.0
-        };
-        (normalized * self.resolution.dmx_max() as ParameterDmxValue).round() as u32
-    }
-
-    /// Returns a logical value as a 0-1 level of this parameter's logical range.
-    pub fn level(&self, value: ParameterDmxValue) -> ParameterDmxValue {
-        let range = self.logical_range();
-        if range <= 0.0 {
-            return 0.0;
         }
-        ((value - self.logical_min()) / range).clamp(0.0, 1.0)
     }
 
     /// Returns the minimum logical value operators should use for this parameter.

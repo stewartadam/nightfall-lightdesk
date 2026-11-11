@@ -8,7 +8,18 @@ I/O Transports configures the physical transport targets used by patch routing. 
 
 **Network input** and **Network output** enable the respective network DMX directions. Add an output target with a unique ID, select its protocol and delivery mode, and enter an IP when that mode requires one. Review the validation/status cell before adding it. The interface summary helps identify the available network adapters.
 
+When several devices send the same input universe, Nightfall combines them the way lighting nodes do instead of following whichever packet arrived last. For sACN, the sender with the highest priority wins, and senders sharing that priority merge highest-takes-precedence per channel. A sender that goes quiet for 2.5 seconds, or stops its stream, drops out so the next one takes over: a backup console at a lower priority takes control when the main console stops. Art-Net carries no priority, so all Art-Net senders on a universe merge highest-takes-precedence, and one that stays quiet for 10 seconds drops out.
+
 Art-Net and sACN targets are destinations for DMX data. Connect them to the appropriate console channels through [Patch](patch.md) DMX routes. A configured target does not by itself route every universe to it. Check send failures and output status when diagnosing a destination.
+
+### Universe sync
+
+Nightfall sends every output universe once per output cycle, one after another. Each node applies its universe as soon as the packet arrives, so a pixel effect spread over several universes can briefly show parts of two different frames. Sync fixes this on nodes that support it. Nightfall sends a sync packet after each cycle, and those nodes hold new data until it arrives, then update all their outputs at once. Turn it on in **Settings > Network > Output**:
+
+- **Art-Net sync** broadcasts an ArtSync packet after each cycle. Nodes without sync support ignore it. A node that supports it goes back to applying data on arrival a few seconds after ArtSync stops.
+- **sACN sync** marks sACN data for synchronization on the **sACN sync universe** (1 by default) and sends the sync packet there. Receivers join that universe on their own. Unicast destinations get their own copy of the sync packet.
+
+Leave sync off unless your nodes support it. A receiver that supports sync holds data until the sync packet arrives, so if the network drops sync packets, for example when a switch filters the sync universe's multicast group, its output freezes or stutters.
 
 ## External control
 
@@ -31,5 +42,13 @@ The PIN keeps casual visitors on your network out; it does not protect against a
 ## USB
 
 Choose a detected USB device for an output target, give the target a unique ID, and enable **USB output** when ready. Review Missing device or duplicate-device status before attempting output. If no device is listed, check the physical connection and host access to the device.
+
+Nightfall supports these USB DMX interfaces:
+
+- **uDMX** and compatible clones. The built-in `udmx` target uses the first uDMX it finds.
+- **Enttec DMX USB Pro** and compatible clones. These appear as an FTDI USB serial adapter. Add a target for the device; Nightfall checks whether it is a USB Pro before sending DMX to it.
+- **Open DMX** dongles (Enttec Open DMX USB and clones such as the DoReMiDi USB-DMX). These also appear as an FTDI USB serial adapter. An FTDI device that does not answer as a USB Pro is driven as Open DMX, so only select one that is a DMX interface, not a generic USB serial cable.
+
+A target remembers both the serial number and the USB port of its device. Some clones all ship with the same serial number; keep each of those plugged into the same USB port (and hub) so every target finds its own dongle. A device whose serial number is unique still follows its target to another port.
 
 Keep physical output off while rehearsing changes that should only affect the visualizer. Test one fixture and destination first, then expand the routing. Use [Console DMX](console-dmx.md) to separate programming problems from transport problems.

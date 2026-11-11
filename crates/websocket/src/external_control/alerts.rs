@@ -111,6 +111,7 @@ mod tests {
             level,
             message,
             actions,
+            ..
         } = notification
         else {
             panic!("expected a toast, got {notification:?}");

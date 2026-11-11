@@ -15,8 +15,10 @@ import {
   frontmostDialog,
   hasOpenDialog,
   isInsideLayerAbove,
+  notifyOverlayHostChanged,
   registerDialog,
   registerDismissableLayer,
+  watchOverlayHost,
 } from "./dialog-stack";
 
 /** Builds a dialog entry whose root element contains only the given nodes. */
@@ -137,4 +139,30 @@ test("presses inside layers stacked above are not outside presses", () => {
     removeNested();
     removeLower();
   }
+});
+
+/**
+ * Verifies overlay-host listeners hear about a dialog once per task, only after
+ * it has joined the stack, and again once it leaves, so a toast host or guide
+ * card never re-homes against a half-registered dialog.
+ */
+test("overlay host listeners run once per change after the stack settles", async () => {
+  const seen: boolean[] = [];
+  const stop = watchOverlayHost(() => seen.push(hasOpenDialog()));
+  try {
+    notifyOverlayHostChanged();
+    const removeDialog = registerDialog(dialogEntry());
+    assert.deepEqual(seen, []);
+    await Promise.resolve();
+    assert.deepEqual(seen, [true]);
+
+    removeDialog();
+    await Promise.resolve();
+    assert.deepEqual(seen, [true, false]);
+  } finally {
+    stop();
+  }
+  notifyOverlayHostChanged();
+  await Promise.resolve();
+  assert.deepEqual(seen, [true, false]);
 });

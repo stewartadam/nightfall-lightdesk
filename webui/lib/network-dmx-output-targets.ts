@@ -325,8 +325,8 @@ export function outputTransportKey(transport: types.OutputTransport): string {
         return `ArtNet:Unicast:${transport.data.mode.data.ip}`;
       }
       return "ArtNet:Broadcast";
-    case "Udmx":
-      return `Udmx:${transport.data.device}`;
+    case "Usb":
+      return `Usb:${transport.data.device}`;
     case "Disabled":
       return "Disabled";
   }
@@ -353,7 +353,7 @@ function outputTransportForUsbDmxTargetId(
   const target = normalized.targets.find(
     (candidate) => candidate.id === targetId,
   );
-  return target ? { type: "Udmx", data: { device: target.device } } : null;
+  return target ? { type: "Usb", data: { device: target.device } } : null;
 }
 
 /** Resolves a named output target to a concrete transport across output types. */

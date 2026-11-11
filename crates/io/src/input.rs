@@ -8,6 +8,8 @@
 
 //! Transport input contracts shared by protocol adapters and routing consumers.
 
+mod source_merge;
+
 use std::{
     collections::{HashMap, VecDeque},
     net::SocketAddr,
@@ -19,6 +21,8 @@ use nightfall_dmx::MAX_CHANNELS_PER_UNIVERSE;
 use serde::{Deserialize, Serialize};
 use web_time::Instant;
 
+pub use self::source_merge::{ARTNET_SOURCE_TIMEOUT, SACN_SOURCE_TIMEOUT, UniverseSourceMerge};
+
 /// Transport identifier used in route declarations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -28,8 +32,8 @@ pub enum RouteTransport {
     Sacn,
     /// Art-Net protocol.
     ArtNet,
-    /// uDMX USB interface.
-    Udmx,
+    /// USB DMX interface.
+    Usb,
 }
 
 /// Metadata about the local sACN output source identity.

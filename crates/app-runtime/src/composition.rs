@@ -197,6 +197,8 @@ pub(super) fn init_bevy_with_transport_policy(
 
     app.init_resource::<systems::showfile_events::ShowfileCleanSnapshotHash>();
     app.init_resource::<PeriodicDraftAutosaveTimer>();
+    app.init_resource::<systems::showfile_events::DraftSaveStatus>();
+    app.add_resource_feed::<systems::showfile_events::DraftSaveStatus>();
     app.insert_state(CommandProcessingState::Running);
     app.insert_state(RuntimeOutputState::Running);
 
@@ -259,6 +261,12 @@ pub(super) fn init_bevy_with_transport_policy(
         sync_frame_rate_with_dmx_output
             .after(ShowfileHandling)
             .run_if(resource_changed::<IoRuntimeSettings>),
+    );
+    app.add_systems(
+        Update,
+        systems::showfile_events::mirror_draft_save_status
+            .after(ShowfileHandling)
+            .run_if(resource_changed::<systems::showfile_events::DraftSaveStatus>),
     );
 
     app
@@ -357,10 +365,14 @@ fn native_runtime_capabilities(
 }
 
 /// Persist a dirty working draft whenever the periodic autosave interval elapses.
+///
+/// The result is recorded in [`systems::showfile_events::DraftSaveStatus`], which clients
+/// follow to warn the operator while saves fail.
 pub(super) fn handle_periodic_draft_autosave(
     mut showfile_save_state: systems::showfile_events::ShowfileSaveState,
     current_showfile: Res<systems::showfile_events::CurrentShowfile>,
     mut clean_snapshot_hash: ResMut<systems::showfile_events::ShowfileCleanSnapshotHash>,
+    mut draft_save_status: ResMut<systems::showfile_events::DraftSaveStatus>,
     time: Res<Time>,
     mut autosave_timer: ResMut<PeriodicDraftAutosaveTimer>,
 ) {
@@ -368,11 +380,13 @@ pub(super) fn handle_periodic_draft_autosave(
         return;
     }
 
-    match systems::showfile_events::save_draft_showfile_if_dirty(
+    let result = systems::showfile_events::save_draft_showfile_if_dirty(
         &mut showfile_save_state,
         current_showfile.name(),
         &mut clean_snapshot_hash,
-    ) {
+    );
+    systems::showfile_events::record_draft_save_result(&mut draft_save_status, &result);
+    match result {
         Ok(systems::showfile_events::DraftSaveOutcome::SavedDirtyDraft) => {
             tracing::debug!("Periodic showfile draft autosave wrote a dirty draft");
         }
@@ -392,22 +406,27 @@ pub(super) fn handle_periodic_draft_autosave(
 ///
 /// With no client left, nobody can save from a UI, so the backend keeps the work in the draft
 /// itself. A tab closing while another stays open saves nothing. Saves use the panel layout
-/// from the showfile's last explicit save, because each client arranges its own panels.
+/// from the showfile's last explicit save, because each client arranges its own panels. The
+/// result is recorded in [`systems::showfile_events::DraftSaveStatus`], which the next client to
+/// connect receives.
 pub(super) fn save_draft_when_last_client_disconnects(
     mut showfile_save_state: systems::showfile_events::ShowfileSaveState,
     current_showfile: Res<systems::showfile_events::CurrentShowfile>,
     mut clean_snapshot_hash: ResMut<systems::showfile_events::ShowfileCleanSnapshotHash>,
+    mut draft_save_status: ResMut<systems::showfile_events::DraftSaveStatus>,
     mut disconnects: MessageReader<LastClientDisconnected>,
 ) {
     if disconnects.read().count() == 0 || is_process_shutdown_requested() {
         return;
     }
 
-    match systems::showfile_events::save_draft_showfile_if_dirty(
+    let result = systems::showfile_events::save_draft_showfile_if_dirty(
         &mut showfile_save_state,
         current_showfile.name(),
         &mut clean_snapshot_hash,
-    ) {
+    );
+    systems::showfile_events::record_draft_save_result(&mut draft_save_status, &result);
+    match result {
         Ok(outcome) => {
             tracing::info!(
                 ?outcome,

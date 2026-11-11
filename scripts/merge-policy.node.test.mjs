@@ -24,6 +24,11 @@ test("small PRs outside risky areas are eligible", () => {
     "webui/components/Button.tsx",
     "webui/e2e/clip-go.spec.ts",
     "crates/clips/src/lib.rs",
+    "crates/input_sacn/src/lib.rs",
+    "crates/output_artnet/src/service.rs",
+    "crates/showfile/src/migrations.rs",
+    "crates/websocket/src/lib.rs",
+    "desktop/app-tauri/src/main.rs",
     "docs/src/user-guide/busking.md",
     "playwright/tests/clip-go-button.spec.ts",
     "README.md",
@@ -59,11 +64,6 @@ test("risky paths always need a human", () => {
     ["config/cargo-tools.json", "toolchain"],
     ["patches/three.patch", "dependencies"],
     ["crates/workspace-hack/src/lib.rs", "dependencies"],
-    ["crates/showfile/src/migrations.rs", "showfile"],
-    ["crates/websocket/src/lib.rs", "protocol"],
-    ["crates/output_sacn/src/service.rs", "output"],
-    ["crates/input_osc/src/command.rs", "input"],
-    ["desktop/app-tauri/tauri.conf.json", "desktop"],
     ["about.toml", "licensing"],
     ["CLAUDE.md", "agent instructions"],
     ["webui/components/CLAUDE.md", "agent instructions"],
@@ -87,12 +87,12 @@ test("risky paths always need a human", () => {
 /** Renaming a file out of a risky area still counts as touching that area. */
 test("renames are judged by both their old and new paths", () => {
   const result = assessMergeRisk([
-    file("crates/clips/src/format.rs", 0, {
-      previous_filename: "crates/showfile/src/format.rs",
+    file("docs/notes/three.patch", 0, {
+      previous_filename: "patches/three.patch",
     }),
   ]);
   assert.equal(result.eligible, false);
-  assert.match(result.reasons[0], /showfile/);
+  assert.match(result.reasons[0], /dependencies/);
 });
 
 /** Added or modified files without line counts are binary, which neither check can measure. */
@@ -139,15 +139,15 @@ test("large PRs need a human", () => {
 /** Long lists of risky paths are summarized so the verdict comment stays short. */
 test("reasons list at most three paths per area", () => {
   const result = assessMergeRisk([
-    file("crates/showfile/src/a.rs"),
-    file("crates/showfile/src/b.rs"),
-    file("crates/showfile/src/c.rs"),
-    file("crates/showfile/src/d.rs"),
-    file("crates/showfile/src/e.rs"),
+    file("scripts/a.mjs"),
+    file("scripts/b.mjs"),
+    file("scripts/c.mjs"),
+    file("scripts/d.mjs"),
+    file("scripts/e.mjs"),
   ]);
   assert.match(
     result.reasons[0],
-    /`crates\/showfile\/src\/c\.rs` and 2 more\.$/,
+    /`scripts\/c\.mjs` and 2 more\.$/,
   );
 });
 

@@ -35,6 +35,16 @@ export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-Wl,--compre
 EOF
 fi
 
+# Containers have no GPU, so Chromium falls back to SwiftShader and the
+# visualizer renders at about 1 FPS, timing out its specs. ANGLE on Mesa's
+# llvmpipe (through EGL) reaches about 10 FPS on the same cores. Leave WebGPU
+# off: Dawn only offers SwiftShader there, which is slower still.
+if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+  cat >>"$CLAUDE_ENV_FILE" <<'EOF'
+export NIGHTFALL_PLAYWRIGHT_CHROMIUM_ARGS="--use-angle=gl-egl --ignore-gpu-blocklist"
+EOF
+fi
+
 # The clone carries LFS pointers only; lint and the demo show need the files.
 git lfs pull
 
@@ -42,10 +52,12 @@ git lfs pull
 # targets) once, before anything can trigger concurrent auto-installs.
 rustup toolchain install
 
-# Native backend builds link alsa-sys.
-if ! dpkg -s libasound2-dev >/dev/null 2>&1; then
+# Native backend builds link alsa-sys; ANGLE loads Mesa's EGL and GLES
+# libraries for the llvmpipe launch flags above.
+apt_packages=(libasound2-dev libegl1 libegl-mesa0 libgles2)
+if ! dpkg -s "${apt_packages[@]}" >/dev/null 2>&1; then
   apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libasound2-dev
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${apt_packages[@]}"
 fi
 
 pnpm install --frozen-lockfile
@@ -77,4 +89,39 @@ pnpm run setup:tools typeshare-cli
 
 if [ ! -f .env ]; then
   node scripts/setup-env.mjs
+fi
+
+# Beads issues live in a Dolt database on a maintainer-only remote, named by
+# the cloud environment's BEADS_SYNC_REMOTE variable so it stays out of this
+# repository. The data sits under a claude/ branch ref rather than Dolt's
+# default refs/dolt/data because cloud sessions may only push branches. bd
+# cannot pick a git ref itself, so the dolt CLI clones the database into the
+# layout bd's embedded mode expects; its pull/push then reuse the clone's ref.
+# A failed clone only costs issue tracking, so it must not fail the session.
+# Keep bd in step with maintainers' machines: a newer bd can migrate the shared
+# database's schema past what older clients read.
+if [ -n "${BEADS_SYNC_REMOTE:-}" ]; then
+  bd_version=1.3.4
+  dolt_version=2.7.2
+  if ! bd version 2>/dev/null | grep -qF "bd version $bd_version "; then
+    npm install -g "@beads/bd@$bd_version"
+  fi
+  if ! dolt version 2>/dev/null | grep -qF "dolt version $dolt_version"; then
+    curl -fsSL "https://github.com/dolthub/dolt/releases/download/v$dolt_version/dolt-linux-amd64.tar.gz" |
+      tar xzf - -C /usr/local --strip-components=1 dolt-linux-amd64/bin/dolt
+  fi
+  # auto-push sends issue writes to the remote as the session goes. Its default
+  # five-minute throttle skips writes until a later one, so the last writes of a
+  # session would never leave the container; a one-second interval pushes each
+  # command's writes (zero means the default). A resumed container already holds
+  # a clone, so pull what changed since instead.
+  if [ ! -d .beads/embeddeddolt/beads ]; then
+    mkdir -p -m 700 .beads/embeddeddolt
+    printf '{"database":"dolt","backend":"dolt","dolt_mode":"embedded","dolt_database":"beads"}\n' >.beads/metadata.json
+    printf 'sync.remote: "%s"\ndolt.auto-push: true\ndolt.auto-push-interval: 1s\n' "$BEADS_SYNC_REMOTE" >.beads/config.yaml
+    dolt clone --ref refs/heads/claude/beads-data "$BEADS_SYNC_REMOTE" .beads/embeddeddolt/beads ||
+      echo "beads clone failed; bd issues are unavailable this session" >&2
+  else
+    bd sync || echo "bd sync failed; beads issues may be stale" >&2
+  fi
 fi

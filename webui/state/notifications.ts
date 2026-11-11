@@ -9,6 +9,10 @@
 import { atom } from "nanostores";
 import Toastify from "toastify-js";
 import { type AppIcon, renderIconComponent } from "../components/ui/icon";
+import {
+  overlayHost,
+  watchOverlayHost,
+} from "../components/ui/modal/dialog-stack";
 import { TOAST_DURATION_MS } from "../lib/constants";
 import { setStoreAction } from "../lib/nanostore-action";
 import {
@@ -136,8 +140,8 @@ function createToastNode(
         ${presentation.title ? `<div class="toast-title mb-1 text-sm font-semibold text-neutral-100">${escapeHtml(presentation.title)}</div>` : ""}
         <p class="text-sm text-neutral-400">${escapeHtml(message)}</p>
       </div>
-      <button type="button" class="toast-close inline-flex shrink-0 justify-center items-center size-5 rounded-lg text-white opacity-50 hover:opacity-100 focus:outline-hidden focus:opacity-100" aria-label="Close">
-        <span class="sr-only">Close</span>
+      <button type="button" class="toast-close inline-flex shrink-0 justify-center items-center size-5 rounded-lg text-white opacity-50 hover:opacity-100 focus:outline-hidden focus:opacity-100" aria-label="Dismiss notification">
+        <span class="sr-only">Dismiss notification</span>
         <svg class="shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 6 6 18" />
           <path d="m6 6 12 12" />
@@ -174,6 +178,46 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+let toastHostElement: HTMLElement | undefined;
+
+/**
+ * Returns the container every toast mounts into, creating it on first use. A
+ * modal `<dialog>` sits in the browser's top layer and makes the rest of the
+ * page inert, so the container follows `overlayHost()`: it moves into the
+ * frontmost open modal dialog as one is shown and back to the page as it
+ * closes, carrying toasts already on screen with it. Inside a dialog, toast
+ * controls keep Enter and Escape to themselves, so working a toast never
+ * submits or dismisses the dialog underneath.
+ */
+function toastHost(): HTMLElement {
+  if (toastHostElement) return toastHostElement;
+  const host = document.createElement("div");
+  host.dataset.component = "ToastHost";
+  host.dataset.ownsDialogKeys = "";
+  // Escape on a toast control has no meaning of its own; cancelling it keeps the browser from
+  // turning it into a close request for the dialog the toast sits in.
+  host.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && host.closest("dialog"))
+      event.preventDefault();
+  });
+  toastHostElement = host;
+  /** Moves the container (and its toasts) into the current overlay host. */
+  const follow = () => {
+    const target = overlayHost();
+    if (host.parentElement === target) return;
+    target.append(host);
+    Toastify.reposition();
+  };
+  follow();
+  const stopFollowing = watchOverlayHost(follow);
+  /** Drops this module copy's container and listener when a hot reload replaces it. */
+  import.meta.hot?.dispose(() => {
+    stopFollowing();
+    host.remove();
+  });
+  return host;
+}
+
 /** Renders one admitted notification and releases its slot only after Toastify removes it. */
 function renderToast(
   entry: NotificationEntry,
@@ -198,6 +242,7 @@ function renderToast(
   const toast = Toastify({
     node,
     duration: -1,
+    selector: toastHost(),
     gravity: "top",
     position: "right",
     className: "!bg-transparent !shadow-none !p-0",

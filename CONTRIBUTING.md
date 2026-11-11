@@ -244,12 +244,43 @@ Then install the combined hooks:
 pnpm exec prek install -t pre-commit -t commit-msg -t pre-push -t post-merge -t post-rewrite
 ```
 
-If you wish to also use beads, ensure hooks are chained:
+If you wish to also use beads, ensure hooks are chained. Keep `bd` at the
+version pinned in `.claude/hooks/cloud-session-start.sh`:
 
 ```sh
-npm install -g @beads/bd
+npm install -g @beads/bd@1.3.4
 bd hooks install --chain
 ```
+
+Maintainers share the issue database through a separate Dolt remote, never
+this repository's, stored under the branch ref `refs/heads/claude/beads-data`
+so cloud sessions can push it. Cloud sessions read the remote from the
+`BEADS_SYNC_REMOTE` environment variable. bd cannot set a git ref, so point a
+local database at it with the dolt CLI (`brew install dolt`):
+
+```sh
+cd .beads/embeddeddolt/<database>
+dolt remote remove origin
+dolt remote add --ref refs/heads/claude/beads-data origin <remote>
+cd - && bd dolt pull
+```
+
+Claude Code sessions run `bd sync` on start through
+`.claude/hooks/beads-sync.sh`, which pulls other machines' changes and pushes
+anything left over. To push each write as it happens, enable auto-push; its
+default five-minute throttle holds back the last writes of a burst, so shorten
+it (zero means the default):
+
+```sh
+bd config set dolt.auto-push true
+bd config set dolt.auto-push-interval 1s
+```
+
+Otherwise run `bd dolt pull` and `bd dolt push` to sync by hand. Dolt records a commit for every
+issue write, so run `bd flatten` occasionally to drop history and keep the
+synced data small. Flattening rewrites history every other copy shares, so
+push it with `dolt push --force origin main` from the database directory and
+have other machines clone the database again.
 
 #### Optional tools
 
@@ -307,6 +338,13 @@ transports initially disabled. This keeps tests from mutating a developer
 session or inheriting backend world and undo state from another test. Owned
 services and disposable data are removed after each test and swept again when
 Playwright exits.
+
+`NIGHTFALL_PLAYWRIGHT_CHROMIUM_ARGS` adds whitespace-separated switches to every
+Chromium launch. On a machine without a GPU, Chromium renders WebGL with
+SwiftShader, and the visualizer drops to about 1 FPS. Installing Mesa's EGL
+libraries (`libegl1 libegl-mesa0 libgles2` on Debian and Ubuntu) and setting it to
+`--use-angle=gl-egl --ignore-gpu-blocklist` renders with Mesa's llvmpipe instead,
+about ten times faster. Claude Code cloud sessions set this up automatically.
 
 All workers share one web server per run. Native runs build the web UI once
 with `vite build --mode e2e` (while Cargo checks the backend) and serve that
@@ -517,6 +555,7 @@ through. Commands for the whole repository use a plain verb; the rest are named
 | `check:command-architecture`, `check:crate-boundaries`, `check:browser-demo-dependencies` | Architecture checks also run by the git hooks or CI. |
 | `test` | Run the script tests and the web UI Node tests. |
 | `test:scripts`, `test:webui-node` | Run either half of `test`. |
+| `test:packet-timing` | Run the sample show with timeline 1 playing and Art-Net and sACN routed from the console for ten seconds, and check each protocol's packets stay on the output tick grid. The test is ignored in normal runs, CI and the push hook because other load on the machine makes it fail, so run it on an otherwise idle machine after changing output scheduling or the engine frame loop. |
 | `test:webui-playwright` | Run Playwright specs through the wrapper. Pass `--headed`, `--ui`, `--target embedded-demo` or spec paths. |
 | `test:webui-smoke`, `test:webui-hmr` | Run the CI smoke specs, or the dev-server hot-reload specs. |
 | `playwright:install` | Install the Playwright browsers into the shared cache. |

@@ -608,7 +608,9 @@ test("opens another showfile from the startup draft prompt", async ({
   });
   await expect(recoveryDialog).toBeVisible();
 
-  await recoveryDialog.getByRole("button", { name: "Open Other..." }).click();
+  await recoveryDialog
+    .getByRole("button", { name: "Manage showfiles" })
+    .click();
   await expect(recoveryDialog).toBeHidden();
 
   const pickerDialog = page.getByRole("dialog", { name: "Open Showfile" });
@@ -639,7 +641,7 @@ test("opens another showfile from the startup draft prompt", async ({
   await expect(page.getByTestId("status-showfile-name")).toContainText("tour");
 });
 
-/** Verifies startup recovery can start a new show before revealing the app. */
+/** Verifies the startup draft prompt can reach a new show through Manage showfiles before revealing the app. */
 test("creates a new show from the startup draft prompt", async ({
   page,
 }, testInfo) => {
@@ -687,7 +689,13 @@ test("creates a new show from the startup draft prompt", async ({
   await recoveryDialog.screenshot({
     path: testInfo.outputPath("recovery-dialog.png"),
   });
-  await recoveryDialog.getByRole("button", { name: "New showfile" }).click();
+  await recoveryDialog
+    .getByRole("button", { name: "Manage showfiles" })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Open Showfile" })
+    .getByRole("button", { name: "New showfile" })
+    .click();
   const nameDialog = page.getByRole("dialog", {
     name: "New Showfile",
     exact: true,
@@ -726,7 +734,7 @@ test("creates a new show from the startup draft prompt", async ({
 });
 
 /**
- * Verifies Enter in the show name field stacked over the startup draft prompt
+ * Verifies Enter in the show name field, reached from the startup draft prompt,
  * submits the new show instead of triggering the prompt's Load Draft default.
  */
 test("enter in the new show name over the startup draft prompt creates the show", async ({
@@ -768,7 +776,13 @@ test("enter in the new show name over the startup draft prompt creates the show"
     name: "Resume your work on default?",
   });
   await expect(recoveryDialog).toBeVisible();
-  await recoveryDialog.getByRole("button", { name: "New showfile" }).click();
+  await recoveryDialog
+    .getByRole("button", { name: "Manage showfiles" })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Open Showfile" })
+    .getByRole("button", { name: "New showfile" })
+    .click();
   const nameDialog = page.getByRole("dialog", {
     name: "New Showfile",
     exact: true,
@@ -846,7 +860,7 @@ test("keeps startup shell hidden while another showfile load is pending", async 
     .getByRole("dialog", {
       name: "Resume your work on default?",
     })
-    .getByRole("button", { name: "Open Other..." })
+    .getByRole("button", { name: "Manage showfiles" })
     .click();
 
   const pickerDialog = page.getByRole("dialog", { name: "Open Showfile" });
@@ -1178,7 +1192,9 @@ test("explains the 1 GiB limit when opening an oversized showfile", async ({
   await dialog
     .getByRole("button", { name: "Open saved showfile oversized" })
     .click();
-  await expect(dialog.getByRole("alert")).toHaveText(`${message}Retry`);
+  await expect(dialog.getByRole("document").getByRole("alert")).toHaveText(
+    `${message}Retry`,
+  );
   await expect(
     dialog.getByRole("button", { name: "Retry", exact: true }),
   ).toBeVisible();
@@ -1244,7 +1260,8 @@ test("shows an error when keeping the saved startup showfile fails", async ({
 
   await dialog.getByRole("button", { name: "Keep Saved" }).click();
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("alert")).toContainText(
+  // The dialog's surface holds its inline alert; the matching error toast floats beside it.
+  await expect(dialog.getByRole("document").getByRole("alert")).toContainText(
     "failed to discard draft",
   );
   await expect(page.locator("button[title='Menu']")).toHaveCount(0);

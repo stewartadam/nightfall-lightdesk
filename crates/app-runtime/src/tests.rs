@@ -69,7 +69,7 @@ use super::{
     composition::{PeriodicDraftAutosaveTimer, ShowfileHandling},
     session::{
         complete_and_publish_world_swap_success, publish_world_replaced,
-        queue_current_showfile_changed, run_world_swap_session_loop,
+        queue_current_showfile_changed, run_world_swap_session_loop, save_outgoing_show_draft,
     },
     startup_commands::{normalize_command_input, queue_startup_command},
     world_factory::{bootstrap_world_with_fallback, initial_world_bootstrap},
@@ -679,6 +679,103 @@ async fn last_client_disconnect_saves_dirty_draft() {
         std::fs::read(&draft_snapshot).expect("read draft after last disconnect"),
         initial_draft,
         "the last disconnect should save the unsaved change into the draft"
+    );
+
+    drop(app);
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
+/// Verifies the save that runs before a world swap writes the outgoing show's unsaved edits
+/// into its draft, and leaves a clean draft alone.
+#[tokio::test]
+async fn world_swap_saves_the_outgoing_show_draft() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("create showfile root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let mut app = WorldFactory::new(test_log_config(), false, false, false)
+        .build(WorldBootstrap::Empty {
+            showfile_name: Some("tour".to_string()),
+        })
+        .expect("named empty world factory build");
+    let draft_snapshot = root
+        .path()
+        .join("drafts")
+        .join("tour.nightfall-show")
+        .join("showfile.json.gz");
+    let initial_draft = std::fs::read(&draft_snapshot).expect("read initial draft");
+
+    assert_eq!(save_outgoing_show_draft(&mut app), None);
+    assert_eq!(
+        std::fs::read(&draft_snapshot).expect("read draft of a clean show"),
+        initial_draft,
+        "a clean show should keep its draft"
+    );
+
+    app.world()
+        .resource::<nightfall_engine::prelude::GlobalVariables>()
+        .set(
+            "unsaved",
+            nightfall::prelude::VariableValue::String("kept".to_string()),
+        );
+    assert_eq!(save_outgoing_show_draft(&mut app), None);
+    assert_ne!(
+        std::fs::read(&draft_snapshot).expect("read draft after the swap save"),
+        initial_draft,
+        "the swap save should write the unsaved change into the draft"
+    );
+    assert_eq!(
+        app.world()
+            .resource::<super::systems::showfile_events::DraftSaveStatus>()
+            .error,
+        None
+    );
+
+    drop(app);
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
+/// Verifies a swap save that cannot write the drafts folder records the failure in the draft
+/// save status clients follow.
+#[tokio::test]
+async fn world_swap_records_a_failed_outgoing_draft_save() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("create showfile root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let mut app = WorldFactory::new(test_log_config(), false, false, false)
+        .build(WorldBootstrap::Empty {
+            showfile_name: Some("tour".to_string()),
+        })
+        .expect("named empty world factory build");
+    app.world()
+        .resource::<nightfall_engine::prelude::GlobalVariables>()
+        .set(
+            "unsaved",
+            nightfall::prelude::VariableValue::String("lost".to_string()),
+        );
+    let drafts = root.path().join("drafts");
+    std::fs::remove_dir_all(&drafts).expect("remove drafts folder");
+    std::fs::write(&drafts, b"not a folder").expect("block drafts folder");
+
+    let error = save_outgoing_show_draft(&mut app);
+    assert!(
+        error.is_some(),
+        "the failure should be returned for the swap to report"
+    );
+
+    assert!(
+        app.world()
+            .resource::<super::systems::showfile_events::DraftSaveStatus>()
+            .error
+            .is_some(),
+        "a failed swap save should be recorded for clients"
     );
 
     drop(app);
@@ -2521,5 +2618,9 @@ async fn automation_programmer_clear_completes() {
     assert_eq!(outcome, Some(CommandOutcome::succeeded()));
 }
 
+mod cue_undo;
+mod desk_harness;
 mod macros;
+#[cfg(all(feature = "artnet", feature = "sacn"))]
+mod packet_timing;
 mod park;

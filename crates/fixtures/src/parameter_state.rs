@@ -503,7 +503,7 @@ mod tests {
         let parameters = patch_bench_fixtures(
             app.world_mut(),
             fixture_count,
-            &OutputTransport::Udmx {
+            &OutputTransport::Usb {
                 device: "test".to_owned(),
             },
         );
@@ -959,7 +959,7 @@ mod tests {
         patch_bench_fixtures(
             app.world_mut(),
             2,
-            &OutputTransport::Udmx {
+            &OutputTransport::Usb {
                 device: "test".to_owned(),
             },
         );
@@ -1164,7 +1164,7 @@ mod tests {
         patch_bench_fixtures_with_profile(
             app.world_mut(),
             1,
-            &OutputTransport::Udmx {
+            &OutputTransport::Usb {
                 device: "test".to_owned(),
             },
             &profile,
@@ -1224,7 +1224,7 @@ mod tests {
         patch_bench_fixtures(
             app.world_mut(),
             3,
-            &OutputTransport::Udmx {
+            &OutputTransport::Usb {
                 device: "test".to_owned(),
             },
         );

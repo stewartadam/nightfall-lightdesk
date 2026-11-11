@@ -16,7 +16,6 @@ use moonshine_kind::prelude::*;
 use nightfall::prelude::FixtureRef;
 use nightfall_dmx::prelude::Attribute;
 use nightfall_fixture_model::prelude::*;
-use nightfall_io::RouteTransport;
 use nightfall_io::prelude::{
     NetworkDmxOutputTarget, NetworkDmxOutputTargets, OutputTransport, UsbDmxOutputTarget,
     UsbDmxOutputTargets,
@@ -331,14 +330,6 @@ pub fn output_transport_from_target_id(
         })
 }
 
-fn output_protocol_for_transport(transport: &OutputTransport) -> RouteTransport {
-    match transport {
-        OutputTransport::Sacn { .. } => RouteTransport::Sacn,
-        OutputTransport::ArtNet { .. } => RouteTransport::ArtNet,
-        OutputTransport::Udmx { .. } | OutputTransport::Disabled => RouteTransport::Udmx,
-    }
-}
-
 /// Orders output routes lowest precedence first: ascending priority, and among equal
 /// priorities the earliest-authored route last. Consumers where a later route replaces an
 /// earlier one therefore leave the highest-priority, earliest-authored route in effect.
@@ -536,7 +527,6 @@ pub fn resolve_input_routes(
                             ResolvedInputDestination::Transport {
                                 target: ResolvedTransportTarget {
                                     target: target.clone(),
-                                    protocol: output_protocol_for_transport(&output_transport),
                                     transport: output_transport,
                                     universe: target_universe,
                                     address: address.unwrap_or(1),
@@ -624,7 +614,6 @@ pub fn resolve_input_routes(
                             ResolvedInputDestination::Transport {
                                 target: ResolvedTransportTarget {
                                     target: target.clone(),
-                                    protocol: output_protocol_for_transport(&output_transport),
                                     transport: output_transport,
                                     universe: target_universe,
                                     address: address.unwrap_or(1),

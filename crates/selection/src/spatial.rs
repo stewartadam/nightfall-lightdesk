@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use nightfall::prelude::*;
 use uuid::Uuid;
 
-use crate::contracts::{SelectionDataSource, SpatialSelectionResolution};
+use crate::contracts::{SelectionDataSource, SelectionGroup, SpatialSelectionResolution};
 use crate::linear::SelectionResolver;
 use crate::validation::{
     MISSING_FIXTURE_REFERENCES_WARNING, push_missing_fixture_elements_warning,
@@ -25,6 +25,60 @@ impl SelectionResolver<'_> {
         visited_groups: &mut HashSet<Uuid>,
         warnings: &mut Vec<String>,
     ) -> ResolvedSelection {
+        let mut resolved = match Self::plain_spatial_group(selection, data_source) {
+            Some(group) if !visited_groups.contains(&group.uid) => {
+                // A bare reference to a group with clauses resolves to the group's own
+                // selection, so per-member inversion survives, which fixture refs cannot carry.
+                visited_groups.insert(group.uid);
+                let resolved = Self::resolve_spatial_to_resolved(
+                    &group.selection,
+                    data_source,
+                    visited_groups,
+                    warnings,
+                );
+                visited_groups.remove(&group.uid);
+                resolved
+            }
+            _ => Self::resolve_spatial_source(selection, data_source, visited_groups, warnings),
+        };
+
+        for branch in &selection.union {
+            let branch_resolved =
+                Self::resolve_spatial_to_resolved(branch, data_source, visited_groups, warnings);
+            resolved.append_spatial_branch(branch_resolved);
+        }
+
+        resolved
+    }
+
+    /// Returns the group a selection names when it is a bare reference to one group with
+    /// spatial clauses or union branches, and adds no clauses of its own.
+    fn plain_spatial_group(
+        selection: &SpatialSelection,
+        data_source: &dyn SelectionDataSource,
+    ) -> Option<SelectionGroup> {
+        if !selection.clauses.is_empty() || !data_source.groups_available() {
+            return None;
+        }
+        let SelectionExpr::Group(group_ref) = &selection.source else {
+            return None;
+        };
+        let group = match group_ref {
+            GroupRefExpr::ByUid { uid } => data_source.group_by_uid(*uid),
+            GroupRefExpr::ById(group_id) => data_source.group_by_id(*group_id),
+            GroupRefExpr::ByLabel(label) => data_source.group_by_label(label),
+            _ => None,
+        }?;
+        Self::group_has_spatial_pipeline(&group).then_some(group)
+    }
+
+    /// Resolves a selection's source and clauses, without its union branches.
+    fn resolve_spatial_source(
+        selection: &SpatialSelection,
+        data_source: &dyn SelectionDataSource,
+        visited_groups: &mut HashSet<Uuid>,
+        warnings: &mut Vec<String>,
+    ) -> ResolvedSelection {
         let spanned = Self::resolve_pipeline_source_spans(
             &selection.source,
             &selection.clauses,
@@ -33,7 +87,7 @@ impl SelectionResolver<'_> {
             warnings,
         );
         let canonical = spanned.flatten();
-        let (mut resolved, projection_issues) = Self::project_spanned_selection(
+        let (resolved, projection_issues) = Self::project_spanned_selection(
             &spanned,
             canonical,
             Self::projection_clauses_after_source_shaping(&selection.clauses),
@@ -41,13 +95,6 @@ impl SelectionResolver<'_> {
         )
         .into_parts();
         warnings.extend(projection_issues);
-
-        for branch in &selection.union {
-            let branch_resolved =
-                Self::resolve_spatial_to_resolved(branch, data_source, visited_groups, warnings);
-            resolved.append_spatial_branch(branch_resolved);
-        }
-
         resolved
     }
 

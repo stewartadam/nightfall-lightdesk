@@ -531,7 +531,7 @@ pub fn finish_timeline_recording_sessions_system(
             }
             TimecodeEvent::Started(_)
             | TimecodeEvent::Seeked { .. }
-            | TimecodeEvent::Deleted(_) => {}
+            | TimecodeEvent::Deleted { .. } => {}
         }
     }
 
@@ -605,8 +605,9 @@ mod tests {
             TimecodeCommand::SeekTimecode { id, position } => {
                 TimecodeEvent::Seeked { id, position }
             }
-            TimecodeCommand::DeleteTimecode(id) => TimecodeEvent::Deleted(id),
-            TimecodeCommand::StoreTimecode(_) | TimecodeCommand::RenameTimecode { .. } => {
+            TimecodeCommand::DeleteTimecode(_)
+            | TimecodeCommand::StoreTimecode(_)
+            | TimecodeCommand::RenameTimecode { .. } => {
                 panic!("CRUD commands are not runtime timecode events")
             }
         }

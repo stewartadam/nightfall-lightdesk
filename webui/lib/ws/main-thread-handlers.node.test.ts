@@ -49,6 +49,7 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "CueDurationProfiles",
   "DmxUniverseChannels",
   "DmxUniverseList",
+  "DraftSaveStatus",
   "ExternalControlState",
   "FixtureCommand",
   "FixtureDefinitions",

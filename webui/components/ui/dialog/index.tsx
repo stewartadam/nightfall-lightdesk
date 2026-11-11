@@ -67,7 +67,10 @@ export interface DialogProps {
   subtitle?: JSX.Element;
   /** Controls placed before the header close button. */
   headerActions?: JSX.Element;
-  /** Shared handler for the header close, Cancel, Escape and (info only) outside clicks. */
+  /**
+   * Shared handler for the header close, Cancel, Escape, (info only) outside clicks and a close
+   * the browser makes on its own. Required and busy dialogs block that browser close instead.
+   */
   onDismiss?: () => void;
   /** Default action run by Enter when focus has no Enter behavior of its own. */
   onSubmit?: () => void;
@@ -130,6 +133,8 @@ export function Dialog(props: DialogProps) {
       isOpen={props.isOpen}
       usePortal={props.usePortal}
       onEscape={dismissFromEscape}
+      onClose={dismiss}
+      blockBrowserClose={!canDismiss()}
       closeOnEscape={canEscape() || page() !== undefined}
       blockBackgroundKeys={props.blockBackgroundKeys}
       onEnter={

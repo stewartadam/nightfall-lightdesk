@@ -229,6 +229,8 @@ mod tests {
         );
     }
 
+    /// Verifies ClearAfterTimeout frees a stale input's console slot and drops the console
+    /// universe once nothing else owns a channel in it.
     #[test]
     fn clear_policy_clears_stale_input_owned_values() {
         let mut app = App::new();
@@ -263,11 +265,7 @@ mod tests {
         app.update();
 
         let universes = app.world().resource::<ConsoleDmxUniverses>();
-        assert_eq!(universes.get_value(7, 9), Some(0));
-        assert_eq!(
-            universes.get_origin(7, 9),
-            Some(ConsoleChannelOrigin::System)
-        );
+        assert!(!universes.has_universe(7));
     }
 
     #[test]
@@ -428,7 +426,7 @@ mod tests {
             .world()
             .get::<TransportInputAssertionOwners>(layer_entity)
             .expect("transport assertion owners should still exist");
-        assert_eq!(universes.get_value(1, 1), Some(0));
+        assert!(!universes.has_universe(1));
         assert!(!layer.absolute.contains_key(parameter));
         assert!(!owners.absolute.contains_key(parameter));
         assert!(

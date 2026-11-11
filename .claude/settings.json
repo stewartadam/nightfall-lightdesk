@@ -8,6 +8,11 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/cloud-session-start.sh\"",
             "timeout": 900
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/beads-sync.sh\"",
+            "timeout": 120
           }
         ]
       }

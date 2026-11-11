@@ -161,5 +161,11 @@ pub enum TimecodeEvent {
         position: Duration,
     },
     /// A persisted timecode and its generator were deleted.
-    Deleted(u32),
+    Deleted {
+        /// Numeric identifier the timecode had.
+        id: u32,
+        /// Stable identifier the timecode had, which timelines reference. Readers cannot look
+        /// it up from `id` any more because the timecode is already gone.
+        uid: uuid::Uuid,
+    },
 }

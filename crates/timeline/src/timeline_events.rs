@@ -19,8 +19,6 @@ use nightfall_clips::{Clip, ClipOperation};
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_engine::prelude::*;
 use nightfall_instances::{InstanceClock, InstanceClockSource, InstanceControls};
-#[cfg(test)]
-use nightfall_timecode::TimecodeCommand;
 use nightfall_timecode::prelude::{Timecode, TimecodeEvent, TimecodeGenerator};
 use uuid::Uuid;
 
@@ -47,7 +45,7 @@ use beatgrid::{
 };
 #[cfg(test)]
 use cleanup::release_timeline_owned_entities;
-pub(crate) use contracts::TimelineActionsChanged;
+pub(crate) use contracts::{TimelineActionsChanged, TimelinePlayheadJumped};
 #[cfg(test)]
 use creation::{TimelineTimecodeStoreMode, remove_timeline_creation, store_timeline_creation};
 #[cfg(test)]

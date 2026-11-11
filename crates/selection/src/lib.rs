@@ -13,6 +13,7 @@ mod linear;
 mod references;
 mod spatial;
 mod structure;
+mod subtraction;
 mod validation;
 
 #[cfg(test)]

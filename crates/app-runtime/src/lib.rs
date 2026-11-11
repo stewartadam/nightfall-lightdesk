@@ -66,6 +66,7 @@ pub use swap_orchestrator::{
     CommandProcessingState, PendingWorldSwap, PendingWorldSwapRequest, RuntimeOutputState,
     SwapOrchestrator,
 };
+pub use systems::showfile_events::draft_save_failure;
 pub use systems::showfile_events::export::{
     PreparedShowfileExport, ShowfileExportPolicy, prepare_showfile_export,
 };

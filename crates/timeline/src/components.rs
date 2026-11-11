@@ -10,11 +10,14 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use bevy_ecs::lifecycle::HookContext;
 use bevy_ecs::prelude::*;
+use bevy_ecs::world::DeferredWorld;
 #[cfg(feature = "audio")]
 use nightfall_audio::AudioSinkId;
 #[cfg(not(feature = "audio"))]
 type AudioSinkId = ();
+use nightfall_timecode::external::POSITION_JUMP_THRESHOLD;
 use uuid::Uuid;
 
 use crate::prelude::*;
@@ -33,31 +36,72 @@ pub enum SpawnedEntityType {
     Instance,
 }
 
+/// Where a range of timeline actions begins.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ActionRangeStart {
+    /// From the timeline start, including actions placed exactly at zero.
+    #[default]
+    Beginning,
+    /// After this position, excluding actions placed exactly on it because an earlier range
+    /// already covered them.
+    After(Duration),
+}
+
+impl ActionRangeStart {
+    /// Returns whether an action at `position` lies at or after this start.
+    pub fn admits(self, position: Duration) -> bool {
+        match self {
+            Self::Beginning => true,
+            Self::After(start) => position > start,
+        }
+    }
+}
+
 /// Position up to which live playback has triggered a timeline's actions.
 ///
 /// Render passes advance it as playback moves. Seeks and action edits move it when they are
 /// handled, so the next render scans actions from the right place.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TimelineActionCursor {
-    /// Timeline position the last live action scan reached.
-    position: Duration,
+    /// Where the next live action scan starts.
+    position: ActionRangeStart,
     /// Skips the next live scan, so the render after a seek does not trigger actions that the
     /// seek reconstruction already applied.
     skip_next_scan: bool,
+    /// Holds scans until the timecode runs again, after a stop that reset the timeline.
+    wait_for_playback: bool,
 }
 
 impl TimelineActionCursor {
     /// Moves the cursor to a seek target and skips the next scan.
     pub fn seek_to(&mut self, position: Duration) {
-        self.position = position;
+        self.position = ActionRangeStart::After(position);
         self.skip_next_scan = true;
+        self.wait_for_playback = false;
     }
 
     /// Moves the cursor to the timeline start, so the next scan re-evaluates every action up to
     /// the playback position.
     pub fn rewind(&mut self) {
-        self.position = Duration::ZERO;
+        self.position = ActionRangeStart::Beginning;
         self.skip_next_scan = false;
+        self.wait_for_playback = false;
+    }
+
+    /// Rewinds the cursor after a reset stop and holds scans until the timecode runs again,
+    /// so a timeline that stays active does not replay its opening actions while stopped.
+    pub fn rewind_for_next_play(&mut self) {
+        self.rewind();
+        self.wait_for_playback = true;
+    }
+
+    /// Returns whether scanning should wait, given whether the timecode is running. Releases
+    /// the hold once it runs.
+    pub fn holds_scan(&mut self, timecode_running: bool) -> bool {
+        if timecode_running {
+            self.wait_for_playback = false;
+        }
+        self.wait_for_playback
     }
 
     /// Returns whether a seek is waiting for the next scan to be skipped.
@@ -67,19 +111,20 @@ impl TimelineActionCursor {
 
     /// Returns the start of the next live scan, or `None` when this scan is skipped. Clears the
     /// skip.
-    pub fn take_scan_start(&mut self) -> Option<Duration> {
+    pub fn take_scan_start(&mut self) -> Option<ActionRangeStart> {
         (!std::mem::take(&mut self.skip_next_scan)).then_some(self.position)
     }
 
     /// Records that a live scan reached `position`.
     pub fn advance_to(&mut self, position: Duration) {
-        self.position = position;
+        self.position = ActionRangeStart::After(position);
     }
 }
 
 /// Component for an active timeline in the ECS
 #[derive(Component, Debug, Clone)]
 #[require(TimelineActionCursor)]
+#[component(on_remove = release_timeline_audio)]
 pub struct MaterializedTimeline {
     /// Unique ID for this materialized timeline
     pub owner_uuid: Uuid,
@@ -104,19 +149,66 @@ pub struct MaterializedTimeline {
     pub spawned_entities: HashMap<Entity, (String, String, SpawnedEntityType)>,
     /// The driving timecode's transport when this active timeline last observed it. `None`
     /// while inactive.
-    observed_transport: Option<ObservedTransport>,
+    observed_transport: Option<TimecodeTransport>,
 }
 
-/// What a timeline last saw of its timecode's transport, to notice changes that no timeline
-/// event announces.
+/// What a timeline sees of its timecode's transport each render, to notice changes that no
+/// timeline event announces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ObservedTransport {
-    /// Whether the timecode followed an external source.
-    external: bool,
-    /// Whether the timecode was running.
-    running: bool,
-    /// How many times the running timecode had jumped to a new position.
-    position_jumps: u64,
+pub struct TimecodeTransport {
+    /// Whether the timecode follows an external source.
+    pub external: bool,
+    /// Whether the timecode is running.
+    pub running: bool,
+    /// How many times the running timecode has jumped to a new position.
+    pub position_jumps: u64,
+    /// The timecode's position.
+    pub position: Duration,
+}
+
+impl TimecodeTransport {
+    /// Returns whether audio must resync between two observations: the timecode started,
+    /// stopped or jumped, or switched between the engine clock and an external source.
+    fn changed_from(&self, previous: &Self) -> bool {
+        (previous.external, previous.running, previous.position_jumps)
+            != (self.external, self.running, self.position_jumps)
+    }
+
+    /// Returns whether an external source moved the timecode somewhere new since `previous`:
+    /// it jumped while running, or it started running away from where it had stopped.
+    fn relocated_from(&self, previous: &Self) -> bool {
+        if !(previous.external && self.external && self.running) {
+            return false;
+        }
+        if previous.running {
+            previous.position_jumps != self.position_jumps
+        } else {
+            previous.position.abs_diff(self.position) > POSITION_JUMP_THRESHOLD
+        }
+    }
+}
+
+/// Stops the audio of a timeline whose entity is going away, such as when the timeline is
+/// deleted or another show loads, because no later audio sync visits a despawned timeline.
+fn release_timeline_audio(mut world: DeferredWorld, context: HookContext) {
+    let Some(timeline) = world.get::<MaterializedTimeline>(context.entity) else {
+        return;
+    };
+    let timeline_uid = timeline.timeline.identifiers.uid;
+    // A timeline stopped earlier in the same frame has not sent its stop to browsers yet.
+    let release_browser = timeline.is_active || timeline.audio_needs_sync;
+    #[cfg(feature = "audio")]
+    let sink_id = timeline.audio_sink_id;
+    #[cfg(feature = "audio")]
+    if let Some(sink_id) = sink_id
+        && let Some(mut audio) = world.get_resource_mut::<nightfall_audio::AudioController>()
+    {
+        audio.stop(sink_id);
+        audio.destroy_sink(sink_id);
+    }
+    if release_browser {
+        crate::browser_audio::release_browser_audio(&mut world, timeline_uid);
+    }
 }
 
 /// Implementation of MaterializedTimeline
@@ -140,35 +232,34 @@ impl MaterializedTimeline {
 
     /// Resyncs audio when the timecode driving this timeline starts or stops running or jumps
     /// while running because an external source said so, or when the timecode switches between
-    /// the engine clock and an external source.
+    /// the engine clock and an external source. Returns whether an external source relocated
+    /// the timecode, which the caller handles as a seek.
     ///
     /// An external sender, not a transport command, decides when such a timecode plays, so no
     /// timeline event marks those moments; switching a playing timecode to an external source
     /// stops it the same way. Audio plays along on its own clock and must follow the timecode,
     /// so each change re-seeks it to the timecode's position. Changes while the timecode stays on
     /// the engine clock come from transport commands, which already resync audio.
-    pub fn follow_timecode_transport(
-        &mut self,
-        external: bool,
-        running: bool,
-        position_jumps: u64,
-    ) {
+    pub fn follow_timecode_transport(&mut self, observed: TimecodeTransport) -> bool {
         if !self.is_active {
             self.observed_transport = None;
-            return;
+            return false;
         }
-        let observed = ObservedTransport {
-            external,
-            running,
-            position_jumps,
-        };
-        if let Some(previous) = self.observed_transport
-            && previous != observed
-            && (previous.external || observed.external)
-        {
-            self.audio_needs_sync = true;
+        let mut relocated = false;
+        let mut recorded = observed;
+        if let Some(previous) = self.observed_transport {
+            if observed.changed_from(&previous) && (previous.external || observed.external) {
+                self.audio_needs_sync = true;
+            }
+            relocated = observed.relocated_from(&previous);
+            // While stopped, keep the position playback stopped at, so a locate made before
+            // play resumes still reads as a relocation when it does.
+            if !previous.running && !observed.running {
+                recorded.position = previous.position;
+            }
         }
-        self.observed_transport = Some(observed);
+        self.observed_transport = Some(recorded);
+        relocated
     }
 
     /// Activate the timeline, which begins audio playback
@@ -253,7 +344,7 @@ impl MaterializedTimeline {
     /// Returns a list of `(track, action)` pairs that should be triggered
     pub fn process_actions(
         &mut self,
-        last_processed: Duration,
+        scan_start: ActionRangeStart,
         current_position: Duration,
     ) -> Vec<(&Track, &Action)> {
         let timeline = &self.timeline;
@@ -270,7 +361,7 @@ impl MaterializedTimeline {
                 continue;
             }
             for (action_index, action) in track.actions.iter().enumerate() {
-                if action.position > last_processed && action.position <= current_position {
+                if scan_start.admits(action.position) && action.position <= current_position {
                     eligible_actions.push((track_index, action_index));
                 }
             }
@@ -390,7 +481,7 @@ impl MaterializedTimeline {
     /// Collect all track actions that occur within a time range, in order
     pub fn collect_actions_in_range(
         &self,
-        start: Duration,
+        start: ActionRangeStart,
         end: Duration,
     ) -> Vec<(&Action, &Track)> {
         let mut actions = Vec::new();
@@ -403,7 +494,7 @@ impl MaterializedTimeline {
             }
 
             for action in &track.actions {
-                if action.position > start && action.position <= end {
+                if start.admits(action.position) && action.position <= end {
                     actions.push((action, track));
                 }
             }
@@ -424,6 +515,16 @@ mod tests {
 
     use super::*;
 
+    /// Builds a transport observation at the timecode's start.
+    fn transport(external: bool, running: bool, position_jumps: u64) -> TimecodeTransport {
+        TimecodeTransport {
+            external,
+            running,
+            position_jumps,
+            position: Duration::ZERO,
+        }
+    }
+
     /// An active timeline resyncs audio when its external timecode starts, stops, or jumps,
     /// but not on the first observation after activation or while nothing changes.
     #[test]
@@ -432,22 +533,110 @@ mod tests {
         timeline.activate();
         timeline.audio_needs_sync = false;
 
-        timeline.follow_timecode_transport(true, false, 0);
+        timeline.follow_timecode_transport(transport(true, false, 0));
         assert!(!timeline.audio_needs_sync);
 
-        timeline.follow_timecode_transport(true, true, 0);
+        timeline.follow_timecode_transport(transport(true, true, 0));
         assert!(timeline.audio_needs_sync);
         timeline.audio_needs_sync = false;
 
-        timeline.follow_timecode_transport(true, true, 0);
+        timeline.follow_timecode_transport(transport(true, true, 0));
         assert!(!timeline.audio_needs_sync);
 
-        timeline.follow_timecode_transport(true, true, 1);
+        timeline.follow_timecode_transport(transport(true, true, 1));
         assert!(timeline.audio_needs_sync);
         timeline.audio_needs_sync = false;
 
-        timeline.follow_timecode_transport(true, false, 1);
+        timeline.follow_timecode_transport(transport(true, false, 1));
         assert!(timeline.audio_needs_sync);
+    }
+
+    /// An external timecode that jumps while running, or starts running away from where it
+    /// stopped, relocates the timeline; resuming in place or engine-clock changes do not.
+    #[test]
+    fn external_locates_relocate_the_timeline() {
+        let at = |external, running, position_jumps, secs| TimecodeTransport {
+            external,
+            running,
+            position_jumps,
+            position: Duration::from_secs(secs),
+        };
+        let mut timeline = MaterializedTimeline::new(Timeline::default());
+        timeline.activate();
+
+        assert!(!timeline.follow_timecode_transport(at(true, false, 0, 0)));
+        assert!(
+            timeline.follow_timecode_transport(at(true, true, 0, 1800)),
+            "a sender starting mid-show is a locate"
+        );
+        assert!(!timeline.follow_timecode_transport(at(true, true, 0, 1801)));
+        assert!(
+            timeline.follow_timecode_transport(at(true, true, 1, 60)),
+            "a rewind while running is a locate"
+        );
+        assert!(!timeline.follow_timecode_transport(at(true, false, 1, 61)));
+        assert!(
+            !timeline.follow_timecode_transport(at(true, true, 1, 61)),
+            "resuming where the sender stopped is not a locate"
+        );
+        assert!(!timeline.follow_timecode_transport(at(true, false, 1, 62)));
+        assert!(!timeline.follow_timecode_transport(at(true, false, 1, 900)));
+        assert!(!timeline.follow_timecode_transport(at(true, false, 1, 900)));
+        assert!(
+            timeline.follow_timecode_transport(at(true, true, 1, 900)),
+            "a locate made while stopped is a locate when play resumes"
+        );
+        assert!(!timeline.follow_timecode_transport(at(false, false, 1, 0)));
+        assert!(!timeline.follow_timecode_transport(at(false, true, 1, 30)));
+    }
+
+    /// An action placed exactly at the timeline start fires on the first scan from the start,
+    /// but not again on a later scan that resumes after zero.
+    #[test]
+    fn action_at_zero_fires_from_the_beginning() {
+        let timeline = Timeline {
+            tracks: vec![Track {
+                id: "track".to_owned(),
+                label: "Track".to_owned(),
+                muted: false,
+                solo: false,
+                expanded: false,
+                actions: vec![Action {
+                    id: "at-zero".to_owned(),
+                    label: "At zero".to_owned(),
+                    position: Duration::ZERO,
+                    duration: Duration::ZERO,
+                    action: ActionKind::StartClip(Uuid::new_v4()).to_reference(),
+                }],
+                automation_lanes: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let mut materialized = MaterializedTimeline::new(timeline);
+
+        let first = materialized
+            .process_actions(
+                TimelineActionCursor::default().position,
+                Duration::from_millis(16),
+            )
+            .into_iter()
+            .map(|(_, action)| action.id.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(first, ["at-zero"]);
+
+        materialized.reset_action_triggers();
+        let resumed = materialized.process_actions(
+            ActionRangeStart::After(Duration::ZERO),
+            Duration::from_millis(32),
+        );
+        assert!(resumed.is_empty());
+        assert_eq!(
+            materialized
+                .collect_actions_in_range(ActionRangeStart::Beginning, Duration::ZERO)
+                .len(),
+            1,
+            "seek reconstruction to the start includes the action"
+        );
     }
 
     /// Switching a playing engine-clock timecode to an external source resyncs audio, so audio
@@ -459,17 +648,17 @@ mod tests {
         timeline.activate();
         timeline.audio_needs_sync = false;
 
-        timeline.follow_timecode_transport(false, true, 0);
-        timeline.follow_timecode_transport(false, false, 0);
+        timeline.follow_timecode_transport(transport(false, true, 0));
+        timeline.follow_timecode_transport(transport(false, false, 0));
         assert!(!timeline.audio_needs_sync);
-        timeline.follow_timecode_transport(false, true, 0);
+        timeline.follow_timecode_transport(transport(false, true, 0));
         assert!(!timeline.audio_needs_sync);
 
-        timeline.follow_timecode_transport(true, false, 0);
+        timeline.follow_timecode_transport(transport(true, false, 0));
         assert!(timeline.audio_needs_sync);
         timeline.audio_needs_sync = false;
 
-        timeline.follow_timecode_transport(false, false, 0);
+        timeline.follow_timecode_transport(transport(false, false, 0));
         assert!(timeline.audio_needs_sync);
     }
 
@@ -520,7 +709,8 @@ mod tests {
         };
         let mut materialized = MaterializedTimeline::new(timeline);
 
-        let triggered = materialized.process_actions(Duration::ZERO, Duration::from_millis(150));
+        let triggered =
+            materialized.process_actions(ActionRangeStart::Beginning, Duration::from_millis(150));
         assert_eq!(triggered.len(), 2);
 
         let triggered_pairs: HashSet<(String, String)> = triggered
@@ -610,7 +800,8 @@ mod tests {
         };
         let mut materialized = MaterializedTimeline::new(timeline);
 
-        let triggered = materialized.process_actions(Duration::ZERO, Duration::from_millis(500));
+        let triggered =
+            materialized.process_actions(ActionRangeStart::Beginning, Duration::from_millis(500));
 
         assert_eq!(
             triggered

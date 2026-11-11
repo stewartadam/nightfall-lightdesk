@@ -33,6 +33,16 @@ const browserName =
   process.env.NIGHTFALL_PLAYWRIGHT_BROWSER === "firefox"
     ? ("firefox" as const)
     : ("chromium" as const);
+/**
+ * Extra Chromium switches from `NIGHTFALL_PLAYWRIGHT_CHROMIUM_ARGS`, split on
+ * whitespace. GPU-less cloud containers set it to render WebGL with Mesa's
+ * llvmpipe through EGL, which runs the visualizer about ten times faster than
+ * the SwiftShader fallback Chromium picks on its own.
+ */
+const extraChromiumArgs =
+  process.env.NIGHTFALL_PLAYWRIGHT_CHROMIUM_ARGS?.split(/\s+/).filter(
+    Boolean,
+  ) ?? [];
 
 /**
  * Returns the configured pool size, or one worker per core minus one, capped
@@ -83,7 +93,7 @@ export default defineConfig({
     // Browser-side timeline audio (embedded demo) must stay silent in every browser.
     launchOptions:
       browserName === "chromium"
-        ? { args: ["--mute-audio"] }
+        ? { args: ["--mute-audio", ...extraChromiumArgs] }
         : { firefoxUserPrefs: { "media.volume_scale": "0.0" } },
   },
   webServer: usesBackendPool

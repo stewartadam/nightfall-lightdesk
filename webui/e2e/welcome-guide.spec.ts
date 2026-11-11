@@ -2221,6 +2221,9 @@ test("covered prerequisite panels offer Show and make room", async ({
   page,
 }, testInfo) => {
   await openSample(page);
+  // Too narrow for the grid panels' minimums beside both open edge panels,
+  // so the edge panels cover the Visualizer.
+  await page.setViewportSize({ width: 1100, height: 1000 });
   const guide = await startLesson(page, /Your first lights/);
   await reachStep(page, "Select lights");
   await page.getByRole("tab", { name: "Clips", exact: true }).click();

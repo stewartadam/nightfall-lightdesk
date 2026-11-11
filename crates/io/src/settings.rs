@@ -28,6 +28,18 @@ pub const MIN_DMX_OUTPUT_RATE_HZ: u32 = 1;
 /// network-native receivers such as pixel controllers and media servers.
 pub const MAX_DMX_OUTPUT_RATE_HZ: u32 = 60;
 
+/// Default sACN synchronization universe.
+///
+/// Receivers join the synchronization universe's multicast group on their own once data
+/// announces it, so a universe the show already sends needs no extra group on the network.
+pub const DEFAULT_SACN_SYNC_UNIVERSE: u16 = 1;
+
+/// Lowest sACN universe, and so the lowest synchronization universe.
+pub const MIN_SACN_UNIVERSE: u16 = 1;
+
+/// Highest sACN universe, and so the highest synchronization universe.
+pub const MAX_SACN_UNIVERSE: u16 = 63_999;
+
 /// Process-scoped permissions that cap showfile transport preferences.
 ///
 /// This resource is intentionally not serialized. A showfile can preserve the
@@ -118,6 +130,19 @@ pub struct IoRuntimeSettings {
         deserialize_with = "deserialize_dmx_output_rate_hz"
     )]
     pub dmx_output_rate_hz: u32,
+    /// Whether Art-Net output follows each transmission with an ArtSync packet.
+    #[serde(default)]
+    pub artnet_sync_enabled: bool,
+    /// Whether sACN output marks its data for universe synchronization and sends a
+    /// synchronization packet after each transmission.
+    #[serde(default)]
+    pub sacn_sync_enabled: bool,
+    /// Universe sACN synchronization packets are sent on, clamped on load.
+    #[serde(
+        default = "default_sacn_sync_universe",
+        deserialize_with = "deserialize_sacn_sync_universe"
+    )]
+    pub sacn_sync_universe: u16,
 }
 
 impl Default for IoRuntimeSettings {
@@ -133,6 +158,9 @@ impl Default for IoRuntimeSettings {
             input_signal_loss_timeout: default_input_signal_loss_timeout(),
             input_universe_visibility_mode: InputUniverseVisibilityMode::default(),
             dmx_output_rate_hz: default_dmx_output_rate_hz(),
+            artnet_sync_enabled: false,
+            sacn_sync_enabled: false,
+            sacn_sync_universe: default_sacn_sync_universe(),
         }
     }
 }
@@ -141,6 +169,11 @@ impl IoRuntimeSettings {
     /// Returns the interval between network DMX output ticks for the sanitized output rate.
     pub fn dmx_output_interval(&self) -> Duration {
         dmx_output_interval(self.dmx_output_rate_hz)
+    }
+
+    /// Returns the universe sACN output synchronizes on, or `None` when sACN sync is off.
+    pub fn sacn_sync_address(&self) -> Option<u16> {
+        self.sacn_sync_enabled.then_some(self.sacn_sync_universe)
     }
 }
 
@@ -180,6 +213,24 @@ where
     D: serde::Deserializer<'de>,
 {
     u32::deserialize(deserializer).map(sanitize_dmx_output_rate_hz)
+}
+
+/// Returns the default sACN synchronization universe for serde defaults.
+pub fn default_sacn_sync_universe() -> u16 {
+    DEFAULT_SACN_SYNC_UNIVERSE
+}
+
+/// Clamps an sACN synchronization universe to [`MIN_SACN_UNIVERSE`]..=[`MAX_SACN_UNIVERSE`].
+pub fn sanitize_sacn_sync_universe(universe: u16) -> u16 {
+    universe.clamp(MIN_SACN_UNIVERSE, MAX_SACN_UNIVERSE)
+}
+
+/// Deserializes a showfile's sACN synchronization universe, clamping it to the sACN range.
+fn deserialize_sacn_sync_universe<'de, D>(deserializer: D) -> Result<u16, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    u16::deserialize(deserializer).map(sanitize_sacn_sync_universe)
 }
 
 /// Returns the tick interval for a network DMX output rate after sanitizing it.
@@ -418,7 +469,13 @@ pub fn usb_dmx_device_label(
         (Some(manufacturer), Some(product)) => format!("{manufacturer} {product}"),
         (Some(manufacturer), None) => manufacturer.to_string(),
         (None, Some(product)) => product.to_string(),
-        (None, None) => "uDMX adapter".to_string(),
+        (None, None) => match (vendor_id, product_id) {
+            (crate::UDMX_VENDOR_ID, crate::UDMX_PRODUCT_ID) => "uDMX adapter".to_string(),
+            (crate::FTDI_VENDOR_ID, crate::FTDI_FT232R_PRODUCT_ID) => {
+                "FTDI USB serial adapter".to_string()
+            }
+            _ => "USB DMX adapter".to_string(),
+        },
     };
     let identity = serial_number
         .map(str::trim)
@@ -663,6 +720,27 @@ mod tests {
                 Some("bus 20 port 1.2")
             ),
             "Anyma uDMX (16c0:05dc) - bus 20 port 1.2"
+        );
+    }
+
+    /// Verifies devices without USB name strings are labelled by the interface family their IDs
+    /// belong to.
+    #[test]
+    fn usb_dmx_device_label_names_family_when_descriptors_are_missing() {
+        assert_eq!(
+            usb_dmx_device_label(UDMX_VENDOR_ID, UDMX_PRODUCT_ID, None, None, None, None),
+            "uDMX adapter (16c0:05dc)"
+        );
+        assert_eq!(
+            usb_dmx_device_label(
+                crate::FTDI_VENDOR_ID,
+                crate::FTDI_FT232R_PRODUCT_ID,
+                None,
+                None,
+                Some("EN123456"),
+                None
+            ),
+            "FTDI USB serial adapter (0403:6001) - serial EN123456"
         );
     }
 }

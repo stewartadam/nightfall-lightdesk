@@ -17,7 +17,7 @@ export default definePanel({
   panelId: "panel-BlueprintsPanel",
   componentName: "BlueprintsPanel",
   title: "Blueprints",
-  minWidth: 515,
+  minWidth: 360,
   minHeight: 160,
   icon: SwatchesIcon,
   loadComponent: () => import("./blueprints-panel"),

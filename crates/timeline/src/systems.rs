@@ -48,7 +48,10 @@ use nightfall_selection_runtime::SpatialSelectionResolver;
 use nightfall_timecode::prelude::*;
 use uuid::Uuid;
 
-use crate::components::{MaterializedTimeline, SpawnedEntityType, TimelineActionCursor};
+use crate::components::{
+    ActionRangeStart, MaterializedTimeline, SpawnedEntityType, TimecodeTransport,
+    TimelineActionCursor,
+};
 use crate::planner::{TimelinePlanningAction, TimelinePlaybackSourceResolver, plan_timeline_at};
 use crate::prelude::{
     ActionKind, ParameterType, TimelineCommand, TimelineLookaheadMode,
@@ -56,6 +59,7 @@ use crate::prelude::{
     TimelineStopBehavior,
 };
 use crate::recording::{TimelineCommandOrigins, write_timeline_clip_action};
+use crate::timeline_events::TimelinePlayheadJumped;
 
 mod lifecycle;
 mod live;

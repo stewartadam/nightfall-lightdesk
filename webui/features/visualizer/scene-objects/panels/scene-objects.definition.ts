@@ -14,7 +14,7 @@ export default definePanel({
   panelId: "panel-SceneObjects",
   componentName: "SceneObjects",
   title: "Scene Objects",
-  minWidth: 515,
+  minWidth: 360,
   minHeight: 160,
   icon: CubeIcon,
   loadComponent: () => import("./scene-objects-panel"),

@@ -91,10 +91,15 @@ test("CLI avoids every other worktree's ports", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "nightfall-allocate-port-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const main = join(root, "main");
-  /** Runs a quiet Git command in `cwd`. */
+  // Git hooks export repository selectors such as GIT_DIR; inheriting them would point Git at
+  // the invoking checkout, and `git init` would then turn that repository bare.
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+  );
+  /** Runs a quiet Git command in `cwd`, isolated from the invoking repository. */
   const git = (cwd, ...args) =>
-    execFileSync("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-  execFileSync("git", ["init", "-q", main]);
+    execFileSync("git", args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+  execFileSync("git", ["init", "-q", main], { env });
   git(
     main,
     "-c",
@@ -117,7 +122,7 @@ test("CLI avoids every other worktree's ports", async (t) => {
   for (let i = 0; i < 10; i += 1) {
     const port = Number(
       execFileSync(process.execPath, [scriptPath, fresh], {
-        env: { ...process.env, NIGHTFALL_PORT: "3000" },
+        env: { ...env, NIGHTFALL_PORT: "3000" },
       }).toString(),
     );
     assert.equal(port % PORT_BLOCK_SIZE, 0);
@@ -125,6 +130,8 @@ test("CLI avoids every other worktree's ports", async (t) => {
   }
 
   await writeFile(join(fresh, ".env"), "NIGHTFALL_PORT=3500\n");
-  const kept = execFileSync(process.execPath, [scriptPath, fresh]).toString();
+  const kept = execFileSync(process.execPath, [scriptPath, fresh], {
+    env,
+  }).toString();
   assert.equal(kept.trim(), "3500");
 });

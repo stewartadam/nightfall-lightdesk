@@ -30,6 +30,7 @@ import {
 import { appLifecycle } from "./state/app-lifecycle";
 import "./state/reduced-motion";
 import { appearanceSettings } from "./state/appearance";
+import { installDraftSaveCloseGuard } from "./state/draft-save-status";
 import { showfileTransition } from "./state/showfile-transition";
 
 import "./index.css";
@@ -62,6 +63,7 @@ function ignoreReportedLoadFailure(): void {}
 // Initialize URL-backed runtime settings before app components read them.
 initFeatureFlags();
 installTestHooks();
+installDraftSaveCloseGuard();
 document.title = isEmbeddedDemoRuntime() ? APP_NAME : APP_TITLE;
 
 type InteractiveShellMountProps = {

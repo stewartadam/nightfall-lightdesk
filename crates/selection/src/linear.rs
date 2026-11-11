@@ -12,6 +12,7 @@ use nightfall::prelude::*;
 use uuid::Uuid;
 
 use crate::contracts::SelectionDataSource;
+use crate::subtraction::RemovedFixtures;
 use crate::validation::{
     MISSING_FIXTURE_REFERENCES_WARNING, push_missing_fixture_elements_warning,
     push_missing_fixture_warning,
@@ -258,12 +259,12 @@ impl<'a> SelectionResolver<'a> {
                     .map(|fixture| vec![fixture])
                     .collect()
             }
-            SelectionExpr::Group(group_ref_expr) => {
-                Self::resolve_group_ref_expr(group_ref_expr, data_source, visited_groups, warnings)
-                    .into_iter()
-                    .map(|fixture| vec![fixture])
-                    .collect()
-            }
+            SelectionExpr::Group(group_ref_expr) => Self::resolve_group_ref_expr_spans(
+                group_ref_expr,
+                data_source,
+                visited_groups,
+                warnings,
+            ),
             SelectionExpr::Add { lhs, rhs } => {
                 let mut out =
                     Self::resolve_to_iterator_spans(lhs, data_source, visited_groups, warnings);
@@ -276,13 +277,14 @@ impl<'a> SelectionResolver<'a> {
                 out
             }
             SelectionExpr::Sub { lhs, rhs } => {
-                let remove = Self::resolve(rhs, data_source, visited_groups, warnings);
+                let remove =
+                    RemovedFixtures::new(Self::resolve(rhs, data_source, visited_groups, warnings));
                 Self::resolve_to_iterator_spans(lhs, data_source, visited_groups, warnings)
                     .into_iter()
                     .filter_map(|span| {
                         let retained = span
                             .into_iter()
-                            .filter(|fixture| !remove.contains(fixture))
+                            .filter(|fixture| !remove.removes(fixture))
                             .collect::<Vec<_>>();
                         (!retained.is_empty()).then_some(retained)
                     })
@@ -346,8 +348,9 @@ impl<'a> SelectionResolver<'a> {
             }
             SelectionExpr::Sub { lhs, rhs } => {
                 let mut out = Self::resolve(lhs, data_source, visited_groups, warnings);
-                let remove = Self::resolve(rhs, data_source, visited_groups, warnings);
-                out.retain(|r| !remove.contains(r));
+                let remove =
+                    RemovedFixtures::new(Self::resolve(rhs, data_source, visited_groups, warnings));
+                out.retain(|r| !remove.removes(r));
                 out
             }
             SelectionExpr::Span(inner) => {

@@ -71,3 +71,54 @@
 .nf-field-group:has(input:disabled) {
   opacity: 0.6;
 }
+/*
+ * A radio card's whole surface selects its radio. The radio sits beside the
+ * title's first line, and a long description wraps beneath the title.
+ */
+.nf-radio-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--nf-corner-radius, 6px);
+  cursor: pointer;
+}
+.nf-radio-card > input {
+  margin-top: 2px;
+}
+.nf-radio-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.nf-radio-card-title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.nf-radio-card-description {
+  color: var(--muted, #a0a7aa);
+  font-size: 12px;
+  line-height: 16px;
+}
+.nf-radio-card:has(> input:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+/* The card already dims as a whole, so its radio is not dimmed a second time. */
+.nf-radio-card > input:disabled {
+  opacity: 1;
+}
+/*
+ * Keyboard focus lands on the radio, so the card draws the selectable
+ * surface's focus outline in place of the radio's own ring.
+ */
+.nf-radio-card:has(> input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.nf-radio-card > input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}

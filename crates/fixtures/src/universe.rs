@@ -128,19 +128,6 @@ impl InputDmxUniverses {
             .and_then(|by_universe| by_universe.get(&universe_id))
     }
 
-    /// Returns a mutable universe buffer, creating it if absent.
-    pub fn get_universe_mut(
-        &mut self,
-        transport: RouteTransport,
-        universe_id: u16,
-    ) -> &mut [ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE] {
-        self.universes
-            .entry(transport)
-            .or_default()
-            .entry(universe_id)
-            .or_insert([0; MAX_CHANNELS_PER_UNIVERSE])
-    }
-
     /// Returns age in milliseconds for the latest frame of a transport + universe.
     pub fn frame_age_ms(
         &self,
@@ -192,8 +179,6 @@ pub enum ConsoleChannelOrigin {
     },
     /// Channel written by explicit manual command.
     ManualCommand,
-    /// Channel written by system-level clear/release behavior.
-    System,
 }
 
 /// DMX universe state owned by the console, including source metadata.
@@ -629,7 +614,12 @@ impl ConsoleDmxUniverses {
         self.held_wire_channels_dirty = false;
     }
 
-    /// Clears channels currently owned by stale input transport sources.
+    /// Frees channels owned by stale input transport sources, zeroing them with no owner.
+    ///
+    /// A source is stale once its last frame is at least `timeout` old, or when no frame was
+    /// ever seen for it. Console universes left without any owned channel are removed so
+    /// routes stop overlaying them, matching [`Self::release_value`]. Returns how many
+    /// channels were freed.
     pub fn clear_stale_input_channels(
         &mut self,
         input_universes: &InputDmxUniverses,
@@ -656,9 +646,14 @@ impl ConsoleDmxUniverses {
                 }
 
                 universe.values[idx] = 0;
-                universe.origins[idx] = Some(ConsoleChannelOrigin::System);
+                universe.origins[idx] = None;
                 cleared += 1;
             }
+        }
+
+        if cleared > 0 {
+            self.universes
+                .retain(|_, universe| universe.origins.iter().any(Option::is_some));
         }
 
         cleared
@@ -793,6 +788,8 @@ mod tests {
         assert!(!universes.has_universe(4));
     }
 
+    /// Verifies a stale input source frees its only console slot and the emptied console
+    /// universe is removed.
     #[test]
     fn console_input_owner_clears_when_source_stale() {
         let mut universes = ConsoleDmxUniverses::default();
@@ -816,10 +813,42 @@ mod tests {
         let cleared =
             universes.clear_stale_input_channels(&input_universes, now, Duration::from_millis(500));
         assert_eq!(cleared, 1);
+        assert!(!universes.has_universe(2));
+        assert_eq!(universes.get_value(2, 1), None);
+    }
+
+    /// Verifies a stale input slot is freed (zero, no owner) while the universe stays alive
+    /// for the channels other owners still hold.
+    #[test]
+    fn console_input_owner_frees_slot_but_keeps_universe_with_other_owners() {
+        let mut universes = ConsoleDmxUniverses::default();
+        let mut input_universes = InputDmxUniverses::default();
+
+        let source = (RouteTransport::Sacn, 1);
+        let now = Instant::now();
+        let past = now - Duration::from_millis(1500);
+
+        universes.set_value(
+            2,
+            1,
+            42,
+            ConsoleChannelOrigin::InputTransport {
+                transport: source.0,
+                universe: source.1,
+            },
+        );
+        universes.set_value(2, 2, 99, ConsoleChannelOrigin::ManualCommand);
+        input_universes.set_universe(source.0, source.1, [0; MAX_CHANNELS_PER_UNIVERSE], past);
+
+        let cleared =
+            universes.clear_stale_input_channels(&input_universes, now, Duration::from_millis(500));
+        assert_eq!(cleared, 1);
         assert_eq!(universes.get_value(2, 1), Some(0));
+        assert_eq!(universes.get_origin(2, 1), None);
+        assert_eq!(universes.get_value(2, 2), Some(99));
         assert_eq!(
-            universes.get_origin(2, 1),
-            Some(ConsoleChannelOrigin::System)
+            universes.get_origin(2, 2),
+            Some(ConsoleChannelOrigin::ManualCommand)
         );
     }
 
@@ -871,24 +900,6 @@ mod tests {
             .frame_age_ms(RouteTransport::Sacn, 1, now)
             .unwrap();
         assert!(age_ms >= 250);
-    }
-
-    #[test]
-    fn input_universe_mut_insert_does_not_mark_received_frame() {
-        let mut input_universes = InputDmxUniverses::default();
-        let now = Instant::now();
-
-        let target = input_universes.get_universe_mut(RouteTransport::ArtNet, 7);
-        target[0] = 123;
-
-        assert_eq!(
-            input_universes.frame_age_ms(RouteTransport::ArtNet, 7, now),
-            None
-        );
-        assert_eq!(
-            input_universes.is_self_frame(RouteTransport::ArtNet, 7),
-            None
-        );
     }
 
     #[test]

@@ -345,7 +345,7 @@ fn output_transport_sort_key(transport: &OutputTransport) -> (u8, String) {
     match transport {
         OutputTransport::Sacn { mode } => (0, format!("{mode:?}")),
         OutputTransport::ArtNet { mode } => (1, format!("{mode:?}")),
-        OutputTransport::Udmx { device } => (2, device.clone()),
+        OutputTransport::Usb { device } => (2, device.clone()),
         OutputTransport::Disabled => (3, String::new()),
     }
 }
@@ -368,12 +368,12 @@ pub fn output_transport_label(transport: &OutputTransport) -> String {
         OutputTransport::ArtNet {
             mode: ArtNetDelivery::Unicast { ip },
         } => format!("Art-Net → {ip}"),
-        OutputTransport::Udmx { device }
+        OutputTransport::Usb { device }
             if device == nightfall_io::DEFAULT_USB_DMX_DEVICE_SELECTOR =>
         {
             "USB".to_string()
         }
-        OutputTransport::Udmx { device } => format!("USB ({device})"),
+        OutputTransport::Usb { device } => format!("USB ({device})"),
         OutputTransport::Disabled => "Disabled".to_string(),
     }
 }
@@ -443,7 +443,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -484,7 +483,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -535,7 +533,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -629,7 +626,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 5,
                     address: 1,

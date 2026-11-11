@@ -33,7 +33,7 @@ Tables commonly offer search, filters, and a column-visibility menu. If an objec
 
 Use the application menu's **Save Showfile** action. **Open Showfile** opens the **Showfiles** dialog, which lists saved shows and their available revisions and drafts. Saving records the show; saving a layout alone does not save fixture programming.
 
-If startup offers to resume unsaved work, **Load Draft** restores the draft and **Keep Saved** discards it in favor of the saved show. Read the show name and timestamps before choosing. A backup revision can be opened from the showfile picker; use a named save such as `save recovered-show` if you want to preserve the current version too.
+If startup offers to resume unsaved work, **Load Draft** restores the draft and **Keep Saved** discards it in favor of the saved show, and **Manage showfiles** opens the showfile picker to create or open a different show. Read the show name and timestamps before choosing. A backup revision can be opened from the showfile picker; use a named save such as `save recovered-show` if you want to preserve the current version too.
 
 To delete a show, hover its row in **Showfiles** and click the trash icon. The show, its draft, and its backup revisions move to **Recently deleted** at the bottom of the picker, where **Restore** brings them back for 7 days. **Empty trash** removes them permanently right away. The show that is currently open cannot be deleted; open another show first.
 

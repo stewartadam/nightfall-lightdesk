@@ -29,6 +29,7 @@ dashmap = { version = "6.2.1", features = ["serde"] }
 dotenv = { package = "dotenv-ng", version = "1" }
 enum_dispatch = "0.3.13"
 futures-util = "0.3.34"
+gdt-cpus = "0.2606.1"
 gdtf = "0.3.0"
 jiff = "0.2.39"
 minicbor = "2.3"

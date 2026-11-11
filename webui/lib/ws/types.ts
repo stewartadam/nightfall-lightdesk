@@ -167,5 +167,6 @@ export type AnyWsMessage =
   | types.SceneObjectWsMessage
   | types.ReferenceWsMessage
   | types.TelemetryWsMessage
+  | types.DraftSaveWsMessage
   | types.UsbDmxWsMessage
   | AnyCommand;

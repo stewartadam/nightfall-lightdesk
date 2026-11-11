@@ -18,7 +18,7 @@ use app_runtime::{monitor_bevy_session, run_bevy_session};
 use nightfall::constants::APP_LOG_FILE_NAME;
 use nightfall_config::RuntimeConfig;
 use nightfall_engine::logging::LogConfig;
-use nightfall_engine::prelude::request_graceful_exit;
+use nightfall_engine::prelude::{is_process_shutdown_requested, request_graceful_exit};
 use tauri::{
     Emitter, EventTarget, Manager, Runtime, WebviewWindow, WebviewWindowBuilder,
     menu::{
@@ -843,6 +843,64 @@ pub(super) fn dispatch_menu_action<R: Runtime + 'static>(
 /// How long quitting waits for the backend to save the draft and stop before closing anyway.
 const BACKEND_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Set once the operator chose to quit despite a failed draft save, so the quit that follows
+/// is not asked about again.
+static QUIT_WITHOUT_DRAFT_CONFIRMED: AtomicBool = AtomicBool::new(false);
+
+/// Set while the quit confirmation is showing, so repeated quit requests open only one.
+static QUIT_CONFIRMATION_OPEN: AtomicBool = AtomicBool::new(false);
+
+/// Asks the operator to confirm quitting while the open show's draft cannot be saved, and
+/// returns whether the quit must wait for that answer.
+///
+/// Quitting stops the backend, which holds the only copy of edits made since the last good
+/// save. Choosing "Quit Anyway" quits; cancelling leaves the app running.
+fn confirm_quit_without_draft<R: Runtime>(app: &tauri::AppHandle<R>) -> bool {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+    // Once the backend is stopping, another quit request only repeats the one under way.
+    if QUIT_WITHOUT_DRAFT_CONFIRMED.load(Ordering::Acquire) || is_process_shutdown_requested() {
+        return false;
+    }
+    let Some(error) = app_runtime::draft_save_failure() else {
+        return false;
+    };
+    if QUIT_CONFIRMATION_OPEN.swap(true, Ordering::AcqRel) {
+        return true;
+    }
+    let app_handle = app.clone();
+    app.dialog()
+        .message(format!(
+            "The show's draft couldn't be saved, so edits since the last save will be lost \
+             if you quit.\n\n{error}"
+        ))
+        .title("Quit without saving the draft?")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Quit Anyway".to_string(),
+            "Cancel".to_string(),
+        ))
+        .show(move |quit| {
+            QUIT_CONFIRMATION_OPEN.store(false, Ordering::Release);
+            if quit {
+                QUIT_WITHOUT_DRAFT_CONFIRMED.store(true, Ordering::Release);
+                app_handle.exit(0);
+            }
+        });
+    true
+}
+
+/// Holds the last window's close while the draft cannot be saved, since closing it quits.
+fn confirm_closing_last_window<R: Runtime>(window: &tauri::Window<R>, event: &tauri::WindowEvent) {
+    let tauri::WindowEvent::CloseRequested { api, .. } = event else {
+        return;
+    };
+    let app = window.app_handle();
+    if app.webview_windows().len() <= 1 && confirm_quit_without_draft(app) {
+        api.prevent_close();
+    }
+}
+
 /// Holds a quit, or the last window closing, until the backend has saved and stopped.
 ///
 /// The first exit request asks the backend to save the draft and stop; the backend thread
@@ -851,8 +909,13 @@ const BACKEND_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 /// wait on a system password prompt, is never cut short.
 ///
 /// Tauri ends the process right after the final exit event without returning to `main`, so
-/// reports still in memory are written to disk then.
-fn defer_exit_until_backend_stops(event: tauri::RunEvent, backend_stopped: &Arc<AtomicBool>) {
+/// reports still in memory are written to disk then. While the draft cannot be saved, the
+/// operator confirms first.
+fn defer_exit_until_backend_stops(
+    app: &tauri::AppHandle,
+    event: tauri::RunEvent,
+    backend_stopped: &Arc<AtomicBool>,
+) {
     if matches!(event, tauri::RunEvent::Exit) {
         app_runtime::flush_reports();
         return;
@@ -864,6 +927,9 @@ fn defer_exit_until_backend_stops(event: tauri::RunEvent, backend_stopped: &Arc<
         return;
     }
     api.prevent_exit();
+    if confirm_quit_without_draft(app) {
+        return;
+    }
     if request_graceful_exit("desktop app quit") {
         let backend_stopped = backend_stopped.clone();
         std::thread::spawn(move || {
@@ -899,6 +965,7 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
     builder
         .menu(build_tauri_menu)
         .on_menu_event(handle_tauri_menu_event)
+        .on_window_event(confirm_closing_last_window)
         .invoke_handler(tauri::generate_handler![
             open_data_dir,
             perform_menu_action,
@@ -974,7 +1041,7 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
         })
         .build(tauri::generate_context!())
         .expect("Error building the tauri application")
-        .run(move |_app, event| defer_exit_until_backend_stops(event, &backend_stopped));
+        .run(move |app, event| defer_exit_until_backend_stops(app, event, &backend_stopped));
 }
 
 #[cfg(test)]

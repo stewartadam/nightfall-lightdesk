@@ -22,13 +22,11 @@ change your verdict.
 
 ## Already checked before you run
 
-The PR is small (at most 20 files and 400 changed lines), changes no binary files, and touches
+The PR is small (at most 20 files and 800 changed lines), changes no binary files, and touches
 none of these areas: CI, build and test tooling (including `scripts/` and lint, TypeScript and
-Playwright configuration), dependencies and toolchain, the showfile format and migrations, the
-client and server protocol crate, the DMX, network and controller input and output crates, the desktop app and installers, licensing, agent instructions,
-and Git attributes. Do not repeat these checks, but if the PR changes behavior in one of those areas
-indirectly (for example, a change elsewhere that alters what gets saved in showfiles or sent over
-the websocket), treat it as risky.
+Playwright configuration), dependencies and toolchain, licensing, agent instructions, and Git
+attributes. Do not repeat these checks, but if the PR changes behavior in one of those areas
+indirectly, treat it as risky.
 
 ## Answer `auto-merge` only when all of these hold
 
@@ -41,6 +39,17 @@ the websocket), treat it as risky.
    or network output, timing of live playback, startup and shutdown, security boundaries, or
    anything that could interrupt a running show. Refactors that move or rename a lot of engine
    code are not low risk even when small.
+
+   Judge risk by what the diff changes, not by where it lives. Test-only changes, comments,
+   logging and small refactors that leave behavior the same can pass anywhere, including the
+   showfile, websocket, desktop and DMX, network and controller input and output crates. In those
+   areas, a behavior change is not low risk when it alters:
+   - what gets saved or loaded: showfile fields, defaults, serialization or migrations;
+   - messages between the engine and its clients: websocket message shapes, fields or ordering;
+   - the desktop app's installers, updates, permissions or startup;
+   - what is sent or accepted on the wire (channel values, universes, priority, sync, merging of
+     multiple senders, controller mappings and LED feedback), packet timing or rates, or socket,
+     port and device handling.
 3. **Tested.** A behavior change comes with tests that would fail without it, or the change is one
    where tests do not apply (documentation, copy, styling, comments, test-only changes). A fix to
    UI behavior needs a browser test that exercises it. Screenshots in the description are welcome
