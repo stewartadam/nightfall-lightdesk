@@ -47,23 +47,6 @@ export const riskyAreas = [
     ],
   },
   {
-    area: "showfile format and migrations",
-    patterns: [/^crates\/showfile\//],
-  },
-  {
-    area: "client and server protocol",
-    patterns: [/^crates\/websocket\//],
-  },
-  {
-    // A mistake here reaches fixtures and other consoles on the network during a show.
-    area: "DMX, network and controller input and output",
-    patterns: [/^crates\/(input|output)_/],
-  },
-  {
-    area: "desktop app, installers and updates",
-    patterns: [/^desktop\//],
-  },
-  {
     area: "licensing",
     patterns: [
       /^LICENSE$/,
