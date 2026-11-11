@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { GPU_TAG } from "./gpu-gate";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { decodePng } from "./png-decode";
 import { prepareStoreSeededTestApp } from "./showfile-startup";
@@ -302,9 +303,9 @@ function coincidentOutlinePixelCount(png: Buffer): number {
 }
 
 /** Verifies patch row selection highlights matching visualizer fixtures. */
-test("patch grid row selection highlights visualizer fixtures in yellow", async ({
-  page,
-}) => {
+test("patch grid row selection highlights visualizer fixtures in yellow", {
+  tag: GPU_TAG,
+}, async ({ page }) => {
   await openApp(page);
   await addPatchPanel(page);
 
@@ -375,9 +376,9 @@ test("patch grid row selection highlights visualizer fixtures in yellow", async 
 });
 
 /** Verifies programmer value and active selection outlines coexist. */
-test("programmer row highlights coexist with active visualizer selection", async ({
-  page,
-}) => {
+test("programmer row highlights coexist with active visualizer selection", {
+  tag: GPU_TAG,
+}, async ({ page }) => {
   await openApp(page);
   await seedFixtures(page);
   await focusVisualizer(page);
@@ -438,9 +439,9 @@ test("programmer row highlights coexist with active visualizer selection", async
 /**
  * Verifies a clicked editable patch cell publishes its fixture without checking a row marker.
  */
-test("patch grid active edit row publishes a visualizer target independently of row markers", async ({
-  page,
-}) => {
+test("patch grid active edit row publishes a visualizer target independently of row markers", {
+  tag: GPU_TAG,
+}, async ({ page }) => {
   await openApp(page);
   await addPatchPanel(page);
 

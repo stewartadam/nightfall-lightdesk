@@ -627,6 +627,8 @@ pnpm run test:webui-playwright --headed webui/e2e/clip-go-button.spec.ts
 
 Use `--grep` to select a scenario and `--workers=1` to reduce concurrent load. Inspect screenshots and traces under `test-results/playwright/`; verify the visible result, not just command acknowledgements. Stop timeline playback at the end of a test that starts it. The wrapper disables timeline audio during its test runs.
 
+Tests tagged `@gpu` (`GPU_TAG` from `webui/e2e/gpu-gate.ts`) assert on pixels the app's 3D visualizer rasterized. They run on a GPU or on Mesa's llvmpipe/lavapipe, which GPU-less cloud containers can use for WebGL. They are skipped, with the WebGL renderer and WebGPU adapter in the report, when the visualizer would render through SwiftShader (Chromium's built-in fallback, as on a stock ubuntu CI runner) or Windows WARP, when it has neither a WebGPU adapter nor WebGL2, or when the probe fails. A missing WebGPU adapter alone does not skip them, since the visualizer then renders through WebGL2. Set `NIGHTFALL_PLAYWRIGHT_RUN_GPU_SPECS=1` to run them anyway, or pass `--grep-invert @gpu` to leave them out of a run entirely. Tag new app tests that read back visualizer pixels the same way; tests that inspect scene state through the visualizer API stay untagged. A gated test skips before `beforeEach` hooks run, but `afterEach` hooks still run and set up the fixtures they request, so return early from them when `testInfo.status` is `"skipped"`. The optics harness specs below gate on their backend themselves.
+
 #### Visualizer optics and performance tests
 
 The optics GPU specs render production visualizer components into `/e2e/fixtures/optics.html` without a backend, so run them with `--target embedded-demo`:

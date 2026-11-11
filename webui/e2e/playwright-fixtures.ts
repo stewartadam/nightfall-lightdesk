@@ -15,13 +15,13 @@ import {
   test as playwrightTest,
 } from "@playwright/test";
 import { createSampleWav } from "../../scripts/browser-demo-audio.mjs";
-
 import {
   startPlaywrightTestBackend,
   startPlaywrightWorkerSlot,
   stopPlaywrightTestBackend,
   stopPlaywrightWorkerSlot,
 } from "../../scripts/playwright-backend-pool.mjs";
+import { type GpuGateFixtures, gpuGateFixture } from "./gpu-gate";
 
 type WorkerSlot = {
   backendPort: number;
@@ -51,7 +51,8 @@ type TestFixtures = {
   /** Leaves telemetry consent unanswered so the first-run prompt appears. */
   telemetryUndecided: boolean;
   backendSlot: BackendSlot;
-} & GuideInvitationFixtures;
+} & GuideInvitationFixtures &
+  GpuGateFixtures;
 
 type GuideInvitationFixtures = {
   /**
@@ -90,6 +91,7 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   emptyStartupWorld: [false, { option: true }],
   telemetryUndecided: [false, { option: true }],
   guideInvitation: [false, { option: true }],
+  gpuGate: [gpuGateFixture, { auto: true }],
   /** Leaves out the guide invitation unless the test opted into it. */
   context: async ({ context, guideInvitation }, use) => {
     await skipGuideInvitation(context, guideInvitation);
@@ -200,10 +202,11 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
 
 /** Playwright fixture that uses only the shared Vite server, leaving the backend port deliberately empty. */
 export const frontendOnlyTest = playwrightTest.extend<
-  GuideInvitationFixtures,
+  GuideInvitationFixtures & GpuGateFixtures,
   WorkerFixtures
 >({
   guideInvitation: [false, { option: true }],
+  gpuGate: [gpuGateFixture, { auto: true }],
   /** Claims a port pair for a backend-free browser test worker on the shared Vite server. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
