@@ -169,7 +169,7 @@ neither checks out PR code. The steps are gated by
 same-repository PR into `develop` from someone with write access is opened ready or marked ready
 for review, or gets new commits while ready, and is not part of a stack:
 
-1. A size and path check (`scripts/merge-policy.mjs`) rejects PRs over 20 files or 400 changed
+1. A size and path check (`scripts/merge-policy.mjs`) rejects PRs over 20 files or 800 changed
    lines, PRs changing binary files, and PRs touching risky areas: CI, build and test tooling
    (which the required checks run from the PR itself), dependencies and toolchain, the showfile
    format, the websocket protocol crate, the DMX/network/controller input and output crates, the desktop app, licensing, agent instructions (any

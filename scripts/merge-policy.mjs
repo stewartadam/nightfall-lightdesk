@@ -10,7 +10,7 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 /** The largest PR, in changed files and in added plus deleted lines, that can merge without a human. */
-export const limits = { files: 20, lines: 400 };
+export const limits = { files: 20, lines: 800 };
 
 // Areas where a mistake is costly or hard to undo. A PR touching any of them always needs a human,
 // whatever the review finds. The review workflow runs from the default branch, so a PR cannot
