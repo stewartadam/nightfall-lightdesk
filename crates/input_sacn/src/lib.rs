@@ -544,7 +544,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "artnet".to_string(),
-                    protocol: RouteTransport::ArtNet,
                     transport: OutputTransport::ArtNet {
                         mode: ArtNetDelivery::Broadcast,
                     },
@@ -570,7 +569,8 @@ mod tests {
         }
     }
 
-    /// Sends one frame through the adapter and returns channel 1 of the Art-Net 3 passthrough.
+    /// Sends one frame through the adapter and returns channel 1 of the arbitrated sACN 1 input,
+    /// which the Art-Net 3 passthrough carries to the wire.
     fn deliver(
         app: &mut App,
         tx: &tokio::sync::mpsc::UnboundedSender<RawSacnFrame>,
@@ -580,7 +580,7 @@ mod tests {
         app.update();
         app.world()
             .resource::<InputDmxUniverses>()
-            .get_universe(RouteTransport::ArtNet, 3)[0]
+            .get_universe(RouteTransport::Sacn, 1)[0]
     }
 
     /// The priority-100 console drives Art-Net 3 whichever console's packets arrive last.
