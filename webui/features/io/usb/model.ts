@@ -183,82 +183,105 @@ export function usbTargetDeviceLabel(
     : savedLabel?.trim() || undefined;
 }
 
-/** Builds the serial-only selector prefix shared by every selector of a device with a serial. */
-function usbDeviceSerialSelector(
-  device: types.UsbDmxDeviceInfo,
-): string | undefined {
-  const serial = device.serial_number?.trim();
-  if (!serial) return undefined;
-  return `id-${usbDeviceVendorProduct(device)},serial-${serial}`;
+/** How a USB output row presents its adapter status, and the one-click fix it offers. */
+export interface UsbTargetStatusView {
+  /** Short status text. */
+  label: string;
+  /** Explanation shown under the status, when the status needs one. */
+  detail?: string;
+  kind: "valid" | "warning" | "invalid";
+  /** Binds the output to an attached adapter, saving the port it is on now. */
+  fix?: { label: string; device: string };
+}
+
+/** Returns the port shown for an attached adapter, such as "port 02:1". */
+function attachedDevicePort(
+  deviceId: string,
+  deviceById: Map<string, types.UsbDmxDeviceInfo>,
+): string {
+  const device = deviceById.get(deviceId);
+  if (device) return usbDevicePortChoiceSummary(device);
+  const port = usbSelectorField(deviceId, "port-");
+  return port ? `port ${port}` : "another port";
 }
 
 /**
- * Resolves saved USB target selectors to attached devices, keyed by target id, following the
- * backend's `resolve_usb_dmx_selectors` rules so the panel shows the device output goes to.
- *
- * A target first takes the device it names exactly, or for a serial-only selector the only
- * attached device with that serial. Targets left over then fall back to an unclaimed device
- * whose serial they name when it is the only attached device with that serial, so a device moved
- * to another port keeps its target while clones sharing a serial stay on their own targets.
- * The default selector then takes the first remaining uDMX interface; the backend picks in
- * enumeration order, so with several uDMX attached the panel may name a different one.
+ * Presents the backend's status for one saved USB output: whether output reaches its adapter,
+ * and, when the adapter moved, shares its serial number with another one, or could belong to
+ * several outputs, which adapter one click binds the output to.
  */
-export function resolveUsbTargetDevices(
-  targets: types.UsbDmxOutputTarget[],
-  devices: types.UsbDmxDeviceInfo[],
-): Map<string, types.UsbDmxDeviceInfo> {
-  const serialSelectors = devices.map(usbDeviceSerialSelector);
-  const serialCounts = new Map<string, number>();
-  for (const serialSelector of serialSelectors) {
-    if (serialSelector === undefined) continue;
-    serialCounts.set(
-      serialSelector,
-      (serialCounts.get(serialSelector) ?? 0) + 1,
-    );
+export function usbTargetStatusView(
+  target: types.UsbDmxOutputTarget,
+  status: types.UsbDmxTargetStatus | undefined,
+  deviceById: Map<string, types.UsbDmxDeviceInfo>,
+): UsbTargetStatusView {
+  const device = target.device.trim();
+  if (device === "") {
+    return { label: "Missing device", kind: "invalid" };
   }
-  /** Returns whether no other attached device shares the device's serial number. */
-  const uniqueSerial = (index: number) => {
-    const serialSelector = serialSelectors[index];
-    return (
-      serialSelector !== undefined && serialCounts.get(serialSelector) === 1
-    );
-  };
-  const claimed = new Set<number>();
-  const resolved = new Map<string, types.UsbDmxDeviceInfo>();
-  /** Records that the target outputs to the device at `index`. */
-  const claim = (target: types.UsbDmxOutputTarget, index: number) => {
-    claimed.add(index);
-    resolved.set(target.id, devices[index]);
-  };
+  // The automatic target needs no saved adapter, so it reads Auto before its first status too.
+  if (status === undefined && device === DEFAULT_USB_DEVICE_ID) {
+    return { label: "Auto", kind: "valid" };
+  }
+  switch (status?.type) {
+    case "Auto":
+      return { label: "Auto", kind: "valid" };
+    case "Connected":
+      return { label: "Configured", kind: "valid" };
+    case "Moved":
+      return {
+        label: "Moved",
+        detail: `Now on ${attachedDevicePort(status.data.device, deviceById)}`,
+        kind: "warning",
+        fix: { label: "Update port", device: status.data.device },
+      };
+    case "NeedsChoice":
+      return {
+        label: "Choose adapter",
+        detail: `The adapter on ${attachedDevicePort(status.data.device, deviceById)} could be this output or another one`,
+        kind: "warning",
+        fix: { label: "Use adapter", device: status.data.device },
+      };
+    case "OtherPort":
+      return {
+        label: "Not on its port",
+        detail: `A matching adapter is on ${attachedDevicePort(status.data.device, deviceById)}`,
+        kind: "invalid",
+        fix: { label: "Update port", device: status.data.device },
+      };
+    default:
+      return { label: "Missing", kind: "invalid" };
+  }
+}
 
-  for (const target of targets) {
-    const selector = target.device.trim();
-    const index = devices.findIndex(
-      (device, index) =>
-        !claimed.has(index) &&
-        (device.id === selector ||
-          (serialSelectors[index] === selector && uniqueSerial(index))),
-    );
-    if (index >= 0) claim(target, index);
+/** Joins port labels as "port 1", "port 1 and port 2", or "port 1, port 2 and port 3". */
+export function joinPorts(ports: string[]): string {
+  if (ports.length <= 1) return ports.join("");
+  return `${ports.slice(0, -1).join(", ")} and ${ports[ports.length - 1]}`;
+}
+
+/**
+ * Returns attached adapters grouped by the serial number they share, for serials reported by
+ * more than one adapter of the same model, so the panel can warn that those adapters are told
+ * apart by port. Adapters of different models are told apart by their USB IDs, as the backend's
+ * saved selectors are.
+ */
+export function usbDevicesSharingSerials(
+  devices: types.UsbDmxDeviceInfo[],
+): Array<{ serial: string; devices: types.UsbDmxDeviceInfo[] }> {
+  const groups = new Map<
+    string,
+    { serial: string; devices: types.UsbDmxDeviceInfo[] }
+  >();
+  for (const device of devices) {
+    const serial = usbDeviceSerialConflictKey(device);
+    if (!serial) continue;
+    const key = `${usbDeviceVendorProduct(device)},${serial}`;
+    const group = groups.get(key) ?? { serial, devices: [] };
+    group.devices.push(device);
+    groups.set(key, group);
   }
-  for (const target of targets) {
-    if (resolved.has(target.id)) continue;
-    const selector = target.device.trim();
-    const index = devices.findIndex(
-      (_, index) =>
-        !claimed.has(index) &&
-        uniqueSerial(index) &&
-        selector.startsWith(`${serialSelectors[index]},`),
-    );
-    if (index >= 0) claim(target, index);
-  }
-  for (const target of targets) {
-    if (target.device.trim() !== DEFAULT_USB_DEVICE_ID) continue;
-    const index = devices.findIndex(
-      (device, index) =>
-        !claimed.has(index) && usbDeviceVendorProduct(device) === "16c0:05dc",
-    );
-    if (index >= 0) claim(target, index);
-  }
-  return resolved;
+  return Array.from(groups.values()).filter(
+    (group) => group.devices.length > 1,
+  );
 }
