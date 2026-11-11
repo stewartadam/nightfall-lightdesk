@@ -80,12 +80,34 @@ impl OflMatrix {
         pixels
     }
 
-    /// Returns the axes that hold more than one pixel, outermost (Z) first.
+    /// Returns the matrix size along X, Y and Z. For `pixelKeys` this counts positions,
+    /// including `null` ones, using the longest row and plane, as OFL does.
+    pub fn size(&self) -> [usize; 3] {
+        match &self.pixel_keys {
+            Some(planes) => [
+                planes
+                    .iter()
+                    .flatten()
+                    .map(Vec::len)
+                    .max()
+                    .unwrap_or(0)
+                    .max(1),
+                planes.iter().map(Vec::len).max().unwrap_or(0).max(1),
+                planes.len().max(1),
+            ],
+            None => self
+                .pixel_count
+                .unwrap_or([1; 3])
+                .map(|count| count as usize),
+        }
+    }
+
+    /// Returns the axes that span more than one position, outermost (Z) first.
     pub fn defined_axes(&self) -> Vec<usize> {
-        let pixels = self.pixels();
+        let size = self.size();
         [Z, Y, X]
             .into_iter()
-            .filter(|axis| pixels.iter().any(|pixel| pixel.position[*axis] > 1))
+            .filter(|axis| size[*axis] > 1)
             .collect()
     }
 

@@ -378,23 +378,21 @@ fn convert_mode_channels(ofl: &OflFixture, mode: &OflMode) -> Vec<FixtureElement
 /// Returns the element label of every matrix pixel in [`OflMatrix::pixels`] order.
 ///
 /// Matrices spanning several axes use their positions on those axes, outermost first
-/// ("Pixel 2-3" for row 2, column 3); a single row or column is numbered
-/// sequentially ("Pixel 7").
+/// ("Pixel 2-3" for row 2, column 3); a single row or column uses its position along
+/// that axis ("Pixel 7"), so a gap in the matrix leaves a gap in the numbering.
 fn pixel_labels(matrix: &OflMatrix) -> Vec<String> {
     let axes = matrix.defined_axes();
     matrix
         .pixels()
         .iter()
-        .enumerate()
-        .map(|(index, pixel)| {
-            if axes.len() > 1 {
-                let position: Vec<String> = axes
-                    .iter()
-                    .map(|axis| pixel.position[*axis].to_string())
-                    .collect();
-                format!("Pixel {}", position.join("-"))
-            } else {
-                format!("Pixel {}", index + 1)
+        .map(|pixel| {
+            let position: Vec<String> = axes
+                .iter()
+                .map(|axis| pixel.position[*axis].to_string())
+                .collect();
+            match position.is_empty() {
+                true => "Pixel 1".to_string(),
+                false => format!("Pixel {}", position.join("-")),
             }
         })
         .collect()

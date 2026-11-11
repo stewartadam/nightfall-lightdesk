@@ -158,3 +158,18 @@ fn natural_order_compares_numbers_by_value() {
         ["007", "8", "a", "B", "Pixel 1", "pixel 2", "Pixel 10"]
     );
 }
+
+/// Verifies the matrix size counts `null` positions, so an axis holding only gaps
+/// beyond its first pixel still counts as defined, as in OFL.
+#[test]
+fn size_counts_null_positions() {
+    let matrix = matrix(serde_json::json!({
+        "pixelKeys": [[["A", null]], [["B", null]]]
+    }));
+    assert_eq!(matrix.size(), [2, 1, 2]);
+    assert_eq!(matrix.defined_axes(), vec![Z, X]);
+    assert_eq!(
+        self::matrix(serde_json::json!({ "pixelCount": [5, 1, 1] })).size(),
+        [5, 1, 1]
+    );
+}

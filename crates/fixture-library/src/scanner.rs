@@ -134,7 +134,8 @@ impl FixtureScanner {
 }
 
 /// Identify JSON files that are not fixture profiles: Nightfall visualizer definitions
-/// and OFL redirects, which only point a renamed fixture at its new file.
+/// and other Open Fixture Library files such as redirects (which only point a renamed
+/// Files declaring the OFL fixture schema always go through the OFL parser so malformed
 /// Other files declaring an OFL schema always go through the OFL parser so malformed
 /// fixture definitions still produce the scanner's normal warning.
 fn is_non_fixture_json(path: &Path) -> Result<bool> {
@@ -142,10 +143,9 @@ fn is_non_fixture_json(path: &Path) -> Result<bool> {
     let definition: serde_json::Value =
         serde_json::from_str(&content).map_err(open_fixture_library::OflError::from)?;
 
-    if definition["$schema"]
-        .as_str()
-        .is_some_and(|schema| schema.ends_with("/fixture-redirect.json"))
-    {
+    if definition["$schema"].as_str().is_some_and(|schema| {
+        schema.contains("/open-fixture-library/") && !schema.ends_with("/schemas/fixture.json")
+    }) {
         return Ok(true);
     }
 
@@ -207,10 +207,11 @@ mod tests {
         assert_eq!(profiles[0].file_path, ofl_path);
     }
 
-    /// OFL redirect files, which only point a renamed fixture at its new file, are skipped
+    /// OFL redirect files, which only point a renamed fixture at its new file, and OFL's
+    /// `manufacturers.json` are skipped
     /// instead of being reported as fixtures that fail to load.
     #[test]
-    fn scan_skips_ofl_redirects() {
+    fn scan_skips_ofl_files_that_are_not_fixtures() {
         let library = tempfile::tempdir().unwrap();
         let redirect = serde_json::json!({
             "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture-redirect.json",
@@ -219,6 +220,15 @@ mod tests {
             "reason": "FixtureRenamed"
         });
         std::fs::write(library.path().join("cameo@ts60.json"), redirect.to_string()).unwrap();
+        let manufacturers = serde_json::json!({
+            "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/manufacturers.json",
+            "cameo": { "name": "Cameo" }
+        });
+        std::fs::write(
+            library.path().join("manufacturers.json"),
+            manufacturers.to_string(),
+        )
+        .unwrap();
 
         let scan = FixtureScanner::new(library.path()).scan().unwrap();
         assert!(scan.profiles.is_empty());
