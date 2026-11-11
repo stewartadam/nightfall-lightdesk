@@ -89,6 +89,8 @@ use uuid::Uuid;
 
 static ACTIVE_SHOW_DATA_DIR: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
 static CONFIGURED_DATA_DIR: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
+static SHOW_STORAGE_IS_FAILOVER: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// Returns the Nightfall data directory.
 ///
@@ -134,6 +136,33 @@ pub fn clear_active_show_data_dir() {
         .write()
         .expect("active show data directory lock should not be poisoned");
     *guard = None;
+}
+
+/// Returns the folder that holds a failover pair's show and its assets, kept apart from this
+/// computer's own showfiles so a backup never adds to or overwrites them.
+pub fn failover_data_dir() -> Option<PathBuf> {
+    nightfall_data_dir().map(|data_dir| data_dir.join(crate::constants::FAILOVER_DIR))
+}
+
+/// Returns the folder that holds the open show's saved copy, working draft and backups: the
+/// failover folder while this computer runs a failover pair's show, otherwise the data directory.
+pub fn show_storage_root() -> Option<PathBuf> {
+    if show_storage_is_failover() {
+        failover_data_dir()
+    } else {
+        nightfall_data_dir()
+    }
+}
+
+/// Returns whether the open show is stored in the failover folder rather than with this
+/// computer's own showfiles.
+pub fn show_storage_is_failover() -> bool {
+    SHOW_STORAGE_IS_FAILOVER.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Selects where the open show is stored: the failover folder, or this computer's showfiles.
+pub fn set_show_storage_failover(failover: bool) {
+    SHOW_STORAGE_IS_FAILOVER.store(failover, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Returns the process-wide active show data directory lock.

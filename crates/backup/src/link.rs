@@ -9,8 +9,9 @@
 //! The process-lifetime connection a backup keeps to its primary.
 //!
 //! A worker thread pairs with the primary, polls the revision of its live show, and downloads
-//! and unpacks the show whenever the revision changes. The world picks up each unpacked show and
-//! loads it. The link outlives world swaps, which the backup itself causes on every load.
+//! and stores it in the failover folder whenever the revision changes. The world picks up each
+//! stored show and loads it. The link outlives world swaps, which the backup itself causes on
+//! every load.
 //!
 //! Alongside, the worker sends the primary a heartbeat, which tells the world when the primary
 //! went silent. While the host follows no one, the worker instead checks whether the backup that
@@ -76,8 +77,11 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 /// never answers fails while the operator still waits on the form.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Folder under the host data directory that holds unpacked copies of the primary's show.
-const MIRROR_DIR_NAME: &str = "backup-mirror";
+/// Folder in the failover folder where a show from the primary is unpacked before it is stored.
+const INCOMING_DIR_NAME: &str = ".incoming";
+
+/// Suffix of a show folder.
+const SHOW_FOLDER_SUFFIX: &str = ".nightfall-show";
 
 /// Name of the primary's pairing cookie, which carries its port.
 fn pairing_cookie_name(address: &str) -> String {
@@ -108,7 +112,7 @@ pub(crate) struct LinkReport {
     pub synced_at_ms: Option<u64>,
 }
 
-/// A show unpacked from the primary, ready for the world to load.
+/// A show copied from the primary into the failover folder, ready for the world to load.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MirroredShow {
     /// Name the primary's show is loaded under, or `None` for the default showfile.
@@ -151,12 +155,18 @@ pub(crate) struct PrimarySilence {
 struct LinkShared {
     /// When the primary last answered a heartbeat, and with what.
     heartbeat: Option<(Instant, HostStatus)>,
+    /// How long the primary's last heartbeat answer took.
+    primary_latency: Option<Duration>,
+    /// Whether the primary answered that it left the pair, until the world takes it.
+    primary_left: bool,
     /// The backup that last followed this host, found running as a newer primary, with its epoch.
     rejoin: Option<(String, u64)>,
     /// Whether the check for a backup that took over finished at least once in this process.
     peer_checked: bool,
     /// The backup last checked and what the check found.
     peer_check: Option<(String, failover::PeerCheck)>,
+    /// How long the backup last checked took to answer, if it answered.
+    peer_latency: Option<Duration>,
     /// Number of the newest probe of a primary before following it; a probe whose number is no
     /// longer this one was replaced or cancelled, and its outcome is dropped.
     probe_generation: u64,
@@ -172,9 +182,6 @@ struct LinkShared {
     loading_since: Option<Instant>,
     /// Whether forwarded commands are held back while a checkpoint is requested.
     holding: bool,
-    /// Keeps the newest unpacked show on disk until the next one replaces it, since the world
-    /// loads it a frame or more after the worker hands it over.
-    unpacked: Option<tempfile::TempDir>,
 }
 
 impl LinkShared {
@@ -241,6 +248,8 @@ impl BackupLink {
                     shared.loading_since = None;
                     shared.holding = false;
                     shared.heartbeat = None;
+                    shared.primary_latency = None;
+                    shared.primary_left = false;
                     shared.rejoin = None;
                     shared.report = LinkReport::default();
                 }
@@ -283,7 +292,7 @@ impl BackupLink {
         report
     }
 
-    /// Takes the show unpacked since the previous call, if any, and counts it as loading until
+    /// Takes the show copied since the previous call, if any, and counts it as loading until
     /// [`Self::finish_mirror_load`].
     pub(crate) fn take_mirror(&self) -> Option<MirroredShow> {
         let mut shared = self.shared.lock().ok()?;
@@ -325,6 +334,32 @@ impl BackupLink {
             silent_for: heard_at.elapsed(),
             primary: primary.clone(),
         })
+    }
+
+    /// Returns how long the primary took to answer its last heartbeat, while it still answers.
+    pub(crate) fn primary_latency(&self) -> Option<Duration> {
+        let shared = self.shared.lock().ok()?;
+        let (heard_at, _) = shared.heartbeat.as_ref()?;
+        (heard_at.elapsed() < failover::FAILOVER_TIMEOUT)
+            .then_some(shared.primary_latency)
+            .flatten()
+    }
+
+    /// Returns how long the backup at `address` took to answer its last check, if it answered.
+    pub(crate) fn peer_latency(&self, address: &str) -> Option<Duration> {
+        let shared = self.shared.lock().ok()?;
+        shared
+            .peer_check
+            .as_ref()
+            .filter(|(checked, _)| checked == address)
+            .and(shared.peer_latency)
+    }
+
+    /// Takes whether the primary answered that it left the pair.
+    pub(crate) fn take_primary_left(&self) -> bool {
+        self.shared
+            .lock()
+            .is_ok_and(|mut shared| std::mem::take(&mut shared.primary_left))
     }
 
     /// Returns the epoch the primary last reported.
@@ -516,9 +551,15 @@ async fn watch_backup_peer(shared: &Mutex<LinkShared>) {
         let own = failover::host_status();
         let mut rejoin = None;
         let mut check = None;
+        let mut latency = None;
         if let Some(peer) = failover::backup_peer().filter(|_| !own.following) {
             let base = format!("http://{peer}");
-            let found = match fetch_host_status(&client, &base, "this host's backup").await {
+            let sent_at = Instant::now();
+            let answer = fetch_host_status(&client, &base, "this host's backup").await;
+            if answer.is_ok() {
+                latency = Some(sent_at.elapsed());
+            }
+            let found = match answer {
                 Ok(status) if failover::should_rejoin(own.epoch, &status) => {
                     tracing::warn!(
                         %peer,
@@ -548,6 +589,7 @@ async fn watch_backup_peer(shared: &Mutex<LinkShared>) {
                 shared.rejoin = rejoin;
             }
             shared.peer_check = check;
+            shared.peer_latency = latency;
             shared.peer_checked = true;
         }
         tokio::time::sleep(PEER_CHECK_INTERVAL).await;
@@ -695,10 +737,12 @@ async fn follow_heartbeat(base: &str, shared: &Mutex<LinkShared>) {
         return std::future::pending().await;
     };
     loop {
+        let sent_at = Instant::now();
         match fetch_host_status(&client, base, "the primary").await {
             Ok(status) => {
                 if let Ok(mut shared) = shared.lock() {
                     shared.heartbeat = Some((Instant::now(), status));
+                    shared.primary_latency = Some(sent_at.elapsed());
                 }
             }
             Err(error) => tracing::debug!(?error, "backup_heartbeat_failed"),
@@ -820,7 +864,8 @@ async fn follow_show_and_checkpoints(
             if let Ok(mut shared) = shared.lock() {
                 shared.holding = false;
                 match fetched {
-                    Ok((snapshot, primary_wait)) => {
+                    Ok(LiveStateAnswer::LeftPair) => shared.primary_left = true,
+                    Ok(LiveStateAnswer::Checkpoint(snapshot, primary_wait)) => {
                         let round_trip = requested_at.elapsed().saturating_sub(primary_wait);
                         shared.checkpoint = Some(LiveCheckpoint {
                             sequence: CHECKPOINT_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1,
@@ -950,11 +995,10 @@ async fn check_revision(
     shared: &Mutex<LinkShared>,
 ) -> Duration {
     match sync_once(client, base, cookie, loaded_revision).await {
-        Ok(Some((revision, show, unpacked))) => {
+        Ok(Some((revision, show))) => {
             *loaded_revision = Some(revision.revision);
             if let Ok(mut shared) = shared.lock() {
                 shared.mirror = Some(show);
-                shared.unpacked = Some(unpacked);
                 shared.report = LinkReport {
                     status: BackupLinkStatus::Synced,
                     error: None,
@@ -988,13 +1032,20 @@ async fn check_revision(
     }
 }
 
-/// Asks the primary for a checkpoint of its live state, returning it with how long the primary
-/// waited for its engine before capturing it.
+/// What the primary answered to a checkpoint request.
+enum LiveStateAnswer {
+    /// A checkpoint, with how long the primary waited for its engine before capturing it.
+    Checkpoint(LiveStateSnapshot, Duration),
+    /// The primary left the pair and no longer serves this host.
+    LeftPair,
+}
+
+/// Asks the primary for a checkpoint of its live state.
 async fn fetch_live_state(
     client: &reqwest::Client,
     base: &str,
     cookie: Option<&str>,
-) -> Result<(LiveStateSnapshot, Duration), LinkError> {
+) -> Result<LiveStateAnswer, LinkError> {
     let mut request = client.get(format!("{base}{LIVE_STATE_PATH}"));
     if let Some(port) = failover::own_port() {
         request = request.header(BACKUP_PORT_HEADER, port);
@@ -1006,6 +1057,9 @@ async fn fetch_live_state(
         .send()
         .await
         .map_err(|error| LinkError::from_request(&error))?;
+    if response.status() == StatusCode::GONE {
+        return Ok(LiveStateAnswer::LeftPair);
+    }
     let response = check_status(response).await?;
     let primary_wait = response
         .headers()
@@ -1022,26 +1076,30 @@ async fn fetch_live_state(
             "The primary sent live state this version cannot read: {error}"
         ))
     })?;
-    Ok((snapshot, primary_wait))
+    Ok(LiveStateAnswer::Checkpoint(snapshot, primary_wait))
 }
 
-/// Checks the primary's revision and, when it differs from the loaded one, downloads and unpacks
-/// the show. Returns `None` when the backup is already up to date.
+/// Checks the primary's revision and, when it differs from the loaded one, downloads the show and
+/// stores it in the failover folder. Returns `None` when the backup is already up to date.
 async fn sync_once(
     client: &reqwest::Client,
     base: &str,
     cookie: Option<&str>,
     loaded_revision: &Option<String>,
-) -> Result<Option<(ShowfileRevision, MirroredShow, tempfile::TempDir)>, LinkError> {
+) -> Result<Option<(ShowfileRevision, MirroredShow)>, LinkError> {
     let revision = fetch_revision(client, base, cookie).await?;
     if loaded_revision.as_ref() == Some(&revision.revision) {
         return Ok(None);
     }
+    let failover_root = nightfall::failover_data_dir().ok_or_else(|| {
+        LinkError::Failed("Could not find the app data folder to store the show in.".to_string())
+    })?;
     let archive = download_show(client, base, cookie, revision.showfile_name.as_deref()).await?;
-    let (unpacked, directory) = tokio::task::spawn_blocking(move || unpack_show(archive.path()))
-        .await
-        .map_err(|error| LinkError::Failed(error.to_string()))?
-        .map_err(LinkError::Failed)?;
+    let directory =
+        tokio::task::spawn_blocking(move || install_show(archive.path(), &failover_root))
+            .await
+            .map_err(|error| LinkError::Failed(error.to_string()))?
+            .map_err(LinkError::Failed)?;
     tracing::info!(
         showfile = ?revision.showfile_name,
         revision = %revision.revision,
@@ -1051,7 +1109,7 @@ async fn sync_once(
         showfile_name: revision.showfile_name.clone(),
         directory,
     };
-    Ok(Some((revision, show, unpacked)))
+    Ok(Some((revision, show)))
 }
 
 /// Submits the PIN and returns the pairing token from the primary's cookie.
@@ -1211,15 +1269,15 @@ fn non_empty_or(message: String, fallback: &str) -> String {
     }
 }
 
-/// Returns the folder that holds unpacked copies of the primary's show.
-fn mirror_root() -> Option<PathBuf> {
-    nightfall::nightfall_data_dir().map(|data_dir| data_dir.join(MIRROR_DIR_NAME))
+/// Returns the folder that holds a show while it is unpacked, before it replaces the copy in the
+/// failover folder.
+fn incoming_root(failover_root: &Path) -> PathBuf {
+    failover_root.join(INCOMING_DIR_NAME)
 }
 
-/// Deletes copies a previous run left behind; the process keeps its newest copy in a static that
-/// is never dropped, so none is removed at exit.
+/// Deletes partly unpacked shows a previous run left behind.
 fn remove_stale_mirrors() {
-    let Some(root) = mirror_root() else {
+    let Some(root) = nightfall::failover_data_dir().map(|root| incoming_root(&root)) else {
         return;
     };
     match std::fs::remove_dir_all(&root) {
@@ -1231,19 +1289,18 @@ fn remove_stale_mirrors() {
     }
 }
 
-/// Unpacks a downloaded show archive and returns the directory holding the show folder.
-pub(crate) fn unpack_show(archive: &Path) -> Result<(tempfile::TempDir, PathBuf), String> {
+/// Unpacks a downloaded show archive and moves its show folder into `failover_root`, replacing
+/// the earlier copy of the same show. Returns the installed show folder. This computer's own
+/// showfiles are never touched.
+pub(crate) fn install_show(archive: &Path, failover_root: &Path) -> Result<PathBuf, String> {
     let file = std::fs::File::open(archive).map_err(|error| error.to_string())?;
     let mut zip = zip::ZipArchive::new(file)
         .map_err(|error| format!("The primary sent an unreadable show: {error}"))?;
-    let unpacked = match mirror_root() {
-        Some(root) => {
-            std::fs::create_dir_all(&root).map_err(|error| error.to_string())?;
-            tempfile::tempdir_in(root)
-        }
-        None => tempfile::tempdir(),
-    }
-    .map_err(|error| format!("Could not unpack the show: {error}"))?;
+    let incoming = incoming_root(failover_root);
+    std::fs::create_dir_all(&incoming)
+        .map_err(|error| format!("Could not unpack the show: {error}"))?;
+    let unpacked = tempfile::tempdir_in(&incoming)
+        .map_err(|error| format!("Could not unpack the show: {error}"))?;
     zip.extract(unpacked.path())
         .map_err(|error| format!("Could not unpack the show: {error}"))?;
     let directory = std::fs::read_dir(unpacked.path())
@@ -1252,7 +1309,24 @@ pub(crate) fn unpack_show(archive: &Path) -> Result<(tempfile::TempDir, PathBuf)
         .find(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .map(|entry| entry.path())
         .ok_or("The primary sent a show archive without a show folder.")?;
-    Ok((unpacked, directory))
+    let folder_name = directory
+        .file_name()
+        .filter(|name| name.to_string_lossy().ends_with(SHOW_FOLDER_SUFFIX))
+        .ok_or("The primary sent a show archive without a show folder.")?;
+    let installed = failover_root.join(folder_name);
+    let replaced = unpacked.path().join(".replaced");
+    if installed.exists() {
+        std::fs::rename(&installed, &replaced)
+            .map_err(|error| format!("Could not replace the earlier copy: {error}"))?;
+    }
+    if let Err(error) = std::fs::rename(&directory, &installed) {
+        // Keep the earlier copy, which would otherwise go with the unpacking folder.
+        if replaced.exists() {
+            let _ = std::fs::rename(&replaced, &installed);
+        }
+        return Err(format!("Could not store the copied show: {error}"));
+    }
+    Ok(installed)
 }
 
 /// Returns the current Unix time in milliseconds.
@@ -1350,32 +1424,47 @@ mod tests {
         assert!(target_rx.has_changed().unwrap());
     }
 
-    /// An archive in the primary's export layout unpacks to its show folder.
-    #[test]
-    fn unpacks_the_show_folder() {
+    /// Writes an archive in the primary's export layout holding one show folder whose snapshot
+    /// is `snapshot`.
+    fn show_archive(snapshot: &[u8]) -> tempfile::NamedTempFile {
         let archive = tempfile::NamedTempFile::new().unwrap();
-        {
-            let mut zip = zip::ZipWriter::new(archive.reopen().unwrap());
-            zip.add_directory(
-                "live.nightfall-show/",
-                zip::write::SimpleFileOptions::default(),
-            )
-            .unwrap();
-            zip.start_file(
-                "live.nightfall-show/showfile.json",
-                zip::write::SimpleFileOptions::default(),
-            )
-            .unwrap();
-            zip.write_all(b"{}").unwrap();
-            zip.finish().unwrap();
-        }
+        let mut zip = zip::ZipWriter::new(archive.reopen().unwrap());
+        zip.add_directory(
+            "live.nightfall-show/",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zip.start_file(
+            "live.nightfall-show/showfile.json",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zip.write_all(snapshot).unwrap();
+        zip.finish().unwrap();
+        archive
+    }
 
-        let (unpacked, directory) = unpack_show(archive.path()).unwrap();
-        assert!(directory.starts_with(unpacked.path()));
-        assert_eq!(directory.file_name().unwrap(), "live.nightfall-show");
+    /// A copied show lands as a show folder in the failover folder, a newer copy replaces it,
+    /// and nothing is left behind in the unpacking folder.
+    #[test]
+    fn stores_the_show_in_the_failover_folder() {
+        let failover = tempfile::tempdir().unwrap();
+
+        let directory = install_show(show_archive(b"{}").path(), failover.path()).unwrap();
+        assert_eq!(directory, failover.path().join("live.nightfall-show"));
         assert_eq!(
             std::fs::read_to_string(directory.join("showfile.json")).unwrap(),
             "{}"
         );
+
+        let directory = install_show(show_archive(b"[]").path(), failover.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(directory.join("showfile.json")).unwrap(),
+            "[]"
+        );
+        let incoming: Vec<_> = std::fs::read_dir(incoming_root(failover.path()))
+            .unwrap()
+            .collect();
+        assert!(incoming.is_empty());
     }
 }

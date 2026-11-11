@@ -90,6 +90,36 @@ pub(crate) fn leave_backup_role_for_show_loads(
     };
     notifications.write(UiNotification::toast(ToastLevel::Info, message));
 }
+
+/// Records whether the open show is the failover pair's show kept in the failover folder, so
+/// continuing as the primary after a restart opens it again. Opening one of this computer's own
+/// showfiles, or saving the pair's show under a new name, clears the record. Only a change is
+/// stored.
+pub(crate) fn remember_failover_show(
+    mut remembered: Local<Option<(Option<String>, bool)>>,
+    current_showfile: Res<crate::systems::showfile_events::CurrentShowfile>,
+    state: Option<ResMut<BackupState>>,
+) {
+    let in_failover_folder = nightfall::show_storage_is_failover();
+    let open = (
+        current_showfile.name().map(str::to_string),
+        in_failover_folder,
+    );
+    if remembered.as_ref() == Some(&open) {
+        return;
+    }
+    *remembered = Some(open);
+    nightfall_backup::remember_open_show(current_showfile.name(), in_failover_folder);
+    if let Some(mut state) = state {
+        let failover_show = in_failover_folder.then(|| nightfall_backup::FailoverShow {
+            name: current_showfile.name().map(str::to_string),
+        });
+        if state.failover_show != failover_show {
+            state.failover_show = failover_show;
+        }
+    }
+}
+
 /// Replaces the world with the newest show copied from the primary.
 ///
 /// Only the newest copy in a frame is loaded, since each one replaces the whole show. The load
@@ -239,6 +269,19 @@ async fn current_live_state(
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Response {
+    match nightfall_backup::failover::check_backup_request(&headers) {
+        Ok(()) => {}
+        Err(nightfall_backup::failover::BackupRefusal::LeftPair) => {
+            return (StatusCode::GONE, "This computer left the failover pair.").into_response();
+        }
+        Err(nightfall_backup::failover::BackupRefusal::NotPaired) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                "This computer is not paired with this backup. Pair again with its PIN.",
+            )
+                .into_response();
+        }
+    }
     // The world waiting at startup for a show is empty, and its checkpoint would wipe the
     // backup's playback.
     if !nightfall_backup::failover::host_status().show_open {

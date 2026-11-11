@@ -7,7 +7,16 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createSignal, Match, Show, Switch } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  type JSX,
+  Match,
+  onCleanup,
+  Show,
+  Switch,
+  untrack,
+} from "solid-js";
 import { useAppShell } from "../../../components/providers/app-shell";
 import { Alert } from "../../../components/ui/alert";
 import { Badge, type BadgeTone } from "../../../components/ui/badge";
@@ -20,10 +29,12 @@ import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { commandClient } from "../../../lib/engine-commands";
+import { backendAppState } from "../../../lib/engine-runtime";
 import { documentationPageUrl } from "../../../lib/feedback";
 import { getLogger } from "../../../lib/logger";
 import { $backupState } from "../../../state/settings";
 import {
+  AppState,
   type BackupCommand,
   BackupLinkStatus,
   type BackupPeer,
@@ -33,25 +44,31 @@ import {
 
 const log = getLogger(import.meta.url);
 
-/** Describes the link to the primary in a few words for the banner and settings. */
+/** Longest wait for the failover show to open before startup asks which show to open. */
+const FAILOVER_SHOW_OPEN_TIMEOUT_MS = 120_000;
+
+/** Appends the last measured round trip to a status, while the other computer answers. */
+function withLatency(status: string, latencyMs?: number | null): string {
+  return latencyMs == null ? status : `${status}, ${latencyMs} ms latency`;
+}
+
+/** Describes the link to the primary in a few words, with its latency while it answers. */
 export function describeBackupLink(state: BackupState): string {
   switch (state.link) {
     case BackupLinkStatus.Connecting:
-      return "Connecting to the primary";
+      return "connecting";
     case BackupLinkStatus.WaitingForShow:
-      return "Waiting for the primary to open a show";
+      return withLatency("waiting for a show", state.latency_ms);
     case BackupLinkStatus.Loading:
-      return "Loading the primary's show";
+      return withLatency("loading the show", state.latency_ms);
     case BackupLinkStatus.Synced:
-      return state.showfile_name
-        ? `In step with the primary's show "${state.showfile_name}"`
-        : "In step with the primary's default show";
+      return withLatency("synchronized", state.latency_ms);
     case BackupLinkStatus.PairingRequired:
-      return "The primary needs its pairing PIN again";
+      return "needs its PIN";
     case BackupLinkStatus.Unreachable:
-      return "Primary unreachable; holding the last copied show";
+      return "unreachable, holding the last copied show";
     default:
-      return "Not connected";
+      return "not connected";
   }
 }
 
@@ -94,7 +111,7 @@ function TakeOverButton(props: { size?: "compact" | "inline" }) {
       <DeleteConfirmModal
         isOpen={confirming()}
         title="Take over output"
-        message="This Nightfall stops following the primary and outputs the copied show at the show's own priority. If the primary is still running, or comes back, it is asked to step down and becomes this computer's backup."
+        message="This Nightfall instance will stop following the primary and send the copied show at the show's own priority. If the primary is still running, or comes back, it is asked to step down and becomes this instance's backup."
         confirmLabel="Take over"
         focusCancel
         onCancel={() => setConfirming(false)}
@@ -126,7 +143,7 @@ function StopFollowingButton(props: { size?: "compact" | "inline" }) {
       <DeleteConfirmModal
         isOpen={confirming()}
         title="Stop following"
-        message="This Nightfall stops following the primary and runs on its own with the copied show, sending its output. Unlike a takeover, it does not ask the primary to step down, so stop or reconfigure the primary's output first if it is still running."
+        message="This Nightfall instance will stop following the primary and send the copied show as its own output. Unlike a takeover, it does not ask the primary to step down, so stop the primary's output first if it is still running."
         confirmLabel="Stop following"
         focusCancel
         onCancel={() => setConfirming(false)}
@@ -161,8 +178,8 @@ function LeavePairButton(props: { size?: "compact" | "inline" }) {
       </Button>
       <DeleteConfirmModal
         isOpen={confirming()}
-        title="Leave the backup pair"
-        message={`This Nightfall forgets ${partner()} and runs on its own, sending its output. Pairing the two again needs the other computer's PIN.`}
+        title="Leave the pair"
+        message={`This Nightfall instance will unpair from ${partner()} and send its own output, with no backup. ${partner()} is told and unpairs too. Pairing the two again needs a PIN.`}
         confirmLabel="Leave the pair"
         focusCancel
         onCancel={() => setConfirming(false)}
@@ -188,7 +205,8 @@ export function BackupBanner() {
         >
           <span>
             Backup of {address()}: {describeBackupLink(state())}. Changes are
-            off here and sACN runs one priority below the primary.
+            off on this instance, and its sACN runs one priority below the
+            primary.
           </span>
           <span class="flex gap-2">
             <StopFollowingButton />
@@ -200,18 +218,21 @@ export function BackupBanner() {
   );
 }
 
-/** Describes how this primary's backup is doing, in a few words after its address. */
+/** Describes how this primary's backup is doing, with its latency while it answers. */
 function describeBackupPeer(peer: BackupPeer): string {
   const since = peer.last_seen_ms ? timeOfDay(peer.last_seen_ms) : undefined;
   switch (peer.state) {
     case BackupPeerState.InStep:
-      return "in step";
+      return withLatency("synchronized", peer.latency_ms);
     case BackupPeerState.NotInStep:
-      return since ? `not in step since ${since}` : "not in step yet";
+      return withLatency(
+        since ? `pending sync since ${since}` : "pending sync",
+        peer.latency_ms,
+      );
     case BackupPeerState.Unreachable:
       return since ? `unreachable since ${since}` : "unreachable";
     case BackupPeerState.AlsoPrimary:
-      return "also sending as a primary";
+      return withLatency("also sending as primary", peer.latency_ms);
     default:
       return "checking";
   }
@@ -244,81 +265,117 @@ function linkTone(link: BackupLinkStatus): BadgeTone {
   }
 }
 
+/** One row of the pair: a role badge, then this machine or the other computer and its status. */
+function RoleRow(props: {
+  label: string;
+  tone: BadgeTone;
+  testId: string;
+  children: JSX.Element;
+}) {
+  return (
+    <>
+      <Badge tone={props.tone} uppercase class="justify-self-start">
+        {props.label}
+      </Badge>
+      <span data-testid={props.testId}>{props.children}</span>
+    </>
+  );
+}
+
 /**
- * Names this computer's role and how its partner is doing on one line: a backup and its link to
- * the primary, a primary and its backup's health, or a computer running on its own.
+ * Lists both computers of the pair, one row per role, with this machine named as such and the
+ * other computer's address, sync state and latency; or this machine alone when it runs on its
+ * own. Shared by the Failover settings and the startup dialog.
  */
-function BackupRoleStatus() {
+function PairRoleRows() {
   const state = useStore($backupState);
-  /** Says when this computer last took over on its own, after its role line. */
+  /** Says when this computer last took over on its own, after its row. */
   const tookOverNotice = () => (
     <Show when={state().took_over_automatically_at_ms}>
       {(at) => (
         <span data-testid="backup-took-over-automatically">
-          {" "}
-          Took over automatically at {timeOfDay(at())}.
+          {", "}
+          took over automatically at {timeOfDay(at())}
         </span>
       )}
     </Show>
   );
   return (
     <div
-      class="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-300"
+      class="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-2 gap-y-1"
       data-testid="backup-role"
     >
       <Switch
         fallback={
-          <p class="flex flex-wrap items-center gap-2">
-            <Badge uppercase>Standalone</Badge>
-            <span>
-              Not backed up.
-              {tookOverNotice()}
-            </span>
-          </p>
+          <RoleRow
+            label="Standalone"
+            tone="neutral"
+            testId="backup-this-machine"
+          >
+            this machine, not paired{tookOverNotice()}
+          </RoleRow>
         }
       >
         <Match when={state().primary_address}>
           {(primary) => (
             <>
-              <p
-                class="flex flex-wrap items-center gap-2"
-                data-testid="backup-link-status"
+              <RoleRow
+                label="Primary"
+                tone={linkTone(state().link)}
+                testId="backup-link-status"
               >
-                <Badge tone={linkTone(state().link)} uppercase>
-                  Backup
-                </Badge>
-                <span>
-                  Following {primary()}: {describeBackupLink(state())}.
-                </span>
-              </p>
-              <span class="flex gap-2">
-                <StopFollowingButton />
-                <TakeOverButton />
-              </span>
+                {primary()}: {describeBackupLink(state())}
+              </RoleRow>
+              <RoleRow
+                label="Backup"
+                tone="neutral"
+                testId="backup-this-machine"
+              >
+                this machine
+              </RoleRow>
             </>
           )}
         </Match>
         <Match when={state().backup}>
           {(backup) => (
             <>
-              <p
-                class="flex flex-wrap items-center gap-2"
-                data-testid="backup-peer"
+              <RoleRow
+                label="Primary"
+                tone="neutral"
+                testId="backup-this-machine"
               >
-                <Badge tone={peerTone(backup().state)} uppercase>
-                  Primary
-                </Badge>
-                <span>
-                  Backed up by {backup().address}:{" "}
-                  {describeBackupPeer(backup())}.{tookOverNotice()}
-                </span>
-              </p>
-              <LeavePairButton />
+                this machine{tookOverNotice()}
+              </RoleRow>
+              <RoleRow
+                label="Backup"
+                tone={peerTone(backup().state)}
+                testId="backup-peer"
+              >
+                {backup().address}: {describeBackupPeer(backup())}
+              </RoleRow>
             </>
           )}
         </Match>
       </Switch>
     </div>
+  );
+}
+
+/** The actions for this computer's role: leave backup mode or take over, or leave the pair. */
+function PairActions() {
+  const state = useStore($backupState);
+  return (
+    <Switch>
+      <Match when={state().primary_address}>
+        <span class="flex gap-2">
+          <StopFollowingButton />
+          <TakeOverButton />
+        </span>
+      </Match>
+      <Match when={state().backup}>
+        <LeavePairButton />
+      </Match>
+    </Switch>
   );
 }
 
@@ -404,13 +461,13 @@ export function FollowPrimaryForm(props: { onFollowed?: () => void }) {
         on. Opening a show stops following.{" "}
         <a
           href={documentationPageUrl(
-            "user-guide/panels/io-transports.html#backup-server",
+            "user-guide/panels/io-transports.html#failover",
           )}
           target="_blank"
           rel="noopener noreferrer"
           class="underline"
         >
-          How backups work
+          How failover works
         </a>
       </p>
     </div>
@@ -457,7 +514,53 @@ export function FollowPrimarySection(props: { onFollowed?: () => void }) {
   );
 }
 
-/** Shows this computer's backup role, its partner's health, and the automatic takeover setting. */
+/** Link to the user guide's failover section. */
+function FailoverGuideLink() {
+  return (
+    <a
+      href={documentationPageUrl(
+        "user-guide/panels/io-transports.html#failover",
+      )}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="underline"
+    >
+      How failover works
+    </a>
+  );
+}
+
+/**
+ * Turns automatic takeover on or off. The setting belongs to this computer, so a primary keeps it
+ * for whenever it becomes a backup; it is only offered while this computer is one.
+ */
+function AutoTakeOverCheckbox() {
+  const state = useStore($backupState);
+  return (
+    <label class="flex items-start gap-2 text-xs text-gray-300">
+      <Checkbox
+        checked={state().auto_take_over}
+        onChange={(event) => {
+          const box = event.currentTarget;
+          // Show what the engine applied, which a failed command leaves unchanged.
+          void sendBackupCommand({
+            type: "SetAutoTakeOver",
+            data: { enabled: box.checked },
+          }).then(() => {
+            box.checked = state().auto_take_over;
+          });
+        }}
+        data-testid="backup-auto-take-over"
+      />
+      <span>
+        Take over automatically when the primary stops answering for 3 seconds,
+        unless its sACN still arrives here
+      </span>
+    </label>
+  );
+}
+
+/** Shows both computers of the pair, the actions for this computer's role, and its settings. */
 export function BackupServerSettings() {
   const state = useStore($backupState);
   const appShell = useAppShell();
@@ -480,11 +583,14 @@ export function BackupServerSettings() {
     <Show when={state().available}>
       <section
         class="border-b border-gray-800 p-3"
-        aria-label="Backup server"
+        aria-label="Failover"
         data-testid="backup-server-settings"
       >
-        <h4 class="text-xs font-semibold text-gray-200">Backup server</h4>
-        <BackupRoleStatus />
+        <h4 class="text-xs font-semibold text-gray-200">Failover</h4>
+        <div class="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-300">
+          <PairRoleRows />
+          <PairActions />
+        </div>
         <Show when={state().backup?.state === BackupPeerState.AlsoPrimary}>
           <Alert
             variant="caution"
@@ -531,47 +637,23 @@ export function BackupServerSettings() {
           )}
         </Show>
         <div class="mt-3 flex flex-col gap-2 border-t border-gray-800 pt-3">
-          <label class="flex items-start gap-2 text-xs text-gray-300">
-            <Checkbox
-              checked={state().auto_take_over}
-              onChange={(event) => {
-                const box = event.currentTarget;
-                // Show what the engine applied, which a failed command leaves unchanged.
-                void sendBackupCommand({
-                  type: "SetAutoTakeOver",
-                  data: { enabled: box.checked },
-                }).then(() => {
-                  box.checked = state().auto_take_over;
-                });
-              }}
-              data-testid="backup-auto-take-over"
-            />
-            <span>
-              Take over automatically when the primary stops answering for 3
-              seconds, unless its sACN still arrives here
-            </span>
-          </label>
+          <Show when={state().primary_address}>
+            <AutoTakeOverCheckbox />
+          </Show>
           <p class="text-xs text-gray-400">
-            To make this computer a backup, follow a primary from the{" "}
-            <button
-              type="button"
-              class="underline"
-              onClick={() => appShell.showOpenShowfileModal()}
-              data-testid="backup-open-showfiles"
-            >
-              Showfiles dialog
-            </button>
-            .{" "}
-            <a
-              href={documentationPageUrl(
-                "user-guide/panels/io-transports.html#backup-server",
-              )}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="underline"
-            >
-              How backups work
-            </a>
+            <Show when={!state().primary_address && !state().backup}>
+              To make this computer a backup, follow a primary from the{" "}
+              <button
+                type="button"
+                class="underline"
+                onClick={() => appShell.showOpenShowfileModal()}
+                data-testid="backup-open-showfiles"
+              >
+                Showfiles dialog
+              </button>
+              .{" "}
+            </Show>
+            <FailoverGuideLink />
           </p>
         </div>
       </section>
@@ -580,17 +662,18 @@ export function BackupServerSettings() {
 }
 
 /**
- * Startup dialog for a computer in a backup pair, shown instead of the showfile prompt. A backup
- * sees its link to the primary and opens once it holds the primary's show, or takes over or
- * leaves the pair. A primary sees its backup and continues as primary, follows its backup when
- * that one took over and should keep the show, or leaves the pair. The view follows the role, so
- * a primary that steps down for its backup switches to the backup's view on its own.
+ * Startup dialog for a computer in a failover pair, shown instead of the showfile prompt. Both
+ * computers are listed with their roles. A backup opens once it holds the primary's show, or
+ * takes over or leaves the pair. A primary continues as primary, follows its backup when that
+ * one took over and should keep the show, or leaves the pair. The view follows the role, so a
+ * primary that steps down for its backup switches to the backup's view on its own.
  */
 export function BackupPairStartupDialog(props: {
   open: boolean;
   onContinueAsPrimary: () => void;
 }) {
   const state = useStore($backupState);
+  const [openingFailoverShow, setOpeningFailoverShow] = createSignal(false);
   /** Follows this primary's backup with the key the two share, so no PIN is needed. */
   const followBackup = (address: string) => {
     void sendBackupCommand({
@@ -598,15 +681,69 @@ export function BackupPairStartupDialog(props: {
       data: { address, pin: undefined },
     });
   };
+  /**
+   * Continues as primary. When this instance last ran the pair's show, it opens that show from
+   * the failover folder and the dialog closes once it is open; otherwise, or when the show can
+   * no longer be opened, startup goes on to the usual show prompt.
+   */
+  const continueAsPrimary = async () => {
+    if (!state().failover_show) {
+      props.onContinueAsPrimary();
+      return;
+    }
+    setOpeningFailoverShow(true);
+    const opened = await sendBackupCommand({ type: "OpenFailoverShow" });
+    if (!opened) {
+      giveUpOpeningFailoverShow();
+      return;
+    }
+    clearTimeout(openTimer);
+    openTimer = setTimeout(
+      giveUpOpeningFailoverShow,
+      FAILOVER_SHOW_OPEN_TIMEOUT_MS,
+    );
+  };
+  let openTimer: ReturnType<typeof setTimeout> | undefined;
+  let sawShowLoading = false;
+  onCleanup(() => clearTimeout(openTimer));
+  /** Goes on to the usual show prompt when the failover show could not be opened. */
+  const giveUpOpeningFailoverShow = () => {
+    clearTimeout(openTimer);
+    sawShowLoading = false;
+    if (!untrack(openingFailoverShow)) return;
+    setOpeningFailoverShow(false);
+    if (untrack(() => props.open)) props.onContinueAsPrimary();
+  };
+  /**
+   * Notices a failover show load that fails: the backend starts loading, then returns to having
+   * no show open.
+   */
+  createEffect(() => {
+    if (!openingFailoverShow()) return;
+    const appState = backendAppState();
+    if (appState === AppState.ShowLoading) sawShowLoading = true;
+    else if (sawShowLoading && appState === AppState.Initialized) {
+      giveUpOpeningFailoverShow();
+    }
+  });
+  /** Ends the wait once the dialog closes, as when the show opened. */
+  createEffect(() => {
+    if (!props.open) {
+      clearTimeout(openTimer);
+      setOpeningFailoverShow(false);
+    }
+  });
   /** Continues as primary from Enter, but only in the primary's view. */
   const submitDefault = () => {
-    if (!state().primary_address && state().backup) props.onContinueAsPrimary();
+    if (!state().primary_address && state().backup && !openingFailoverShow()) {
+      void continueAsPrimary();
+    }
   };
   return (
     <Dialog
       kind="required"
       isOpen={props.open}
-      title="Backup server"
+      title="Failover"
       onSubmit={submitDefault}
       class="max-w-[560px]"
     >
@@ -614,54 +751,40 @@ export function BackupPairStartupDialog(props: {
         class="space-y-3 text-sm text-neutral-300"
         data-testid="backup-pair-startup"
       >
-        <Switch>
-          <Match when={state().primary_address}>
-            {(primary) => (
-              <>
-                <p
-                  class="flex flex-wrap items-center gap-2"
-                  data-testid="backup-pair-startup-link"
-                >
-                  <Badge tone={linkTone(state().link)} uppercase>
-                    Backup
-                  </Badge>
-                  <span>
-                    Following {primary()}: {describeBackupLink(state())}.
-                  </span>
-                </p>
-                <p class="text-xs text-neutral-400">
-                  This computer opens once it holds the primary's show, and
-                  sends no output until it takes over. Take over to send the
-                  show copied last, or leave the pair to open a show of its own.
-                </p>
-              </>
-            )}
-          </Match>
-          <Match when={state().backup}>
-            {(backup) => (
-              <>
-                <p
-                  class="flex flex-wrap items-center gap-2"
-                  data-testid="backup-pair-startup-peer"
-                >
-                  <Badge tone={peerTone(backup().state)} uppercase>
-                    Primary
-                  </Badge>
-                  <span>
-                    Backed up by {backup().address}:{" "}
-                    {describeBackupPeer(backup())}.
-                  </span>
-                </p>
-                <p class="text-xs text-neutral-400">
-                  Continue as the primary to open a show, which{" "}
-                  {backup().address} then follows. If {backup().address} took
-                  over and should keep the show, follow it instead. Leave the
-                  pair to run on your own.
-                </p>
-              </>
-            )}
-          </Match>
-        </Switch>
+        <PairRoleRows />
+        <p class="text-xs text-neutral-400">
+          <Switch>
+            <Match when={state().primary_address}>
+              This instance opens once it holds the primary's show, and sends no
+              output until it takes over.
+            </Match>
+            <Match when={state().backup}>
+              {(backup) => (
+                <>
+                  <Show
+                    when={state().failover_show}
+                    fallback={"Continue as primary to open a show, "}
+                  >
+                    {(show) => (
+                      <>
+                        Continue as primary to open{" "}
+                        <strong class="text-neutral-200">
+                          {show().name ?? "default"}
+                        </strong>
+                        , the pair's show this instance ran last,{" "}
+                      </>
+                    )}
+                  </Show>
+                  which {backup().address} then follows. If {backup().address}{" "}
+                  took over and should keep the show, follow it instead.
+                </>
+              )}
+            </Match>
+          </Switch>
+        </p>
+        <Show when={state().primary_address}>
+          <AutoTakeOverCheckbox />
+        </Show>
         <Show when={state().error}>
           {(error) => (
             <Alert
@@ -701,10 +824,13 @@ export function BackupPairStartupDialog(props: {
                     variant="primary"
                     type="button"
                     autofocus
-                    onClick={() => props.onContinueAsPrimary()}
+                    disabled={openingFailoverShow()}
+                    onClick={() => void continueAsPrimary()}
                     data-testid="backup-pair-startup-continue"
                   >
-                    Continue as primary
+                    {openingFailoverShow()
+                      ? "Opening the show…"
+                      : "Continue as primary"}
                   </Button>
                 </>
               )}

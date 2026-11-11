@@ -110,6 +110,7 @@ use nightfall_showfile::{
 };
 #[cfg(test)]
 use nightfall_showfile::{ShowfileLoadDomain, ordered_showfile_load_domains};
+pub(crate) use paths::select_library_show_storage;
 use paths::*;
 pub(crate) use save::{
     persist_new_showfile_draft_from_world, refresh_clean_snapshot_hash_after_showfile_bootstrap,

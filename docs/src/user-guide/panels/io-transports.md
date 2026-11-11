@@ -35,11 +35,11 @@ When developing Nightfall, the link points at the Vite dev server, which only ac
 
 ### Pairing PIN
 
-A phone, tablet or other computer must enter the **Pairing PIN** shown under External control before it can control the show. The computer running Nightfall never needs it. Each device enters the PIN once: it stays paired, and reconnects on its own after a network drop, until Nightfall restarts. The PIN stays the same until Nightfall restarts or you select **New PIN**, which also signs out every paired device. A backup server and its primary stay paired with each other across restarts, see [Backup server](#backup-server), but **New PIN** on either computer signs that pair out too. After five wrong PINs, a device must wait before trying again, and the wait grows with each further miss.
+A phone, tablet or other computer must enter the **Pairing PIN** shown under External control before it can control the show. The computer running Nightfall never needs it. Each device enters the PIN once: it stays paired, and reconnects on its own after a network drop, until Nightfall restarts. The PIN stays the same until Nightfall restarts or you select **New PIN**, which also signs out every paired device. A backup server and its primary stay paired with each other across restarts, see [Failover](#failover), but **New PIN** on either computer signs that pair out too. After five wrong PINs, a device must wait before trying again, and the wait grows with each further miss.
 
 The PIN keeps casual visitors on your network out; it does not protect against an attacker on it. Nightfall serves other devices over plain HTTP, so anyone who can watch network traffic can capture the PIN or a paired device's session and take control. Use External control only on networks you trust.
 
-## Backup server
+## Failover
 
 A backup server is a second computer running Nightfall that keeps a copy of the show on the primary computer, ready to take over if the primary fails.
 
@@ -59,35 +59,38 @@ While it follows the primary, the backup:
 - Sends sACN one priority below the show's **sACN priority**, so sACN receivers listen to the primary while both are sending, and switch to the backup on their own if the primary's stream stops.
 - Mutes Art-Net and USB DMX, which have no priority to let the primary win.
 - Shows a banner on every connected device and refuses changes made there, including MIDI and OSC controllers mapped in the show. Panel layouts can still be arranged.
-- Copies assets the show uses from outside its folder, such as audio files, so the backup can play them after it takes over.
+- Copies assets the show uses from outside its folder, such as audio files, fixture profiles and FX modules, so the backup can play them after it takes over.
 
-The backup loads each copy as a working draft under the primary's showfile name, replacing the backup's own unsaved draft of a show with that name. The saved showfile on the backup is not changed.
+The backup keeps the copied show, with the audio, fixture files and other assets it uses, in a `failover` folder in its app data folder, apart from its own showfiles. Its working draft and anything saved while it runs the copied show, such as after a takeover, also stay there, so a backup never adds to or overwrites its own showfiles. Saving the copied show under a new name makes it one of this computer's own showfiles.
 
-To take over, select **Take over** in the banner or under **Backup server**. The backup stops following the primary and outputs the copied show at the show's own priority on every transport. If the primary is still running, the backup asks it to step down, and within a few seconds it becomes the backup's backup, so the two never keep sending the same universes at the same priority.
+To take over, select **Take over** in the banner or under **Failover**. The backup stops following the primary and outputs the copied show at the show's own priority on every transport. If the primary is still running, the backup asks it to step down, and within a few seconds it becomes the backup's backup, so the two never keep sending the same universes at the same priority.
 
 To stop being a backup without taking over, select **Stop following**, or open or create a show from the **Showfiles** dialog. **Stop following** keeps the copied show and starts sending its output, but does not ask the primary to step down. Opening a show replaces the copied show.
 
-The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart. The two computers stay paired with each other across restarts. If the banner says the primary needs its pairing PIN again, for example after **New PIN**, or because the primary paired a different backup, enter its PIN under **Backup server** and select **Pair again**.
+The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart. The two computers stay paired with each other across restarts. If the banner says the primary needs its pairing PIN again, for example after **New PIN**, or because the primary paired a different backup, enter its PIN under **Failover** and select **Pair again**.
 
-When a computer that belongs to a pair starts, it shows a **Backup server** dialog instead of asking which show to open:
+When a computer that belongs to a pair starts, it shows a **Failover** dialog instead of asking which show to open. Like the **Failover** section, it lists both computers, the primary and the backup, with **this machine** in place of this computer's address:
 
 - On a backup, the dialog shows its link to the primary, such as waiting for the primary to open a show, and opens Nightfall on its own once the backup holds the primary's show. You can also **Take over**, or **Leave the pair** to open a show of its own.
-- On a primary, the dialog shows how its backup is doing. Select **Continue as primary** to open a show as usual, which the backup then follows. If the backup took over while this computer was away and should keep the show, select **Follow** with its address instead; no PIN is needed. If the backup took over and is running, this computer steps down on its own and the dialog switches to the backup's view.
+- On a primary, the dialog shows how its backup is doing. Select **Continue as primary** to open a show, which the backup then follows. If this computer last ran the pair's show, as after a takeover, it opens that show again from the `failover` folder; otherwise it asks which show to open as usual. If the backup took over while this computer was away and should keep the show, select **Follow** with its address instead; no PIN is needed. If the backup took over and is running, this computer steps down on its own and the dialog switches to the backup's view.
 
-**Leave the pair**, in the dialog or under **Backup server** on a primary, makes this computer run on its own and forget the other computer and the key they share, so following again needs the PIN.
+**Leave the pair**, in the dialog or under **Failover** on a primary, makes this computer run on its own and forget the other computer and the key they share, so pairing them again needs the PIN. When the primary leaves, its backup is told within a second: it leaves the pair too and sends the copied show as its own output.
 
 When you take over, the backup keeps playing what the primary was playing. While the backup loads a newly copied show, its banner says it is loading the primary's show.
 
 ### Automatic takeover
 
-The backup checks on the primary twice a second. When **Take over automatically** is on, which it is by default, the backup takes over on its own once the primary has not answered for 3 seconds. **Backup server** then says when it took over. If the backup receives sACN on a universe the primary sends, it does not take over while the primary's sACN still arrives, since the primary is then still running and only the network between the two computers failed.
+The backup checks on the primary twice a second. When **Take over automatically** is on, which it is by default, the backup takes over on its own once the primary has not answered for 3 seconds. **Failover** then says when it took over. The setting belongs to the computer and is offered while it is a backup; a primary keeps its setting for whenever it becomes a backup again. If the backup receives sACN on a universe the primary sends, it does not take over while the primary's sACN still arrives, since the primary is then still running and only the network between the two computers failed.
 
 A backup only takes over on its own after it has reached the primary and loaded its show since it last started.
 
-The top of **Backup server** says what this computer is and how its partner is doing:
+The top of **Failover** lists the pair, one row per role, with **this machine** in place of this computer's address and the other computer's state and latency, for example `BACKUP 192.168.1.21:3030: synchronized, 2 ms latency`:
 
-- **Backup**: the primary it follows and whether it is in step.
-- **Primary**: the backup that follows it, and whether that backup is in step, not in step since a given time, or unreachable. If the backup is also sending as a primary, a warning says both computers are sending output; on the one that should stop, open the **Showfiles** dialog and follow the other as its primary.
+- **Synchronized**: the backup holds the primary's current show and live state.
+- **Pending sync**: the backup answers but has not copied the primary's live state recently, as while it loads a show; the time it was last in step follows.
+- **Waiting for a show**: the primary has no show open yet.
+- **Unreachable**: the other computer does not answer.
+- **Also sending as primary**: both computers send output. On the one that should stop, open the **Showfiles** dialog and follow the other as its primary.
 - **Standalone**: no backup follows this computer.
 
 A takeover, and an old primary stepping down, also show a message on every connected device. If a device loses its connection to the primary, the connection message offers **Open the backup**, which opens the backup's address.

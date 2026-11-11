@@ -38,6 +38,27 @@ pub(crate) struct BackupPreferences {
     pub backup_peer: Option<String>,
     /// Whether this host takes over on its own when its primary stops answering.
     pub auto_take_over: bool,
+    /// The failover pair's show this host ran last, kept in the failover folder, or `None` when
+    /// it last ran one of its own showfiles.
+    pub failover_show: Option<FailoverShow>,
+}
+
+/// A show kept in the failover folder.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[typeshare::typeshare]
+pub struct FailoverShow {
+    /// Name the show is open under, or `None` for the default showfile.
+    pub name: Option<String>,
+}
+
+impl FailoverShow {
+    /// Returns the show's folder name, as the failover folder stores it.
+    pub(crate) fn folder_name(&self) -> String {
+        format!(
+            "{}.nightfall-show",
+            self.name.as_deref().unwrap_or("default")
+        )
+    }
 }
 
 impl Default for BackupPreferences {
@@ -49,6 +70,7 @@ impl Default for BackupPreferences {
             epoch: 0,
             backup_peer: None,
             auto_take_over: true,
+            failover_show: None,
         }
     }
 }
@@ -151,6 +173,9 @@ mod tests {
             epoch: 3,
             backup_peer: Some("192.0.2.11:3000".into()),
             auto_take_over: false,
+            failover_show: Some(FailoverShow {
+                name: Some("Tour".into()),
+            }),
         };
         save(Some(&path), &preferences).unwrap();
         assert_eq!(load(Some(&path)), (preferences, None));

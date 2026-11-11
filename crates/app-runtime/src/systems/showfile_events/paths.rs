@@ -160,15 +160,48 @@ pub(super) fn show_data_dir_path() -> Result<PathBuf, String> {
         .ok_or_else(|| "could not determine active show data directory".to_string())
 }
 
-/// Resolve the root directory that contains showfile folders.
+/// Resolve the root directory that holds the open show's saved folder, draft and backups: the
+/// failover folder while this computer runs a failover pair's show, otherwise the showfiles root.
 pub(super) fn showfile_root_dir_path() -> Result<PathBuf, String> {
+    nightfall::show_storage_root()
+        .ok_or_else(|| "could not determine Nightfall app data directory".to_string())
+}
+
+/// Resolve the root directory that contains this computer's own showfile folders, which the
+/// showfile list, trash and imports work with whichever show is open.
+pub(super) fn showfile_library_root_path() -> Result<PathBuf, String> {
     nightfall::nightfall_data_dir()
         .ok_or_else(|| "could not determine Nightfall app data directory".to_string())
 }
 
-/// Reject names already occupied by saved shows or working drafts, including case variants.
+/// Resolve the saved folder of one of this computer's own showfiles.
+pub(super) fn library_showfile_dir_path(name: Option<&str>) -> Result<PathBuf, String> {
+    Ok(showfile_library_root_path()?.join(showfile_folder_name(name)?))
+}
+
+/// Resolve the working draft folder of one of this computer's own showfiles.
+pub(super) fn library_showfile_draft_dir_path(name: Option<&str>) -> Result<PathBuf, String> {
+    showfile_draft_dir_path_in_root(&showfile_library_root_path()?, name)
+}
+
+/// Stores the show about to open from `source` in the failover folder when it comes from there,
+/// and with this computer's own showfiles otherwise, so a failover pair's show and its drafts and
+/// saves never land among the local showfiles.
+pub(crate) fn select_show_storage_for_source(source: &Path) {
+    let failover =
+        nightfall::failover_data_dir().is_some_and(|failover_dir| source.starts_with(failover_dir));
+    nightfall::set_show_storage_failover(failover);
+}
+
+/// Stores a newly created show with this computer's own showfiles.
+pub(crate) fn select_library_show_storage() {
+    nightfall::set_show_storage_failover(false);
+}
+
+/// Reject names already occupied by this computer's saved shows or working drafts, including
+/// case variants.
 pub(super) fn validate_new_showfile_name(name: Option<&str>) -> Result<(), String> {
-    validate_new_showfile_name_in_root(&showfile_root_dir_path()?, name)
+    validate_new_showfile_name_in_root(&showfile_library_root_path()?, name)
 }
 
 /// Check both storage locations without relying on readable snapshot or manifest contents.

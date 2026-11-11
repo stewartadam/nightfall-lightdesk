@@ -275,6 +275,12 @@ pub(super) fn init_bevy_with_transport_policy(
     );
     app.add_systems(
         Update,
+        systems::backup_mirror::remember_failover_show
+            .run_if(disk_storage_available)
+            .run_if(in_state(AppState::Ready)),
+    );
+    app.add_systems(
+        Update,
         sync_frame_rate_with_dmx_output
             .after(ShowfileHandling)
             .run_if(resource_changed::<IoRuntimeSettings>),

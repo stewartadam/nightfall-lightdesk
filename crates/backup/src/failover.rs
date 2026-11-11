@@ -19,7 +19,7 @@ use std::{
     net::IpAddr,
     sync::{
         Mutex,
-        atomic::{AtomicU16, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -106,6 +106,10 @@ pub(crate) enum PeerCheck {
     /// The backup did not answer.
     Unreachable,
 }
+
+/// Whether this host left its pair since it last issued a pair key, so the backup that still
+/// follows it is told to stop.
+static LEFT_PAIR: AtomicBool = AtomicBool::new(false);
 
 /// Port this host's server listens on, or 0 when unknown.
 static OWN_PORT: AtomicU16 = AtomicU16::new(0);
@@ -215,6 +219,7 @@ pub fn issue_pair_key() -> Result<String, String> {
         tracing::warn!(%error, "Could not save the backup pair key");
     }
     share_pair_key(Some(key.clone()));
+    LEFT_PAIR.store(false, Ordering::Relaxed);
     tracing::info!("Issued a pair key to a new backup");
     Ok(key)
 }
@@ -313,6 +318,57 @@ fn backup_port(headers: &reqwest::header::HeaderMap) -> Option<u16> {
         .and_then(|value| value.to_str().ok()?.parse::<u16>().ok())
 }
 
+/// Records that this host left its pair, so the backup still following it is told to stop.
+pub(crate) fn note_left_pair() {
+    LEFT_PAIR.store(true, Ordering::Relaxed);
+}
+
+/// Records that this host joined a pair again as a backup, so a backup that later follows it is
+/// served again.
+pub(crate) fn note_joined_pair() {
+    LEFT_PAIR.store(false, Ordering::Relaxed);
+}
+
+/// Why a backup's checkpoint request is refused, if it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupRefusal {
+    /// This host left the pair; the backup should stop following it.
+    LeftPair,
+    /// The request does not carry the key this host shares with its backup, as after New PIN or
+    /// after another backup paired; the backup must pair again.
+    NotPaired,
+}
+
+/// Checks a request from a host following this one as its backup. Requests from anything else
+/// pass, since pairing already admitted them.
+///
+/// A backup is served only with the key the two share, even where pairing is skipped, so a
+/// backup on the same computer stops when this host leaves the pair or pairs another backup.
+pub fn check_backup_request(headers: &reqwest::header::HeaderMap) -> Result<(), BackupRefusal> {
+    if backup_port(headers).is_none() {
+        return Ok(());
+    }
+    if LEFT_PAIR.load(Ordering::Relaxed) {
+        return Err(BackupRefusal::LeftPair);
+    }
+    let Some(port) = own_port() else {
+        return Ok(());
+    };
+    let name = format!("nightfall_pairing_{port}");
+    let presented = headers
+        .get_all(reqwest::header::COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|cookies| cookies.split(';'))
+        .filter_map(|cookie| cookie.trim().split_once('='))
+        .find(|(cookie, _)| *cookie == name)
+        .map(|(_, value)| value);
+    match presented {
+        Some(key) if is_pair_key(key) => Ok(()),
+        _ => Err(BackupRefusal::NotPaired),
+    }
+}
+
 /// Returns how this host's backup at `address` is doing, from the last check of it and the last
 /// checkpoint this host sent it.
 pub(crate) fn peer_health(address: String, check: Option<PeerCheck>) -> BackupPeer {
@@ -329,6 +385,7 @@ pub(crate) fn peer_health(address: String, check: Option<PeerCheck>) -> BackupPe
         last_seen_ms: (state != BackupPeerState::InStep)
             .then_some(last_request.map(|(_, at_ms)| at_ms))
             .flatten(),
+        latency_ms: None,
     }
 }
 
@@ -405,7 +462,8 @@ mod tests {
 
     /// A host that took over asks only a peer still running as a primary from before its
     /// takeover to step down, and a primary steps down only for a newer takeover, sent by the
-    /// backup it remembers with the key the two share.
+    /// backup it remembers with the key the two share. A backup's checkpoints are served only
+    /// with that key, and not after this host left the pair.
     #[test]
     fn steps_down_only_for_a_newer_takeover() {
         let host = |following, epoch| HostStatus {
@@ -438,6 +496,35 @@ mod tests {
             "192.0.2.11".parse().unwrap(),
             &without_key
         ));
+
+        // A backup's checkpoint requests need the key, and stop being served once this host
+        // leaves the pair; other requests are not this check's business. Kept in this test,
+        // since both share the process-wide key.
+        set_own_port(3000);
+        let request = |cookie: &str| {
+            let mut headers = reqwest::header::HeaderMap::new();
+            headers.insert(BACKUP_PORT_HEADER, "3001".parse().unwrap());
+            headers.insert(reqwest::header::COOKIE, cookie.parse().unwrap());
+            headers
+        };
+        assert_eq!(
+            check_backup_request(&request("a=b; nightfall_pairing_3000=pair-key")),
+            Ok(())
+        );
+        assert_eq!(
+            check_backup_request(&request("nightfall_pairing_3000=stale")),
+            Err(BackupRefusal::NotPaired)
+        );
+        assert_eq!(
+            check_backup_request(&reqwest::header::HeaderMap::new()),
+            Ok(())
+        );
+        note_left_pair();
+        assert_eq!(
+            check_backup_request(&request("nightfall_pairing_3000=pair-key")),
+            Err(BackupRefusal::LeftPair)
+        );
+        LEFT_PAIR.store(false, Ordering::Relaxed);
         share_pair_key(None);
         set_backup_peer(None);
     }

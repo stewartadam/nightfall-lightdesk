@@ -32,6 +32,7 @@ mod link;
 mod preferences;
 
 use forwarding::CommandsThrough;
+pub use preferences::FailoverShow;
 
 /// Prelude for ergonomic imports.
 pub mod prelude {
@@ -138,6 +139,8 @@ pub struct BackupPeer {
     /// not in step.
     #[typeshare(serialized_as = "Option<number>")]
     pub last_seen_ms: Option<u64>,
+    /// Milliseconds the backup took to answer its last check, while it answers.
+    pub latency_ms: Option<u32>,
 }
 
 /// The host's backup role and the state of its link, as clients see it.
@@ -157,6 +160,8 @@ pub struct BackupState {
     /// Unix time in milliseconds of the last show copied from the primary.
     #[typeshare(serialized_as = "Option<number>")]
     pub synced_at_ms: Option<u64>,
+    /// Milliseconds the primary took to answer its last heartbeat, while it answers.
+    pub latency_ms: Option<u32>,
     /// Takeover epoch, raised by every takeover so the host that took over last can be told
     /// apart from the one it replaced.
     #[typeshare(serialized_as = "number")]
@@ -172,6 +177,8 @@ pub struct BackupState {
     pub took_over_automatically_at_ms: Option<u64>,
     /// `host:port` of a primary this host is checking before it follows it, as while pairing.
     pub checking_address: Option<String>,
+    /// The failover pair's show this host ran last, which continuing as the primary opens.
+    pub failover_show: Option<FailoverShow>,
 }
 
 impl BackupState {
@@ -185,6 +192,7 @@ impl BackupState {
         self.primary_address = stored.primary_address.clone();
         self.epoch = stored.epoch;
         self.auto_take_over = stored.auto_take_over;
+        self.failover_show = stored.failover_show.clone();
         // Clients learn at once whether this host belongs to a pair, before its backup is checked.
         self.backup = match (&stored.primary_address, &stored.backup_peer) {
             (None, Some(peer)) => Some(
@@ -195,6 +203,7 @@ impl BackupState {
                         address: peer.clone(),
                         state: BackupPeerState::Checking,
                         last_seen_ms: None,
+                        latency_ms: None,
                     }),
             ),
             _ => None,
@@ -239,16 +248,20 @@ pub enum BackupCommand {
         /// Whether to take over on its own once the primary stops answering.
         enabled: bool,
     },
+    /// Opens the failover pair's show this host ran last, from the failover folder, as when it
+    /// continues as the primary after a restart.
+    OpenFailoverShow,
 }
 
 impl IngressCommand for BackupCommand {}
 
-/// A show copied from the primary, ready to replace the backup's world.
+/// A show in the failover folder, copied from the primary or opened again, ready to replace the
+/// world.
 #[derive(Debug, Clone, PartialEq, Eq, Message)]
 pub struct MirroredShowfileReady {
     /// Name to load the show under, or `None` for the default showfile.
     pub showfile_name: Option<String>,
-    /// Loadable show directory, kept until the next copy replaces it.
+    /// Loadable show directory in the failover folder.
     pub directory: std::path::PathBuf,
 }
 
@@ -365,6 +378,7 @@ fn handle_backup_commands(
     mut state: ResMut<BackupState>,
     mut role_error: ResMut<RoleError>,
     mut pending: ResMut<PendingFollow>,
+    mut mirrored: MessageWriter<MirroredShowfileReady>,
     mut responder: CommandResponder,
 ) {
     for envelope in commands.read() {
@@ -405,17 +419,41 @@ fn handle_backup_commands(
             }
             continue;
         }
-        let changes_role = !matches!(envelope.command, BackupCommand::SetAutoTakeOver { .. });
+        if let BackupCommand::OpenFailoverShow = envelope.command {
+            let result = match open_failover_show(&state) {
+                Ok(show) => {
+                    mirrored.write(show);
+                    responder.succeed(envelope.command_id)
+                }
+                Err(message) => responder.fail(
+                    envelope.command_id,
+                    CommandError::new("backup.failover_show_unavailable", message),
+                ),
+            };
+            if let Err(error) = result {
+                tracing::error!(command_id = %envelope.command_id, %error, "backup_command_completion_failed");
+            }
+            continue;
+        }
+        let changes_role = !matches!(
+            envelope.command,
+            BackupCommand::SetAutoTakeOver { .. } | BackupCommand::OpenFailoverShow
+        );
         let outcome: Result<RoleChange, String> = match &envelope.command {
             // Handled above, since it completes only once the primary was checked.
-            BackupCommand::FollowPrimary { .. } => continue,
+            BackupCommand::FollowPrimary { .. } | BackupCommand::OpenFailoverShow => continue,
             BackupCommand::StopFollowing if state.is_backup() => Ok(stop_following()),
             // A host that follows no one, such as one that just took over, keeps its backup.
             BackupCommand::StopFollowing => Ok((
                 preferences::current(preferences::preferences_path().as_deref()).0,
                 None,
             )),
-            BackupCommand::LeavePair => Ok(stop_following()),
+            BackupCommand::LeavePair => {
+                if !state.is_backup() {
+                    failover::note_left_pair();
+                }
+                Ok(stop_following())
+            }
             BackupCommand::TakeOver if state.is_backup() => Ok(take_over()),
             // A host that follows no one has nothing to take over.
             BackupCommand::TakeOver => Ok((
@@ -459,6 +497,47 @@ fn handle_backup_commands(
         if let Err(error) = result {
             tracing::error!(command_id = %envelope.command_id, %error, "backup_command_completion_failed");
         }
+    }
+}
+
+/// Finds the failover pair's show this host ran last: its working draft when one is kept, which
+/// holds the latest state, otherwise its saved copy. A backup opens its primary's show instead.
+fn open_failover_show(state: &BackupState) -> Result<MirroredShowfileReady, String> {
+    if state.is_backup() {
+        return Err("A backup opens its primary's show on its own.".to_string());
+    }
+    let show = state
+        .failover_show
+        .as_ref()
+        .ok_or("This computer has no failover show to open.")?;
+    let root = nightfall::failover_data_dir().ok_or("Could not find the app data folder.")?;
+    let folder = show.folder_name();
+    let directory = [root.join("drafts").join(&folder), root.join(&folder)]
+        .into_iter()
+        .find(|directory| directory.is_dir())
+        .ok_or_else(|| format!("The failover folder no longer holds {folder}."))?;
+    Ok(MirroredShowfileReady {
+        showfile_name: show.name.clone(),
+        directory,
+    })
+}
+
+/// Records which show this host opened: the failover pair's show when it is stored in the
+/// failover folder, so continuing as the primary after a restart opens it again, or none for one
+/// of this computer's own showfiles.
+pub fn remember_open_show(name: Option<&str>, in_failover_folder: bool) {
+    let failover_show = in_failover_folder.then(|| FailoverShow {
+        name: name.map(str::to_string),
+    });
+    let path = preferences::preferences_path();
+    if preferences::current(path.as_deref()).0.failover_show == failover_show {
+        return;
+    }
+    let (_, error) = preferences::update(path.as_deref(), |stored| {
+        stored.failover_show = failover_show;
+    });
+    if let Some(error) = error {
+        tracing::warn!(%error, "Could not store which failover show is open");
     }
 }
 
@@ -523,6 +602,7 @@ fn finish_pending_follow(
 ///
 /// The primary becomes this host's only peer: a backup has no backup of its own to remember.
 fn follow_primary(address: String, key: Option<String>) -> RoleChange {
+    failover::note_joined_pair();
     let (stored, save_error) =
         preferences::update(preferences::preferences_path().as_deref(), |stored| {
             stored.primary_address = Some(address.clone());
@@ -605,6 +685,7 @@ fn take_over() -> RoleChange {
 ///
 /// It follows with the key the two share, so it needs no PIN, even after either restarted.
 fn rejoin_as_backup(address: &str, epoch: u64) -> RoleChange {
+    failover::note_joined_pair();
     let (stored, save_error) =
         preferences::update(preferences::preferences_path().as_deref(), |stored| {
             stored.primary_address = Some(address.to_string());
@@ -707,9 +788,50 @@ fn rejoin_when_backup_took_over(
     role_error.0 = save_error;
 }
 
+/// Rounds a round trip up to whole milliseconds, so a fast local link reads as 1 ms, not 0.
+fn latency_ms(latency: std::time::Duration) -> u32 {
+    u32::try_from(latency.as_micros().div_ceil(1000)).unwrap_or(u32::MAX)
+}
+
+/// Keeps the latency clients were shown until a new measurement differs by a quarter or by at
+/// least 2 ms, so jitter does not resend the backup state with every heartbeat.
+fn steady_latency(shown: Option<u32>, measured: Option<u32>) -> Option<u32> {
+    match (shown, measured) {
+        (Some(shown), Some(measured)) if measured.abs_diff(shown) < (shown / 4).max(2) => {
+            Some(shown)
+        }
+        _ => measured,
+    }
+}
+
 /// Returns whether the world holds an open show, rather than waiting at startup for one.
 fn show_is_open(app_state: Option<&bevy_state::state::State<nightfall_engine::AppState>>) -> bool {
     app_state.is_some_and(|app_state| *app_state.get() == nightfall_engine::AppState::Ready)
+}
+
+/// Leaves the pair when the primary answers that it left it, keeping the copied show and sending
+/// it, and tells every client why.
+fn leave_when_primary_left(
+    mut state: ResMut<BackupState>,
+    mut role_error: ResMut<RoleError>,
+    mut notifications: MessageWriter<UiNotification>,
+) {
+    if !link::process_backup_link().take_primary_left() || !state.is_backup() {
+        return;
+    }
+    let primary = state.primary_address.clone().unwrap_or_default();
+    let (stored, save_error) = stop_following();
+    state.apply_preferences(&stored);
+    failover::set_took_over_automatically_at(None);
+    state.took_over_automatically_at_ms = None;
+    role_error.0 = save_error;
+    notifications.write(UiNotification::toast(
+        ToastLevel::Warning,
+        format!(
+            "{primary} left the failover pair, so this instance no longer follows it and sends \
+             the copied show as its own output."
+        ),
+    ));
 }
 
 /// Mirrors the link's progress into the client-facing state, applies the output and ingress
@@ -750,6 +872,11 @@ fn sync_backup_link(
         error: report.error.or_else(|| role_error.0.clone()),
         showfile_name: report.showfile_name,
         synced_at_ms: report.synced_at_ms,
+        latency_ms: if state.is_backup() {
+            steady_latency(state.latency_ms, link.primary_latency().map(latency_ms))
+        } else {
+            None
+        },
         epoch,
         backup: if state.is_backup() {
             None
@@ -758,7 +885,16 @@ fn sync_backup_link(
             *peer_checked_at = Some(std::time::Instant::now());
             failover::backup_peer().map(|address| {
                 let check = link.peer_check(&address);
-                failover::peer_health(address, check)
+                let shown = state
+                    .backup
+                    .as_ref()
+                    .filter(|backup| backup.address == address)
+                    .and_then(|backup| backup.latency_ms);
+                let latency = steady_latency(shown, link.peer_latency(&address).map(latency_ms));
+                BackupPeer {
+                    latency_ms: latency,
+                    ..failover::peer_health(address, check)
+                }
             })
         } else {
             state.backup.clone()
@@ -919,6 +1055,7 @@ impl Plugin for BackupPlugin {
                 finish_pending_follow,
                 take_over_when_primary_is_lost,
                 rejoin_when_backup_took_over,
+                leave_when_primary_left,
                 sync_backup_link,
             )
                 .chain()
@@ -992,5 +1129,17 @@ mod tests {
                 .unwrap()
                 .contains("192.168.1.20:3000")
         );
+    }
+
+    /// Latency shown to clients ignores small jitter but follows real changes and a link that
+    /// starts or stops answering.
+    #[test]
+    fn latency_ignores_jitter() {
+        assert_eq!(steady_latency(None, Some(3)), Some(3));
+        assert_eq!(steady_latency(Some(3), Some(4)), Some(3));
+        assert_eq!(steady_latency(Some(3), Some(5)), Some(5));
+        assert_eq!(steady_latency(Some(40), Some(48)), Some(40));
+        assert_eq!(steady_latency(Some(40), Some(50)), Some(50));
+        assert_eq!(steady_latency(Some(3), None), None);
     }
 }

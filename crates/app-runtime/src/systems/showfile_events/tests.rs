@@ -669,6 +669,48 @@ fn prepare_showfile_session_loads_arbitrary_directory_and_resumes_working_storag
     nightfall::set_nightfall_data_dir(None);
 }
 
+/// A show opened from the failover folder keeps its saved copy, draft and saves there, leaving
+/// this computer's own showfiles and drafts untouched, until one of its own shows opens again.
+#[test]
+fn failover_show_is_stored_apart_from_local_showfiles() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("create showfile root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let failover = nightfall::failover_data_dir().unwrap();
+    let mirrored = failover.join("Tour.nightfall-show");
+    std::fs::create_dir_all(&mirrored).unwrap();
+    let snapshot = collect_snapshot(&mut setup_world());
+    let json = serialize_showfile_snapshot_json(&snapshot).expect("serialize snapshot");
+    std::fs::write(mirrored.join(SHOWFILE_SNAPSHOT_FILENAME), &json).unwrap();
+
+    prepare_showfile_session(&mirrored, Some("Tour")).expect("open the failover show");
+    assert!(nightfall::show_storage_is_failover());
+    let draft = failover.join("drafts").join("Tour.nightfall-show");
+    assert_eq!(nightfall::active_show_data_dir(), Some(draft.clone()));
+    assert_eq!(showfile_dir_path(Some("Tour")).unwrap(), mirrored);
+    assert!(!root.path().join("drafts").exists());
+    assert!(!root.path().join("Tour.nightfall-show").exists());
+    assert_eq!(
+        library_showfile_draft_dir_path(Some("Tour")).unwrap(),
+        root.path().join("drafts").join("Tour.nightfall-show")
+    );
+    assert!(validate_new_showfile_name(Some("Tour")).is_ok());
+
+    let local = tempfile::tempdir().expect("create a local source");
+    std::fs::write(local.path().join(SHOWFILE_SNAPSHOT_FILENAME), &json).unwrap();
+    prepare_showfile_session(local.path(), Some("Local")).expect("open a local show");
+    assert!(!nightfall::show_storage_is_failover());
+    assert_eq!(
+        nightfall::active_show_data_dir(),
+        Some(root.path().join("drafts").join("Local.nightfall-show"))
+    );
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
 /// Verifies loading a revision creates working state without replacing the saved showfile.
 #[test]
 fn reset_working_draft_from_revision_preserves_saved_showfile() {
