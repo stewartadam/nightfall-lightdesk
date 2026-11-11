@@ -42,6 +42,7 @@ mod assets;
 mod backup;
 mod commands;
 mod draft;
+mod draft_status;
 pub mod export;
 mod feedback;
 mod http_routes;
@@ -82,6 +83,11 @@ use draft::{
     prepare_showfile_session, prepare_working_draft_for_save, remove_draft_showfile,
     replace_working_draft_with_saved_snapshot, save_initial_draft_showfile_snapshot,
 };
+pub use draft_status::DraftSaveStatus;
+use draft_status::clear_draft_save_failure;
+pub use draft_status::draft_save_failure;
+pub(crate) use draft_status::mirror_draft_save_status;
+pub(crate) use draft_status::record_draft_save_result;
 use feedback::*;
 pub(crate) use http_routes::register_showfile_http_routes;
 #[cfg(test)]

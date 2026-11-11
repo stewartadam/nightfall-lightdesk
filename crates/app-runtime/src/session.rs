@@ -13,8 +13,8 @@ use nightfall_config::RuntimeConfig;
 use nightfall_engine::logging::LogConfig;
 use nightfall_engine::prelude::{
     ClientEventSink, CommandError, CommandId, CommandOutcome, CommandResult,
-    DISCRIMINATOR_NON_DROPPABLE, EngineClientMessage, UiNotification, UiNotificationState,
-    finish_command_in_world, request_graceful_exit,
+    DISCRIMINATOR_NON_DROPPABLE, EngineClientMessage, ToastLevel, UiNotification,
+    UiNotificationState, finish_command_in_world, request_graceful_exit,
 };
 use nightfall_websocket::prelude::SharedWebUiAssets;
 
@@ -104,6 +104,11 @@ pub(super) fn run_world_swap_session_loop(initial_app: App, factory: WorldFactor
             .get_resource_mut::<PendingWorldSwapRequest>()
             .map(|mut pending| pending.take_requests())
             .unwrap_or_default();
+        let mut outgoing_draft_save_error = if pending_world_swap_requests.is_empty() {
+            None
+        } else {
+            save_outgoing_show_draft(orchestrator.active_app_mut())
+        };
         for request in pending_world_swap_requests {
             match orchestrator.stage_and_swap_with_before_commit(
                 &factory,
@@ -132,6 +137,9 @@ pub(super) fn run_world_swap_session_loop(initial_app: App, factory: WorldFactor
                     }
                 }
                 Ok(_previous_app) => {
+                    if let Some(error) = outgoing_draft_save_error.take() {
+                        publish_outgoing_draft_save_failure(orchestrator.active_app(), &error);
+                    }
                     queue_current_showfile_changed(orchestrator.active_app_mut(), &request);
                     publish_world_replaced(orchestrator.active_app());
                 }
@@ -140,6 +148,79 @@ pub(super) fn run_world_swap_session_loop(initial_app: App, factory: WorldFactor
 
         std::thread::sleep(Duration::from_millis(1));
     }
+}
+
+/// Saves the open show's draft before a world swap drops its world.
+///
+/// Opening, recovering or creating a show replaces the world, and the periodic autosave may
+/// not have run since the last edit. Saving here, once per batch of swaps and after the
+/// frame's systems have run, keeps every edit, as quit, shutdown and last-client disconnect
+/// already do. A failed save does not stop the switch, so a broken drafts folder never traps
+/// the operator in the current show. It is recorded in the outgoing world's draft save status,
+/// which warns clients if the swap fails and that world stays, and returned so a swap that
+/// succeeds can report it with [`publish_outgoing_draft_save_failure`].
+pub(super) fn save_outgoing_show_draft(bevy_app: &mut App) -> Option<String> {
+    use bevy::ecs::system::RunSystemOnce;
+
+    /// Saves the draft of the current show when it differs from its clean snapshot, and
+    /// records the result in the draft save status.
+    fn save_draft(
+        mut showfile_save_state: systems::showfile_events::ShowfileSaveState,
+        current_showfile: bevy::prelude::Res<systems::showfile_events::CurrentShowfile>,
+        mut clean_snapshot_hash: bevy::prelude::ResMut<
+            systems::showfile_events::ShowfileCleanSnapshotHash,
+        >,
+        mut draft_save_status: bevy::prelude::ResMut<systems::showfile_events::DraftSaveStatus>,
+    ) -> Result<systems::showfile_events::DraftSaveOutcome, String> {
+        let result = systems::showfile_events::save_draft_showfile_if_dirty(
+            &mut showfile_save_state,
+            current_showfile.name(),
+            &mut clean_snapshot_hash,
+        );
+        systems::showfile_events::record_draft_save_result(&mut draft_save_status, &result);
+        result
+    }
+
+    match bevy_app.world_mut().run_system_once(save_draft) {
+        Ok(Ok(outcome)) => {
+            tracing::debug!(
+                ?outcome,
+                "Saved the outgoing show's draft before a world swap"
+            );
+            None
+        }
+        Ok(Err(error)) => {
+            tracing::warn!("Failed to save the outgoing show's draft before a world swap: {error}");
+            Some(error)
+        }
+        Err(error) => {
+            tracing::warn!("Could not run the draft save before a world swap: {error}");
+            Some(error.to_string())
+        }
+    }
+}
+
+/// Tells clients directly, once the switch has happened, that the previous show's draft could
+/// not be saved before it.
+///
+/// The outgoing world's draft save status was dropped with it and the incoming world starts
+/// with a clean one, so without this toast the operator would never hear of the lost edits.
+fn publish_outgoing_draft_save_failure(bevy_app: &App, error: &str) {
+    let Some(client_events) = bevy_app.world().get_resource::<ClientEventSink>() else {
+        tracing::warn!("Failed to report the draft save failure; client event sink was missing");
+        return;
+    };
+    let toast = UiNotification::sticky_toast(
+        ToastLevel::Error,
+        format!(
+            "Couldn't save the previous show's draft before switching, so its edits since \
+             the last save were lost: {error}"
+        ),
+    );
+    client_events.publish(
+        DISCRIMINATOR_NON_DROPPABLE,
+        &EngineClientMessage::UiNotification(&toast),
+    );
 }
 
 /// Completes and directly sends success before the current world is replaced.
