@@ -308,6 +308,13 @@ session or inheriting backend world and undo state from another test. Owned
 services and disposable data are removed after each test and swept again when
 Playwright exits.
 
+`NIGHTFALL_PLAYWRIGHT_CHROMIUM_ARGS` adds whitespace-separated switches to every
+Chromium launch. On a machine without a GPU, Chromium renders WebGL with
+SwiftShader, and the visualizer drops to about 1 FPS. Installing Mesa's EGL
+libraries (`libegl1 libegl-mesa0 libgles2` on Debian and Ubuntu) and setting it to
+`--use-angle=gl-egl --ignore-gpu-blocklist` renders with Mesa's llvmpipe instead,
+about ten times faster. Claude Code cloud sessions set this up automatically.
+
 All workers share one web server per run. Native runs build the web UI once
 with `vite build --mode e2e` (while Cargo checks the backend) and serve that
 bundle with `vite preview`, so tests exercise production bundles instead of
