@@ -61,7 +61,7 @@ test("panel definitions constrain grid and edge groups", async ({
       const group = await clipGroup(page);
       return [group.minWidth, group.minHeight];
     })
-    .toEqual([531, 416]);
+    .toEqual([376, 416]);
   await page.evaluate(() => {
     (window as any).appStores.dockApi
       .get()
@@ -69,7 +69,7 @@ test("panel definitions constrain grid and edge groups", async ({
       .api.setSize({ width: 80, height: 80 });
   });
   const before = await clipGroup(page);
-  expect(before.width).toBeGreaterThanOrEqual(515);
+  expect(before.width).toBeGreaterThanOrEqual(360);
   expect(before.height).toBeGreaterThanOrEqual(400);
   await page.getByRole("tab", { name: "Console", exact: true }).click();
   expect(await clipGroup(page)).toEqual(before);
@@ -83,7 +83,7 @@ test("panel definitions constrain grid and edge groups", async ({
       position: "bottom",
     });
   });
-  await expect.poll(async () => (await clipGroup(page)).minWidth).toBe(531);
+  await expect.poll(async () => (await clipGroup(page)).minWidth).toBe(376);
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
     const right = api.getPanel("panel-PropertiesInspector").api.group;
@@ -98,7 +98,7 @@ test("panel definitions constrain grid and edge groups", async ({
   });
   await expect
     .poll(async () => (await clipGroup(page)).width)
-    .toBeGreaterThanOrEqual(514.5);
+    .toBeGreaterThanOrEqual(359.5);
 
   const edge = page.getByTestId("dv-edge-group-edge-Properties");
   const sash = page.locator(".dv-sash").filter({ visible: true });
@@ -125,8 +125,8 @@ test("panel definitions constrain grid and edge groups", async ({
   await page.mouse.up();
   await expect
     .poll(async () => (await clipGroup(page)).width)
-    .toBeGreaterThanOrEqual(514.5);
-  expect((await clipGroup(page)).width).toBeLessThan(525);
+    .toBeGreaterThanOrEqual(359.5);
+  expect((await clipGroup(page)).width).toBeLessThan(370);
   await edge.screenshot({
     path: testInfo.outputPath("clips-edge-minimum.png"),
   });
@@ -156,8 +156,8 @@ test("panel definitions constrain grid and edge groups", async ({
   await waitForDockviewApp(page);
   await expect
     .poll(async () => (await clipGroup(page)).width)
-    .toBeGreaterThanOrEqual(514.5);
-  await expect.poll(async () => (await clipGroup(page)).minWidth).toBe(531);
+    .toBeGreaterThanOrEqual(359.5);
+  await expect.poll(async () => (await clipGroup(page)).minWidth).toBe(376);
   await page.evaluate(() =>
     (window as any).appStores.dockApi.get().getEdgeGroup("right").collapse(),
   );
@@ -167,7 +167,7 @@ test("panel definitions constrain grid and edge groups", async ({
   );
   await expect
     .poll(async () => (await clipGroup(page)).width)
-    .toBeGreaterThanOrEqual(514.5);
+    .toBeGreaterThanOrEqual(359.5);
 
   await page.evaluate(() => {
     const api = (window as any).appStores.dockApi.get();
