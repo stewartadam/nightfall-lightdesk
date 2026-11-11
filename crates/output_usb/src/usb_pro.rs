@@ -167,26 +167,28 @@ impl UsbProPort {
     ///
     /// When a write stops partway through a packet, the unsent rest is kept and sent first next
     /// time, so the widget never sees a cut-off frame followed by a new one. Data the widget
-    /// sent back unasked, such as DMX it received while in input mode, is discarded so it
+    /// sent back unasked, such as DMX it received while in input mode, is discarded first so it
     /// cannot fill the OS buffer.
     pub(crate) fn write(&mut self, next: &Universe) -> WriteOutcome {
+        // Discarding input before the write rather than after leaves the packet just written
+        // alone: on macOS pseudo-terminals, flushing one direction can drop data still in
+        // transit.
+        if let Err(error) = self.port.clear(ClearBuffer::Input) {
+            tracing::debug!(port_name = self.port_name, %error, "could not discard USB Pro input");
+        }
         // A cut-off packet is finished first, and `next` goes out on a later tick.
         let finishing_earlier_packet = !self.unsent.is_empty();
         if !finishing_earlier_packet {
             encode_dmx_packet(next, &mut self.unsent);
         }
-        let outcome = match write_some(self.port.as_mut(), &mut self.unsent) {
+        match write_some(self.port.as_mut(), &mut self.unsent) {
             Ok(()) if self.unsent.is_empty() && !finishing_earlier_packet => WriteOutcome::Written,
             Ok(()) => WriteOutcome::Failed,
             Err(error) => {
                 tracing::warn!(port_name = self.port_name, %error, "Enttec DMX USB Pro write failed");
-                return WriteOutcome::Disconnected;
+                WriteOutcome::Disconnected
             }
-        };
-        if let Err(error) = self.port.clear(ClearBuffer::Input) {
-            tracing::debug!(port_name = self.port_name, %error, "could not discard USB Pro input");
         }
-        outcome
     }
 }
 

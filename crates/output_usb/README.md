@@ -72,7 +72,7 @@ The USB Pro runs its own firmware behind an FTDI FT245R and keeps transmitting t
 | `3` | Get widget parameters | Probe. The request carries the user configuration length (`0`); the reply carries the firmware version, break time, mark-after-break time, and output rate. |
 | `6` | Output only send DMX packet | Start code `0` followed by all 512 channels |
 
-The driver opens the device's serial port, sends the label 3 request, and waits up to 300 ms for the reply, skipping other messages such as received DMX. A device that does not answer is handed to the Open DMX driver. A packet the port only partly took is finished before the next one starts, so the widget never sees a cut-off frame. After each DMX packet the driver discards anything the widget sent back unasked.
+The driver opens the device's serial port, sends the label 3 request, and waits up to 300 ms for the reply, skipping other messages such as received DMX. A device that does not answer is handed to the Open DMX driver. A packet the port only partly took is finished before the next one starts, so the widget never sees a cut-off frame. Before each DMX packet the driver discards anything the widget sent back unasked.
 
 Enttec's DMX USB Pro API specification documents the full message set.
 
