@@ -26,6 +26,7 @@ import {
   TimelinePlacementPreference,
   type UiPreferences,
   type UsbDmxDeviceInfo,
+  type UsbDmxTargetState,
 } from "../types";
 
 /**
@@ -100,6 +101,9 @@ export const $availableAudioDevices = atom<Record<string, string>>({});
 
 /** Compatible USB DMX devices for output transport selection */
 export const $availableUsbDmxDevices = atom<UsbDmxDeviceInfo[]>([]);
+
+/** Status of each saved USB DMX output against the attached adapters, resolved by the backend. */
+export const $usbDmxTargetStates = atom<UsbDmxTargetState[]>([]);
 
 /** Host-owned telemetry consent and the anonymous identifier reports are grouped under. */
 export const $telemetryState = atom<TelemetryState>({

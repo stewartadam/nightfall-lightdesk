@@ -18,8 +18,9 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_io::prelude::{IoRuntimeSettings, TransportRuntimePolicy};
+use nightfall_io::prelude::{IoRuntimeSettings, IoStateSync, TransportRuntimePolicy};
 
+mod command;
 mod device_list;
 mod discovery;
 mod driver;
@@ -27,14 +28,23 @@ mod open_dmx;
 mod output;
 mod serial_port;
 mod service;
+mod target_alerts;
+mod targets;
 mod udmx;
 mod usb_pro;
 
+pub use command::UsbDmxCommand;
 pub use device_list::AvailableUsbDmxDevices;
+pub use targets::{
+    UsbDmxDeviceAssignment, UsbDmxTargetState, UsbDmxTargetStates, UsbDmxTargetStatus,
+};
 
 /// Prelude for ergonomic imports
 pub mod prelude {
-    pub use crate::{AvailableUsbDmxDevices, OutputUsbDmxPlugin};
+    pub use crate::{
+        AvailableUsbDmxDevices, OutputUsbDmxPlugin, UsbDmxCommand, UsbDmxDeviceAssignment,
+        UsbDmxTargetState, UsbDmxTargetStates, UsbDmxTargetStatus,
+    };
 }
 
 /// Plugin for adding USB DMX output to the app
@@ -92,8 +102,9 @@ fn refresh_available_usb_dmx_devices(
 }
 
 impl Plugin for OutputUsbDmxPlugin {
-    /// Registers the USB DMX output worker, hotplug-driven USB discovery refresh, and the
-    /// device list feed.
+    /// Registers the USB DMX output worker, hotplug-driven USB discovery refresh, the device
+    /// list and output status feeds, the adapter assignment command, and the alerts for outputs
+    /// that need an operator to confirm their adapter.
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering OutputUsbDmxPlugin");
         app.init_resource::<TransportRuntimePolicy>();
@@ -105,16 +116,31 @@ impl Plugin for OutputUsbDmxPlugin {
             disconnected: false,
         });
         app.insert_resource(usb_service.client());
+        app.init_resource::<UsbDmxTargetStates>();
+        register_client_command::<UsbDmxCommand>(app, Undo::Skipped);
         app.add_systems(
             Update,
             (
                 refresh_available_usb_dmx_devices.in_set(EventHandling),
+                command::handle_usb_dmx_commands
+                    .in_set(EventHandling)
+                    .after(refresh_available_usb_dmx_devices)
+                    .before(IoStateSync),
+                (
+                    targets::resolve_usb_dmx_target_states,
+                    target_alerts::announce_usb_dmx_target_changes,
+                )
+                    .chain()
+                    .in_set(EventHandling)
+                    .after(IoStateSync)
+                    .after(refresh_available_usb_dmx_devices),
                 sync_usb_dmx_output_rate
                     .after(EventHandling)
                     .run_if(resource_exists_and_changed::<IoRuntimeSettings>),
             ),
         );
         app.add_resource_feed::<AvailableUsbDmxDevices>();
+        app.add_resource_feed::<UsbDmxTargetStates>();
         app.add_systems(
             Render,
             output::output

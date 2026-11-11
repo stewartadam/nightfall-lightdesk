@@ -8,32 +8,56 @@
 
 import { getLogger } from "../lib/logger";
 import type { ToastAction } from "../lib/notification-queue";
-import { ToastAction as EngineToastAction } from "../types";
+import type { ToastAction as EngineToastAction } from "../types";
 
 const log = getLogger(import.meta.url);
 
+type EngineToastActionType = EngineToastAction["type"];
+
+/** The engine action of one kind, with the payload that kind carries. */
+type EngineToastActionOf<Type extends EngineToastActionType> = Extract<
+  EngineToastAction,
+  { type: Type }
+>;
+
 /** Button text for each follow-up the engine can attach to a toast. */
-const LABELS: Record<EngineToastAction, string> = {
-  [EngineToastAction.OpenNetworkSettings]: "Open network settings",
-  [EngineToastAction.OpenExternalControlSettings]:
-    "Open external control settings",
+const LABELS: {
+  [Type in EngineToastActionType]: (
+    action: EngineToastActionOf<Type>,
+  ) => string;
+} = {
+  OpenNetworkSettings: () => "Open network settings",
+  OpenExternalControlSettings: () => "Open external control settings",
+  OpenUsbDmxOutputs: () => "Open I/O Transports",
+  UpdateUsbDmxPort: () => "Update port",
+  ChooseUsbDmxOutput: (action) => `Use as ${action.data.target}`,
 };
 
-const handlers = new Map<EngineToastAction, () => void>();
+const handlers = new Map<
+  EngineToastActionType,
+  (action: EngineToastAction) => void
+>();
 
 /**
- * Lets the shell decide what an engine toast action opens. The engine only names the follow-up,
- * and the shell owns the dialogs and panels, so websocket handlers never import UI modules.
- * Returns a function that removes the registration.
+ * Lets the shell decide what an engine toast action opens or does. The engine only names the
+ * follow-up and its payload, and the shell owns the dialogs, panels and command client, so
+ * websocket handlers never import UI modules. Returns a function that removes the registration.
  */
-export function registerToastActionHandler(
-  action: EngineToastAction,
-  run: () => void,
+export function registerToastActionHandler<Type extends EngineToastActionType>(
+  type: Type,
+  run: (action: EngineToastActionOf<Type>) => void,
 ): () => void {
-  handlers.set(action, run);
+  const handler = run as (action: EngineToastAction) => void;
+  handlers.set(type, handler);
   return () => {
-    if (handlers.get(action) === run) handlers.delete(action);
+    if (handlers.get(type) === handler) handlers.delete(type);
   };
+}
+
+/** Returns the button text for one engine toast action. */
+function actionLabel(action: EngineToastAction): string {
+  const label = LABELS[action.type] as (action: EngineToastAction) => string;
+  return label(action);
 }
 
 /**
@@ -44,11 +68,11 @@ export function toastActionButtons(
   actions: readonly EngineToastAction[] | undefined,
 ): ToastAction[] {
   return (actions ?? []).map((action) => ({
-    label: LABELS[action],
+    label: actionLabel(action),
     onClick: () => {
-      const run = handlers.get(action);
-      if (run) run();
-      else log.warn(`No handler is registered for toast action ${action}`);
+      const run = handlers.get(action.type);
+      if (run) run(action);
+      else log.warn(`No handler is registered for toast action ${action.type}`);
     },
   }));
 }

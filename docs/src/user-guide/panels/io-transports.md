@@ -49,6 +49,19 @@ Nightfall supports these USB DMX interfaces:
 - **Enttec DMX USB Pro** and compatible clones. These appear as an FTDI USB serial adapter. Add a target for the device; Nightfall checks whether it is a USB Pro before sending DMX to it.
 - **Open DMX** dongles (Enttec Open DMX USB and clones such as the DoReMiDi USB-DMX). These also appear as an FTDI USB serial adapter. An FTDI device that does not answer as a USB Pro is driven as Open DMX, so only select one that is a DMX interface, not a generic USB serial cable.
 
-A target remembers both the serial number and the USB port of its device. Some clones all ship with the same serial number; keep each of those plugged into the same USB port (and hub) so every target finds its own dongle. A device whose serial number is unique still follows its target to another port.
+### Adapters on a different port
+
+Nightfall saves each USB output with its adapter's serial number and the USB port it is plugged into. If you move an adapter to another port, output follows it and its status reads **Moved**. Select **Update port** to save the new port.
+
+### Adapters that share a serial number
+
+Some low-cost adapters all report the same serial number. Nightfall tells these adapters apart by the USB port they are plugged into, and the USB section shows a warning naming their ports. To keep each output on the right adapter:
+
+- Assign each adapter to its output while it is plugged into the port you plan to use.
+- Keep each adapter in that port. Label the cables if they are easy to swap.
+
+When an output's adapter is not on its saved port and another adapter with the same serial number is plugged in somewhere else, the output stays off and its status reads **Not on its port**. If that adapter belongs to the output, select **Update port**.
+
+If a show has two outputs saved for adapters with the same serial number and only one of them is plugged in, on a port neither output was saved with, Nightfall cannot tell which output it belongs to. Both outputs stay off, their status reads **Choose adapter**, and a notification asks which output the adapter drives. Select the output in the notification, or select **Use adapter** on the output's row in I/O Transports.
 
 Keep physical output off while rehearsing changes that should only affect the visualizer. Test one fixture and destination first, then expand the routing. Use [Console DMX](console-dmx.md) to separate programming problems from transport problems.

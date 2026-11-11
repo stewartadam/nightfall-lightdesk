@@ -32,6 +32,7 @@ import {
   applyOscSourcesSnapshot,
   applySettingsSnapshot,
   applyTelemetryStateSnapshot,
+  applyUsbDmxTargetStatesSnapshot,
 } from "../../state/io-snapshots";
 import type { WsMessageHandlerRegistry } from "./message-registry";
 import type { AnyWsMessage } from "./types";
@@ -70,6 +71,10 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("AvailableUsbDmxDevices", (message) => {
     applyAvailableUsbDmxDevicesSnapshot(message.data);
+  });
+
+  registry.register("UsbDmxTargetStates", (message) => {
+    applyUsbDmxTargetStatesSnapshot(message.data);
   });
 
   registry.register("MidiDeviceList", (message) => {

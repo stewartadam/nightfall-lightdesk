@@ -56,7 +56,7 @@ function handleLogCommand(command: types.LogCommand) {
 }
 
 /** Applies backend UI notifications such as toast presentation requests. */
-function handleUiNotification(notification: types.UiNotification) {
+export function handleUiNotification(notification: types.UiNotification) {
   log.trace("Handling UiNotification:", notification);
 
   switch (notification.type) {
