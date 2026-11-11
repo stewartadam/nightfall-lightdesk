@@ -1,7 +1,7 @@
 {
   "metadata": {
     "nightfallVersion": "0.1.0-alpha.5",
-    "showfileVersion": 25,
+    "showfileVersion": 26,
     "lastSavedUnixSec": 1800000000
   },
   "fixtures": [
@@ -178,7 +178,10 @@
         "nanos": 0
       },
       "input_universe_visibility_mode": "ExternalOnly",
-      "dmx_output_rate_hz": 44
+      "dmx_output_rate_hz": 44,
+      "artnet_sync_enabled": false,
+      "sacn_sync_enabled": false,
+      "sacn_sync_universe": 1
     },
     "panelLayouts": {
       "layouts": [],
@@ -1117,5 +1120,6 @@
     }
   ],
   "boards": [],
-  "macros": []
+  "macros": [],
+  "parked": []
 }

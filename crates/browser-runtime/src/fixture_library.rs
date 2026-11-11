@@ -219,6 +219,7 @@ mod tests {
     use serde_json::{Value, json};
     use uuid::Uuid;
 
+    use super::builtin_fixture_profiles;
     use crate::tests::{decode_publication, sample_engine};
 
     /// Submits one fixture-library command and returns every publication from the next frames.
@@ -273,7 +274,7 @@ mod tests {
         let fixtures = listing["data"]["fixtures"]
             .as_array()
             .expect("listing should contain fixtures");
-        assert_eq!(fixtures.len(), 12);
+        assert_eq!(fixtures.len(), builtin_fixture_profiles().len());
         assert!(
             fixtures
                 .iter()

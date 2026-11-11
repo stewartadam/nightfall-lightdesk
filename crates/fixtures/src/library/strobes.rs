@@ -18,23 +18,39 @@ use crate::prelude::*;
 
 /// Creates the 308-channel strobe matrix, which has 16 white segments.
 pub(super) fn create_strobe_matrix_308(id: u32, make: &str, model: &str) -> Fixture {
-    create_strobe(id, make, model, 16)
+    create_strobe(id, make, model, 16, false)
 }
 
-/// Creates the 312-channel strobe matrix, which has 20 white segments.
+/// Creates the 312-channel strobe matrix, which has 20 white segments and no firmware strobes.
+///
+/// This is the 20-segment hardware on its stock firmware, before the strobe/duration patch.
 pub(super) fn create_strobe_matrix_312(id: u32, make: &str, model: &str) -> Fixture {
-    create_strobe(id, make, model, 20)
+    create_strobe(id, make, model, 20, false)
+}
+
+/// Creates the 316-channel strobe matrix, which has 20 white segments and firmware strobes.
+///
+/// This is the 20-segment hardware running the patched firmware. After the stock 312-channel
+/// map it adds four slots: white strobe, white duration, RGB strobe, and RGB duration.
+pub(super) fn create_strobe_matrix_316(id: u32, make: &str, model: &str) -> Fixture {
+    create_strobe(id, make, model, 20, true)
 }
 
 /// Creates a strobe fixture with 96 RGB pixels and the requested white segment count.
 ///
 /// The hardware control prefix is Tilt, Rotation Speed, and Reset. Tilt uses
 /// coarse and fine DMX slots, so the non-emitter prefix occupies four slots.
+/// With `firmware_strobes`, four trailing slots drive the fixture's own strobe
+/// timers in the order white strobe, white duration, RGB strobe, RGB duration.
+/// Each strobe is off below DMX 5 and speeds up from 5 to 255; each duration
+/// stretches that strobe's flash, from the stock short pulse at 0 to a 50/50
+/// duty cycle at 255.
 pub(super) fn create_strobe(
     id: u32,
     make: &str,
     model: &str,
     white_segment_count: usize,
+    firmware_strobes: bool,
 ) -> Fixture {
     let vdim_parameter = ParameterMetadata {
         dmx_slots: Default::default(),
@@ -188,7 +204,45 @@ pub(super) fn create_strobe(
         use_grandmaster: false,
     };
 
-    let mut elements = Vec::with_capacity(96 + white_segment_count + 3);
+    let strobe_rate_parameter = ParameterMetadata {
+        dmx_slots: Default::default(),
+        functions: Vec::new(),
+        default_dmx: None,
+        highlight_dmx: None,
+        attribute: Attribute::StrobeRate,
+        native_unit: Attribute::StrobeRate.native_unit(),
+        value_polarity: Attribute::StrobeRate.value_polarity(),
+        is_inverted: false,
+        is_snap: false,
+        max: 255.0,
+        offset: ParameterValue::Absolute { value: 0.0 },
+        merge_type: MergeStrategy::LTP,
+        min: 0.0,
+        resolution: DmxValueResolution::Coarse,
+        use_grandmaster: false,
+    };
+
+    let strobe_duration_parameter = ParameterMetadata {
+        dmx_slots: Default::default(),
+        functions: Vec::new(),
+        default_dmx: None,
+        highlight_dmx: None,
+        attribute: Attribute::Custom {
+            label: "Strobe Duration".to_owned(),
+        },
+        native_unit: ParameterUnit::Percent,
+        value_polarity: ParameterValuePolarity::Unsigned,
+        is_inverted: false,
+        is_snap: false,
+        max: 255.0,
+        offset: ParameterValue::Absolute { value: 0.0 },
+        merge_type: MergeStrategy::LTP,
+        min: 0.0,
+        resolution: DmxValueResolution::Coarse,
+        use_grandmaster: false,
+    };
+
+    let mut elements = Vec::with_capacity(96 + white_segment_count + 7);
 
     elements.push(FixtureElement {
         label: "Tilt Axis".to_owned(),
@@ -214,6 +268,25 @@ pub(super) fn create_strobe(
         elements.push(FixtureElement {
             label: format!("RGB Pixel {}", i),
             parameters: rgb_parameters.clone(),
+        });
+    }
+
+    if firmware_strobes {
+        elements.push(FixtureElement {
+            label: "White Strobe".to_owned(),
+            parameters: vec![strobe_rate_parameter.clone()],
+        });
+        elements.push(FixtureElement {
+            label: "White Strobe Duration".to_owned(),
+            parameters: vec![strobe_duration_parameter.clone()],
+        });
+        elements.push(FixtureElement {
+            label: "RGB Strobe".to_owned(),
+            parameters: vec![strobe_rate_parameter],
+        });
+        elements.push(FixtureElement {
+            label: "RGB Strobe Duration".to_owned(),
+            parameters: vec![strobe_duration_parameter],
         });
     }
 

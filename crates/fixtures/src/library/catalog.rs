@@ -80,7 +80,7 @@ impl BuiltinFixtureProfile {
 }
 
 /// Built-in profiles available even when no fixture files are installed.
-static BUILTIN_FIXTURE_PROFILES: [BuiltinFixtureProfile; 12] = [
+static BUILTIN_FIXTURE_PROFILES: [BuiltinFixtureProfile; 11] = [
     builtin(
         "100-segment LED Bar",
         "builtin:generic-100-segment-led-bar:v1",
@@ -115,14 +115,13 @@ static BUILTIN_FIXTURE_PROFILES: [BuiltinFixtureProfile; 12] = [
         &[mode("RGB", pixel_bars::create_rgb_bar_40)],
     ),
     builtin(
-        "Strobe Matrix 308ch",
-        "builtin:generic-strobe-matrix-308ch:v1",
-        &[mode("Strobe", strobes::create_strobe_matrix_308)],
-    ),
-    builtin(
-        "Strobe Matrix 312ch",
-        "builtin:generic-strobe-matrix-312ch:v1",
-        &[mode("Strobe", strobes::create_strobe_matrix_312)],
+        "Strobe Matrix",
+        "builtin:generic-strobe-matrix:v1",
+        &[
+            mode("308ch", strobes::create_strobe_matrix_308),
+            mode("312ch", strobes::create_strobe_matrix_312),
+            mode("316ch", strobes::create_strobe_matrix_316),
+        ],
     ),
     builtin(
         "RGB Strobe Bar 168ch",
@@ -178,4 +177,65 @@ pub fn find_builtin_fixture_profile(
     BUILTIN_FIXTURE_PROFILES
         .iter()
         .find(|profile| profile.make == make && profile.model == model)
+}
+
+/// A retired built-in model that is now one mode of another built-in profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetiredBuiltinModel {
+    /// Manufacturer name of the retired model.
+    pub make: &'static str,
+    /// Model name the retired profile was offered under.
+    pub model: &'static str,
+    /// Only mode the retired profile offered.
+    pub mode: &'static str,
+    /// Version string the retired profile recorded on fixtures created from it.
+    pub asset_etag: &'static str,
+    /// Model of the built-in profile that replaces it, with the same make.
+    pub replacement_model: &'static str,
+    /// Mode of the replacement profile with the same channel layout.
+    pub replacement_mode: &'static str,
+}
+
+/// Retired built-in models, kept so old store-fixture commands keep resolving.
+static RETIRED_BUILTIN_MODELS: [RetiredBuiltinModel; 2] = [
+    RetiredBuiltinModel {
+        make: "Generic",
+        model: "Strobe Matrix 308ch",
+        mode: "Strobe",
+        asset_etag: "builtin:generic-strobe-matrix-308ch:v1",
+        replacement_model: "Strobe Matrix",
+        replacement_mode: "308ch",
+    },
+    RetiredBuiltinModel {
+        make: "Generic",
+        model: "Strobe Matrix 312ch",
+        mode: "Strobe",
+        asset_etag: "builtin:generic-strobe-matrix-312ch:v1",
+        replacement_model: "Strobe Matrix",
+        replacement_mode: "312ch",
+    },
+];
+
+/// Returns every retired built-in model and the profile mode that replaces it.
+pub fn retired_builtin_models() -> &'static [RetiredBuiltinModel] {
+    &RETIRED_BUILTIN_MODELS
+}
+
+/// Resolves a retired built-in model to the current profile and mode with its channel layout.
+///
+/// `mode` must be the retired profile's only mode or empty (its default); any other mode was
+/// never offered by the retired profile and resolves to `None`, as do unknown models.
+pub fn resolve_retired_builtin_model(
+    make: &str,
+    model: &str,
+    mode: &str,
+) -> Option<(&'static BuiltinFixtureProfile, &'static str)> {
+    let retired = RETIRED_BUILTIN_MODELS
+        .iter()
+        .find(|retired| retired.make == make && retired.model == model)?;
+    if !mode.is_empty() && mode != retired.mode {
+        return None;
+    }
+    let profile = find_builtin_fixture_profile(retired.make, retired.replacement_model)?;
+    Some((profile, retired.replacement_mode))
 }
