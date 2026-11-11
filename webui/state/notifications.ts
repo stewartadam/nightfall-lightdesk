@@ -194,6 +194,12 @@ function toastHost(): HTMLElement {
   const host = document.createElement("div");
   host.dataset.component = "ToastHost";
   host.dataset.ownsDialogKeys = "";
+  // Escape on a toast control has no meaning of its own; cancelling it keeps the browser from
+  // turning it into a close request for the dialog the toast sits in.
+  host.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && host.closest("dialog"))
+      event.preventDefault();
+  });
   toastHostElement = host;
   /** Moves the container (and its toasts) into the current overlay host. */
   const follow = () => {

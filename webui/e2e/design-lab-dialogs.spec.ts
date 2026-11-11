@@ -131,8 +131,7 @@ test("escape closes a dropdown inside a dialog before the dialog", async ({
 /**
  * Verifies a dialog closed and reopened within one task stays open without errors.
  * The browser delivers the old dialog's `close` event a task later, after the old
- * element has left the page, and the Modal must not try to reopen that element. A close
- * the browser forces on the current dialog while it should stay open is still undone.
+ * element has left the page, and the Modal must not act on that stale event.
  */
 test("a dialog reopened right after closing shows without errors", async ({
   page,
@@ -173,6 +172,54 @@ test("a dialog reopened right after closing shows without errors", async ({
   ).toBe(1);
   expect(pageErrors).toEqual([]);
 
+  await required.getByRole("button", { name: "Load draft" }).click();
+  await expect(required).toBeHidden();
+});
+
+/**
+ * Verifies how dialogs answer a close the browser makes on its own (a close request the page
+ * may not block). An info dialog follows it: it leaves the page, its owner hears about it
+ * through the same handler as Escape, and opening it again shows it. A required dialog
+ * blocks it by showing itself again until the operator answers.
+ */
+test("a browser close closes optional dialogs and is blocked by required ones", async ({
+  page,
+}) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await page.goto("/design-lab.html");
+  await page
+    .getByRole("navigation", { name: "Component index" })
+    .getByRole("button", { name: /Dialogs/ })
+    .click();
+  const panel = page.getByRole("region", { name: "Dialog examples" });
+  await panel.getByRole("button", { name: "Info dialog" }).click();
+  const info = page.getByRole("dialog", { name: "About this sample" });
+  await expect(info).toBeVisible();
+
+  await page.evaluate(() =>
+    [...document.querySelectorAll("dialog")]
+      .find((dialog) => dialog.open)
+      ?.close(),
+  );
+  await expect(info).toBeHidden();
+  await expect(panel.getByRole("status")).toHaveText("Info closed");
+  expect(
+    await page.evaluate(() =>
+      [...document.querySelectorAll("dialog")].some((dialog) => dialog.open),
+    ),
+  ).toBe(false);
+
+  await panel.getByRole("button", { name: "Info dialog" }).click();
+  await expect(info).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(info).toBeHidden();
+
+  // A required dialog must be answered, so it blocks a browser close by showing itself again.
+  await panel.getByRole("button", { name: "Required choice" }).click();
+  const required = page.getByRole("dialog", { name: "Resume your work?" });
+  await expect(required).toBeVisible();
   await page.evaluate(() =>
     [...document.querySelectorAll("dialog")]
       .find((dialog) => dialog.open)
@@ -188,8 +235,7 @@ test("a dialog reopened right after closing shows without errors", async ({
     )
     .toBe(true);
   await expect(required).toBeVisible();
-  expect(pageErrors).toEqual([]);
-
   await required.getByRole("button", { name: "Load draft" }).click();
   await expect(required).toBeHidden();
+  expect(pageErrors).toEqual([]);
 });

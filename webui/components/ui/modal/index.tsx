@@ -56,6 +56,18 @@ interface ModalProps {
     [attribute: `data-${string}`]: string | undefined;
   };
   usePortal?: boolean;
+  /**
+   * Runs when the browser closed the dialog on its own, such as a close request the page is
+   * not allowed to block. The owner clears its open state to let the dialog go; if it keeps it
+   * open, the dialog is shown again.
+   */
+  onClose?: () => void;
+  /**
+   * Shows the dialog again right away when the browser closes it on its own, for dialogs the
+   * operator must answer before the app is usable (required choices, the connection overlay).
+   * `onClose` does not run for these.
+   */
+  blockBrowserClose?: boolean;
 }
 
 /**
@@ -74,6 +86,7 @@ export default function Modal(props: ModalProps) {
   let opener: HTMLElement | undefined;
   /** The dialog element this Modal currently keeps open; cleared once it closes on purpose. */
   let shownDialog: HTMLDialogElement | undefined;
+  /** Last control focused inside the dialog, restored when a blocked browser close reopens it. */
   let lastFocusedInside: HTMLElement | undefined;
 
   /**
@@ -173,16 +186,17 @@ export default function Modal(props: ModalProps) {
             lastFocusedInside = event.target;
         }}
         onClose={(event) => {
-          // Reopens a dialog the browser closed on its own while its owner still shows it.
-          // The close event arrives a task later, so it can belong to an element that was
-          // since removed from the page or replaced by a reopened one.
+          // A close this Modal did not start came from the browser (a close request the page
+          // may not block, such as a repeated Escape or a back gesture). The close event
+          // arrives a task later, so it can belong to an element that was since removed from
+          // the page or replaced by a reopened one.
+          // The owner's open state decides what happens: a dialog that does not block the
+          // close asks its owner to close, and closing clears it from the page as usual.
           const dialog = event.currentTarget;
-          if (
-            dialog !== shownDialog ||
-            dialog.open ||
-            !dialog.isConnected ||
-            !visible()
-          )
+          if (dialog !== shownDialog || dialog.open || !visible()) return;
+          if (!props.blockBrowserClose) props.onClose?.();
+          // The owner still shows it, because it blocks browser closes or turned this one down.
+          if (dialog !== shownDialog || !visible() || !dialog.isConnected)
             return;
           dialog.showModal();
           notifyOverlayHostChanged();
