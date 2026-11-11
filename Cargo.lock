@@ -6352,6 +6352,7 @@ dependencies = [
 name = "nightfall-timeline"
 version = "0.1.0-alpha.5"
 dependencies = [
+ "async-channel",
  "axum",
  "bevy_app",
  "bevy_diagnostic",

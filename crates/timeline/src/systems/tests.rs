@@ -86,8 +86,9 @@ fn timecode_command(command: TimecodeCommand) -> TimecodeEvent {
         TimecodeCommand::PauseTimecode(id) => TimecodeEvent::Paused(id),
         TimecodeCommand::StopTimecode(id) => TimecodeEvent::Stopped(id),
         TimecodeCommand::SeekTimecode { id, position } => TimecodeEvent::Seeked { id, position },
-        TimecodeCommand::DeleteTimecode(id) => TimecodeEvent::Deleted(id),
-        TimecodeCommand::StoreTimecode(_) | TimecodeCommand::RenameTimecode { .. } => {
+        TimecodeCommand::DeleteTimecode(_)
+        | TimecodeCommand::StoreTimecode(_)
+        | TimecodeCommand::RenameTimecode { .. } => {
             panic!("CRUD commands are not runtime timecode events")
         }
     }

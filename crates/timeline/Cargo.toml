@@ -41,6 +41,7 @@ audio = ["dep:nightfall-audio"]
 http = ["dep:axum", "dep:nightfall-websocket"]
 
 [dev-dependencies]
+async-channel.workspace = true
 criterion.workspace = true
 minicbor-serde.workspace = true
 nightfall-fixture-model = { path = "../fixture-model" }

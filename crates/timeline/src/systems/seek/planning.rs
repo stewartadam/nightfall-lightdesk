@@ -234,7 +234,7 @@ pub(super) fn plan_timeline_reconstruction(
     let step_fx_query = &planning.step_fx_query;
     let materializer_registry = TimelineSeekMaterializerRegistry;
     let timeline_actions_before_target = timeline
-        .collect_actions_in_range(Duration::ZERO, timeline_position)
+        .collect_actions_in_range(ActionRangeStart::Beginning, timeline_position)
         .into_iter()
         .map(|(action, track)| {
             (

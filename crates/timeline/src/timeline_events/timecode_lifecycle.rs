@@ -105,13 +105,10 @@ pub fn handle_timecode_events(
                 }
             }
 
-            TimecodeEvent::Deleted(id) => {
-                let Some(timecode_uid) = timecode_uid_for_id(&timecode_query, *id) else {
-                    continue;
-                };
+            TimecodeEvent::Deleted { id, uid } => {
                 for (_, timeline) in timeline_query
                     .iter_mut()
-                    .filter(|(_, tl)| tl.timeline.timecode_uid == timecode_uid && tl.is_active)
+                    .filter(|(_, tl)| tl.timeline.timecode_uid == *uid && tl.is_active)
                 {
                     let timeline_id = timeline.timeline.identifiers.id;
                     tracing::debug!(

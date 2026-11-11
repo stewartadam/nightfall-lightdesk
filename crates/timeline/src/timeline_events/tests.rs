@@ -96,20 +96,6 @@ fn start_missing_timeline_returns_failure() {
     assert!(error.message.contains("404"));
 }
 
-/// Wraps a timecode command with detached lifecycle context for event tests.
-fn timecode_command(command: TimecodeCommand) -> TimecodeEvent {
-    match command {
-        TimecodeCommand::StartTimecode(id) => TimecodeEvent::Started(id),
-        TimecodeCommand::PauseTimecode(id) => TimecodeEvent::Paused(id),
-        TimecodeCommand::StopTimecode(id) => TimecodeEvent::Stopped(id),
-        TimecodeCommand::SeekTimecode { id, position } => TimecodeEvent::Seeked { id, position },
-        TimecodeCommand::DeleteTimecode(id) => TimecodeEvent::Deleted(id),
-        TimecodeCommand::StoreTimecode(_) | TimecodeCommand::RenameTimecode { .. } => {
-            panic!("CRUD commands are not runtime timecode events")
-        }
-    }
-}
-
 /// Records timeline actions emitted during a test schedule.
 fn record_timeline_actions(
     mut events: MessageReader<EngineOperationEnvelope<TimelineOperation>>,
@@ -757,8 +743,9 @@ fn delete_timecode_stops_associated_timelines() {
         )
             .chain(),
     );
-    let deleted_timecode = timecode(42, 0x420, "Deleted Timecode");
-    let deleted_timecode_uid = deleted_timecode.identifiers.uid;
+    // The timecode crate despawns the generator before the deletion event is read, so only
+    // its uid remains.
+    let deleted_timecode_uid = timecode(42, 0x420, "Deleted Timecode").identifiers.uid;
     let other_timecode = timecode(43, 0x430, "Other Timecode");
     let other_timecode_uid = other_timecode.identifiers.uid;
     let timeline_spawned_cue = app.world_mut().spawn_empty().id();
@@ -796,12 +783,12 @@ fn delete_timecode_stops_associated_timelines() {
         ))
         .id();
     app.world_mut()
-        .spawn(TimecodeGenerator::new(deleted_timecode));
-    app.world_mut()
         .spawn(TimecodeGenerator::new(other_timecode));
 
-    app.world_mut()
-        .write_message(timecode_command(TimecodeCommand::DeleteTimecode(42)));
+    app.world_mut().write_message(TimecodeEvent::Deleted {
+        id: 42,
+        uid: deleted_timecode_uid,
+    });
     app.update();
 
     let observed = &app.world().resource::<ObservedTimelineActions>().0;
