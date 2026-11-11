@@ -145,10 +145,7 @@ test("reasons list at most three paths per area", () => {
     file("scripts/d.mjs"),
     file("scripts/e.mjs"),
   ]);
-  assert.match(
-    result.reasons[0],
-    /`scripts\/c\.mjs` and 2 more\.$/,
-  );
+  assert.match(result.reasons[0], /`scripts\/c\.mjs` and 2 more\.$/);
 });
 
 /** A PR with no file changes has nothing to review, so it is not cleared for auto-merge. */
