@@ -183,26 +183,37 @@ test("inherited NIGHTFALL_PORT never reaches the generated .env", async (t) => {
   t.after(() => rm(root, { recursive: true, force: true }));
   const main = join(root, "main");
   const worktree = join(root, "worktree");
-  execFileSync("git", ["init", "-q", main]);
+  // Git hooks export repository selectors such as GIT_DIR; inheriting them would point Git at
+  // the invoking checkout, and `git init` would then turn that repository bare.
+  const gitEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+  );
+  execFileSync("git", ["init", "-q", main], { env: gitEnv });
   for (const file of SETUP_ENV_FILES) {
     await cp(join(scriptsDir, file), join(main, "scripts", file));
   }
-  execFileSync("git", ["-C", main, "add", "scripts"]);
-  execFileSync("git", [
-    "-C",
-    main,
-    "-c",
-    "user.name=t",
-    "-c",
-    "user.email=t@t",
-    "commit",
-    "-q",
-    "-m",
-    "init",
-  ]);
-  execFileSync("git", ["-C", main, "worktree", "add", "-q", worktree]);
+  execFileSync("git", ["-C", main, "add", "scripts"], { env: gitEnv });
+  execFileSync(
+    "git",
+    [
+      "-C",
+      main,
+      "-c",
+      "user.name=t",
+      "-c",
+      "user.email=t@t",
+      "commit",
+      "-q",
+      "-m",
+      "init",
+    ],
+    { env: gitEnv },
+  );
+  execFileSync("git", ["-C", main, "worktree", "add", "-q", worktree], {
+    env: gitEnv,
+  });
   const env = {
-    ...process.env,
+    ...gitEnv,
     NIGHTFALL_PORT: "5172",
     NIGHTFALL_DATA_DIR: join(root, "data"),
   };
