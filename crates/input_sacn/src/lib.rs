@@ -136,34 +136,76 @@ type RawSacnFrame = SacnInputFrame;
 #[derive(Resource)]
 struct SacnEventReceiver(UnboundedReceiver<RawSacnFrame>);
 
-/// Drain decoded sACN frames, publishing only frames accepted by input policy.
+/// Live sACN senders per universe, arbitrated by priority with the E1.31 source timeout.
+struct SacnSources(UniverseSourceMerge<Option<[u8; 16]>>);
+
+impl Default for SacnSources {
+    /// Starts with no known senders and the E1.31 2.5 s network data loss timeout.
+    fn default() -> Self {
+        Self(UniverseSourceMerge::new(SACN_SOURCE_TIMEOUT))
+    }
+}
+
+/// Drain decoded sACN frames, publishing each universe as its senders' priority merge defines it.
+///
+/// Every accepted packet or stream termination republishes its universe, so routes always see
+/// the highest-priority live sender rather than whichever packet arrived last.
 fn sacn_event_system(
     mut sacn_rx: ResMut<SacnEventReceiver>,
     sacn_output_identity: Option<Res<SacnOutputIdentity>>,
     input_universe_visibility_mode: Option<Res<InputUniverseVisibilityMode>>,
+    mut sources: Local<SacnSources>,
     mut frames: MessageWriter<AcceptedDmxFrame>,
 ) {
+    let visibility_mode = input_universe_visibility_mode
+        .as_deref()
+        .copied()
+        .unwrap_or_default();
     while let Ok(frame) = sacn_rx.0.try_recv() {
-        if let Some(frame) = accept_frame(
-            sacn_output_identity.as_deref(),
-            input_universe_visibility_mode
-                .as_deref()
-                .copied()
-                .unwrap_or_default(),
-            frame,
-        ) {
-            frames.write(frame);
+        let Some(is_self_frame) =
+            classify_frame(sacn_output_identity.as_deref(), visibility_mode, &frame)
+        else {
+            continue;
+        };
+        // Local loopback is shown as-is and never arbitrates against external senders: merged
+        // in, our own output would feed back into itself and hold channels up.
+        let data = if is_self_frame {
+            (!frame.stream_terminated).then_some(frame.data)
+        } else if frame.stream_terminated {
+            sources
+                .0
+                .remove_source(frame.universe_id, frame.source_cid, frame.received_at)
+        } else {
+            Some(sources.0.accept(
+                frame.universe_id,
+                frame.source_cid,
+                frame.priority,
+                &frame.data,
+                frame.received_at,
+            ))
+        };
+        if let Some(data) = data {
+            frames.write(AcceptedDmxFrame {
+                transport: RouteTransport::Sacn,
+                universe: frame.universe_id,
+                data,
+                received_at: frame.received_at,
+                is_self_frame,
+            });
         }
     }
 }
 
-/// Classifies local output and applies sACN visibility policy before publishing a frame.
-fn accept_frame(
+/// Applies sACN visibility policy to a frame and reports whether it is local loopback.
+///
+/// Returns `None` when the frame must be dropped before arbitration, otherwise whether it
+/// came from this process' own sACN output.
+fn classify_frame(
     sacn_output_identity: Option<&SacnOutputIdentity>,
     input_universe_visibility_mode: InputUniverseVisibilityMode,
-    frame: RawSacnFrame,
-) -> Option<AcceptedDmxFrame> {
-    let is_self_frame = is_frame_from_local_sacn_output(&frame, sacn_output_identity);
+    frame: &RawSacnFrame,
+) -> Option<bool> {
+    let is_self_frame = is_frame_from_local_sacn_output(frame, sacn_output_identity);
     if input_universe_visibility_mode == InputUniverseVisibilityMode::ExternalOnly && is_self_frame
     {
         return None;
@@ -171,16 +213,11 @@ fn accept_frame(
 
     tracing::trace!(
         universe_id = frame.universe_id,
+        priority = frame.priority,
         received_at = ?frame.received_at,
         "Applying sACN frame"
     );
-    Some(AcceptedDmxFrame {
-        transport: RouteTransport::Sacn,
-        universe: frame.universe_id,
-        data: frame.data,
-        received_at: frame.received_at,
-        is_self_frame,
-    })
+    Some(is_self_frame)
 }
 
 /// Return true when a frame originated from this process' sACN output source CID.
@@ -201,6 +238,8 @@ fn is_frame_from_local_sacn_output(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use bevy_ecs::system::RunSystemOnce;
     use nightfall_compositor::prelude::Layer;
     use nightfall_dmx::prelude::{DmxValueResolution, ParameterValue};
@@ -309,6 +348,8 @@ mod tests {
             universe_id,
             data,
             source_cid,
+            priority: 100,
+            stream_terminated: false,
             received_at: Instant::now(),
         }
     }
@@ -478,5 +519,137 @@ mod tests {
 
         let universes = app.world().resource::<ConsoleDmxUniverses>();
         assert_eq!(universes.get_value(2, 1), Some(77));
+    }
+
+    /// Console A (priority 100) and backup console B (priority 50) both send sACN universe 1.
+    const CONSOLE_A: [u8; 16] = [0xA; 16];
+    const CONSOLE_B: [u8; 16] = [0xB; 16];
+
+    /// Builds an app that passes sACN universe 1 through to Art-Net universe 3.
+    fn sacn_to_artnet_passthrough_app() -> (App, tokio::sync::mpsc::UnboundedSender<RawSacnFrame>) {
+        let mut app = App::new();
+        add_render_schedule(&mut app);
+        app.add_plugins(TransportInputPlugin);
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawSacnFrame>();
+        app.insert_resource(SacnEventReceiver(rx));
+        app.add_systems(Render, sacn_event_system.in_set(DmxInputSet::Ingress));
+
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
+            source: ResolvedInputSource::Transport {
+                transport: RouteTransport::Sacn,
+                universe: 1,
+                address: 1,
+            },
+            priority: 0,
+            destination: ResolvedInputDestination::Transport {
+                target: ResolvedTransportTarget {
+                    target: "artnet".to_string(),
+                    protocol: RouteTransport::ArtNet,
+                    transport: OutputTransport::ArtNet {
+                        mode: ArtNetDelivery::Broadcast,
+                    },
+                    universe: 3,
+                    address: 1,
+                },
+            },
+        }];
+        (app, tx)
+    }
+
+    /// Builds a universe-1 frame from `source_cid` with channel 1 at `value`.
+    fn console_frame(
+        source_cid: [u8; 16],
+        priority: u8,
+        value: u8,
+        received_at: Instant,
+    ) -> RawSacnFrame {
+        RawSacnFrame {
+            priority,
+            received_at,
+            ..make_frame_with_source_cid(1, &[(1, value)], Some(source_cid))
+        }
+    }
+
+    /// Sends one frame through the adapter and returns channel 1 of the Art-Net 3 passthrough.
+    fn deliver(
+        app: &mut App,
+        tx: &tokio::sync::mpsc::UnboundedSender<RawSacnFrame>,
+        frame: RawSacnFrame,
+    ) -> u8 {
+        tx.send(frame).expect("failed to enqueue frame");
+        app.update();
+        app.world()
+            .resource::<InputDmxUniverses>()
+            .get_universe(RouteTransport::ArtNet, 3)[0]
+    }
+
+    /// The priority-100 console drives Art-Net 3 whichever console's packets arrive last.
+    #[test]
+    fn higher_priority_sacn_sender_drives_passthrough_in_either_order() {
+        let start = Instant::now();
+        let later = start + Duration::from_millis(20);
+
+        let (mut app, tx) = sacn_to_artnet_passthrough_app();
+        assert_eq!(
+            deliver(&mut app, &tx, console_frame(CONSOLE_A, 100, 200, start)),
+            200
+        );
+        assert_eq!(
+            deliver(&mut app, &tx, console_frame(CONSOLE_B, 50, 10, later)),
+            200
+        );
+
+        let (mut app, tx) = sacn_to_artnet_passthrough_app();
+        assert_eq!(
+            deliver(&mut app, &tx, console_frame(CONSOLE_B, 50, 10, start)),
+            10
+        );
+        assert_eq!(
+            deliver(&mut app, &tx, console_frame(CONSOLE_A, 100, 200, later)),
+            200
+        );
+        assert_eq!(
+            deliver(
+                &mut app,
+                &tx,
+                console_frame(CONSOLE_B, 50, 10, later + Duration::from_millis(20))
+            ),
+            200
+        );
+    }
+
+    /// The backup console takes over Art-Net 3 once the main console is silent for 2.5 s.
+    #[test]
+    fn lower_priority_sacn_sender_takes_over_after_source_timeout() {
+        let start = Instant::now();
+        let (mut app, tx) = sacn_to_artnet_passthrough_app();
+        deliver(&mut app, &tx, console_frame(CONSOLE_A, 100, 200, start));
+
+        let within = start + Duration::from_millis(2400);
+        assert_eq!(
+            deliver(&mut app, &tx, console_frame(CONSOLE_B, 50, 10, within)),
+            200
+        );
+
+        let after = start + Duration::from_millis(2600);
+        assert_eq!(
+            deliver(&mut app, &tx, console_frame(CONSOLE_B, 50, 10, after)),
+            10
+        );
+    }
+
+    /// The backup console takes over at once when the main console terminates its stream.
+    #[test]
+    fn lower_priority_sacn_sender_takes_over_on_stream_termination() {
+        let start = Instant::now();
+        let (mut app, tx) = sacn_to_artnet_passthrough_app();
+        deliver(&mut app, &tx, console_frame(CONSOLE_A, 100, 200, start));
+        deliver(&mut app, &tx, console_frame(CONSOLE_B, 50, 10, start));
+
+        let terminated = RawSacnFrame {
+            stream_terminated: true,
+            ..console_frame(CONSOLE_A, 0, 0, start + Duration::from_millis(5))
+        };
+        assert_eq!(deliver(&mut app, &tx, terminated), 10);
     }
 }
