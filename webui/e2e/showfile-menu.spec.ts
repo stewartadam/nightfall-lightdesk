@@ -1192,7 +1192,9 @@ test("explains the 1 GiB limit when opening an oversized showfile", async ({
   await dialog
     .getByRole("button", { name: "Open saved showfile oversized" })
     .click();
-  await expect(dialog.getByRole("alert")).toHaveText(`${message}Retry`);
+  await expect(dialog.getByRole("document").getByRole("alert")).toHaveText(
+    `${message}Retry`,
+  );
   await expect(
     dialog.getByRole("button", { name: "Retry", exact: true }),
   ).toBeVisible();
@@ -1258,7 +1260,8 @@ test("shows an error when keeping the saved startup showfile fails", async ({
 
   await dialog.getByRole("button", { name: "Keep Saved" }).click();
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("alert")).toContainText(
+  // The dialog's surface holds its inline alert; the matching error toast floats beside it.
+  await expect(dialog.getByRole("document").getByRole("alert")).toContainText(
     "failed to discard draft",
   );
   await expect(page.locator("button[title='Menu']")).toHaveCount(0);

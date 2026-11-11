@@ -91,7 +91,13 @@ function openDialogs(): DialogStackEntry[] {
 
 /** Adds a visible dialog to the top of the stack and returns its removal function. */
 export function registerDialog(entry: DialogStackEntry): () => void {
-  return pushLayer({ kind: "dialog", entry });
+  const remove = pushLayer({ kind: "dialog", entry });
+  notifyOverlayHostChanged();
+  /** Removes the dialog from the stack and lets overlays move out of it. */
+  return () => {
+    remove();
+    notifyOverlayHostChanged();
+  };
 }
 
 /**
@@ -162,6 +168,40 @@ export function overlayHost(anchor?: Element | null): HTMLElement {
     if (element instanceof HTMLDialogElement && element.open) return element;
   }
   return document.body;
+}
+
+const overlayHostListeners = new Set<() => void>();
+let overlayHostNotifyQueued = false;
+
+/**
+ * Calls `listener` whenever a modal dialog is shown, closed, registered or
+ * removed, which is when `overlayHost()` may answer differently. Long-lived
+ * overlays that outlive any one dialog (toasts, the welcome guide card) use it
+ * to move into the frontmost modal dialog, or back to the page once none is
+ * open. Returns the function that stops listening.
+ */
+export function watchOverlayHost(listener: () => void): () => void {
+  overlayHostListeners.add(listener);
+  /** Removes this listener so later dialog changes no longer reach it. */
+  return () => {
+    overlayHostListeners.delete(listener);
+  };
+}
+
+/**
+ * Tells every `watchOverlayHost` listener that the open modal dialogs changed.
+ * Calls made in the same task collapse into one notification on a microtask,
+ * so listeners see the stack only after a dialog has both opened and joined
+ * it (the shared Modal shows a dialog just before registering it), and still
+ * before the browser paints a closing dialog's removal.
+ */
+export function notifyOverlayHostChanged(): void {
+  if (overlayHostNotifyQueued) return;
+  overlayHostNotifyQueued = true;
+  queueMicrotask(() => {
+    overlayHostNotifyQueued = false;
+    for (const listener of overlayHostListeners) listener();
+  });
 }
 
 /** Reports whether any dialog is visible, so user-initiated workspace changes can wait. */

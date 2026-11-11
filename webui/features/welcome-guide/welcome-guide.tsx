@@ -21,7 +21,10 @@ import {
 import { Portal } from "solid-js/web";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useUiAction } from "../../components/providers/command-registry";
-import { overlayHost } from "../../components/ui/modal/dialog-stack";
+import {
+  overlayHost,
+  watchOverlayHost,
+} from "../../components/ui/modal/dialog-stack";
 import { Button } from "../../components/ui/visual-language/button";
 import { hasDiskStorage } from "../../lib/disk-storage";
 import { getLogger } from "../../lib/logger";
@@ -782,13 +785,7 @@ export default function WelcomeGuide() {
       if (next !== untrack(cardHost)) setCardHost(next);
     };
     update();
-    const observer = new MutationObserver(update);
-    observer.observe(document.body, {
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["open"],
-    });
-    onCleanup(() => observer.disconnect());
+    onCleanup(watchOverlayHost(update));
   });
   /** The card itself, docked beside the app for the lesson library and floating during lessons. */
   const cardView = () => (

@@ -153,3 +153,89 @@ test("modal and popup overlays render above dockview sashes", async ({
     '[role="dialog"][aria-label="Manage layouts"]',
   );
 });
+
+/**
+ * Reports whether the topmost element at a toast's center belongs to that
+ * toast, which fails while a modal dialog's top layer covers it.
+ */
+async function toastIsOnTop(toast: Locator): Promise<boolean> {
+  return toast.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const top = document.elementFromPoint(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2,
+    );
+    return top !== null && element.contains(top);
+  });
+}
+
+/**
+ * Checks that toasts stay visible and clickable above modal dialogs: one
+ * raised before Settings opens moves on top of it, one raised while Settings
+ * is open appears on top of it, and both return to the page when it closes.
+ */
+test("toasts render above open modal dialogs", async ({ page }, testInfo) => {
+  await page.goto("/?e2e=1");
+  await expect(page.locator("main#app")).toBeVisible();
+  await page.waitForFunction(() =>
+    Boolean((window as any).appStores?.dockApi?.get?.()),
+  );
+
+  await page.evaluate(() => {
+    (window as any).appStores.pushToast("info", "Raised before Settings", 0);
+  });
+  const earlier = page
+    .locator('[data-component="Toast"]')
+    .filter({ hasText: "Raised before Settings" });
+  await expect(earlier).toBeVisible();
+
+  await openCommandPaletteCommand(page, "Open Settings");
+  const settingsDialog = page.getByRole("dialog", { name: "Settings" });
+  await expect(settingsDialog).toBeVisible();
+
+  await page.evaluate(() => {
+    (window as any).appStores.pushToast("warning", "Raised over Settings", 0);
+  });
+  const later = page
+    .locator('[data-component="Toast"]')
+    .filter({ hasText: "Raised over Settings" });
+  await expect(later).toBeVisible();
+
+  await expect.poll(() => toastIsOnTop(earlier)).toBe(true);
+  await expect.poll(() => toastIsOnTop(later)).toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("toasts-over-settings.png"),
+  });
+
+  // Escape on a focused toast control stays with the toast instead of closing Settings.
+  const laterDismiss = later.getByRole("button", {
+    name: "Dismiss notification",
+  });
+  await laterDismiss.focus();
+  await page.keyboard.press("Escape");
+  await expect(settingsDialog).toBeVisible();
+  await expect(later).toBeVisible();
+
+  // Enter activates the focused toast control and never reaches the dialog behind it.
+  await page.keyboard.press("Enter");
+  await expect(later).toHaveCount(0);
+  await expect(settingsDialog).toBeVisible();
+
+  // Clicking requires the close button to be the hit target, so it proves the toast is not inert.
+  await page.evaluate(() => {
+    (window as any).appStores.pushToast("info", "Clicked over Settings", 0);
+  });
+  const clicked = page
+    .locator('[data-component="Toast"]')
+    .filter({ hasText: "Clicked over Settings" });
+  await clicked.getByRole("button", { name: "Dismiss notification" }).click();
+  await expect(clicked).toHaveCount(0);
+  await expect(settingsDialog).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(settingsDialog).not.toBeVisible();
+  await expect(earlier).toBeVisible();
+  await expect.poll(() => toastIsOnTop(earlier)).toBe(true);
+  await earlier.getByRole("button", { name: "Dismiss notification" }).click();
+  await expect(earlier).toHaveCount(0);
+});

@@ -18,7 +18,7 @@ import {
   useContext,
 } from "solid-js";
 import { Portal } from "solid-js/web";
-import { registerDialog } from "./dialog-stack";
+import { notifyOverlayHostChanged, registerDialog } from "./dialog-stack";
 import { focusDialogOnOpen } from "./focus-scope";
 import { createModalScrollLock } from "./scroll-lock";
 
@@ -118,6 +118,7 @@ export default function Modal(props: ModalProps) {
       const focusedBeforeShow = document.activeElement;
       shownDialog = dialog;
       dialog.showModal();
+      notifyOverlayHostChanged();
       focusDialogOnOpen(
         dialog,
         focusedBeforeShow instanceof HTMLElement &&
@@ -132,6 +133,7 @@ export default function Modal(props: ModalProps) {
       disposed = true;
       if (shownDialog === dialog) shownDialog = undefined;
       if (dialog.open) dialog.close();
+      notifyOverlayHostChanged();
       queueMicrotask(() => {
         const active = document.activeElement;
         const focusLeftWithDialog =
@@ -183,6 +185,7 @@ export default function Modal(props: ModalProps) {
           )
             return;
           dialog.showModal();
+          notifyOverlayHostChanged();
           focusDialogOnOpen(
             dialog,
             lastFocusedInside && dialog.contains(lastFocusedInside)
