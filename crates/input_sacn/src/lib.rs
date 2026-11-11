@@ -533,6 +533,17 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<RawSacnFrame>();
         app.insert_resource(SacnEventReceiver(rx));
         app.add_systems(Render, sacn_event_system.in_set(DmxInputSet::Ingress));
+        app.init_resource::<OutputRouting>();
+        app.init_resource::<OutputDmxFrames>();
+        app.add_systems(
+            Render,
+            (
+                nightfall_fixtures::output_frames::update_input_routing,
+                nightfall_fixtures::output_frames::compose_output_frames,
+            )
+                .chain()
+                .after(DmxInputSet::Apply),
+        );
 
         app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
             source: ResolvedInputSource::Transport {
@@ -544,7 +555,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "artnet".to_string(),
-                    protocol: RouteTransport::ArtNet,
                     transport: OutputTransport::ArtNet {
                         mode: ArtNetDelivery::Broadcast,
                     },
@@ -570,7 +580,7 @@ mod tests {
         }
     }
 
-    /// Sends one frame through the adapter and returns channel 1 of the Art-Net 3 passthrough.
+    /// Sends one frame through the adapter and returns channel 1 of the composed Art-Net 3 frame.
     fn deliver(
         app: &mut App,
         tx: &tokio::sync::mpsc::UnboundedSender<RawSacnFrame>,
@@ -578,9 +588,14 @@ mod tests {
     ) -> u8 {
         tx.send(frame).expect("failed to enqueue frame");
         app.update();
+        let transport = OutputTransport::ArtNet {
+            mode: ArtNetDelivery::Broadcast,
+        };
         app.world()
-            .resource::<InputDmxUniverses>()
-            .get_universe(RouteTransport::ArtNet, 3)[0]
+            .resource::<OutputDmxFrames>()
+            .get(&transport, 3)
+            .expect("the passthrough route composes an Art-Net 3 frame")
+            .channels[0]
     }
 
     /// The priority-100 console drives Art-Net 3 whichever console's packets arrive last.
