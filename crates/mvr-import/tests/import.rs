@@ -201,6 +201,49 @@ fn preview_numbers_and_flags_fixtures() {
     assert_eq!(preview.fixtures[1].label, "Floor left");
 }
 
+/// A type the file leaves out resolves to the library fixture with the same manufacturer
+/// and name, so its fixture imports; with no such fixture the preview keeps the file's names
+/// for looking the type up elsewhere.
+#[test]
+fn missing_types_resolve_from_the_library_by_name() {
+    let root = tempfile::tempdir().unwrap();
+    let rig = read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap();
+    let mut library = empty_library(root.path());
+    let plan_with = |library: &FixtureLibraryManager| {
+        plan_import(
+            Uuid::new_v4(),
+            &rig,
+            library,
+            &ShowFixtures::default(),
+            &RigImportOptions::default(),
+        )
+        .preview
+    };
+
+    let missing = &plan_with(&library).fixture_types[2];
+    assert_eq!(missing.status, FixtureTypeStatus::Missing);
+    assert_eq!(missing.make.as_deref(), Some("Other"));
+    assert_eq!(missing.model.as_deref(), Some("Wash"));
+
+    let wash = GdtfBuilder::new("other", "WASH")
+        .geometry(GeometrySpec::generic("Base"))
+        .mode(ModeSpec::new("Mode 1", "Base").channel(ChannelSpec::new("Base", "Dimmer", &[1])))
+        .to_bytes();
+    std::fs::write(root.path().join("library/other@WASH.gdtf"), wash).unwrap();
+    library.scan().unwrap();
+
+    let preview = plan_with(&library);
+    let found = &preview.fixture_types[2];
+    assert_eq!(found.status, FixtureTypeStatus::FoundInLibrary);
+    assert_eq!(
+        (found.make.as_deref(), found.model.as_deref()),
+        (Some("other"), Some("WASH"))
+    );
+    assert_eq!(found.modes, ["Mode 1"]);
+    assert_eq!(preview.fixtures[2].status, FixtureImportStatus::New);
+    assert_eq!(preview.fixtures[2].mode.as_deref(), Some("Mode 1"));
+}
+
 /// Builds the show as it is after importing the test rig, with the spot since moved and
 /// repatched by hand and a group already named "LX 1".
 fn show_after_import(rig: &nightfall_mvr_import::rig::RigFile) -> ShowFixtures {

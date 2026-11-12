@@ -34,7 +34,10 @@ pub use routes::{GdtfShareFolders, register_routes};
 /// Prelude for ergonomic imports
 pub mod prelude {
     pub use crate::account::{GdtfShareAccount, GdtfShareAccountStatus, GdtfShareCredentialSource};
-    pub use crate::catalog::{GdtfShareFixture, GdtfShareMode, GdtfShareSearchResults};
+    pub use crate::catalog::{
+        GdtfShareFixture, GdtfShareFixtureName, GdtfShareMatch, GdtfShareMatchRequest,
+        GdtfShareMatches, GdtfShareMode, GdtfShareSearchResults,
+    };
     pub use crate::install::{
         GdtfShareDownloadProgress, GdtfShareInstall, GdtfShareInstallEvent, GdtfShareInstallFailure,
     };

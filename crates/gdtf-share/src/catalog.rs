@@ -26,7 +26,10 @@ use crate::client::ShareEntry;
 
 mod search;
 
-pub use search::GdtfShareSearchResults;
+pub use search::{
+    GdtfShareFixtureName, GdtfShareMatch, GdtfShareMatchRequest, GdtfShareMatches,
+    GdtfShareSearchResults,
+};
 
 /// How long a fetched list is used before a newer one is fetched.
 const REFRESH_AFTER: Duration = Duration::from_secs(24 * 60 * 60);

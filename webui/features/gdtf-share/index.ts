@@ -6,5 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+export {
+  installGdtfShareFixture,
+  matchGdtfShare,
+  waitForInstalledFile,
+} from "./fixtures";
 export { GdtfShareBrowser } from "./gdtf-share-browser";
 export { GdtfShareSettings } from "./gdtf-share-settings";
+export { GdtfShareRequestError } from "./request";

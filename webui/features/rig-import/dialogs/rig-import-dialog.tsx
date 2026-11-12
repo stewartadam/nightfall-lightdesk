@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { CaretLeftIcon } from "@squidlab/phosphor-solid/caret-left";
+import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import { CloudArrowUpIcon } from "@squidlab/phosphor-solid/cloud-arrow-up";
 import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import {
@@ -22,6 +23,7 @@ import {
   Show,
   Switch,
 } from "solid-js";
+import { useAppShell } from "../../../components/providers/app-shell";
 import { Alert } from "../../../components/ui/alert";
 import { Badge, type BadgeTone } from "../../../components/ui/badge";
 import {
@@ -44,6 +46,7 @@ import { fixtureLibrary } from "../../../state/appStores";
 import { pushToast } from "../../../state/notifications";
 import * as types from "../../../types";
 import { revealPatchFixtures } from "../../patch";
+import { createGdtfShareLookup } from "../model/gdtf-share-lookup";
 import {
   fixtureStatusLabel,
   fixtureStatusTone,
@@ -126,10 +129,33 @@ export function RigImportDialog() {
     typeMappings: mappings(),
   });
 
+  const { openSettings } = useAppShell();
+  /**
+   * Missing fixture types GDTF Share lists, and their downloads. An installed type is
+   * normally found in the library by name on the next preview; when the GDTF names it
+   * differently, the download becomes the type's stand-in instead.
+   */
+  const gdtfShare = createGdtfShareLookup(preview, {
+    onInstalled: async (spec, entry) => {
+      await refreshPreview();
+      const type = preview()?.fixtureTypes.find(
+        (candidate) => candidate.spec === spec,
+      );
+      if (type?.status.type === "Missing") {
+        setMappings(
+          withTypeMapping(mappings(), spec, libraryKey(entry), [entry]),
+        );
+      }
+    },
+    onSignedOut: () =>
+      openSettings({ tab: "accounts", setting: "gdtf-share-user" }),
+  });
+
   /** Puts the dialog back to its first step, forgetting any read rig. */
   const reset = () => {
     const current = session();
     if (current) discardRig(current);
+    gdtfShare.reset();
     previewRequest += 1;
     setSession(undefined);
     setPreview(undefined);
@@ -557,6 +583,18 @@ export function RigImportDialog() {
                                     fixture.model === mapping()?.model &&
                                     fixture.asset_etag === mapping()?.revision,
                                 )?.modes ?? [];
+                              /** The GDTF Share revision to download while the type is missing. */
+                              const shareMatch = () =>
+                                type.status.type === "Missing"
+                                  ? gdtfShare.match(type.spec)
+                                  : undefined;
+                              /** The running download, when it is this type's. */
+                              const download = () => {
+                                const running = gdtfShare.download();
+                                return running?.spec === type.spec
+                                  ? running
+                                  : undefined;
+                              };
                               return (
                                 <tr>
                                   <StatusCell
@@ -578,75 +616,146 @@ export function RigImportDialog() {
                                         Missing 3D
                                       </Badge>
                                     </Show>
+                                    <Show when={shareMatch()}>
+                                      {(fixture) => (
+                                        <Badge
+                                          tone="info"
+                                          appearance="soft"
+                                          icon={CloudArrowDownIcon}
+                                          title={`GDTF Share lists ${fixture().manufacturer} ${fixture().fixture}, revision ${fixture().revision}.`}
+                                          data-testid="rig-import-on-gdtf-share"
+                                        >
+                                          On GDTF Share
+                                        </Badge>
+                                      )}
+                                    </Show>
                                   </StatusCell>
                                   <td class="font-mono text-xs">{type.spec}</td>
                                   <td>
                                     <Show
                                       when={
                                         fixtureTypeNeedsChoice(type.status) ||
+                                        type.status.type === "FoundInLibrary" ||
                                         mapping()
                                       }
                                       fallback={`${type.make ?? ""} ${type.model ?? ""}`}
                                     >
-                                      <div class="flex flex-wrap gap-2">
-                                        <NativeSelect
-                                          aria-label={`Library fixture for ${type.spec}`}
-                                          value={(() => {
-                                            const current = mapping();
-                                            if (!current) return "";
-                                            return JSON.stringify([
-                                              current.make,
-                                              current.model,
-                                              current.revision,
-                                            ]);
-                                          })()}
-                                          onChange={(event) =>
-                                            setMappings(
-                                              withTypeMapping(
-                                                mappings(),
-                                                type.spec,
-                                                event.currentTarget.value,
-                                                library(),
-                                              ),
-                                            )
-                                          }
-                                        >
-                                          <option value="">
-                                            Choose a library fixture…
-                                          </option>
-                                          <For each={library()}>
+                                      <div class="flex flex-col gap-1">
+                                        <div class="flex items-center gap-2">
+                                          <Show when={shareMatch()}>
                                             {(fixture) => (
-                                              <option
-                                                value={libraryKey(fixture)}
-                                              >
-                                                {fixture.make} {fixture.model}
-                                              </option>
-                                            )}
-                                          </For>
-                                        </NativeSelect>
-                                        <Show when={mapping()}>
-                                          {(current) => (
-                                            <NativeSelect
-                                              aria-label={`Mode for ${type.spec}`}
-                                              value={current().mode}
-                                              onChange={(event) =>
-                                                setMappings(
-                                                  withMappingMode(
-                                                    mappings(),
+                                              <Button
+                                                size="compact"
+                                                class="shrink-0"
+                                                variant="primary"
+                                                disabled={
+                                                  gdtfShare.download() !==
+                                                  undefined
+                                                }
+                                                tooltip={`Download ${fixture().manufacturer} ${fixture().fixture} from GDTF Share into the fixture library`}
+                                                onClick={() =>
+                                                  void gdtfShare.downloadType(
                                                     type.spec,
-                                                    event.currentTarget.value,
-                                                  ),
-                                                )
+                                                  )
+                                                }
+                                                data-testid="rig-import-gdtf-share-download"
+                                              >
+                                                <CloudArrowDownIcon
+                                                  class="size-4"
+                                                  aria-hidden
+                                                />
+                                                {download()
+                                                  ? "Downloading…"
+                                                  : "Download"}
+                                              </Button>
+                                            )}
+                                          </Show>
+                                          <NativeSelect
+                                            class="min-w-0 flex-1"
+                                            aria-label={`Library fixture for ${type.spec}`}
+                                            value={(() => {
+                                              const current = mapping();
+                                              if (!current) return "";
+                                              return JSON.stringify([
+                                                current.make,
+                                                current.model,
+                                                current.revision,
+                                              ]);
+                                            })()}
+                                            onChange={(event) =>
+                                              setMappings(
+                                                withTypeMapping(
+                                                  mappings(),
+                                                  type.spec,
+                                                  event.currentTarget.value,
+                                                  library(),
+                                                ),
+                                              )
+                                            }
+                                          >
+                                            <option value="">
+                                              {type.status.type ===
+                                              "FoundInLibrary"
+                                                ? `${type.make} ${type.model} (matched by name)`
+                                                : "Choose a library fixture…"}
+                                            </option>
+                                            <For each={library()}>
+                                              {(fixture) => (
+                                                <option
+                                                  value={libraryKey(fixture)}
+                                                >
+                                                  {fixture.make} {fixture.model}
+                                                </option>
+                                              )}
+                                            </For>
+                                          </NativeSelect>
+                                          <Show when={mapping()}>
+                                            {(current) => (
+                                              <NativeSelect
+                                                class="w-40 shrink-0"
+                                                aria-label={`Mode for ${type.spec}`}
+                                                value={current().mode}
+                                                onChange={(event) =>
+                                                  setMappings(
+                                                    withMappingMode(
+                                                      mappings(),
+                                                      type.spec,
+                                                      event.currentTarget.value,
+                                                    ),
+                                                  )
+                                                }
+                                              >
+                                                <For each={mappedModes()}>
+                                                  {(mode) => (
+                                                    <option value={mode}>
+                                                      {mode}
+                                                    </option>
+                                                  )}
+                                                </For>
+                                              </NativeSelect>
+                                            )}
+                                          </Show>
+                                        </div>
+                                        <Show when={download()}>
+                                          {(running) => (
+                                            <ProgressBar
+                                              label={`GDTF Share download of ${type.spec}`}
+                                              value={
+                                                running().progress?.received
                                               }
+                                              max={running().progress?.total}
+                                              data-testid="rig-import-gdtf-share-progress"
+                                            />
+                                          )}
+                                        </Show>
+                                        <Show when={gdtfShare.note(type.spec)}>
+                                          {(note) => (
+                                            <span
+                                              class="text-xs text-gray-400"
+                                              data-testid="rig-import-gdtf-share-note"
                                             >
-                                              <For each={mappedModes()}>
-                                                {(mode) => (
-                                                  <option value={mode}>
-                                                    {mode}
-                                                  </option>
-                                                )}
-                                              </For>
-                                            </NativeSelect>
+                                              {note()}
+                                            </span>
                                           )}
                                         </Show>
                                       </div>

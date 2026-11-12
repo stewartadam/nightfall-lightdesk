@@ -10,7 +10,8 @@
 
 use std::cmp::Reverse;
 
-use serde::Serialize;
+use nightfall_fixture_model::prelude::fixture_name_key;
+use serde::{Deserialize, Serialize};
 
 use super::{Catalog, GdtfShareFixture};
 
@@ -39,6 +40,8 @@ pub(super) struct Indexed {
     modes: String,
     /// Fixture name alone, for exact matches.
     fixture_name: String,
+    /// Manufacturer and fixture name folded by [`fixture_name_key`], for lookups by name.
+    name_key: (String, String),
 }
 
 impl Indexed {
@@ -52,11 +55,16 @@ impl Indexed {
             .collect::<Vec<_>>()
             .join("\n");
         let fixture_name = fixture.fixture.to_lowercase();
+        let name_key = (
+            fixture_name_key(&fixture.manufacturer),
+            fixture_name_key(&fixture.fixture),
+        );
         Self {
             fixture,
             name,
             modes,
             fixture_name,
+            name_key,
         }
     }
 
@@ -157,5 +165,69 @@ impl Catalog {
             total: u32::try_from(self.latest.len()).unwrap_or(u32::MAX),
             fetched_at: u32::try_from(self.fetched_at).unwrap_or(u32::MAX),
         }
+    }
+}
+
+/// A fixture type named by manufacturer and fixture name, as a rig file names one it
+/// leaves out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct GdtfShareFixtureName {
+    /// Manufacturer name.
+    pub manufacturer: String,
+    /// Fixture name.
+    pub fixture: String,
+}
+
+/// The fixtures to look up on GDTF Share by name.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct GdtfShareMatchRequest {
+    /// Names to look up.
+    pub fixtures: Vec<GdtfShareFixtureName>,
+}
+
+/// What GDTF Share lists under one looked-up name.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct GdtfShareMatch {
+    /// The newest revision listed under the name, or none when GDTF Share lists none or no
+    /// list is saved.
+    pub fixture: Option<GdtfShareFixture>,
+}
+
+/// The GDTF Share fixture for each looked-up name.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct GdtfShareMatches {
+    /// One answer per looked-up name, in request order.
+    pub matches: Vec<GdtfShareMatch>,
+}
+
+impl Catalog {
+    /// Finds the fixture type GDTF Share lists as `manufacturer` `fixture`, ignoring case,
+    /// spacing and punctuation, and returns its newest revision. When several fixture types
+    /// share the names, a manufacturer upload wins, then the best rated, then the most
+    /// recently changed.
+    pub fn find(&self, manufacturer: &str, fixture: &str) -> Option<&GdtfShareFixture> {
+        let key = (fixture_name_key(manufacturer), fixture_name_key(fixture));
+        if key.0.is_empty() || key.1.is_empty() {
+            return None;
+        }
+        self.latest
+            .iter()
+            .filter(|indexed| indexed.name_key == key)
+            .max_by_key(|indexed| {
+                let fixture = &indexed.fixture;
+                (
+                    fixture.manufacturer_upload,
+                    fixture
+                        .rating
+                        .map_or(0, |rating| (rating * 10.0).round() as u32),
+                    fixture.last_modified,
+                    fixture.rid,
+                )
+            })
+            .map(|indexed| &indexed.fixture)
     }
 }

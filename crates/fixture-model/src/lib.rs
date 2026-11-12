@@ -18,7 +18,7 @@ pub mod parameter;
 
 /// Prelude for ergonomic imports.
 pub mod prelude {
-    pub use crate::asset::fixture_asset_etag;
+    pub use crate::asset::{fixture_asset_etag, fixture_name_key};
     pub use crate::evaluation::{
         ChannelReading, FixtureEvaluator, FixtureModel, MAX_RELATION_DEPTH, RelationScope,
     };

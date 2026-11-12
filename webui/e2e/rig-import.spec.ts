@@ -6,9 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { mkdir, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { crc32 } from "node:zlib";
+import type { GdtfShareFixture } from "../types";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
-import { testGdtfArchive } from "./gdtf-archive";
+import { libraryAssetEtag, testGdtfArchive } from "./gdtf-archive";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -516,5 +519,180 @@ test("flags fixture types without 3D models", async ({ backendSlot, page }) => {
   await expect(dialog.getByText("Missing 3D")).toBeVisible();
   await settleTabPanel(dialog);
   await page.screenshot({ path: test.info().outputPath("1-no-3d-model.png") });
+  await dialog.getByRole("button", { name: "Close rig import dialog" }).click();
+});
+
+/** The GDTF Share listing of the wash type {@link washRig} leaves out. */
+const SHARED_WASH: GdtfShareFixture = {
+  rid: 9701,
+  fixture_type_id: "6a1e3c52-7b1d-4f0b-9e57-2c0d5a1b7e02",
+  manufacturer: "Acme",
+  fixture: "Wash",
+  revision: "Release 2",
+  modes: [{ name: "Standard", footprint: 1 }],
+  rating: 4,
+  manufacturer_upload: true,
+  last_modified: 1_761_000_000,
+  file_size: 2048,
+};
+
+/**
+ * Answers the engine's GDTF Share lookup and install routes so the test never contacts GDTF
+ * Share: the lookup lists {@link SHARED_WASH} under the names Acme and Wash, and an install
+ * answers signed out while `signedIn()` is false, otherwise waits for `installGate`, writes a
+ * generated archive into the backend's fixture library folder as the engine does, and streams
+ * progress and the outcome.
+ */
+async function standInForGdtfShare(
+  page: Page,
+  options: {
+    libraryDir: string;
+    signedIn: () => boolean;
+    installGate: Promise<void>;
+  },
+) {
+  await page.route("**/api/gdtf-share/fixtures/match", (route) => {
+    const names = (
+      route.request().postDataJSON() as {
+        fixtures: { manufacturer: string; fixture: string }[];
+      }
+    ).fixtures;
+    return route.fulfill({
+      json: {
+        matches: names.map((name) => ({
+          fixture:
+            name.manufacturer === "Acme" && name.fixture === "Wash"
+              ? SHARED_WASH
+              : null,
+        })),
+      },
+    });
+  });
+  await page.route(
+    `**/api/gdtf-share/fixtures/${SHARED_WASH.rid}/install`,
+    async (route) => {
+      if (!options.signedIn()) {
+        return route.fulfill({
+          status: 428,
+          body: "Sign in to GDTF Share in Settings first.",
+        });
+      }
+      await options.installGate;
+      const fileName = `Acme@Wash@Release_2@${SHARED_WASH.rid}.gdtf`;
+      const archive = testGdtfArchive({
+        manufacturer: "Acme",
+        model: "Wash",
+        fixtureTypeId: SHARED_WASH.fixture_type_id ?? "",
+      });
+      await mkdir(options.libraryDir, { recursive: true });
+      // Written under a hidden name first, as the engine does, so no rescan sees half a file.
+      const partial = join(options.libraryDir, `.${fileName}.partial`);
+      await writeFile(partial, archive);
+      await rename(partial, join(options.libraryDir, fileName));
+      const total = archive.length;
+      const events = [
+        { type: "Progress", data: { received: total >> 1, total } },
+        { type: "Progress", data: { received: total, total } },
+        {
+          type: "Installed",
+          data: {
+            file_name: fileName,
+            fixture_type_id: SHARED_WASH.fixture_type_id,
+            asset_etag: libraryAssetEtag(archive),
+          },
+        },
+      ];
+      return route.fulfill({
+        contentType: "application/x-ndjson",
+        body: events.map((event) => `${JSON.stringify(event)}\n`).join(""),
+      });
+    },
+  );
+}
+
+/**
+ * A fixture type the file leaves out but GDTF Share lists is flagged on the types tab with a
+ * Download button. Signed out, the button opens the GDTF Share sign-in in Settings; signed in,
+ * it shows the download's progress, and once the library lists the download the type resolves
+ * to it by name, so its fixtures can be imported.
+ */
+test("downloads a missing fixture type from GDTF Share", async ({
+  backendSlot,
+  page,
+}) => {
+  let signedIn = false;
+  let releaseInstall = () => {};
+  const installGate = new Promise<void>((resolve) => {
+    releaseInstall = resolve;
+  });
+  await standInForGdtfShare(page, {
+    libraryDir: join(backendSlot.dataDir, "fixtures"),
+    signedIn: () => signedIn,
+    installGate,
+  });
+  await prepareFreshBackendShowfile(backendSlot.backendPort);
+  await page.goto("/?e2e=1");
+  await waitForDockviewApp(page);
+
+  await page.locator("button[title='Menu']").click();
+  await page.getByRole("button", { name: "Import Rig from MVR" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import Rig from MVR" });
+  await dialog.getByTestId("rig-import-file").setInputFiles({
+    name: "wash-rig.mvr",
+    mimeType: "application/octet-stream",
+    buffer: washRig(),
+  });
+  const summary = dialog.getByTestId("rig-import-summary");
+  await expect(summary).toContainText("0 of 2 fixtures will be added");
+  await expect(dialog.getByTestId("rig-import-on-gdtf-share")).toBeVisible();
+  const download = dialog.getByTestId("rig-import-gdtf-share-download");
+  await expect(download).toHaveText("Download");
+  await settleTabPanel(dialog);
+  await dialog
+    .getByTestId("rig-import-blocked")
+    .evaluate((alert) =>
+      Promise.all(alert.getAnimations().map((animation) => animation.finished)),
+    );
+  await page.screenshot({
+    path: test.info().outputPath("1-on-gdtf-share.png"),
+  });
+
+  await download.click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await expect(
+    settings.getByRole("region", { name: "GDTF Share" }),
+    "signed out, the download opens the sign-in",
+  ).toBeVisible();
+  await expect(settings.getByTestId("gdtf-share-user")).toBeFocused();
+  await page.screenshot({ path: test.info().outputPath("2-sign-in.png") });
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await expect(dialog.getByTestId("rig-import-gdtf-share-note")).toContainText(
+    "Sign in to GDTF Share in Settings",
+  );
+
+  signedIn = true;
+  await download.click();
+  await expect(download).toHaveText("Downloading…");
+  await expect(
+    dialog.getByTestId("rig-import-gdtf-share-progress"),
+  ).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("3-downloading.png") });
+  releaseInstall();
+
+  await expect(summary).toContainText("2 of 2 fixtures will be added", {
+    timeout: 30_000,
+  });
+  await expect(
+    dialog.getByRole("cell", { name: "Library match" }),
+  ).toBeVisible();
+  await expect(dialog.getByTestId("rig-import-on-gdtf-share")).toHaveCount(0);
+  await expect(dialog.getByTestId("rig-import-blocked")).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Import", exact: true }),
+  ).toBeEnabled();
+  await page.screenshot({
+    path: test.info().outputPath("4-library-match.png"),
+  });
   await dialog.getByRole("button", { name: "Close rig import dialog" }).click();
 });

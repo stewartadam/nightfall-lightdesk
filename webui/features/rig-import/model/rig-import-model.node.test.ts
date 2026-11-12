@@ -14,6 +14,7 @@ import {
   importBlockedReason,
   importDoneMessage,
   libraryKey,
+  missingTypeNames,
   numberingOption,
   rigImportTabCount,
   rigImportTabs,
@@ -173,5 +174,29 @@ test("review tabs follow the preview", () => {
   assert.deepEqual(rigImportTabs({ ...preview, scenery: [] }), [
     "types",
     "fixtures",
+  ]);
+});
+
+/** Only missing types with both names are looked up on GDTF Share. */
+test("missing type names", () => {
+  const type = (
+    spec: string,
+    status: types.FixtureTypeStatus["type"],
+    make?: string,
+    model?: string,
+  ) => ({ spec, status: { type: status }, make, model });
+  const preview = {
+    fixtureTypes: [
+      type("Acme@Wash.gdtf", "Missing", "Acme", "Wash"),
+      type("Wash.gdtf", "Missing"),
+      type("Acme@Spot.gdtf", "FoundInLibrary", "Acme", "Spot"),
+      type("Acme@Beam.gdtf", "Mapped", "Robe", "Spiider"),
+    ],
+  } as unknown as types.RigImportPreview;
+  assert.deepEqual(missingTypeNames(preview), [
+    {
+      spec: "Acme@Wash.gdtf",
+      name: { manufacturer: "Acme", fixture: "Wash" },
+    },
   ]);
 });
