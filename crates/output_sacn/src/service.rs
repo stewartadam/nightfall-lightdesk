@@ -241,11 +241,7 @@ fn transmit_tick(
     let mut sent_count = 0u32;
     let mut outcomes = Vec::with_capacity(frames.len());
     let mut flow = ControlFlow::Continue(());
-    // The source refuses data that names an unregistered sync universe, so fall back to
-    // unsynchronized data when it cannot be registered.
-    let sync_universe = client
-        .sync_universe()
-        .filter(|&universe| ensure_registered(source, registered_universes, universe).is_ok());
+    let sync_universe = client.sync_universe();
 
     for frame in frames.iter() {
         let key = (frame.universe, frame.unicast_ip);
@@ -297,7 +293,7 @@ fn transmit_tick(
         {
             send_sync_packets(source, sync_universe, &frames, unicast_port);
         }
-        terminate_unpublished_universes(source, registered_universes, &frames, sync_universe);
+        terminate_unpublished_universes(source, registered_universes, &frames);
     }
     client.record_tick(outcomes, start.elapsed(), sent_count);
     flow
@@ -345,8 +341,7 @@ fn send_sync_packets(
     }
 }
 
-/// Ends the stream of every registered universe that is neither published nor the sync
-/// universe.
+/// Ends the stream of every registered universe that is no longer published.
 ///
 /// E1.31 asks a source that stops sending a universe to say so with three Stream_Terminated
 /// packets, so receivers release it at once instead of holding the last look until their
@@ -360,11 +355,10 @@ fn terminate_unpublished_universes(
     source: &mut impl StreamTerminator,
     registered_universes: &mut HashSet<u16>,
     frames: &[SacnFrame],
-    sync_universe: Option<u16>,
 ) {
     let published: HashSet<u16> = frames.iter().map(|frame| frame.universe).collect();
     registered_universes.retain(|&universe| {
-        if published.contains(&universe) || sync_universe == Some(universe) {
+        if published.contains(&universe) {
             return true;
         }
         match source.terminate_stream(universe, DMX_START_CODE) {
@@ -381,12 +375,19 @@ fn terminate_unpublished_universes(
     });
 }
 
-/// Registers `universe` with the source unless it is already registered.
-fn ensure_registered(
+/// Sends one universe, registering it with the source first and once more if the source
+/// reports it was dropped. Data names `sync_universe` as its synchronization address, so
+/// receivers that support sync hold it until the matching sync packet arrives. The sync
+/// universe itself is never registered, which keeps it out of the source's universe discovery
+/// adverts since it carries no data. A unicast frame goes to `unicast_port` on its destination.
+fn send_universe(
     source: &mut SacnSource,
     registered_universes: &mut HashSet<u16>,
-    universe: u16,
+    frame: &SacnFrame,
+    sync_universe: Option<u16>,
+    unicast_port: u16,
 ) -> Result<(), SacnError> {
+    let universe = frame.universe;
     if !registered_universes.contains(&universe) {
         source.register_universe(universe).inspect_err(|error| {
             tracing::trace!(
@@ -397,44 +398,25 @@ fn ensure_registered(
         })?;
         registered_universes.insert(universe);
     }
-    Ok(())
-}
-
-/// Sends one universe, registering it with the source first and once more if the source
-/// reports it was dropped. Data names `sync_universe` as its synchronization address, so
-/// receivers that support sync hold it until the matching sync packet arrives. A unicast frame
-/// goes to `unicast_port` on its destination.
-fn send_universe(
-    source: &mut SacnSource,
-    registered_universes: &mut HashSet<u16>,
-    frame: &SacnFrame,
-    sync_universe: Option<u16>,
-    unicast_port: u16,
-) -> Result<(), SacnError> {
-    let universe = frame.universe;
-    ensure_registered(source, registered_universes, universe)?;
 
     let payload = with_start_code(&frame.data);
     let dst_ip = frame
         .unicast_ip
         .map(|ip| SocketAddr::new(ip.into(), unicast_port));
     let result = source.send(&[universe], &payload, Some(100), dst_ip, sync_universe);
-    // The source reports a dropped data universe as UniverseNotRegistered and a dropped sync
-    // universe as IllegalSyncUniverse; register whichever it lost again and retry once.
-    let dropped = match result {
-        Err(SacnError::UniverseNotRegistered(_)) => universe,
-        Err(SacnError::IllegalSyncUniverse(sync)) => sync,
-        result => return result,
-    };
+    if !matches!(result, Err(SacnError::UniverseNotRegistered(_))) {
+        return result;
+    }
 
-    registered_universes.remove(&dropped);
-    ensure_registered(source, registered_universes, dropped).inspect_err(|error| {
+    registered_universes.remove(&universe);
+    source.register_universe(universe).inspect_err(|error| {
         tracing::trace!(
             ?error,
-            universe = dropped,
-            "Could not re-register sACN universe after the source dropped it"
+            universe,
+            "Could not re-register sACN universe after UniverseNotRegistered error"
         );
     })?;
+    registered_universes.insert(universe);
     source.send(&[universe], &payload, Some(100), dst_ip, sync_universe)
 }
 
@@ -684,7 +666,7 @@ mod tests {
         let mut source = FakeTerminator::with_universes(&[1, 2]);
         let mut registered = HashSet::from([1, 2]);
 
-        terminate_unpublished_universes(&mut source, &mut registered, &[frame(1)], None);
+        terminate_unpublished_universes(&mut source, &mut registered, &[frame(1)]);
 
         assert_eq!(registered, HashSet::from([1]));
         assert_eq!(source.universes, HashSet::from([1]));
@@ -699,11 +681,11 @@ mod tests {
         source.send_error = Some(std::io::ErrorKind::NetworkUnreachable);
         let mut registered = HashSet::from([2]);
 
-        terminate_unpublished_universes(&mut source, &mut registered, &[], None);
+        terminate_unpublished_universes(&mut source, &mut registered, &[]);
         assert_eq!(registered, HashSet::from([2]));
 
         source.send_error = None;
-        terminate_unpublished_universes(&mut source, &mut registered, &[], None);
+        terminate_unpublished_universes(&mut source, &mut registered, &[]);
 
         assert!(registered.is_empty());
         assert!(source.universes.is_empty());
@@ -716,32 +698,15 @@ mod tests {
         let mut source = FakeTerminator::default();
         let mut registered = HashSet::from([3]);
 
-        terminate_unpublished_universes(&mut source, &mut registered, &[], None);
+        terminate_unpublished_universes(&mut source, &mut registered, &[]);
 
         assert!(registered.is_empty());
         assert_eq!(source.terminated, vec![3]);
     }
 
-    /// The sync universe stays registered while sync uses it even though no data is published
-    /// on it, and is terminated once sync stops using it.
-    #[test]
-    fn sync_universe_stays_registered_while_in_use() {
-        let mut source = FakeTerminator::with_universes(&[1, 900]);
-        let mut registered = HashSet::from([1, 900]);
-
-        terminate_unpublished_universes(&mut source, &mut registered, &[frame(1)], Some(900));
-        assert_eq!(registered, HashSet::from([1, 900]));
-        assert!(source.terminated.is_empty());
-
-        terminate_unpublished_universes(&mut source, &mut registered, &[frame(1)], None);
-        assert_eq!(registered, HashSet::from([1]));
-        assert_eq!(source.universes, HashSet::from([1]));
-        assert_eq!(source.terminated, vec![900]);
-    }
-
     /// With sync on, every data packet names the sync universe and the tick ends with one sync
     /// packet per destination; with sync off, data names no sync universe and no sync packet
-    /// follows.
+    /// follows. The sync universe is never registered, so it stays out of universe discovery.
     #[test]
     fn sync_tick_marks_data_and_sends_sync_packet() {
         use sacn::packet::{AcnRootLayerProtocol, E131RootLayerData};
@@ -791,6 +756,6 @@ mod tests {
             packets(&receiver),
             vec![(false, 900), (false, 900), (true, 900)]
         );
-        assert!(registered.contains(&900));
+        assert_eq!(registered, HashSet::from([1, 2]));
     }
 }
