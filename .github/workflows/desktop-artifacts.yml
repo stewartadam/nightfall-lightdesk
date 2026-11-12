@@ -139,6 +139,7 @@ jobs:
       - name: Load the repository Rust toolchain
         env:
           TARGET: ${{ matrix.target }}
+        shell: bash
         run: rustup target add "$TARGET"
       - uses: $/.github/actions/rust-cache
         with:
@@ -162,6 +163,7 @@ jobs:
       - name: Assemble target-specific distribution notices
         env:
           TARGET: ${{ matrix.target }}
+        shell: bash
         run: node scripts/distribution-notices.mjs "$TARGET"
       - name: Build credential-free desktop installers
         id: tauri
