@@ -641,11 +641,12 @@ export function RigImportDialog() {
                                       fallback={`${type.make ?? ""} ${type.model ?? ""}`}
                                     >
                                       <div class="flex flex-col gap-1">
-                                        <div class="flex flex-wrap gap-2">
+                                        <div class="flex items-center gap-2">
                                           <Show when={shareMatch()}>
                                             {(fixture) => (
                                               <Button
                                                 size="compact"
+                                                class="shrink-0"
                                                 variant="primary"
                                                 disabled={
                                                   gdtfShare.download() !==
@@ -670,6 +671,7 @@ export function RigImportDialog() {
                                             )}
                                           </Show>
                                           <NativeSelect
+                                            class="min-w-0 flex-1"
                                             aria-label={`Library fixture for ${type.spec}`}
                                             value={(() => {
                                               const current = mapping();
@@ -710,6 +712,7 @@ export function RigImportDialog() {
                                           <Show when={mapping()}>
                                             {(current) => (
                                               <NativeSelect
+                                                class="w-40 shrink-0"
                                                 aria-label={`Mode for ${type.spec}`}
                                                 value={current().mode}
                                                 onChange={(event) =>
