@@ -18,8 +18,10 @@ Keep these boundaries intact when adding checks, tools, caches, or release steps
 
 Actions are locked in `actions.lock`: after adding a workflow or changing a `uses:`,
 run `gh actions-lock` (install it with `gh extension install github/gh-actions-lock`)
-and commit the lockfile. Refer to this repository's own actions and reusable workflows
-as `$/.github/...`, not `./.github/...`. The **Workflow lockfile** job verifies the
+and commit the lockfile. The tool also rewrites the commit pins in `.github/actions/` to
+tags; restore those pins before committing, since zizmor requires them there. Call this
+repository's composite actions as `$/.github/actions/...`; reusable workflow calls keep
+`./.github/workflows/...` so actionlint checks their inputs. The **Workflow lockfile** job verifies the
 lockfile against upstream with a pinned extension release (`GH_ACTIONS_LOCK_VERSION`
 in `ci.yml`), which Dependabot does not bump.
 

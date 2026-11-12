@@ -140,9 +140,12 @@ Every external action, including the ones external actions use in turn, is
 pinned to a verified commit in `.github/workflows/actions.lock`, which GitHub
 checks again when each job starts. Workflows name readable version tags; the
 `Workflow lockfile` CI job fails when the lockfile drifts from the workflows or a
-locked commit no longer matches upstream. Same-repository actions and reusable
-workflows use `$/…`, which loads them from the workflow's own commit instead of
-from files a job restored into its workspace. zizmor runs with the other
+locked commit no longer matches upstream. Composite actions under
+`.github/actions/` keep full commit pins, because zizmor does not accept the
+lockfile for them. Steps call this repository's composite actions as `$/…`,
+which loads them from the workflow's own commit instead of from files a job
+restored into its workspace; reusable workflow calls keep `./…`, which GitHub
+already resolves from the caller's commit. zizmor runs with the other
 pre-commit hooks; justify any `# zizmor: ignore[...]` on the line it covers.
 Dependabot proposes Actions updates weekly, after a seven-day cooldown, and
 updates the lockfile with them; review those changes, especially checkout and
