@@ -267,18 +267,12 @@ cd - && bd dolt pull
 
 Claude Code sessions run `bd sync` on start through
 `.claude/hooks/beads-sync.sh`, which pulls other machines' changes and pushes
-anything left over. To push each write as it happens, enable auto-push; its
-default five-minute throttle holds back the last writes of a burst, so shorten
-it (zero means the default):
+anything left over, and push unpushed issue writes at the end of each turn
+through `.claude/hooks/beads-push.sh`, which needs the dolt CLI and `jq`.
 
-```sh
-bd config set dolt.auto-push true
-bd config set dolt.auto-push-interval 1s
-```
-
-Otherwise run `bd dolt pull` and `bd dolt push` to sync by hand. Dolt records a commit for every
-issue write, so run `bd flatten` occasionally to drop history and keep the
-synced data small. Flattening rewrites history every other copy shares, so
+Outside Claude Code, run `bd dolt pull` and `bd dolt push` to sync by hand.
+Dolt records a commit for every issue write, so run `bd flatten` occasionally
+to drop history and keep the synced data small. Flattening rewrites history every other copy shares, so
 push it with `dolt push --force origin main` from the database directory and
 have other machines clone the database again.
 

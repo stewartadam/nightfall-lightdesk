@@ -110,15 +110,12 @@ if [ -n "${BEADS_SYNC_REMOTE:-}" ]; then
     curl -fsSL "https://github.com/dolthub/dolt/releases/download/v$dolt_version/dolt-linux-amd64.tar.gz" |
       tar xzf - -C /usr/local --strip-components=1 dolt-linux-amd64/bin/dolt
   fi
-  # auto-push sends issue writes to the remote as the session goes. Its default
-  # five-minute throttle skips writes until a later one, so the last writes of a
-  # session would never leave the container; a one-second interval pushes each
-  # command's writes (zero means the default). A resumed container already holds
-  # a clone, so pull what changed since instead.
+  # A resumed container already holds a clone, so pull what changed since
+  # instead. beads-push.sh pushes writes at each turn end.
   if [ ! -d .beads/embeddeddolt/beads ]; then
     mkdir -p -m 700 .beads/embeddeddolt
     printf '{"database":"dolt","backend":"dolt","dolt_mode":"embedded","dolt_database":"beads"}\n' >.beads/metadata.json
-    printf 'sync.remote: "%s"\ndolt.auto-push: true\ndolt.auto-push-interval: 1s\n' "$BEADS_SYNC_REMOTE" >.beads/config.yaml
+    printf 'sync.remote: "%s"\n' "$BEADS_SYNC_REMOTE" >.beads/config.yaml
     dolt clone --ref refs/heads/claude/beads-data "$BEADS_SYNC_REMOTE" .beads/embeddeddolt/beads ||
       echo "beads clone failed; bd issues are unavailable this session" >&2
   else
