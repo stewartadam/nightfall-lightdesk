@@ -40,6 +40,23 @@ export function sendUsbDmxOutputs(targets: types.UsbDmxOutputTarget[]): void {
   log.info("Requested USB DMX output target update");
 }
 
+/**
+ * Asks the backend to point one USB output at an attached adapter, saving the adapter's current
+ * port so the output finds it there from now on.
+ */
+export function sendUsbDmxDeviceAssignment(
+  assignment: types.UsbDmxDeviceAssignment,
+): void {
+  const command: types.UsbDmxCommand = {
+    type: "AssignDevice",
+    data: assignment,
+  };
+  commandClient.emit("UsbDmxCommand", command);
+  log.info(
+    `Requested USB output ${assignment.target} use ${assignment.device}`,
+  );
+}
+
 /** Sends the requested Network DMX output enabled state to the backend. */
 export function sendNetworkOutputEnabled(enabled: boolean): void {
   const command: types.IoSettingsCommand = {

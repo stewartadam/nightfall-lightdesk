@@ -12,12 +12,11 @@
 use std::collections::HashSet;
 
 use nightfall_io::prelude::{
-    DEFAULT_USB_DMX_DEVICE_SELECTOR, UsbDmxDeviceIdentity, UsbDmxDeviceInfo,
-    resolve_usb_dmx_selectors, usb_dmx_device_label,
+    DEFAULT_USB_DMX_DEVICE_SELECTOR, UsbDmxDeviceIdentity, UsbDmxDeviceInfo, usb_dmx_device_label,
 };
 use nusb::MaybeFuture;
 
-use crate::driver::UsbDmxFamily;
+use crate::{driver::UsbDmxFamily, targets::resolve_usb_dmx_selectors};
 
 /// A visible USB device of a supported interface family, with the identity its selector is
 /// built from.

@@ -43,6 +43,7 @@ import {
   $networkInterfaceStatus,
   $settings,
   $telemetryState,
+  $usbDmxTargetStates,
 } from "./settings";
 
 /** Smoothed backend diagnostic values keyed by diagnostic path; see `METRIC_PATHS`. */
@@ -1085,6 +1086,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     externalControlState: $externalControlState,
     telemetryState: $telemetryState,
     availableUsbDmxDevices: $availableUsbDmxDevices,
+    usbDmxTargetStates: $usbDmxTargetStates,
     networkInterfaceStatus: $networkInterfaceStatus,
     serverVersion,
     browserDemoRuntimeInfo,

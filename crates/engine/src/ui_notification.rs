@@ -25,13 +25,30 @@ pub enum ToastLevel {
 }
 
 /// Follow-up a toast offers as a button, resolved to a concrete UI destination by each client.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
+#[serde(tag = "type", content = "data")]
 pub enum ToastAction {
     /// Open Settings on the Network tab, where the DMX network interface is chosen.
     OpenNetworkSettings,
     /// Open the Transports panel, where External control and its interface are configured.
     OpenExternalControlSettings,
+    /// Open the I/O Transports panel, where USB DMX outputs are assigned to adapters.
+    OpenUsbDmxOutputs,
+    /// Save the port an attached adapter is on now as its USB output's port.
+    UpdateUsbDmxPort {
+        /// USB output target identifier.
+        target: String,
+        /// Selector of the attached adapter.
+        device: String,
+    },
+    /// Make an adapter that several USB outputs could claim drive the named output.
+    ChooseUsbDmxOutput {
+        /// USB output target identifier.
+        target: String,
+        /// Selector of the attached adapter.
+        device: String,
+    },
 }
 
 /// Outbound observations requesting UI-only presentation behavior.
