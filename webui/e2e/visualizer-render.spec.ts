@@ -18,6 +18,7 @@ import {
   type ParameterMetadata,
 } from "../types/index";
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { GPU_TAG } from "./gpu-gate";
 import { ALWAYS_ATTACH_ARTIFACTS, collectPageErrors } from "./optics-harness";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { decodePng } from "./png-decode";
@@ -41,7 +42,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 /** Requires every visualizer scenario to finish without shader or pipeline failures. */
-test.afterEach(async ({ page }) => {
+test.afterEach(async ({ page }, testInfo) => {
+  // afterEach still runs for tests the `@gpu` gate skipped before beforeEach could.
+  if (testInfo.status === "skipped") return;
   expect(rendererErrors.get(page)).toEqual([]);
 });
 
@@ -190,7 +193,8 @@ test.beforeEach(async ({ backendSlot, page }) => {
 });
 
 /** Replaces the backend after each scenario and proves owned state is blank. */
-test.afterEach(async ({ backendSlot, page }) => {
+test.afterEach(async ({ backendSlot, page }, testInfo) => {
+  if (testInfo.status === "skipped") return;
   await prepareFreshBackendShowfile(backendSlot.backendPort);
   if (page.isClosed() || page.url() === "about:blank") return;
   await page.reload();
@@ -405,40 +409,42 @@ test("3D visualizer worker starts without Inspector storage errors", async ({
 });
 
 /** Verifies the main-thread renderer paints a visibly non-uniform canvas. */
-test("3D visualizer main-thread renderer paints the canvas", async ({
-  page,
-}, testInfo) => {
-  const pageErrors = collectPageErrors(page);
+test(
+  "3D visualizer main-thread renderer paints the canvas",
+  { tag: GPU_TAG },
+  async ({ page }, testInfo) => {
+    const pageErrors = collectPageErrors(page);
 
-  await page.goto("/?visualizer:offscreenCanvas=false");
-  await expect(page).not.toHaveURL(/visualizer:offscreenCanvas=false/);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          JSON.parse(
-            window.localStorage.getItem("nightfall-feature-flags") ?? "{}",
-          ).features?.visualizerOffscreenCanvas,
-      ),
-    )
-    .toBe(false);
+    await page.goto("/?visualizer:offscreenCanvas=false");
+    await expect(page).not.toHaveURL(/visualizer:offscreenCanvas=false/);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            JSON.parse(
+              window.localStorage.getItem("nightfall-feature-flags") ?? "{}",
+            ).features?.visualizerOffscreenCanvas,
+        ),
+      )
+      .toBe(false);
 
-  await waitForVisualizerReady(page);
-  await largestVisibleCanvasBox(page);
-  await expectVisualizerFpsLabel(page);
-  const canvasBox = await largestVisibleCanvasBox(page);
-  const screenshot = await page.screenshot({ clip: canvasBox });
-  if (ALWAYS_ATTACH_ARTIFACTS)
-    await testInfo.attach("owned-visualizer-main-thread", {
-      body: screenshot,
-      contentType: "image/png",
-    });
-  expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
+    await waitForVisualizerReady(page);
+    await largestVisibleCanvasBox(page);
+    await expectVisualizerFpsLabel(page);
+    const canvasBox = await largestVisibleCanvasBox(page);
+    const screenshot = await page.screenshot({ clip: canvasBox });
+    if (ALWAYS_ATTACH_ARTIFACTS)
+      await testInfo.attach("owned-visualizer-main-thread", {
+        body: screenshot,
+        contentType: "image/png",
+      });
+    expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
 
-  expect(pageErrors).not.toContainEqual(
-    expect.stringContaining("localStorage"),
-  );
-});
+    expect(pageErrors).not.toContainEqual(
+      expect.stringContaining("localStorage"),
+    );
+  },
+);
 
 /** Visible labels of the Settings quality preset options, keyed by preset. */
 const QUALITY_PRESET_LABELS = {
@@ -535,130 +541,136 @@ for (const worker of [false, true]) {
   const mode = worker ? "worker" : "main";
 
   /** Switches the running renderer through every preset and checks the rebuilt renderer draws visible output. */
-  test(`quality settings replace the ${mode} renderer live`, async ({
-    page,
-  }, testInfo) => {
-    const pageErrors = collectPageErrors(page, { consoleErrors: false });
-    await page.goto(`/?visualizer:offscreenCanvas=${worker}`);
-    await waitForVisualizerReady(page);
-    if (worker) await waitForWorkerVisualizerApi(page);
-    else await waitForMainThreadVisualizerApi(page);
-    const uid = await installRotatingWashBeamFixture(page);
-    await waitForFixtureStoreHydration(page);
-    await holdRotatingWashBeamImmediateOutput(page, uid);
-    for (const preset of ["medium", "low", "high"] as const) {
-      const previousApi = await page.evaluateHandle(
-        () => (window as any).visualizerApi,
-      );
-      const dialog = await openVisualizerSettings(page);
-      await dialog
-        .getByRole("radiogroup", { name: "Quality preset" })
-        .getByRole("radio", { name: QUALITY_PRESET_LABELS[preset] })
-        .click();
-      await expect
-        .poll(() =>
-          page.evaluate(
-            (previous) =>
-              Boolean((window as any).visualizerApi) &&
-              (window as any).visualizerApi !== previous,
-            previousApi,
-          ),
-        )
-        .toBe(true);
-      await previousApi.dispose();
-      await page.keyboard.press("Escape");
+  test(
+    `quality settings replace the ${mode} renderer live`,
+    { tag: GPU_TAG },
+    async ({ page }, testInfo) => {
+      const pageErrors = collectPageErrors(page, { consoleErrors: false });
+      await page.goto(`/?visualizer:offscreenCanvas=${worker}`);
+      await waitForVisualizerReady(page);
       if (worker) await waitForWorkerVisualizerApi(page);
-      else {
-        await waitForMainThreadVisualizerApi(page);
+      else await waitForMainThreadVisualizerApi(page);
+      const uid = await installRotatingWashBeamFixture(page);
+      await waitForFixtureStoreHydration(page);
+      await holdRotatingWashBeamImmediateOutput(page, uid);
+      for (const preset of ["medium", "low", "high"] as const) {
+        const previousApi = await page.evaluateHandle(
+          () => (window as any).visualizerApi,
+        );
+        const dialog = await openVisualizerSettings(page);
+        await dialog
+          .getByRole("radiogroup", { name: "Quality preset" })
+          .getByRole("radio", { name: QUALITY_PRESET_LABELS[preset] })
+          .click();
         await expect
           .poll(() =>
-            page.evaluate(async () => {
-              const scene = (window as any).visualizerApi.getScene();
-              const { getOpticalRenderContext } = (
-                await window.__nightfallHarness.load("visualizer")
-              ).opticalRenderContext;
-              const context = getOpticalRenderContext(scene);
-              return {
-                quality: context?.profile.preset,
-                cones: !!context?.scene.getObjectByName("EmitterBeams"),
-                volumes: !!context?.scene.getObjectByName("EmitterVolumes"),
-              };
-            }),
+            page.evaluate(
+              (previous) =>
+                Boolean((window as any).visualizerApi) &&
+                (window as any).visualizerApi !== previous,
+              previousApi,
+            ),
           )
-          .toEqual({
-            quality: preset,
-            cones: preset !== "high",
-            volumes: preset === "high",
-          });
-      }
-      await holdRotatingWashBeamImmediateOutput(page, uid);
-      await expectVisualizerFpsLabel(page);
-      const screenshot = await page.screenshot({
-        clip: await largestVisibleCanvasBox(page),
-      });
-      const range = pngLumaRange(screenshot);
-      if (range <= 5)
-        await testInfo.attach(`quality-${preset}.png`, {
-          body: screenshot,
-          contentType: "image/png",
+          .toBe(true);
+        await previousApi.dispose();
+        await page.keyboard.press("Escape");
+        if (worker) await waitForWorkerVisualizerApi(page);
+        else {
+          await waitForMainThreadVisualizerApi(page);
+          await expect
+            .poll(() =>
+              page.evaluate(async () => {
+                const scene = (window as any).visualizerApi.getScene();
+                const { getOpticalRenderContext } = (
+                  await window.__nightfallHarness.load("visualizer")
+                ).opticalRenderContext;
+                const context = getOpticalRenderContext(scene);
+                return {
+                  quality: context?.profile.preset,
+                  cones: !!context?.scene.getObjectByName("EmitterBeams"),
+                  volumes: !!context?.scene.getObjectByName("EmitterVolumes"),
+                };
+              }),
+            )
+            .toEqual({
+              quality: preset,
+              cones: preset !== "high",
+              volumes: preset === "high",
+            });
+        }
+        await holdRotatingWashBeamImmediateOutput(page, uid);
+        await expectVisualizerFpsLabel(page);
+        const screenshot = await page.screenshot({
+          clip: await largestVisibleCanvasBox(page),
         });
-      expect(range, `${preset} preset draws visible output`).toBeGreaterThan(5);
-    }
-    expect(pageErrors).toEqual([]);
-  });
+        const range = pngLumaRange(screenshot);
+        if (range <= 5)
+          await testInfo.attach(`quality-${preset}.png`, {
+            body: screenshot,
+            contentType: "image/png",
+          });
+        expect(range, `${preset} preset draws visible output`).toBeGreaterThan(
+          5,
+        );
+      }
+      expect(pageErrors).toEqual([]);
+    },
+  );
 
   /** Darkness re-renders the running renderer darker, and both it and the quality preset survive a reload. */
-  test(`visualizer settings dim the ${mode} renderer and persist`, async ({
-    page,
-  }, testInfo) => {
-    const pageErrors = collectPageErrors(page, { consoleErrors: false });
-    await page.goto(`/?visualizer:offscreenCanvas=${worker}`);
-    await waitForVisualizerReady(page);
-    if (worker) await waitForWorkerVisualizerApi(page);
-    else await waitForMainThreadVisualizerApi(page);
-    await expectVisualizerFpsLabel(page);
-    let dialog = await openVisualizerSettings(page);
-    await dialog
-      .getByRole("radiogroup", { name: "Quality preset" })
-      .getByRole("radio", { name: QUALITY_PRESET_LABELS.medium })
-      .click();
-    await setDarkness(dialog, 0);
-    await page.keyboard.press("Escape");
-    const bright = await settledCanvasLuma(page);
-    dialog = await openVisualizerSettings(page);
-    await setDarkness(dialog, 100);
-    await page.keyboard.press("Escape");
-    // Worker frames arrive asynchronously, so poll until a re-rendered frame shows the change.
-    let dark = bright;
-    await expect
-      .poll(
-        async () => {
-          const screenshot = await page.screenshot({
-            clip: await largestVisibleCanvasBox(page),
-          });
-          dark = pngMeanLuma(screenshot);
-          return bright - dark;
-        },
-        { message: "Darkness 100 dims the canvas", timeout: 15_000 },
-      )
-      .toBeGreaterThanOrEqual(DARKNESS_MIN_LUMA_DROP);
-    testInfo.annotations.push({
-      type: "mean luma",
-      description: `darkness 0: ${bright.toFixed(1)}, darkness 100: ${dark.toFixed(1)}`,
-    });
-    await page.reload();
-    await waitForVisualizerReady(page);
-    dialog = await openVisualizerSettings(page);
-    await expect(
-      dialog
+  test(
+    `visualizer settings dim the ${mode} renderer and persist`,
+    { tag: GPU_TAG },
+    async ({ page }, testInfo) => {
+      const pageErrors = collectPageErrors(page, { consoleErrors: false });
+      await page.goto(`/?visualizer:offscreenCanvas=${worker}`);
+      await waitForVisualizerReady(page);
+      if (worker) await waitForWorkerVisualizerApi(page);
+      else await waitForMainThreadVisualizerApi(page);
+      await expectVisualizerFpsLabel(page);
+      let dialog = await openVisualizerSettings(page);
+      await dialog
         .getByRole("radiogroup", { name: "Quality preset" })
-        .getByRole("radio", { name: QUALITY_PRESET_LABELS.medium }),
-    ).toBeChecked();
-    await expect(
-      dialog.getByRole("slider", { name: "Darkness", exact: true }),
-    ).toHaveAttribute("aria-valuenow", "100.0");
-    expect(pageErrors).toEqual([]);
-  });
+        .getByRole("radio", { name: QUALITY_PRESET_LABELS.medium })
+        .click();
+      await setDarkness(dialog, 0);
+      await page.keyboard.press("Escape");
+      const bright = await settledCanvasLuma(page);
+      dialog = await openVisualizerSettings(page);
+      await setDarkness(dialog, 100);
+      await page.keyboard.press("Escape");
+      // Worker frames arrive asynchronously, so poll until a re-rendered frame shows the change.
+      let dark = bright;
+      await expect
+        .poll(
+          async () => {
+            const screenshot = await page.screenshot({
+              clip: await largestVisibleCanvasBox(page),
+            });
+            dark = pngMeanLuma(screenshot);
+            return bright - dark;
+          },
+          { message: "Darkness 100 dims the canvas", timeout: 15_000 },
+        )
+        .toBeGreaterThanOrEqual(DARKNESS_MIN_LUMA_DROP);
+      testInfo.annotations.push({
+        type: "mean luma",
+        description: `darkness 0: ${bright.toFixed(1)}, darkness 100: ${dark.toFixed(1)}`,
+      });
+      await page.reload();
+      await waitForVisualizerReady(page);
+      dialog = await openVisualizerSettings(page);
+      await expect(
+        dialog
+          .getByRole("radiogroup", { name: "Quality preset" })
+          .getByRole("radio", { name: QUALITY_PRESET_LABELS.medium }),
+      ).toBeChecked();
+      await expect(
+        dialog.getByRole("slider", { name: "Darkness", exact: true }),
+      ).toHaveAttribute("aria-valuenow", "100.0");
+      expect(pageErrors).toEqual([]);
+    },
+  );
 }
 
 /** Verifies camera panning retargets the orbit controls to the stage floor. */
@@ -788,38 +800,40 @@ test("idle strobe panels keep white segments dark", async ({ page }) => {
 });
 
 /** Verifies the owned RGB strobe bar renders all three emitter groups. */
-test("rgb strobe bar fixture renders its three emitter groups", async ({
-  page,
-}, testInfo) => {
-  await page.goto("/?visualizer:offscreenCanvas=false");
+test(
+  "rgb strobe bar fixture renders its three emitter groups",
+  { tag: GPU_TAG },
+  async ({ page }, testInfo) => {
+    await page.goto("/?visualizer:offscreenCanvas=false");
 
-  await waitForVisualizerReady(page);
-  await expect(page.locator(inputSelector)).toBeVisible();
-  await expectVisualizerFpsLabel(page);
-  await waitForMainThreadVisualizerApi(page);
-  const fixtureUid = await installRgbStrobeBarFixture(page);
-  await waitForFixtureStoreHydration(page);
+    await waitForVisualizerReady(page);
+    await expect(page.locator(inputSelector)).toBeVisible();
+    await expectVisualizerFpsLabel(page);
+    await waitForMainThreadVisualizerApi(page);
+    const fixtureUid = await installRgbStrobeBarFixture(page);
+    await waitForFixtureStoreHydration(page);
 
-  await expect
-    .poll(async () => rgbStrobeBarSceneStats(page, fixtureUid))
-    .toEqual({
-      topCount: 24,
-      whiteCount: 24,
-      bottomCount: 24,
-      litTopCount: 0,
-      litWhiteCount: 0,
-      litBottomCount: 0,
-    });
+    await expect
+      .poll(async () => rgbStrobeBarSceneStats(page, fixtureUid))
+      .toEqual({
+        topCount: 24,
+        whiteCount: 24,
+        bottomCount: 24,
+        litTopCount: 0,
+        litWhiteCount: 0,
+        litBottomCount: 0,
+      });
 
-  const canvasBox = await largestVisibleCanvasBox(page);
-  const screenshot = await page.screenshot({ clip: canvasBox });
-  if (ALWAYS_ATTACH_ARTIFACTS)
-    await testInfo.attach("owned-rgb-strobe-bar", {
-      body: screenshot,
-      contentType: "image/png",
-    });
-  expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
-});
+    const canvasBox = await largestVisibleCanvasBox(page);
+    const screenshot = await page.screenshot({ clip: canvasBox });
+    if (ALWAYS_ATTACH_ARTIFACTS)
+      await testInfo.attach("owned-rgb-strobe-bar", {
+        body: screenshot,
+        contentType: "image/png",
+      });
+    expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
+  },
+);
 
 /** Verifies an owned RGB strobe bar applies white virtual intensity. */
 test("rgb strobe bar visualizer applies white virtual intensity", async ({
@@ -909,204 +923,218 @@ test("rgb strobe bar command path dims white when intensity is zero", async ({
     });
 });
 
-/** Verifies commands light exact strip elements on the owned Generic wash beam. */
-test("generic wash beam command path lights strip elements with element intensity", async ({
-  page,
-}, testInfo) => {
-  testInfo.setTimeout(60_000);
+/**
+ * Verifies commands light exact strip elements on the owned Generic wash beam. Tagged
+ * `@gpu` although it reads scene state, because the strip stats lag behind on SwiftShader.
+ */
+test(
+  "generic wash beam command path lights strip elements with element intensity",
+  {
+    tag: GPU_TAG,
+  },
+  async ({ page }, testInfo) => {
+    testInfo.setTimeout(60_000);
 
-  await page.goto(
-    "/?startup:draftRecovery=false&visualizer:offscreenCanvas=false",
-  );
-  await waitForVisualizerReady(page);
-  await expect(page.locator(inputSelector)).toBeVisible();
-  await expectVisualizerFpsLabel(page);
-  await waitForMainThreadVisualizerApi(page);
-  const fixtureUid = await installOwnedBackendFixture(page, OWNED_WASH_BEAM);
-  await waitForFixtureStoreHydration(page);
-  await expect
-    .poll(() => rotatingWashBeamSceneStats(page, fixtureUid))
-    .not.toBeNull();
+    await page.goto(
+      "/?startup:draftRecovery=false&visualizer:offscreenCanvas=false",
+    );
+    await waitForVisualizerReady(page);
+    await expect(page.locator(inputSelector)).toBeVisible();
+    await expectVisualizerFpsLabel(page);
+    await waitForMainThreadVisualizerApi(page);
+    const fixtureUid = await installOwnedBackendFixture(page, OWNED_WASH_BEAM);
+    await waitForFixtureStoreHydration(page);
+    await expect
+      .poll(() => rotatingWashBeamSceneStats(page, fixtureUid))
+      .not.toBeNull();
 
-  await submitCommand(
-    page,
-    `fix ${OWNED_WASH_BEAM.id}.(14>25) int @ 100 red @ 100`,
-  );
+    await submitCommand(
+      page,
+      `fix ${OWNED_WASH_BEAM.id}.(14>25) int @ 100 red @ 100`,
+    );
 
-  await expect
-    .poll(() => rotatingWashBeamElementParameterState(page, fixtureUid, 14), {
-      timeout: 5_000,
-    })
-    .toMatchObject({
-      absoluteIntensity: 255,
-      outputVirtualIntensity: 255,
-      outputRed: 255,
-    });
+    await expect
+      .poll(() => rotatingWashBeamElementParameterState(page, fixtureUid, 14), {
+        timeout: 5_000,
+      })
+      .toMatchObject({
+        absoluteIntensity: 255,
+        outputVirtualIntensity: 255,
+        outputRed: 255,
+      });
 
-  await expect
-    .poll(() => rotatingWashBeamSceneStats(page, fixtureUid), {
-      timeout: 5_000,
-    })
-    .toMatchObject({
-      litTopStripCount: 12,
-      litBottomStripCount: 0,
-    });
-});
+    await expect
+      .poll(() => rotatingWashBeamSceneStats(page, fixtureUid), {
+        timeout: 5_000,
+      })
+      .toMatchObject({
+        litTopStripCount: 12,
+        litBottomStripCount: 0,
+      });
+  },
+);
 
 /** Verifies the owned Generic wash beam renders beams and both pixel strips. */
-test("generic wash beam fixture renders beams and strip pixels", async ({
-  page,
-}, testInfo) => {
-  await page.goto("/?visualizer:offscreenCanvas=false");
+test(
+  "generic wash beam fixture renders beams and strip pixels",
+  { tag: GPU_TAG },
+  async ({ page }, testInfo) => {
+    await page.goto("/?visualizer:offscreenCanvas=false");
 
-  await waitForVisualizerReady(page);
-  await largestVisibleCanvasBox(page);
-  await expectVisualizerFpsLabel(page);
-  await waitForMainThreadVisualizerApi(page);
-  const fixtureUid = await installRotatingWashBeamFixture(page);
-  await waitForFixtureStoreHydration(page);
+    await waitForVisualizerReady(page);
+    await largestVisibleCanvasBox(page);
+    await expectVisualizerFpsLabel(page);
+    await waitForMainThreadVisualizerApi(page);
+    const fixtureUid = await installRotatingWashBeamFixture(page);
+    await waitForFixtureStoreHydration(page);
 
-  await expect
-    .poll(() => rotatingWashBeamSceneStats(page, fixtureUid))
-    .toEqual({
-      baseCount: 1,
-      lensCount: 12,
-      apertureCount: 12,
-      topStripCount: 12,
-      bottomStripCount: 12,
-      litTopStripCount: 0,
-      litBottomStripCount: 0,
-      position: { x: 0, y: 0.5, z: 0 },
-    });
+    await expect
+      .poll(() => rotatingWashBeamSceneStats(page, fixtureUid))
+      .toEqual({
+        baseCount: 1,
+        lensCount: 12,
+        apertureCount: 12,
+        topStripCount: 12,
+        bottomStripCount: 12,
+        litTopStripCount: 0,
+        litBottomStripCount: 0,
+        position: { x: 0, y: 0.5, z: 0 },
+      });
 
-  const canvasBox = await largestVisibleCanvasBox(page);
-  const screenshot = await page.screenshot({ clip: canvasBox });
-  if (ALWAYS_ATTACH_ARTIFACTS)
-    await testInfo.attach("owned-rotating-wash-beam", {
-      body: screenshot,
-      contentType: "image/png",
-    });
-  expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
-  await holdRotatingWashBeamImmediateOutput(page, fixtureUid);
-  await expect
-    .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
-    .toEqual({
-      opticalBeamCount: 12,
-      atmosphericBeamCount: 12,
-      atmosphericDraws: 1,
-    });
-});
+    const canvasBox = await largestVisibleCanvasBox(page);
+    const screenshot = await page.screenshot({ clip: canvasBox });
+    if (ALWAYS_ATTACH_ARTIFACTS)
+      await testInfo.attach("owned-rotating-wash-beam", {
+        body: screenshot,
+        contentType: "image/png",
+      });
+    expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
+    await holdRotatingWashBeamImmediateOutput(page, fixtureUid);
+    await expect
+      .poll(() => rotatingWashBeamOpticalStats(page, fixtureUid))
+      .toEqual({
+        opticalBeamCount: 12,
+        atmosphericBeamCount: 12,
+        atmosphericDraws: 1,
+      });
+  },
+);
 
 /** Compares the actual spot and wash rendering paths together under the Low preset. */
-test("low quality spot and wash comparison", async ({ page }, testInfo) => {
-  await page.goto(
-    "/?visualizer:offscreenCanvas=false&visualizer:beamQuality=low",
-  );
-  await waitForVisualizerReady(page);
-  await waitForMainThreadVisualizerApi(page);
-  const wash = await installRotatingWashBeamFixture(page);
-  const spot = await installMovingSpotFixture(page);
-  await page.evaluate(
-    ({ wash, spot }) => {
-      const stores = (window as any).appStores;
-      const fixtures = stores.fixtures.get();
-      stores.fixtures.set({
-        ...fixtures,
-        [wash]: {
-          ...fixtures[wash],
-          physical: {
-            beamType: "Wash",
-            beamAngle: 1,
-            fieldAngle: 1.2,
-            lumens: 12000,
+test(
+  "low quality spot and wash comparison",
+  { tag: GPU_TAG },
+  async ({ page }, testInfo) => {
+    await page.goto(
+      "/?visualizer:offscreenCanvas=false&visualizer:beamQuality=low",
+    );
+    await waitForVisualizerReady(page);
+    await waitForMainThreadVisualizerApi(page);
+    const wash = await installRotatingWashBeamFixture(page);
+    const spot = await installMovingSpotFixture(page);
+    await page.evaluate(
+      ({ wash, spot }) => {
+        const stores = (window as any).appStores;
+        const fixtures = stores.fixtures.get();
+        stores.fixtures.set({
+          ...fixtures,
+          [wash]: {
+            ...fixtures[wash],
+            physical: {
+              beamType: "Wash",
+              beamAngle: 1,
+              fieldAngle: 1.2,
+              lumens: 12000,
+            },
+            placement: {
+              position: { x: -2, y: 1, z: 0 },
+              rotation: { x: 0, y: 0, z: 0 },
+            },
           },
-          placement: {
-            position: { x: -2, y: 1, z: 0 },
-            rotation: { x: 0, y: 0, z: 0 },
+          [spot]: {
+            ...fixtures[spot],
+            physical: {
+              beamType: "Spot",
+              beamAngle: 8,
+              fieldAngle: 15,
+              lumens: 8000,
+            },
+            placement: {
+              position: { x: 2, y: 1, z: 0 },
+              rotation: { x: 0, y: 0, z: 0 },
+            },
           },
-        },
-        [spot]: {
-          ...fixtures[spot],
-          physical: {
-            beamType: "Spot",
-            beamAngle: 8,
-            fieldAngle: 15,
-            lumens: 8000,
-          },
-          placement: {
-            position: { x: 2, y: 1, z: 0 },
-            rotation: { x: 0, y: 0, z: 0 },
-          },
-        },
-      });
-      (window as any).visualizerApi.setCameraState({
-        position: { x: 9, y: 5, z: 14 },
-        target: { x: 0, y: -5, z: 0 },
-      });
-      (window as any).visualizerApi
-        .getScene()
-        .getObjectByName("StageFloor").visible = false;
-    },
-    { wash, spot },
-  );
-  await waitForFixtureStoreHydration(page);
-  await holdRotatingWashBeamImmediateOutput(page, wash);
-  await holdFixtureImmediateOutput(page, spot, {
-    Intensity: 255,
-    Tilt: 127,
-    Zoom: 127,
-    "Color Wheel": 0,
-  });
-  await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const scene = (window as any).visualizerApi.getScene();
-        const { getOpticalRenderContext } = (
-          await window.__nightfallHarness.load("visualizer")
-        ).opticalRenderContext;
-        const context = getOpticalRenderContext(scene)!;
-        return {
-          quality: context.profile.preset,
-          count: (context.scene.getObjectByName("EmitterBeams") as any)?.count,
-        };
-      }),
-    )
-    .toEqual({ quality: "low", count: 13 });
-  if (ALWAYS_ATTACH_ARTIFACTS)
-    await testInfo.attach("low-spot-wash.png", {
-      body: await page.screenshot({
-        clip: await largestVisibleCanvasBox(page),
-      }),
-      contentType: "image/png",
+        });
+        (window as any).visualizerApi.setCameraState({
+          position: { x: 9, y: 5, z: 14 },
+          target: { x: 0, y: -5, z: 0 },
+        });
+        (window as any).visualizerApi
+          .getScene()
+          .getObjectByName("StageFloor").visible = false;
+      },
+      { wash, spot },
+    );
+    await waitForFixtureStoreHydration(page);
+    await holdRotatingWashBeamImmediateOutput(page, wash);
+    await holdFixtureImmediateOutput(page, spot, {
+      Intensity: 255,
+      Tilt: 127,
+      Zoom: 127,
+      "Color Wheel": 0,
     });
-  await holdRotatingWashBeamImmediateOutput(page, wash, 1);
-  await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const { getOpticalRenderContext } = (
-          await window.__nightfallHarness.load("visualizer")
-        ).opticalRenderContext;
-        return (
-          getOpticalRenderContext(
-            (window as any).visualizerApi.getScene(),
-          )!.scene.getObjectByName("EmitterBeams") as any
-        ).count;
-      }),
-    )
-    .toBe(2);
-  if (ALWAYS_ATTACH_ARTIFACTS)
-    await testInfo.attach("low-single-wash-emitter.png", {
-      body: await page.screenshot({
-        clip: await largestVisibleCanvasBox(page),
-      }),
-      contentType: "image/png",
-    });
-});
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const scene = (window as any).visualizerApi.getScene();
+          const { getOpticalRenderContext } = (
+            await window.__nightfallHarness.load("visualizer")
+          ).opticalRenderContext;
+          const context = getOpticalRenderContext(scene)!;
+          return {
+            quality: context.profile.preset,
+            count: (context.scene.getObjectByName("EmitterBeams") as any)
+              ?.count,
+          };
+        }),
+      )
+      .toEqual({ quality: "low", count: 13 });
+    if (ALWAYS_ATTACH_ARTIFACTS)
+      await testInfo.attach("low-spot-wash.png", {
+        body: await page.screenshot({
+          clip: await largestVisibleCanvasBox(page),
+        }),
+        contentType: "image/png",
+      });
+    await holdRotatingWashBeamImmediateOutput(page, wash, 1);
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const { getOpticalRenderContext } = (
+            await window.__nightfallHarness.load("visualizer")
+          ).opticalRenderContext;
+          return (
+            getOpticalRenderContext(
+              (window as any).visualizerApi.getScene(),
+            )!.scene.getObjectByName("EmitterBeams") as any
+          ).count;
+        }),
+      )
+      .toBe(2);
+    if (ALWAYS_ATTACH_ARTIFACTS)
+      await testInfo.attach("low-single-wash-emitter.png", {
+        body: await page.screenshot({
+          clip: await largestVisibleCanvasBox(page),
+        }),
+        contentType: "image/png",
+      });
+  },
+);
 
 /** Verifies low quality uses batched geometry beams without atmospheric integration. */
-test("generic wash beam low-quality setting uses geometry beams", async ({
-  page,
-}) => {
+test("generic wash beam low-quality setting uses geometry beams", {
+  tag: GPU_TAG,
+}, async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => {
     window.localStorage.setItem(
@@ -1181,9 +1209,9 @@ test("generic wash beam low-quality setting uses geometry beams", async ({
 });
 
 /** Verifies the owned Generic wash beam narrows as its zoom function moves to the narrowest angle (DMX 255 = 1°). */
-test("generic wash beam minimum zoom renders a focused beam", async ({
-  page,
-}) => {
+test("generic wash beam minimum zoom renders a focused beam", {
+  tag: GPU_TAG,
+}, async ({ page }) => {
   await page.goto(
     "/?startup:draftRecovery=false&visualizer:offscreenCanvas=false",
   );
@@ -1257,45 +1285,47 @@ test("generic wash beam minimum zoom renders a focused beam", async ({
 });
 
 /** Verifies the owned Generic moving spot orients its yoke arms at zero pan. */
-test("generic moving spot fixture renders yoke arms along the x axis at pan zero", async ({
-  page,
-}, testInfo) => {
-  await page.goto("/?visualizer:offscreenCanvas=false");
+test(
+  "generic moving spot fixture renders yoke arms along the x axis at pan zero",
+  { tag: GPU_TAG },
+  async ({ page }, testInfo) => {
+    await page.goto("/?visualizer:offscreenCanvas=false");
 
-  await waitForVisualizerReady(page);
-  await largestVisibleCanvasBox(page);
-  await expectVisualizerFpsLabel(page);
-  await waitForMainThreadVisualizerApi(page);
-  const fixtureUid = await installMovingSpotFixture(page);
-  await waitForFixtureStoreHydration(page);
+    await waitForVisualizerReady(page);
+    await largestVisibleCanvasBox(page);
+    await expectVisualizerFpsLabel(page);
+    await waitForMainThreadVisualizerApi(page);
+    const fixtureUid = await installMovingSpotFixture(page);
+    await waitForFixtureStoreHydration(page);
 
-  await expect
-    .poll(() => movingSpotSceneStats(page, fixtureUid))
-    .toEqual({
-      leftArm: { x: -0.1, z: 0 },
-      rightArm: { x: 0.1, z: 0 },
-      yokeRotationY: 0,
-    });
+    await expect
+      .poll(() => movingSpotSceneStats(page, fixtureUid))
+      .toEqual({
+        leftArm: { x: -0.1, z: 0 },
+        rightArm: { x: 0.1, z: 0 },
+        yokeRotationY: 0,
+      });
 
-  await setFixtureImmediateOutput(page, fixtureUid, { Pan: 0, Tilt: 0 });
+    await setFixtureImmediateOutput(page, fixtureUid, { Pan: 0, Tilt: 0 });
 
-  await expect
-    .poll(() => movingSpotSceneStats(page, fixtureUid))
-    .toEqual({
-      leftArm: { x: -0.1, z: 0 },
-      rightArm: { x: 0.1, z: 0 },
-      yokeRotationY: 0,
-    });
+    await expect
+      .poll(() => movingSpotSceneStats(page, fixtureUid))
+      .toEqual({
+        leftArm: { x: -0.1, z: 0 },
+        rightArm: { x: 0.1, z: 0 },
+        yokeRotationY: 0,
+      });
 
-  const canvasBox = await largestVisibleCanvasBox(page);
-  const screenshot = await page.screenshot({ clip: canvasBox });
-  if (ALWAYS_ATTACH_ARTIFACTS)
-    await testInfo.attach("owned-generic-moving-spot", {
-      body: screenshot,
-      contentType: "image/png",
-    });
-  expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
-});
+    const canvasBox = await largestVisibleCanvasBox(page);
+    const screenshot = await page.screenshot({ clip: canvasBox });
+    if (ALWAYS_ATTACH_ARTIFACTS)
+      await testInfo.attach("owned-generic-moving-spot", {
+        body: screenshot,
+        contentType: "image/png",
+      });
+    expect(pngLumaRange(screenshot)).toBeGreaterThan(5);
+  },
+);
 
 /** Verifies the owned moving spot color wheel renders a red beam. */
 test("generic moving spot color wheel renders a red beam", async ({ page }) => {
@@ -1348,60 +1378,62 @@ test("generic moving spot color wheel renders split beam colors", async ({
 });
 
 /** Verifies clearing the owned tilted strobe removes its rendered red pixels. */
-test("clearing a tilted strobe panel removes rendered LED pixels", async ({
-  page,
-}, testInfo) => {
-  await page.goto("/?visualizer:offscreenCanvas=false");
+test(
+  "clearing a tilted strobe panel removes rendered LED pixels",
+  { tag: GPU_TAG },
+  async ({ page }, testInfo) => {
+    await page.goto("/?visualizer:offscreenCanvas=false");
 
-  await waitForVisualizerReady(page);
-  await expect(page.locator(inputSelector)).toBeVisible();
-  await expectVisualizerFpsLabel(page);
-  await installOwnedBackendFixture(page, OWNED_TILTED_STROBE);
-  await waitForFixtureStoreHydration(page);
-  await expect.poll(() => strobeWhiteSegmentStats(page)).not.toBeNull();
+    await waitForVisualizerReady(page);
+    await expect(page.locator(inputSelector)).toBeVisible();
+    await expectVisualizerFpsLabel(page);
+    await installOwnedBackendFixture(page, OWNED_TILTED_STROBE);
+    await waitForFixtureStoreHydration(page);
+    await expect.poll(() => strobeWhiteSegmentStats(page)).not.toBeNull();
 
-  await submitCommand(
-    page,
-    `fix ${OWNED_TILTED_STROBE.id} tilt @ 50 red @ 100`,
-  );
-  await page.waitForTimeout(500);
+    await submitCommand(
+      page,
+      `fix ${OWNED_TILTED_STROBE.id} tilt @ 50 red @ 100`,
+    );
+    await page.waitForTimeout(500);
 
-  const canvasBox = await largestVisibleCanvasBox(page);
-  const asserted = await page.screenshot({ clip: canvasBox });
-  if (ALWAYS_ATTACH_ARTIFACTS)
-    await testInfo.attach("owned-tilted-strobe-asserted", {
-      body: asserted,
-      contentType: "image/png",
+    const canvasBox = await largestVisibleCanvasBox(page);
+    const asserted = await page.screenshot({ clip: canvasBox });
+    if (ALWAYS_ATTACH_ARTIFACTS)
+      await testInfo.attach("owned-tilted-strobe-asserted", {
+        body: asserted,
+        contentType: "image/png",
+      });
+    const searchRegion = {
+      x: 0,
+      y: Math.floor(canvasBox.height * 0.45),
+      width: Math.floor(canvasBox.width * 0.5),
+      height: Math.floor(canvasBox.height * 0.4),
+    };
+    const assertedRed = pngRedDominantStats(asserted, searchRegion);
+    expect(assertedRed.count).toBeGreaterThan(20);
+    expect(assertedRed.bounds).not.toBeNull();
+
+    const bounds = assertedRed.bounds!;
+    await submitCommand(page, "clear");
+    await page.waitForTimeout(500);
+
+    const cleared = await page.screenshot({ clip: canvasBox });
+    if (ALWAYS_ATTACH_ARTIFACTS)
+      await testInfo.attach("owned-tilted-strobe-cleared", {
+        body: cleared,
+        contentType: "image/png",
+      });
+    const clearedRed = pngRedDominantStats(cleared, {
+      x: Math.max(0, bounds.x - 8),
+      y: Math.max(0, bounds.y - 8),
+      width: bounds.width + 16,
+      height: bounds.height + 16,
     });
-  const searchRegion = {
-    x: 0,
-    y: Math.floor(canvasBox.height * 0.45),
-    width: Math.floor(canvasBox.width * 0.5),
-    height: Math.floor(canvasBox.height * 0.4),
-  };
-  const assertedRed = pngRedDominantStats(asserted, searchRegion);
-  expect(assertedRed.count).toBeGreaterThan(20);
-  expect(assertedRed.bounds).not.toBeNull();
 
-  const bounds = assertedRed.bounds!;
-  await submitCommand(page, "clear");
-  await page.waitForTimeout(500);
-
-  const cleared = await page.screenshot({ clip: canvasBox });
-  if (ALWAYS_ATTACH_ARTIFACTS)
-    await testInfo.attach("owned-tilted-strobe-cleared", {
-      body: cleared,
-      contentType: "image/png",
-    });
-  const clearedRed = pngRedDominantStats(cleared, {
-    x: Math.max(0, bounds.x - 8),
-    y: Math.max(0, bounds.y - 8),
-    width: bounds.width + 16,
-    height: bounds.height + 16,
-  });
-
-  expect(clearedRed.count).toBe(0);
-});
+    expect(clearedRed.count).toBe(0);
+  },
+);
 
 /** A built-in fixture per specialized renderer and the meshes its selection outline may cover. */
 type SelectionOutlineCase = {
@@ -1531,58 +1563,62 @@ for (const outlineCase of SELECTION_OUTLINE_CASES) {
    * its structural meshes; beams, lenses, pixels and footprints stay flagged
    * out. The capture is attached for visual review of the outline.
    */
-  test(`${outlineCase.title} selection outline excludes its light meshes`, async ({
-    page,
-  }, testInfo) => {
-    await page.goto("/?visualizer:offscreenCanvas=false");
-    await waitForVisualizerReady(page);
-    await expect(page.locator(inputSelector)).toBeVisible();
-    await waitForMainThreadVisualizerApi(page);
-    const { id } = outlineCase.fixture;
-    const fixtureUid = await installOwnedBackendFixture(
-      page,
-      outlineCase.fixture,
-    );
-    await waitForFixtureStoreHydration(page);
+  test(
+    `${outlineCase.title} selection outline excludes its light meshes`,
+    { tag: GPU_TAG },
+    async ({ page }, testInfo) => {
+      await page.goto("/?visualizer:offscreenCanvas=false");
+      await waitForVisualizerReady(page);
+      await expect(page.locator(inputSelector)).toBeVisible();
+      await waitForMainThreadVisualizerApi(page);
+      const { id } = outlineCase.fixture;
+      const fixtureUid = await installOwnedBackendFixture(
+        page,
+        outlineCase.fixture,
+      );
+      await waitForFixtureStoreHydration(page);
 
-    await submitCommand(
-      page,
-      `fix ${id}${outlineCase.lightElements ?? ""} ${outlineCase.light}`,
-    );
-    await submitCommand(page, `fix ${id}`);
-    await expect
-      .poll(() =>
-        page.evaluate(
-          (uid) =>
-            (
-              (window as any).appStores.programmerSelection.get() as string[]
-            ).includes(uid),
-          fixtureUid,
-        ),
-      )
-      .toBe(true);
+      await submitCommand(
+        page,
+        `fix ${id}${outlineCase.lightElements ?? ""} ${outlineCase.light}`,
+      );
+      await submitCommand(page, `fix ${id}`);
+      await expect
+        .poll(() =>
+          page.evaluate(
+            (uid) =>
+              (
+                (window as any).appStores.programmerSelection.get() as string[]
+              ).includes(uid),
+            fixtureUid,
+          ),
+        )
+        .toBe(true);
 
-    await expect
-      .poll(() => selectionOutlineMeshes(page, fixtureUid))
-      .toEqual({
-        outlined: outlineCase.outlined,
-        excluded: expect.any(Number),
+      await expect
+        .poll(() => selectionOutlineMeshes(page, fixtureUid))
+        .toEqual({
+          outlined: outlineCase.outlined,
+          excluded: expect.any(Number),
+        });
+      expect(
+        (await selectionOutlineMeshes(page, fixtureUid)).excluded,
+      ).toBeGreaterThan(0);
+
+      await page.evaluate(() =>
+        (window as any).visualizerApi.zoomToSelection(),
+      );
+      await page.waitForTimeout(500);
+      const canvasBox = await largestVisibleCanvasBox(page);
+      const path = testInfo.outputPath("selection-outline.png");
+      await page.screenshot({ clip: canvasBox, path });
+      await testInfo.attach("selection-outline", {
+        path,
+        contentType: "image/png",
       });
-    expect(
-      (await selectionOutlineMeshes(page, fixtureUid)).excluded,
-    ).toBeGreaterThan(0);
-
-    await page.evaluate(() => (window as any).visualizerApi.zoomToSelection());
-    await page.waitForTimeout(500);
-    const canvasBox = await largestVisibleCanvasBox(page);
-    const path = testInfo.outputPath("selection-outline.png");
-    await page.screenshot({ clip: canvasBox, path });
-    await testInfo.attach("selection-outline", {
-      path,
-      contentType: "image/png",
-    });
-    await submitCommand(page, "clear");
-  });
+      await submitCommand(page, "clear");
+    },
+  );
 }
 
 /**
@@ -2719,90 +2755,92 @@ function clampRegion(
 }
 
 /** Verifies repository-defined generic bars render without installed fixture files. */
-test("generic sample bars render their complete segment layouts", async ({
-  page,
-}, testInfo) => {
-  await page.goto("/?visualizer:offscreenCanvas=false");
-  await waitForVisualizerReady(page);
-  const fixtures: string[] = [];
-  for (const [index, model] of [
-    "12-segment RGBW Bar",
-    "100-segment LED Bar",
-    "10-segment Rotating RGBW Bar",
-  ].entries()) {
-    fixtures.push(
-      await installOwnedBackendFixture(page, {
-        id: 800 + index,
-        make: "Generic",
-        model,
-        mode: ["Segments", "RGB", "RGBW"][index],
-        label: model,
-        update_existing_ids: [],
-        update_existing_only: false,
-        placement: {
-          position: { x: (index - 1) * 2, y: 1, z: 0 },
-          rotation: { x: 0, y: 0, z: 0 },
-        },
-      }),
-    );
-  }
-  await expect
-    .poll(() => rotatingWashBeamSceneStats(page, fixtures[2]))
-    .toMatchObject({
-      lensCount: 10,
-      apertureCount: 10,
-      topStripCount: 0,
-      bottomStripCount: 0,
-    });
-  await expect
-    .poll(() =>
-      page.evaluate((uids) => {
-        const scene = (window as any).visualizerApi?.getScene?.();
-        return uids.map((uid) =>
-          Boolean(scene?.getObjectByName(`Fixture_${uid}`)),
-        );
-      }, fixtures),
-    )
-    .toEqual([true, true, true]);
-  await waitForFixtureStoreHydration(page);
-  await submitCommand(page, "fix 800>802 int @ 100 red @ 100");
-  await expect
-    .poll(() =>
-      page.evaluate((uids) => {
-        const scene = (window as any).visualizerApi?.getScene?.();
-        return uids
-          .slice(0, 2)
-          .map(
-            (uid) =>
-              scene
-                ?.getObjectByName(`Fixture_${uid}`)
-                ?.getObjectByName("Pixels")?.count,
+test(
+  "generic sample bars render their complete segment layouts",
+  { tag: GPU_TAG },
+  async ({ page }, testInfo) => {
+    await page.goto("/?visualizer:offscreenCanvas=false");
+    await waitForVisualizerReady(page);
+    const fixtures: string[] = [];
+    for (const [index, model] of [
+      "12-segment RGBW Bar",
+      "100-segment LED Bar",
+      "10-segment Rotating RGBW Bar",
+    ].entries()) {
+      fixtures.push(
+        await installOwnedBackendFixture(page, {
+          id: 800 + index,
+          make: "Generic",
+          model,
+          mode: ["Segments", "RGB", "RGBW"][index],
+          label: model,
+          update_existing_ids: [],
+          update_existing_only: false,
+          placement: {
+            position: { x: (index - 1) * 2, y: 1, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+          },
+        }),
+      );
+    }
+    await expect
+      .poll(() => rotatingWashBeamSceneStats(page, fixtures[2]))
+      .toMatchObject({
+        lensCount: 10,
+        apertureCount: 10,
+        topStripCount: 0,
+        bottomStripCount: 0,
+      });
+    await expect
+      .poll(() =>
+        page.evaluate((uids) => {
+          const scene = (window as any).visualizerApi?.getScene?.();
+          return uids.map((uid) =>
+            Boolean(scene?.getObjectByName(`Fixture_${uid}`)),
           );
-      }, fixtures),
-    )
-    .toEqual([12, 100]);
-  await expect
-    .poll(() =>
-      page.evaluate((uid) => {
-        const root = (window as any).visualizerApi
-          ?.getScene?.()
-          ?.getObjectByName(`Fixture_${uid}`);
-        let count = 0;
-        root?.traverse((object: any) => {
-          if (
-            object.name.startsWith("Lens_") &&
-            object.material?.color?.r > 0.25
-          )
-            count += 1;
-        });
-        return count;
-      }, fixtures[2]),
-    )
-    .toBe(10);
-  const canvasBox = await largestVisibleCanvasBox(page);
-  if (ALWAYS_ATTACH_ARTIFACTS)
-    await testInfo.attach("generic-sample-bars", {
-      body: await page.screenshot({ clip: canvasBox }),
-      contentType: "image/png",
-    });
-});
+        }, fixtures),
+      )
+      .toEqual([true, true, true]);
+    await waitForFixtureStoreHydration(page);
+    await submitCommand(page, "fix 800>802 int @ 100 red @ 100");
+    await expect
+      .poll(() =>
+        page.evaluate((uids) => {
+          const scene = (window as any).visualizerApi?.getScene?.();
+          return uids
+            .slice(0, 2)
+            .map(
+              (uid) =>
+                scene
+                  ?.getObjectByName(`Fixture_${uid}`)
+                  ?.getObjectByName("Pixels")?.count,
+            );
+        }, fixtures),
+      )
+      .toEqual([12, 100]);
+    await expect
+      .poll(() =>
+        page.evaluate((uid) => {
+          const root = (window as any).visualizerApi
+            ?.getScene?.()
+            ?.getObjectByName(`Fixture_${uid}`);
+          let count = 0;
+          root?.traverse((object: any) => {
+            if (
+              object.name.startsWith("Lens_") &&
+              object.material?.color?.r > 0.25
+            )
+              count += 1;
+          });
+          return count;
+        }, fixtures[2]),
+      )
+      .toBe(10);
+    const canvasBox = await largestVisibleCanvasBox(page);
+    if (ALWAYS_ATTACH_ARTIFACTS)
+      await testInfo.attach("generic-sample-bars", {
+        body: await page.screenshot({ clip: canvasBox }),
+        contentType: "image/png",
+      });
+  },
+);
