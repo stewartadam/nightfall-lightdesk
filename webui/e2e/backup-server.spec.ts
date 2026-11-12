@@ -653,10 +653,10 @@ test("an unreachable primary is not followed", async ({ page }, testInfo) => {
 });
 
 /**
- * A backup leaves its role either with Stop following, which keeps the copied show, or by
- * opening a show from the Showfiles dialog, which replaces it.
+ * A backup leaves its role either with Leave the pair, which closes the copied show and returns
+ * to the welcome screen, or by opening a show from the Showfiles dialog, which replaces it.
  */
-test("a backup stops following, or opens a show instead", async ({
+test("a backup leaves the pair for the welcome screen, or opens a show instead", async ({
   page,
   backendSlot,
 }, testInfo) => {
@@ -670,14 +670,26 @@ test("a backup stops following, or opens a show instead", async ({
     await waitForDockviewApp(page);
     await expect(page.getByTestId("startup-splash")).toHaveCount(0);
 
-    await banner.getByTestId("backup-stop-following").click();
-    const confirm = page.getByRole("dialog", { name: "Stop following" });
-    await expect(confirm).toBeVisible();
+    await banner.getByTestId("backup-leave-pair").click();
+    const confirm = page.getByRole("dialog", { name: "Leave the pair" });
+    await expect(confirm).toContainText("close the copied show");
     await page.screenshot({
-      path: testInfo.outputPath("15-stop-following.png"),
+      path: testInfo.outputPath("15-backup-leaves-pair.png"),
     });
-    await confirm.getByRole("button", { name: "Stop following" }).click();
+    await confirm.getByRole("button", { name: "Leave the pair" }).click();
+    const welcome = page.getByRole("dialog", { name: "Open Showfile" });
+    await expect(welcome).toBeVisible({ timeout: 30_000 });
     await expect(banner).toBeHidden();
+    await page.screenshot({
+      path: testInfo.outputPath("15b-welcome-after-leaving.png"),
+    });
+    await welcome.getByRole("button", { name: "New showfile" }).click();
+    const created = page.getByRole("dialog", { name: "New Showfile" });
+    await created
+      .getByLabel("Show name")
+      .fill(`after-leaving-${testInfo.workerIndex}-${Date.now()}`);
+    await created.getByRole("button", { name: "Create Show" }).click();
+    await waitForDockviewApp(page);
     await enterPriority(page, 130);
     await expect.poll(() => storedPriority(page)).toBe(130);
 
@@ -715,7 +727,8 @@ test("a backup stops following, or opens a show instead", async ({
 
 /**
  * Leaving the pair on the primary ends it on both computers: the primary forgets its backup, and
- * the backup is told, leaves the pair too and runs on its own.
+ * the backup is told, leaves the pair too, closes the copied show and returns to the welcome
+ * screen.
  */
 test("a primary that leaves the pair releases its backup", async ({
   page,
@@ -768,7 +781,13 @@ test("a primary that leaves the pair releases its backup", async ({
       page
         .locator('[data-component="Toast"]')
         .filter({ hasText: "left the failover pair" }),
-    ).toBeVisible();
+    ).toContainText("closed the copied show");
+    await expect(
+      page.getByRole("dialog", { name: "Open Showfile" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await page.screenshot({
+      path: testInfo.outputPath("23-backup-released-to-welcome.png"),
+    });
     await primaryPage.context().close();
   } finally {
     await stopPlaywrightTestBackend(primary.backend);

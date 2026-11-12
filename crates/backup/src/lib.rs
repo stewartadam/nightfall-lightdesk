@@ -12,6 +12,7 @@
 //! the primary's live show, transmits sACN one priority step below the show's so receivers keep
 //! following the primary, mutes Art-Net and USB DMX, and refuses changes from its own clients.
 //! Taking over ends the role: the host keeps the copied show and outputs it as a normal desk.
+//! Leaving the pair instead, or a primary that leaves it, closes the copied show unsent.
 //! A backup also takes over on its own when its primary stops answering, and a primary that
 //! finds its backup took over rejoins as that host's backup; see [`failover`].
 //!
@@ -37,8 +38,8 @@ pub use preferences::FailoverShow;
 /// Prelude for ergonomic imports.
 pub mod prelude {
     pub use crate::{
-        BackupCommand, BackupLinkStatus, BackupPlugin, BackupState, MirroredShowfileReady,
-        ShowfileRevision,
+        BackupCommand, BackupLinkStatus, BackupPlugin, BackupState, CopiedShowClosing,
+        MirroredShowfileReady, ShowfileRevision,
     };
 }
 
@@ -214,8 +215,8 @@ impl BackupState {
     fn read_only_reason(&self) -> Option<String> {
         self.primary_address.as_ref().map(|address| {
             format!(
-                "This Nightfall is a backup following {address}. Take over or stop following to \
-                 make changes here."
+                "This Nightfall is a backup following {address}. Take over to make changes \
+                 here, or leave the pair."
             )
         })
     }
@@ -236,12 +237,10 @@ pub enum BackupCommand {
     },
     /// Stops following and outputs the copied show as a normal desk.
     TakeOver,
-    /// Stops following without taking over: this host runs on its own again, remembers no
-    /// primary, and keeps its epoch. Opening a show does the same.
-    StopFollowing,
     /// Leaves the backup pair on either computer: this host runs on its own and forgets its
     /// primary, its backup and the key they share, so neither follows the other again without the
-    /// PIN.
+    /// PIN. A backup also closes the copied show without ever sending it, so its clients return
+    /// to the welcome screen.
     LeavePair,
     /// Turns automatic takeover on or off for when this host follows a primary.
     SetAutoTakeOver {
@@ -264,6 +263,17 @@ pub struct MirroredShowfileReady {
     /// Loadable show directory in the failover folder.
     pub directory: std::path::PathBuf,
 }
+
+/// A backup left its pair, so the world should close the copied show and wait for a show like a
+/// freshly started host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Message)]
+pub struct CopiedShowClosing;
+
+/// Whether this world holds a copied show that a backup left the pair with and that waits to be
+/// closed. Its output stays in standby until then, so the copied show never sends as this
+/// host's own output.
+#[derive(Debug, Default, Resource)]
+struct ClosingCopiedShow(bool);
 
 /// Messages the backup sends to clients.
 #[derive(Serialize)]
@@ -379,6 +389,8 @@ fn handle_backup_commands(
     mut role_error: ResMut<RoleError>,
     mut pending: ResMut<PendingFollow>,
     mut mirrored: MessageWriter<MirroredShowfileReady>,
+    mut closing: ResMut<ClosingCopiedShow>,
+    mut close: MessageWriter<CopiedShowClosing>,
     mut responder: CommandResponder,
 ) {
     for envelope in commands.read() {
@@ -442,17 +454,12 @@ fn handle_backup_commands(
         let outcome: Result<RoleChange, String> = match &envelope.command {
             // Handled above, since it completes only once the primary was checked.
             BackupCommand::FollowPrimary { .. } | BackupCommand::OpenFailoverShow => continue,
-            BackupCommand::StopFollowing if state.is_backup() => Ok(stop_following()),
-            // A host that follows no one, such as one that just took over, keeps its backup.
-            BackupCommand::StopFollowing => Ok((
-                preferences::current(preferences::preferences_path().as_deref()).0,
-                None,
-            )),
+            BackupCommand::LeavePair if state.is_backup() => {
+                Ok(leave_pair_closing_copied_show(&mut closing, &mut close))
+            }
             BackupCommand::LeavePair => {
-                if !state.is_backup() {
-                    failover::note_left_pair();
-                }
-                Ok(stop_following())
+                failover::note_left_pair();
+                Ok(leave_pair(LeftShow::Kept))
             }
             BackupCommand::TakeOver if state.is_backup() => Ok(take_over()),
             // A host that follows no one has nothing to take over.
@@ -619,15 +626,29 @@ fn follow_primary(address: String, key: Option<String>) -> RoleChange {
     (stored, save_error)
 }
 
-/// Stops following without taking over, or leaves the pair as a primary, and returns the new
-/// role: this host runs on its own, remembers neither its primary nor a backup nor their shared
-/// key, and keeps its epoch.
-fn stop_following() -> RoleChange {
+/// What becomes of the open show when this host leaves the pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LeftShow {
+    /// The show stays open: a primary keeps running its show, and a show load replaces a
+    /// backup's copy anyway.
+    Kept,
+    /// A backup's copy of its primary's show is closed, so continuing as a primary after a
+    /// restart no longer offers it.
+    Closed,
+}
+
+/// Leaves the pair, or stops following without taking over, and returns the new role: this host
+/// runs on its own, remembers neither its primary nor a backup nor their shared key, and keeps
+/// its epoch.
+fn leave_pair(show: LeftShow) -> RoleChange {
     let (stored, save_error) =
         preferences::update(preferences::preferences_path().as_deref(), |stored| {
             stored.primary_address = None;
             stored.pair_key = None;
             stored.backup_peer = None;
+            if show == LeftShow::Closed {
+                stored.failover_show = None;
+            }
         });
     failover::set_backup_peer(None);
     failover::share_pair_key(None);
@@ -637,6 +658,17 @@ fn stop_following() -> RoleChange {
     link.set_target(None);
     link.mark_peer_checked();
     (stored, save_error)
+}
+
+/// Leaves the pair as a backup and asks the world to close the copied show, holding its output in
+/// standby until the empty world replaces it, and returns the new role.
+fn leave_pair_closing_copied_show(
+    closing: &mut ClosingCopiedShow,
+    close: &mut MessageWriter<CopiedShowClosing>,
+) -> RoleChange {
+    closing.0 = true;
+    close.write(CopiedShowClosing);
+    leave_pair(LeftShow::Closed)
 }
 
 /// Stops following when a client opens or creates a show, which replaces the copied show, and
@@ -650,7 +682,7 @@ pub fn leave_backup_role_for_show_load(state: &mut BackupState) -> Option<String
     if !state.is_backup() {
         return None;
     }
-    let (stored, save_error) = stop_following();
+    let (stored, save_error) = leave_pair(LeftShow::Kept);
     state.apply_preferences(&stored);
     save_error
 }
@@ -809,40 +841,41 @@ fn show_is_open(app_state: Option<&bevy_state::state::State<nightfall_engine::Ap
     app_state.is_some_and(|app_state| *app_state.get() == nightfall_engine::AppState::Ready)
 }
 
-/// Leaves the pair when the primary answers that it left it, keeping the copied show and sending
-/// it, and tells every client why.
+/// Leaves the pair when the primary answers that it left it, closing the copied show without
+/// ever sending it, and tells every client why.
 fn leave_when_primary_left(
     mut state: ResMut<BackupState>,
     mut role_error: ResMut<RoleError>,
+    mut closing: ResMut<ClosingCopiedShow>,
+    mut close: MessageWriter<CopiedShowClosing>,
     mut notifications: MessageWriter<UiNotification>,
 ) {
     if !link::process_backup_link().take_primary_left() || !state.is_backup() {
         return;
     }
     let primary = state.primary_address.clone().unwrap_or_default();
-    let (stored, save_error) = stop_following();
+    let (stored, save_error) = leave_pair_closing_copied_show(&mut closing, &mut close);
     state.apply_preferences(&stored);
     failover::set_took_over_automatically_at(None);
     state.took_over_automatically_at_ms = None;
     role_error.0 = save_error;
     notifications.write(UiNotification::toast(
         ToastLevel::Warning,
-        format!(
-            "{primary} left the failover pair, so this instance no longer follows it and sends \
-             the copied show as its own output."
-        ),
+        format!("{primary} left the failover pair, so this instance closed the copied show."),
     ));
 }
 
 /// Mirrors the link's progress into the client-facing state, applies the output and ingress
-/// restrictions of the backup role, adopts the primary's epoch, publishes this host's status to
-/// other hosts, and hands newly copied shows to the world.
+/// restrictions of the backup role, keeping output in standby while a copied show waits to close,
+/// adopts the primary's epoch, publishes this host's status to other hosts, and hands newly
+/// copied shows to the world.
 fn sync_backup_link(
     mut state: ResMut<BackupState>,
     role_error: Res<RoleError>,
     mut standby: ResMut<DmxOutputStandby>,
     mut gate: ResMut<ClientIngressGate>,
     mut mirrored: MessageWriter<MirroredShowfileReady>,
+    closing: Res<ClosingCopiedShow>,
     sacn_identity: Option<Res<SacnOutputIdentity>>,
     app_state: Option<Res<bevy_state::state::State<nightfall_engine::AppState>>>,
     mut peer_checked_at: Local<Option<std::time::Instant>>,
@@ -909,7 +942,9 @@ fn sync_backup_link(
         show_open: show_is_open(app_state.as_deref()),
     });
 
-    standby.set_if_neq(DmxOutputStandby(state.is_backup() || awaiting_peer_check()));
+    standby.set_if_neq(DmxOutputStandby(
+        state.is_backup() || awaiting_peer_check() || closing.0,
+    ));
     let reason = state.read_only_reason();
     if gate.read_only_reason() != reason.as_deref() {
         gate.set_read_only(reason);
@@ -1032,6 +1067,7 @@ impl Plugin for BackupPlugin {
         app.init_resource::<RoleError>();
         app.init_resource::<PendingFollow>();
         app.init_resource::<BackupTracking>();
+        app.init_resource::<ClosingCopiedShow>();
         app.init_resource::<CommandForwarding>();
         app.register_live_state(
             forwarding::COMMANDS_LIVE_STATE,
@@ -1041,11 +1077,11 @@ impl Plugin for BackupPlugin {
         app.init_resource::<DmxOutputStandby>();
         app.init_resource::<ClientIngressGate>();
         app.add_message::<MirroredShowfileReady>();
+        app.add_message::<CopiedShowClosing>();
         register_client_command::<BackupCommand>(app, Undo::Skipped);
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "TakeOver");
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "FollowPrimary");
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "SetAutoTakeOver");
-        allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "StopFollowing");
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "LeavePair");
         app.add_systems(Startup, restore_backup_role);
         app.add_systems(

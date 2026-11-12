@@ -65,16 +65,16 @@ The backup keeps the copied show, with the audio, fixture files and other assets
 
 To take over, select **Take over** in the banner or under **Failover**. The backup stops following the primary and outputs the copied show at the show's own priority on every transport. If the primary is still running, the backup asks it to step down, and within a few seconds it becomes the backup's backup, so the two never keep sending the same universes at the same priority.
 
-To stop being a backup without taking over, select **Stop following**, or open or create a show from the **Showfiles** dialog. **Stop following** keeps the copied show and starts sending its output, but does not ask the primary to step down. Opening a show replaces the copied show.
+To stop being a backup without taking over, select **Leave the pair** in the banner or under **Failover**, or open or create a show from the **Showfiles** dialog. **Leave the pair** closes the copied show without ever sending it and returns to the welcome screen. Opening a show replaces the copied show.
 
 The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart. The two computers stay paired with each other across restarts. If the banner says the primary needs its pairing PIN again, for example after **New PIN**, or because the primary paired a different backup, enter its PIN under **Failover** and select **Pair again**.
 
 When a computer that belongs to a pair starts, it shows a **Failover** dialog instead of asking which show to open. Like the **Failover** section, it lists both computers, the primary and the backup, with **this machine** in place of this computer's address:
 
-- On a backup, the dialog shows its link to the primary, such as waiting for the primary to open a show, and opens Nightfall on its own once the backup holds the primary's show. You can also **Take over**, or **Leave the pair** to open a show of its own.
+- On a backup, the dialog shows its link to the primary, such as waiting for the primary to open a show, and opens Nightfall on its own once the backup holds the primary's show. You can also **Take over**, or **Leave the pair** to return to the welcome screen and open a show of its own.
 - On a primary, the dialog shows how its backup is doing. Select **Continue as primary** to open a show, which the backup then follows. If this computer last ran the pair's show, as after a takeover, it opens that show again from the `failover` folder; otherwise it asks which show to open as usual. If the backup took over while this computer was away and should keep the show, select **Follow** with its address instead; no PIN is needed. If the backup took over and is running, this computer steps down on its own and the dialog switches to the backup's view.
 
-**Leave the pair**, in the dialog or under **Failover** on a primary, makes this computer run on its own and forget the other computer and the key they share, so pairing them again needs the PIN. When the primary leaves, its backup is told within a second: it leaves the pair too and sends the copied show as its own output.
+**Leave the pair**, in the dialog, the banner or under **Failover**, makes this computer run on its own and forget the other computer and the key they share, so pairing them again needs the PIN. A primary keeps its show open and sending. A backup closes the copied show without sending it and returns to the welcome screen. When the primary leaves, its backup is told within a second and does the same: it leaves the pair, closes the copied show and returns to the welcome screen.
 
 When you take over, the backup keeps playing what the primary was playing. While the backup loads a newly copied show, its banner says it is loading the primary's show.
 

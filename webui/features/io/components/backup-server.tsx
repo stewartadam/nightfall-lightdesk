@@ -125,40 +125,8 @@ function TakeOverButton(props: { size?: "compact" | "inline" }) {
 }
 
 /**
- * Asks before stopping following, since this computer then sends the copied show as its own;
- * opening a show replaces it.
- */
-function StopFollowingButton(props: { size?: "compact" | "inline" }) {
-  const [confirming, setConfirming] = createSignal(false);
-  return (
-    <>
-      <Button
-        size={props.size ?? "compact"}
-        type="button"
-        data-testid="backup-stop-following"
-        onClick={() => setConfirming(true)}
-      >
-        Stop following
-      </Button>
-      <DeleteConfirmModal
-        isOpen={confirming()}
-        title="Stop following"
-        message="This Nightfall instance will stop following the primary and send the copied show as its own output. Unlike a takeover, it does not ask the primary to step down, so stop the primary's output first if it is still running."
-        confirmLabel="Stop following"
-        focusCancel
-        onCancel={() => setConfirming(false)}
-        onConfirm={() => {
-          setConfirming(false);
-          void sendBackupCommand({ type: "StopFollowing" });
-        }}
-      />
-    </>
-  );
-}
-
-/**
  * Asks before leaving the backup pair, since following the other computer again then needs its
- * PIN.
+ * PIN, and a backup closes the copied show and returns to the welcome screen.
  */
 function LeavePairButton(props: { size?: "compact" | "inline" }) {
   const state = useStore($backupState);
@@ -179,7 +147,11 @@ function LeavePairButton(props: { size?: "compact" | "inline" }) {
       <DeleteConfirmModal
         isOpen={confirming()}
         title="Leave the pair"
-        message={`This Nightfall instance will unpair from ${partner()} and send its own output, with no backup. ${partner()} is told and unpairs too. Pairing the two again needs a PIN.`}
+        message={
+          state().primary_address
+            ? `This Nightfall instance will unpair from ${partner()}, close the copied show without sending it, and return to the welcome screen. Pairing the two again needs a PIN.`
+            : `This Nightfall instance will unpair from ${partner()} and keep sending its show, with no backup. ${partner()} closes its copy of the show and returns to the welcome screen. Pairing the two again needs a PIN.`
+        }
         confirmLabel="Leave the pair"
         focusCancel
         onCancel={() => setConfirming(false)}
@@ -209,7 +181,7 @@ export function BackupBanner() {
             primary.
           </span>
           <span class="flex gap-2">
-            <StopFollowingButton />
+            <LeavePairButton />
             <TakeOverButton />
           </span>
         </div>
@@ -361,21 +333,18 @@ function PairRoleRows() {
   );
 }
 
-/** The actions for this computer's role: leave backup mode or take over, or leave the pair. */
+/** The actions for this computer's role: leave the pair, or take over as its backup. */
 function PairActions() {
   const state = useStore($backupState);
   return (
-    <Switch>
-      <Match when={state().primary_address}>
-        <span class="flex gap-2">
-          <StopFollowingButton />
-          <TakeOverButton />
-        </span>
-      </Match>
-      <Match when={state().backup}>
+    <Show when={state().primary_address || state().backup}>
+      <span class="flex gap-2">
         <LeavePairButton />
-      </Match>
-    </Switch>
+        <Show when={state().primary_address}>
+          <TakeOverButton />
+        </Show>
+      </span>
+    </Show>
   );
 }
 
@@ -476,7 +445,7 @@ export function FollowPrimaryForm(props: { onFollowed?: () => void }) {
 
 /**
  * The Showfiles dialog's section for following a primary: the follow form, or, while this
- * computer is a backup, its link and a way to stop following.
+ * computer is a backup, its link. Opening a show from the dialog ends the role.
  */
 export function FollowPrimarySection(props: { onFollowed?: () => void }) {
   const state = useStore($backupState);
@@ -495,7 +464,7 @@ export function FollowPrimarySection(props: { onFollowed?: () => void }) {
           fallback={<FollowPrimaryForm onFollowed={props.onFollowed} />}
         >
           {(primary) => (
-            <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-300">
+            <div class="text-xs text-gray-300">
               <p class="flex flex-wrap items-center gap-2">
                 <Badge tone={linkTone(state().link)} uppercase>
                   Backup
@@ -505,7 +474,6 @@ export function FollowPrimarySection(props: { onFollowed?: () => void }) {
                   a show stops following.
                 </span>
               </p>
-              <StopFollowingButton />
             </div>
           )}
         </Show>

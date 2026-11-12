@@ -24,7 +24,7 @@ use axum::{
 use bevy::prelude::*;
 use nightfall_backup::{
     forwarding::{ForwardCursor, forward_journal},
-    prelude::{BackupState, MirroredShowfileReady, ShowfileRevision},
+    prelude::{BackupState, CopiedShowClosing, MirroredShowfileReady, ShowfileRevision},
 };
 use nightfall_engine::prelude::*;
 use nightfall_showfile::ShowfileCommand;
@@ -120,10 +120,27 @@ pub(crate) fn remember_failover_show(
     }
 }
 
+/// Registers a world swap the backup link starts as a detached command, so the swap can complete
+/// it like any other show load, and returns its id, or `None` when it could not be registered.
+fn register_backup_link_swap(tracker: &mut CommandTracker) -> Option<CommandId> {
+    let command_id = CommandId::new();
+    match tracker.register_context(
+        command_id,
+        command_id.into(),
+        CommandOrigin::Remote(BACKUP_LINK_ORIGIN.to_string()),
+        ReplyTarget::Detached,
+    ) {
+        Ok(()) => Some(command_id),
+        Err(error) => {
+            tracing::error!(%command_id, %error, "backup_world_swap_registration_failed");
+            None
+        }
+    }
+}
+
 /// Replaces the world with the newest show copied from the primary.
 ///
-/// Only the newest copy in a frame is loaded, since each one replaces the whole show. The load
-/// is tracked as a detached command so the world swap can complete it like any other load.
+/// Only the newest copy in a frame is loaded, since each one replaces the whole show.
 pub(crate) fn load_mirrored_showfiles(
     mut mirrored: MessageReader<MirroredShowfileReady>,
     pending: Option<ResMut<PendingWorldSwapRequest>>,
@@ -136,22 +153,45 @@ pub(crate) fn load_mirrored_showfiles(
         tracing::warn!("Backup copied a show, but this runtime cannot swap worlds");
         return;
     };
-    let command_id = CommandId::new();
-    if let Err(error) = tracker.register_context(
-        command_id,
-        command_id.into(),
-        CommandOrigin::Remote(BACKUP_LINK_ORIGIN.to_string()),
-        ReplyTarget::Detached,
-    ) {
-        tracing::error!(%command_id, %error, "backup_show_load_registration_failed");
+    let Some(command_id) = register_backup_link_swap(&mut tracker) else {
         return;
-    }
+    };
     tracing::info!(showfile = ?show.showfile_name, "Loading the show copied from the primary");
     pending.request_load_showfile(
         command_id.into(),
         show.showfile_name.as_deref(),
         show.directory.clone(),
     );
+}
+
+/// Closes the show a backup copied once it leaves its pair, swapping in an empty world that waits
+/// for a show, so clients return to the welcome screen.
+///
+/// When the close cannot be queued, the copied show stays open with its output held in standby,
+/// so it is still never sent, and clients are told to open a show instead.
+pub(crate) fn close_copied_shows(
+    mut closing: MessageReader<CopiedShowClosing>,
+    pending: Option<ResMut<PendingWorldSwapRequest>>,
+    mut tracker: ResMut<CommandTracker>,
+    mut notifications: MessageWriter<UiNotification>,
+) {
+    if closing.read().last().is_none() {
+        return;
+    }
+    let command_id = pending.and_then(|pending| {
+        register_backup_link_swap(&mut tracker).map(|command_id| (pending, command_id))
+    });
+    let Some((mut pending, command_id)) = command_id else {
+        tracing::warn!("Backup left its pair, but could not close the copied show");
+        notifications.write(UiNotification::toast(
+            ToastLevel::Error,
+            "Could not close the copied show, so it stays open without sending output. Open a \
+             show to continue.",
+        ));
+        return;
+    };
+    tracing::info!("Closing the show copied from the primary");
+    pending.request_close_showfile(command_id.into());
 }
 
 /// Registers the routes a backup polls: the revision of this host's live show, checkpoints of

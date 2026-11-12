@@ -266,6 +266,7 @@ pub(super) fn init_bevy_with_transport_policy(
             systems::deleted_object_instances::release_deleted_object_instances,
             systems::quit_event::handle_events,
             systems::backup_mirror::load_mirrored_showfiles,
+            systems::backup_mirror::close_copied_shows,
             handle_periodic_draft_autosave,
             save_draft_when_last_client_disconnects,
             handle_process_shutdown_request,
