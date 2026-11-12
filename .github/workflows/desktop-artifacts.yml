@@ -20,14 +20,14 @@ jobs:
       prerelease: ${{ steps.release.outputs.prerelease }}
       matrix: ${{ steps.release.outputs.matrix }}
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: source-${{ github.sha }}
           path: .ci-source
       - name: Restore source and Git history
         run: tar -xf .ci-source/source.tar && rm -rf .ci-source
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v5.0.0
         with:
           node-version: 24
           cache: pnpm
@@ -40,7 +40,7 @@ jobs:
           node scripts/desktop-artifacts.mjs prepare
       - name: Download the published-release snapshot
         if: steps.release.outputs.publish == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@v8.0.1
         with:
           name: published-releases-${{ github.sha }}
           path: release-metadata
@@ -51,18 +51,18 @@ jobs:
         run: |
           node scripts/release-notes.mjs plan --to "$RELEASE_TAG" \
             --metadata release-metadata --output "$RUNNER_TEMP/commits.json"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@v7.0.1
         if: steps.release.outputs.publish == 'true'
         with:
           name: release-note-commits-${{ github.sha }}
           path: ${{ runner.temp }}/commits.json
           if-no-files-found: error
           retention-days: 7
-      - uses: ./.github/actions/rust-cache
+      - uses: $/.github/actions/rust-cache
         with:
           key: desktop-web
           cache-on-failure: true
-      - uses: ./.github/actions/cargo-tools
+      - uses: $/.github/actions/cargo-tools
         with:
           typeshare: true
           cargo-about: true
@@ -71,7 +71,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run typeshare
       - name: Download shared release bridge
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@v8.0.1
         with:
           name: release-wasm-bridge-${{ github.sha }}
           path: webui/assets/wasm
@@ -81,7 +81,7 @@ jobs:
           NIGHTFALL_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           pnpm run build
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: desktop-web-${{ github.sha }}
           path: |
@@ -98,7 +98,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: source-${{ github.sha }}
           path: .ci-source
@@ -131,14 +131,17 @@ jobs:
                       archive.extract(member, filter='data')
           subprocess.run(['git', 'config', 'core.symlinks', 'false'], check=True)
           shutil.rmtree('.ci-source')
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - uses: pnpm/action-setup@v6.1.0
+      - uses: actions/setup-node@v5.0.0
         with:
           node-version: 24
           cache: pnpm
       - name: Load the repository Rust toolchain
-        run: rustup target add ${{ matrix.target }}
-      - uses: ./.github/actions/rust-cache
+        env:
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: rustup target add "$TARGET"
+      - uses: $/.github/actions/rust-cache
         with:
           key: desktop-${{ matrix.target }}
           cache-on-failure: true
@@ -150,18 +153,21 @@ jobs:
             libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev \
             librsvg2-dev patchelf file wget
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: desktop-web-${{ github.sha }}
           path: webui/dist
-      - uses: ./.github/actions/cargo-tools
+      - uses: $/.github/actions/cargo-tools
         with:
           cargo-about: true
       - name: Assemble target-specific distribution notices
-        run: node scripts/distribution-notices.mjs ${{ matrix.target }}
+        env:
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: node scripts/distribution-notices.mjs "$TARGET"
       - name: Build credential-free desktop installers
         id: tauri
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
+        uses: tauri-apps/tauri-action@v1.0.0
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
           # The ERROR_REPORTS_DSN and USAGE_REPORTS_URL repository variables are compiled into
@@ -221,7 +227,7 @@ jobs:
         run: node scripts/desktop-artifacts.mjs stage-debug-symbols
       - name: Upload debug symbols
         if: needs.prepare.outputs.publish == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: debug-symbols-${{ matrix.target }}-${{ github.sha }}
           path: desktop-debug-symbols
@@ -238,7 +244,7 @@ jobs:
             -C "$target_dir/$DESKTOP_TARGET/release/bundle/macos" Nightfall.app
       - name: Upload the unsigned app
         if: runner.os == 'macOS' && needs.prepare.outputs.publish == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: unsigned-macos-${{ github.sha }}
           path: ${{ runner.temp }}/unsigned-macos.tar
@@ -252,7 +258,7 @@ jobs:
       - name: Upload primary installer
         # Release DMGs are uploaded only by the isolated signing job.
         if: runner.os != 'macOS' || needs.prepare.outputs.publish != 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           path: desktop-artifacts/*${{ matrix.extensions[0] }}
           archive: false
@@ -260,14 +266,14 @@ jobs:
           retention-days: 7
       - name: Upload additional installer
         if: matrix.extensions[1] != ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           path: desktop-artifacts/*${{ matrix.extensions[1] }}
           archive: false
           if-no-files-found: error
           retention-days: 7
       - name: Upload target notice inventory
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: desktop-notices-${{ matrix.target }}-${{ github.sha }}
           path: desktop-artifacts/notices-*.json
@@ -280,23 +286,23 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: source-${{ github.sha }}
           path: .ci-source
       - name: Restore source and Git history
         run: tar -xf .ci-source/source.tar && rm -rf .ci-source
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - uses: actions/setup-node@v5.0.0
         with:
           node-version: 24
           package-manager-cache: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@v8.0.1
         with:
           pattern: desktop-notices-*-${{ github.sha }}
           path: desktop-notices
           merge-multiple: true
       - run: node scripts/desktop-artifacts.mjs combine-notices
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@v7.0.1
         with:
           path: release-notices/THIRD-PARTY-NOTICES-v*.txt
           archive: false
@@ -313,7 +319,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: release-note-commits-${{ github.sha }}
           path: requests
@@ -331,7 +337,7 @@ jobs:
           done < "$RUNNER_TEMP/commits"
           # Keep an artifact even when the release range contains no commits.
           cp requests/commits.json release-metadata/commits.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: release-note-metadata-${{ github.sha }}
           path: release-metadata/
@@ -344,21 +350,21 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: source-${{ github.sha }}
           path: .ci-source
       - name: Restore source and Git history
         run: tar -xf .ci-source/source.tar && rm -rf .ci-source
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      - uses: actions/setup-node@v5.0.0
         with:
           node-version: 24
           package-manager-cache: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: published-releases-${{ github.sha }}
           path: release-metadata
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: release-note-metadata-${{ github.sha }}
           path: release-metadata
@@ -369,7 +375,7 @@ jobs:
           node scripts/release-notes.mjs generate --to "$RELEASE_TAG" \
             --metadata release-metadata --output "$RUNNER_TEMP/release-notes.md"
       - name: Preserve release-note preview and source metadata
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: release-notes-${{ github.sha }}
           path: |

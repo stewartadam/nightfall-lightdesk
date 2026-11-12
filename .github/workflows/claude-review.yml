@@ -6,7 +6,7 @@ name: Claude mergeability review
 # it is judged by. PR code is only ever read as data: Claude gets read-only file tools and no shell.
 # See "Claude mergeability review" in .github/workflows/README.md.
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] runs default-branch code; PR code is data only
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
 
 permissions: {}
@@ -70,7 +70,7 @@ jobs:
       pull-requests: read
     steps:
       # Acquire the default branch's policy script as data; it runs only on the next runner.
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@v5.1.0
         with:
           persist-credentials: false
           sparse-checkout: scripts/merge-policy.mjs
@@ -94,7 +94,7 @@ jobs:
           # The API refuses diffs far beyond the policy's size limit; the policy rejects those PRs.
           gh api "repos/$GH_REPO/pulls/$PR_NUMBER" -H 'Accept: application/vnd.github.diff' \
             > "$dir/pr.diff" || echo 'The diff is too large for the GitHub API.' > "$dir/pr.diff"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: claude-review-${{ github.event.pull_request.head.sha }}
           path: ${{ runner.temp }}/claude-review/
@@ -110,7 +110,7 @@ jobs:
       eligible: ${{ steps.assess.outputs.eligible }}
       assessment: ${{ steps.assess.outputs.assessment }}
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: claude-review-${{ github.event.pull_request.head.sha }}
       - id: assess
@@ -131,10 +131,10 @@ jobs:
     steps:
       # The default branch sits at the workspace root, so CLAUDE.md, .claude/ and the rubric are the
       # trusted copies. The PR head goes in a subdirectory, to be read and never executed.
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@v5.1.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           path: pr-head
@@ -142,14 +142,14 @@ jobs:
       # A symlink in the PR could point the file tools outside the workspace.
       - name: Drop symlinks from the PR head
         run: find pr-head -type l -delete
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      - uses: actions/download-artifact@v8.0.1
         with:
           name: claude-review-${{ github.event.pull_request.head.sha }}
           path: .pr-review
       # Read rules also bound Glob and Grep. Reads stay inside the workspace, and the process
       # environment, which holds the tokens, is off limits.
       - id: claude
-        uses: anthropics/claude-code-action@c0949c50a78c1ec8ce2647db36629b870e715d0c # v1.0.268
+        uses: anthropics/claude-code-action@v1.0.268
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}

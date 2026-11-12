@@ -46,7 +46,7 @@ runs:
 
     - name: Restore Cargo cache
       id: cache
-      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      uses: Swatinem/rust-cache@v2.9.2 # zizmor: ignore[unpinned-uses] locked by .github/workflows/actions.lock
       with:
         key: ${{ inputs.key }}
         shared-key: ${{ inputs.shared-key }}
@@ -56,7 +56,7 @@ runs:
         save-if: ${{ github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main' }}
 
     - name: Track Cargo cache reuse
-      uses: ./.github/actions/rust-cache/report
+      uses: $/.github/actions/rust-cache/report
       with:
         label: ${{ inputs.shared-key || inputs.key }}
         restored: ${{ steps.cache.outputs.cache-hit }}
@@ -65,4 +65,4 @@ runs:
     # Must come after the cache step so its post step runs before rust-cache saves.
     - name: Skip the Cargo cache save if the job is cancelled
       if: inputs.cache-on-failure == 'true'
-      uses: ./.github/actions/rust-cache/skip-cancelled-save
+      uses: $/.github/actions/rust-cache/skip-cancelled-save

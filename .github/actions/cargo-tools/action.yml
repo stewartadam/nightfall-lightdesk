@@ -62,6 +62,6 @@ runs:
     # install-action downloads release binaries, or uses cargo-binstall for tools without its
     # own manifest.
     - name: Install pinned Cargo tools
-      uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+      uses: taiki-e/install-action@v2.87.31 # zizmor: ignore[unpinned-uses] locked by .github/workflows/actions.lock
       with:
         tool: ${{ steps.select.outputs.tools }}

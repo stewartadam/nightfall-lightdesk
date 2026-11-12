@@ -46,7 +46,7 @@ runs:
 
     - name: Upload Playwright report and failure artifacts
       if: always()
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      uses: actions/upload-artifact@v7.0.1 # zizmor: ignore[unpinned-uses] locked by .github/workflows/actions.lock
       with:
         name: ${{ inputs.artifact-name }}
         path: |
