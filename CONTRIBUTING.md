@@ -568,6 +568,7 @@ through. Commands for the whole repository use a plain verb; the rest are named
 | `gdtf:fetch` | Download the pinned GDTF bench archives from GDTF Share. |
 | `gdtf:bench` | Check the pinned bench archives against their committed expectations. |
 | `gdtf:corpus` | Check that every GDTF file in `NIGHTFALL_GDTF_CORPUS_DIR` converts or is rejected cleanly. |
+| `mvr:samples` | Download the pinned real MVR exports (Capture, Vectorworks) and run the MVR reader tests against them; `mvr:samples fetch` only downloads. |
 | `fx-module:install` | Build an FX module and install it into the application data directory. |
 | `package:notices` | Generate dependency notices for a desktop target triple (defaults to the Rust host triple). |
 | `package:sample-audio` | Copy the sample tracks next to a standalone backend executable. |

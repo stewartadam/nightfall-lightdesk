@@ -12,6 +12,7 @@
       "nightfall-engine-derive",
       "nightfall-fixture-model",
       "nightfall-lookahead-projection",
+      "nightfall-mvr",
       "nightfall-instances",
       "nightfall-playback-planner",
       "nightfall-selection",

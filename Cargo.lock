@@ -6050,6 +6050,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nightfall-mvr"
+version = "0.1.0-alpha.5"
+dependencies = [
+ "nightfall-workspace-hack",
+ "quick-xml 0.42.0",
+ "serde",
+ "thiserror 2.0.21",
+ "uuid",
+ "zip",
+]
+
+[[package]]
 name = "nightfall-object-library"
 version = "0.1.0-alpha.5"
 dependencies = [
