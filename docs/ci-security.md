@@ -136,9 +136,17 @@ outputs or caches it can write, but those must not become executable tools on a
 credential-bearing runner. Cached binaries are only executed by permissionless
 build/test jobs.
 
-Every external action is pinned to a full commit SHA. Dependabot proposes Actions
-updates weekly; review those changes, especially checkout and artifact handling
-at the privileged boundaries. Review changes to inline release scripts as
+Every external action, including the ones external actions use in turn, is
+pinned to a verified commit in `.github/workflows/actions.lock`, which GitHub
+checks again when each job starts. Workflows name readable version tags; the
+`Workflow lockfile` CI job fails when the lockfile drifts from the workflows or a
+locked commit no longer matches upstream. Same-repository actions and reusable
+workflows use `$/…`, which loads them from the workflow's own commit instead of
+from files a job restored into its workspace. zizmor runs with the other
+pre-commit hooks; justify any `# zizmor: ignore[...]` on the line it covers.
+Dependabot proposes Actions updates weekly, after a seven-day cooldown, and
+updates the lockfile with them; review those changes, especially checkout and
+artifact handling at the privileged boundaries. Review changes to inline release scripts as
 security-sensitive code. Do not replace them with scripts supplied by a build
 artifact or an npm/Cargo installation.
 
@@ -163,7 +171,9 @@ building distributions rather than repeating the full native/UI test suite.
 ## Validation
 
 Run `node --test scripts/ci-security.node.test.mjs scripts/desktop-artifacts.node.test.mjs`
-and `pnpm exec prek run actionlint --all-files`. The security tests exercise the actual
+and `pnpm exec prek run actionlint zizmor --all-files`. After changing any `uses:`, run
+`gh actions-lock` (the `github/gh-actions-lock` extension for the GitHub CLI) and commit
+the updated lockfile. The security tests exercise the actual
 inline archive and inventory validators with hostile fixtures, enforce token
 permissions/action pins, and check that privileged runners cannot acquire source
 or build dependencies. They require Python 3 and Bash alongside Node.

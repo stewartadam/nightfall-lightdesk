@@ -6,7 +6,7 @@ name: Claude mergeability review
 # it is judged by. PR code is only ever read as data: Claude gets read-only file tools and no shell.
 # See "Claude mergeability review" in .github/workflows/README.md.
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] runs default-branch code; PR code is data only
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
 
 permissions: {}

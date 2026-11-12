@@ -3,7 +3,7 @@ name: Website release
 # Once installed apps are offered a release, nightfall.live opens one PR that points its
 # downloads, user guide and browser demo at the same tag.
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers] reads no artifacts or code from the triggering run
     workflows: [Desktop updates]
     types: [completed]
 

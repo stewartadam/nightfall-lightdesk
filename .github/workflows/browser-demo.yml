@@ -44,12 +44,12 @@ jobs:
       # Native validation already runs the browser runtime's tests; this job only
       # caches its installed Cargo tools.
       - name: Cache Cargo tools
-        uses: ./.github/actions/rust-cache
+        uses: $/.github/actions/rust-cache
         with:
           key: browser-demo-tools
           cache-targets: false
 
-      - uses: ./.github/actions/cargo-tools
+      - uses: $/.github/actions/cargo-tools
         with:
           typeshare: true
           cargo-about: true

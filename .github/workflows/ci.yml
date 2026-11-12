@@ -156,7 +156,7 @@ jobs:
     name: Desktop check
     needs: [scope, selection]
     if: needs.selection.outputs.desktop_check == 'true'
-    uses: ./.github/workflows/desktop-check.yml
+    uses: ./.github/workflows/desktop-check.yml # zizmor: ignore[self-repository] callee comes from this commit; keeps actionlint input checks
 
   # Both WASM packages feed the app validation jobs and the browser demo; the bridge also feeds
   # desktop packaging.
@@ -166,7 +166,7 @@ jobs:
     if: >-
       needs.selection.outputs.app == 'true' || needs.selection.outputs.desktop_package == 'true' ||
       needs.selection.outputs.browser_package == 'true' || needs.selection.outputs.browser_preview == 'true'
-    uses: ./.github/workflows/wasm.yml
+    uses: ./.github/workflows/wasm.yml # zizmor: ignore[self-repository] callee comes from this commit; keeps actionlint input checks
     with:
       package: wasm-bridge
       directory: wasm
@@ -178,7 +178,7 @@ jobs:
       (!startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && (
       needs.selection.outputs.app == 'true' || needs.selection.outputs.browser_package == 'true' ||
       needs.selection.outputs.browser_preview == 'true')
-    uses: ./.github/workflows/wasm.yml
+    uses: ./.github/workflows/wasm.yml # zizmor: ignore[self-repository] callee comes from this commit; keeps actionlint input checks
     with:
       package: browser-runtime
       directory: browser-runtime
@@ -187,7 +187,7 @@ jobs:
     name: Desktop installers
     needs: [scope, selection, wasm-bridge]
     if: needs.selection.outputs.desktop_package == 'true'
-    uses: ./.github/workflows/desktop-artifacts.yml
+    uses: ./.github/workflows/desktop-artifacts.yml # zizmor: ignore[self-repository] callee comes from this commit; keeps actionlint input checks
     # Permission ceiling for the metadata-only job; all build/render jobs use {}.
     permissions:
       contents: read
@@ -197,7 +197,7 @@ jobs:
     name: Release
     needs: desktop
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    uses: ./.github/workflows/release.yml
+    uses: ./.github/workflows/release.yml # zizmor: ignore[self-repository] callee comes from this commit; keeps actionlint input checks
     permissions:
       contents: write
     secrets:
@@ -253,7 +253,7 @@ jobs:
     name: Browser demo
     needs: [scope, selection, wasm-bridge, browser-runtime]
     if: needs.selection.outputs.browser_package == 'true' || needs.selection.outputs.browser_preview == 'true'
-    uses: ./.github/workflows/browser-demo.yml
+    uses: ./.github/workflows/browser-demo.yml # zizmor: ignore[self-repository] callee comes from this commit; keeps actionlint input checks
     with:
       # Preview-only builds skip the product flows that release packaging requires.
       product-flows: ${{ needs.selection.outputs.browser_package == 'true' }}
@@ -360,21 +360,46 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
-          cache: pnpm
+          cache: pnpm # zizmor: ignore[cache-poisoning] job skips tag pushes, so never feeds a release
       - run: rustup show
-      - uses: ./.github/actions/rust-cache
+      - uses: $/.github/actions/rust-cache
         with:
           key: source-tools
           cache-targets: false
       - run: pnpm install --frozen-lockfile
       - name: Run script tests
         run: pnpm run test:scripts
-      - uses: ./.github/actions/cargo-tools
+      - uses: $/.github/actions/cargo-tools
         with:
           typeshare: true
           cargo-hakari: true
       - name: Run source pre-commit hooks
         run: pnpm exec prek run --all-files --verbose --show-diff-on-failure --color always --stage pre-commit
+
+  actions-lock:
+    name: Workflow lockfile
+    needs: scope
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.preview && !github.event.pull_request.draft }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+    env:
+      # Bump by hand: Dependabot does not update gh extensions.
+      GH_ACTIONS_LOCK_VERSION: v0.4.1
+      # The no-permission job token only raises the API rate limit for public action lookups.
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore credential-free source
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - name: Install gh-actions-lock
+        run: gh extension install github/gh-actions-lock --pin "$GH_ACTIONS_LOCK_VERSION"
+      # Fails when .github/workflows/actions.lock is out of sync with the workflows, or a locked
+      # commit no longer verifies upstream. Run `gh actions-lock` locally to fix it.
+      - name: Verify the lockfile
+        run: gh actions-lock --verify
 
   docs:
     name: Documentation
@@ -389,7 +414,7 @@ jobs:
           path: .ci-source
       - name: Restore credential-free source
         run: tar -xf .ci-source/source.tar && rm -rf .ci-source
-      - uses: ./.github/actions/cargo-tools
+      - uses: $/.github/actions/cargo-tools
         with:
           mdbook: true
       - name: Build every mdBook
@@ -434,7 +459,7 @@ jobs:
     name: Native
     needs: [scope, selection]
     if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.selection.outputs.native == 'true' }}
-    uses: ./.github/workflows/native-validation.yml
+    uses: ./.github/workflows/native-validation.yml # zizmor: ignore[self-repository] callee comes from this commit; keeps actionlint input checks
     with:
       rust-tests: ${{ needs.selection.outputs.rust == 'true' }}
 
@@ -455,13 +480,13 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
-          cache: pnpm
+          cache: pnpm # zizmor: ignore[cache-poisoning] job skips tag pushes, so never feeds a release
       - run: rustup show
-      - uses: ./.github/actions/rust-cache
+      - uses: $/.github/actions/rust-cache
         with:
           key: webui-tools
           cache-targets: false
-      - uses: ./.github/actions/cargo-tools
+      - uses: $/.github/actions/cargo-tools
         with:
           typeshare: true
       - name: Install dependencies
@@ -501,13 +526,13 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
-          cache: pnpm
+          cache: pnpm # zizmor: ignore[cache-poisoning] job skips tag pushes, so never feeds a release
       - run: rustup show
-      - uses: ./.github/actions/rust-cache
+      - uses: $/.github/actions/rust-cache
         with:
           key: webui-tools
           cache-targets: false
-      - uses: ./.github/actions/cargo-tools
+      - uses: $/.github/actions/cargo-tools
         with:
           typeshare: true
       - name: Install dependencies
@@ -527,12 +552,12 @@ jobs:
       - name: Run Chromium product flows
         env:
           NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-headless
-        uses: ./.github/actions/playwright-smoke
+        uses: $/.github/actions/playwright-smoke
 
   gate:
     # Single required check that aggregates every validation job.
     name: CI gate
-    needs: [scope, selection, source-checks, docs, native, wasm-bridge, browser-runtime, webui, browser-smoke]
+    needs: [scope, selection, source-checks, actions-lock, docs, native, wasm-bridge, browser-runtime, webui, browser-smoke]
     if: ${{ !cancelled() && needs.scope.result != 'skipped' && !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5

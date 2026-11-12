@@ -33,6 +33,9 @@ const workflows = Object.fromEntries(
       parse(readFileSync(new URL(name, workflowDirectory), "utf8")),
     ]),
 );
+const actionsLock = parse(
+  readFileSync(new URL("actions.lock", workflowDirectory), "utf8"),
+);
 const release = workflows["release.yml"];
 const unpack = release.jobs.sign.steps.find((step) => step.id === "app").run;
 const inventory = release.jobs.publish.steps.find(
@@ -50,6 +53,16 @@ const releaseEnvironment = {
   GITHUB_REF_NAME: "v0.1.0-alpha.2",
   RELEASE_TAG: "v0.1.0-alpha.2",
 };
+
+/**
+ * Names the actions a job's steps use, without their refs. The workflow lockfile pins each ref to
+ * a commit, so assertions about which actions a privileged job may run compare names only.
+ */
+function stepActions(job) {
+  return job.steps
+    .filter((step) => step.uses)
+    .map((step) => step.uses.replace(/@.*$/, ""));
+}
 
 /** Gives each attack fixture an empty directory and removes it after the test. */
 function fixtureDirectory(t) {
@@ -115,6 +128,8 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "ci.yml/release": { contents: "write" },
     "ci.yml/preview": { "pull-requests": "write" },
     "ci.yml/gate": { "pull-requests": "read" },
+    // Uses the permissionless job token only to look up public action commits.
+    "ci.yml/actions-lock": {},
     "pr-commands.yml/recheck-cla": {
       checks: "read",
       issues: "write",
@@ -149,8 +164,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     for (const [id, job] of Object.entries(workflow.jobs)) {
       const key = `${file}/${id}`;
       assert.deepEqual(job.permissions ?? {}, exceptions[key] ?? {}, key);
-      assert.notEqual(job.secrets, "inherit", key);
-      if (
+      assert.notEqual(job.secrets, "inherit", key);      if (
         file !== "release.yml" &&
         key !== "desktop-updates.yml/sign" &&
         key !== "website-release.yml/notify" &&
@@ -173,8 +187,18 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
             /\b(?:node|npm|npx|pnpm|cargo|rustup)\s/,
           );
         }
-        if (step.uses && !step.uses.startsWith("./")) {
-          assert.match(step.uses, /@[a-f0-9]{40}$/, key);
+        // Same-repository actions use `$/`, which loads them from the workflow's own commit
+        // rather than from whatever the job restored into its workspace.
+        if (step.uses?.startsWith("./")) {
+          assert.fail(`${key} uses ${step.uses}; use $/ instead`);
+        }
+        if (step.uses && !step.uses.startsWith("$/")) {
+          assert.ok(
+            actionsLock.workflows[`.github/workflows/${file}`]?.includes(
+              step.uses,
+            ),
+            `${key}: ${step.uses} is missing from actions.lock`,
+          );
         }
       }
     }
@@ -199,7 +223,7 @@ test("signing and publishing only use pinned artifact actions and reviewed inlin
       if (step.uses) {
         assert.match(
           step.uses,
-          /^actions\/(?:upload|download)-artifact@[a-f0-9]{40}$/,
+          /^actions\/(?:upload|download)-artifact@/,
         );
       }
       assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
@@ -234,7 +258,7 @@ test("update signing holds only the updater key and verifies its tool", () => {
       if (step.uses) {
         assert.match(
           step.uses,
-          /^actions\/(?:upload|download)-artifact@[a-f0-9]{40}$/,
+          /^actions\/(?:upload|download)-artifact@/,
         );
       }
       assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
@@ -256,11 +280,11 @@ test("browser previews deploy same-run artifacts without source or build tools",
     "!cancelled() && needs.selection.outputs.browser_preview == 'true' && needs.browser-demo.result == 'success' && (needs.docs.result == 'success' || needs.docs.result == 'skipped')",
   );
   assert.deepEqual(
-    preview.steps.filter((step) => step.uses).map((step) => step.uses),
+    stepActions(preview),
     [
-      "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-      "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-      "cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0",
+      "actions/download-artifact",
+      "actions/download-artifact",
+      "cloudflare/wrangler-action",
     ],
   );
   const secrets = JSON.stringify(preview).match(/secrets\.[A-Z_]+/g);
@@ -289,8 +313,8 @@ test("debug symbols upload same-run artifacts with a pinned, verified tool", () 
   );
   assert.deepEqual(symbols.permissions ?? {}, {});
   assert.deepEqual(
-    symbols.steps.filter((step) => step.uses).map((step) => step.uses),
-    ["actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"],
+    stepActions(symbols),
+    ["actions/download-artifact"],
   );
   assert.deepEqual(JSON.stringify(symbols).match(/secrets\.[A-Z_]+/g), [
     "secrets.GLITCHTIP_AUTH_TOKEN",
@@ -318,9 +342,9 @@ test("website notification dispatches a validated tag with a pinned token action
   );
   assert.deepEqual(notify.permissions ?? {}, {});
   assert.deepEqual(
-    notify.steps.filter((step) => step.uses).map((step) => step.uses),
+    stepActions(notify),
     [
-      "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
+      "actions/create-github-app-token",
     ],
   );
   assert.deepEqual(JSON.stringify(notify).match(/secrets\.[A-Z_]+/g), [

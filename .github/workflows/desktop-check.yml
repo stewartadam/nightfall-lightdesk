@@ -53,7 +53,7 @@ jobs:
           shutil.rmtree('.ci-source')
       - name: Load the repository Rust toolchain
         run: rustup show
-      - uses: ./.github/actions/rust-cache
+      - uses: $/.github/actions/rust-cache
         with:
           key: desktop-check
           cache-on-failure: true

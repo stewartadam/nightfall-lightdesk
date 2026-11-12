@@ -79,7 +79,7 @@ export const appIndependent = [
   /^playwright\/(docs\.config\.ts|tests\/docs-[^/]+\.spec\.ts)$/,
   /^(AGENTS|CLAUDE|CONTRIBUTING|README)\.md$/,
   /^\.(agents|claude|vscode)\//,
-  /^\.github\/(ISSUE_TEMPLATE\/|(copilot-instructions|desktop-release-notes|pull_request_template)\.md$|dependabot\.yml$)/,
+  /^\.github\/(ISSUE_TEMPLATE\/|(copilot-instructions|desktop-release-notes|pull_request_template)\.md$|(actionlint|dependabot)\.ya?ml$)/,
   /^\.github\/claude-review\.md$/,
   /^\.github\/workflows\/(README\.md|(claude-review|desktop-updates|playwright-full|pr-commands|release-notes)\.yml)$/,
   /^scripts\/(?!ci-scope)[^/]+\.node\.test\.mjs$/,

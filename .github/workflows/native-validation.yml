@@ -45,7 +45,7 @@ jobs:
         run: rustup show
 
       - name: Cache native dependencies and tools
-        uses: ./.github/actions/rust-cache
+        uses: $/.github/actions/rust-cache
         with:
           # A stable key lets develop pushes warm caches that PRs restore from their base
           # branch. The action already hashes manifests and the lockfile, and falls back
@@ -72,7 +72,7 @@ jobs:
 
       - name: Install cargo-nextest for Rust tests
         if: inputs.rust-tests
-        uses: ./.github/actions/cargo-tools
+        uses: $/.github/actions/cargo-tools
         with:
           cargo-nextest: true
 

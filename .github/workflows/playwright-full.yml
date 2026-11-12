@@ -67,7 +67,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: rustup show
-      - uses: ./.github/actions/rust-cache
+      - uses: $/.github/actions/rust-cache
         with:
           key: playwright-full
           cache-on-failure: true
@@ -76,7 +76,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libasound2-dev
       - run: pnpm install --frozen-lockfile
-      - uses: ./.github/actions/wasm-assets
+      - uses: $/.github/actions/wasm-assets
         with:
           profile: release
           package: wasm-bridge
@@ -122,11 +122,11 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: rustup show
-      - uses: ./.github/actions/rust-cache
+      - uses: $/.github/actions/rust-cache
         with:
           key: webui-tools
           cache-targets: false
-      - uses: ./.github/actions/cargo-tools
+      - uses: $/.github/actions/cargo-tools
         with:
           typeshare: true
       - name: Install dependencies
@@ -144,7 +144,7 @@ jobs:
       - name: Run Chromium product flows
         env:
           NIGHTFALL_PLAYWRIGHT_BACKEND_EXECUTABLE: ${{ github.workspace }}/ci-artifacts/nightfall-headless
-        uses: ./.github/actions/playwright-smoke
+        uses: $/.github/actions/playwright-smoke
         with:
           workers: ${{ inputs.workers }}
           shard: ${{ matrix.shard }}/6

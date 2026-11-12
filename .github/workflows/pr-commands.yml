@@ -4,7 +4,7 @@ name: PR commands
 # issue_comment runs this file from the default branch, never from the PR, and
 # github/command only proceeds for commenters with write or admin access.
 on:
-  issue_comment:
+  issue_comment: # zizmor: ignore[dangerous-triggers] default-branch code, write-access commenters only
     types: [created]
 
 permissions: {}

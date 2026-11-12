@@ -29,12 +29,12 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: rustup show
-      - uses: ./.github/actions/rust-cache
+      - uses: $/.github/actions/rust-cache
         with:
           key: release-${{ inputs.package }}
           cache-on-failure: true
       - run: pnpm install --frozen-lockfile
-      - uses: ./.github/actions/wasm-assets
+      - uses: $/.github/actions/wasm-assets
         with:
           profile: release
           package: ${{ inputs.package }}

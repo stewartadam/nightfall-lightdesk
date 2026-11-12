@@ -58,11 +58,11 @@ jobs:
           path: ${{ runner.temp }}/commits.json
           if-no-files-found: error
           retention-days: 7
-      - uses: ./.github/actions/rust-cache
+      - uses: $/.github/actions/rust-cache
         with:
           key: desktop-web
           cache-on-failure: true
-      - uses: ./.github/actions/cargo-tools
+      - uses: $/.github/actions/cargo-tools
         with:
           typeshare: true
           cargo-about: true
@@ -137,8 +137,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - name: Load the repository Rust toolchain
-        run: rustup target add ${{ matrix.target }}
-      - uses: ./.github/actions/rust-cache
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add "$TARGET"
+      - uses: $/.github/actions/rust-cache
         with:
           key: desktop-${{ matrix.target }}
           cache-on-failure: true
@@ -154,11 +156,13 @@ jobs:
         with:
           name: desktop-web-${{ github.sha }}
           path: webui/dist
-      - uses: ./.github/actions/cargo-tools
+      - uses: $/.github/actions/cargo-tools
         with:
           cargo-about: true
       - name: Assemble target-specific distribution notices
-        run: node scripts/distribution-notices.mjs ${{ matrix.target }}
+        env:
+          TARGET: ${{ matrix.target }}
+        run: node scripts/distribution-notices.mjs "$TARGET"
       - name: Build credential-free desktop installers
         id: tauri
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
