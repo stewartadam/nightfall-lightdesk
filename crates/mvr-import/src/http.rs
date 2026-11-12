@@ -30,7 +30,7 @@ use crate::rig::read_rig_file;
 use crate::sessions::RigImportSessions;
 
 /// Path of the upload route.
-pub const UPLOAD_PATH: &str = "/api/rig-import/mvr";
+pub const UPLOAD_PATH: &str = "/api/mvr-import";
 
 /// Largest MVR file accepted, in bytes.
 pub const UPLOAD_LIMIT_BYTES: usize = 1024 * 1024 * 1024;
