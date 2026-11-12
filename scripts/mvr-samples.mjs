@@ -149,7 +149,7 @@ function runSampleTests(dir, extra) {
     "-p",
     "nightfall-mvr",
     "-p",
-    "nightfall-rig-import",
+    "nightfall-mvr-import",
     "--",
     "--ignored",
     ...extra,

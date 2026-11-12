@@ -23,10 +23,10 @@ use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::websocket::SuppressFixtureChangedSnapshot;
 use nightfall_fixtures::{FixtureCommand, RouteEndpoint};
 use nightfall_io::prelude::*;
-use nightfall_rig_import::commands::expand_rig_import_commits;
-use nightfall_rig_import::plan::{ShowFixtures, plan_import};
-use nightfall_rig_import::prelude::*;
-use nightfall_rig_import::rig::{RigTypeSource, read_rig};
+use nightfall_mvr_import::commands::expand_rig_import_commits;
+use nightfall_mvr_import::plan::{ShowFixtures, plan_import};
+use nightfall_mvr_import::prelude::*;
+use nightfall_mvr_import::rig::{RigTypeSource, read_rig};
 use uuid::Uuid;
 use zip::write::SimpleFileOptions;
 
@@ -308,10 +308,10 @@ fn commit_adds_fixtures_with_patch_and_placement() {
 }
 
 /// Opens one of the public samples, or returns `None` when they were not downloaded.
-fn sample(name: &str) -> Option<nightfall_rig_import::rig::RigFile> {
+fn sample(name: &str) -> Option<nightfall_mvr_import::rig::RigFile> {
     let dir = std::env::var_os("NIGHTFALL_MVR_SAMPLES_DIR")?;
     let path = Path::new(&dir).join(name);
-    Some(nightfall_rig_import::rig::read_rig_file(&path, name).expect("sample reads"))
+    Some(nightfall_mvr_import::rig::read_rig_file(&path, name).expect("sample reads"))
 }
 
 /// The Capture demo show plans 76 new fixtures from five embedded types, keeping the
