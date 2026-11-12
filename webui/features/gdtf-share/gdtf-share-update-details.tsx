@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { ArrowSquareOutIcon } from "@squidlab/phosphor-solid/arrow-square-out";
 import { Show } from "solid-js";
 import { Button } from "../../components/ui/visual-language/button";
 import type { GdtfShareUpdate } from "../../types";
@@ -26,7 +27,7 @@ export interface GdtfShareUpdateDetailsProps {
 
 /**
  * Tells the user a newer GDTF Share revision of the selected library file exists: which
- * revision, when GDTF Share last changed it, and a link to its notes there. The caller
+ * revision, when GDTF Share last changed it, and a link to its page there. The caller
  * decides the single action it offers, such as updating or showing the library copy.
  */
 export function GdtfShareUpdateDetails(props: GdtfShareUpdateDetailsProps) {
@@ -55,13 +56,14 @@ export function GdtfShareUpdateDetails(props: GdtfShareUpdateDetailsProps) {
           )}
         </Show>
         <a
-          class="text-blue-300 underline"
+          class="inline-flex items-center gap-1 text-blue-300 underline"
           href={gdtfSharePageUrl(props.update.latest)}
           target="_blank"
           rel="noopener noreferrer"
           data-testid="gdtf-share-update-link"
         >
-          What changed
+          View on GDTF Share
+          <ArrowSquareOutIcon class="size-3.5" aria-hidden />
         </a>
       </div>
     </div>

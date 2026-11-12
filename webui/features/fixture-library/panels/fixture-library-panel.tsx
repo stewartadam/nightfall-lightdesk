@@ -62,6 +62,7 @@ import {
 import { commandClient } from "../../../lib/engine-commands";
 import {
   libraryDefinitionId,
+  libraryRevisionDate,
   libraryRevisionLabel,
 } from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
@@ -178,7 +179,9 @@ function libraryRowText(
     case "source":
       return fixture.source_format;
     case "revision":
-      return libraryRevisionLabel(fixture.asset_etag);
+      return libraryRevisionLabel(fixture);
+    case "revised":
+      return libraryRevisionDate(fixture);
     case "patched":
       return String(context.patched.get(libraryDefinitionId(fixture)) ?? 0);
     case "gdtf-share":
@@ -403,8 +406,9 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
   );
 
   /**
-   * Lists library rows: loaded profiles sorted by make, model, then revision so revisions of
-   * one model keep a stable order, followed by the files that failed to load, by file name.
+   * Lists library rows: loaded profiles sorted by make, model, then revision date, oldest
+   * first, and fingerprint so revisions of one model keep a stable order, followed by the
+   * files that failed to load, by file name.
    */
   const sortedFixtures = createMemo((): FixtureLibraryRow[] => {
     const loaded = [...$fixtureLibrary()]
@@ -412,6 +416,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
         (a, b) =>
           a.make.localeCompare(b.make) ||
           a.model.localeCompare(b.model) ||
+          libraryRevisionDate(a).localeCompare(libraryRevisionDate(b)) ||
           a.asset_etag.localeCompare(b.asset_etag),
       )
       .map((fixture): FixtureLibraryRow => ({ kind: "fixture", fixture }));
@@ -455,8 +460,15 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     {
       title: "Revision",
       id: "revision",
-      width: 90,
+      width: 110,
+      filter: { value: (row) => libraryRowText(row, "revision", rowContext()) },
       ...columnVisibilityMeta("Metadata", "Revision"),
+    },
+    {
+      title: "Revised",
+      id: "revised",
+      width: 95,
+      ...columnVisibilityMeta("Metadata", "Revised"),
     },
     {
       title: "Patched",

@@ -157,12 +157,26 @@ export function libraryDefinitionId(info: {
 }
 
 /**
- * Returns a short label telling library revisions of one make/model apart:
- * the leading characters of the content fingerprint, like an abbreviated
- * commit hash, or "built-in" for definitions shipped with the app.
+ * Returns a short label telling library revisions of one make/model apart: "built-in" for
+ * definitions shipped with the app, the GDTF file's revision name, such as "Release 2.0",
+ * or else the leading characters of the content fingerprint, like an abbreviated commit hash.
  */
-export function libraryRevisionLabel(assetEtag: string): string {
-  return assetEtag.startsWith("builtin:") ? "built-in" : assetEtag.slice(0, 8);
+export function libraryRevisionLabel(
+  info: Pick<types.AvailableFixtureInfo, "asset_etag" | "gdtf_revision">,
+): string {
+  if (info.asset_etag.startsWith("builtin:")) return "built-in";
+  return info.gdtf_revision || info.asset_etag.slice(0, 8);
+}
+
+/**
+ * Returns the day a GDTF file's latest revision was made as `YYYY-MM-DD`, which sorts in
+ * order as text, the archive's own text when it isn't a date, or "" when it records none.
+ */
+export function libraryRevisionDate(
+  info: Pick<types.AvailableFixtureInfo, "gdtf_revision_date">,
+): string {
+  const date = info.gdtf_revision_date?.trim() ?? "";
+  return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : date;
 }
 
 /**

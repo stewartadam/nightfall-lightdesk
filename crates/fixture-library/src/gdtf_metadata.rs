@@ -36,6 +36,13 @@ pub struct GdtfMetadata {
     /// revision's name; `None` when the archive records no revision text.
     #[serde(default)]
     pub revision: Option<String>,
+    /// Date of the archive's latest `Revision` entry as the archive writes it, such as
+    /// `2024-03-01T12:00:00`; `None` when it records no revision or leaves the date empty.
+    #[serde(default)]
+    pub revision_date: Option<String>,
+    /// The GDTF specification version the description is written against, such as `1.2`.
+    #[serde(default)]
+    pub data_version: Option<String>,
     /// Every `Revision` entry with text, oldest first, so an update can show what changed.
     #[serde(default)]
     pub revision_notes: Vec<GdtfRevisionNote>,
@@ -61,6 +68,8 @@ impl GdtfMetadata {
             modes,
             fixture_type_id: extract_fixture_type_id(&gdtf_file),
             revision: extract_revision(&gdtf_file),
+            revision_date: extract_revision_date(&gdtf_file),
+            data_version: Some(gdtf_file.description.data_version.to_string()),
             revision_notes: extract_revision_notes(&gdtf_file),
             file_path: path.to_path_buf(),
         })
@@ -117,6 +126,18 @@ fn extract_revision(gdtf: &gdtf::GdtfFile) -> Option<String> {
         .last()
         .map(|revision| revision.text.trim().to_string())
         .filter(|text| !text.is_empty())
+}
+
+/// Extracts the date of the last `Revision` entry, so users can tell revisions of one
+/// fixture type apart by when they were made.
+fn extract_revision_date(gdtf: &gdtf::GdtfFile) -> Option<String> {
+    gdtf.description
+        .fixture_types
+        .first()?
+        .revisions
+        .last()
+        .map(|revision| revision.date.trim().to_string())
+        .filter(|date| !date.is_empty())
 }
 
 /// Extracts every `Revision` entry that has text, oldest first, trimmed, with the date the
@@ -180,20 +201,27 @@ mod tests {
         );
     }
 
-    /// Reports the last revision's text, which GDTF Share lists as the revision name, and
-    /// nothing for an archive without revisions.
+    /// Reports the last revision's text, which GDTF Share lists as the revision name, and its
+    /// date, nothing for an archive without revisions, and the GDTF data version either way.
     #[test]
     fn reads_the_latest_revision_text() {
         let dir = tempfile::tempdir().unwrap();
         let builder = GdtfBuilder::new("Test", "Spot")
             .geometry(GeometrySpec::generic("Body"))
             .mode(ModeSpec::new("Mode", "Body"));
-        assert_eq!(builder.write_metadata(dir.path()).revision, None);
+        let bare = builder.write_metadata(dir.path());
+        assert_eq!(bare.revision, None);
+        assert_eq!(bare.revision_date, None);
         let metadata = builder
             .revision("Created")
             .revision("  added white channel ")
             .write_metadata(dir.path());
         assert_eq!(metadata.revision.as_deref(), Some("added white channel"));
+        assert_eq!(
+            metadata.revision_date.as_deref(),
+            Some("2024-01-01T00:00:00")
+        );
+        assert!(metadata.data_version.is_some());
     }
 
     /// Lists every revision with text, oldest first and trimmed, with its recorded date,

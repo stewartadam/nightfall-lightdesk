@@ -27,7 +27,11 @@ import {
 } from "solid-js";
 import { fixtureWireLayout, parameterDmxBreak } from "../../../lib/dmx";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
-import { fetchFixtureProfile } from "../../../lib/fixture-service";
+import {
+  fetchFixtureProfile,
+  libraryRevisionDate,
+  libraryRevisionLabel,
+} from "../../../lib/fixture-service";
 import {
   fixtureLibrary,
   fixtureProfile,
@@ -326,7 +330,21 @@ export default function FixtureLibraryProperties(
                 <div>
                   <span class="text-neutral-400">Source Format:</span>{" "}
                   {fixture().source_format}
+                  <Show when={fixture().gdtf_data_version}>
+                    {(version) => ` ${version()}`}
+                  </Show>
                 </div>
+                <Show when={!fixture().asset_etag.startsWith("builtin:")}>
+                  <div data-testid="fixture-library-revision">
+                    <span class="text-neutral-400">Revision:</span>{" "}
+                    {libraryRevisionLabel(fixture())}
+                    <Show when={libraryRevisionDate(fixture())}>
+                      {(date) => (
+                        <span class="text-neutral-400"> · {date()}</span>
+                      )}
+                    </Show>
+                  </div>
+                </Show>
                 <div data-testid="fixture-library-patched-count">
                   <span class="text-neutral-400">Patched:</span>{" "}
                   {props.patchedCount() === 1

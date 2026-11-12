@@ -657,7 +657,13 @@ test("offers newer GDTF Share revisions of library fixtures", async ({
     path: testInfo.outputPath("10-update-available.png"),
   });
 
+  await expect(rows.first()).toContainText("Release 1.0");
+  await expect(rows.first()).toContainText("2024-01-01");
   await rows.first().click();
+  await expect(page.getByTestId("fixture-library-revision")).toHaveText(
+    "Revision: Release 1.0 · 2024-01-01",
+  );
+  await expect(page.getByText("Source Format: GDTF 1.2")).toBeVisible();
   const details = page.getByTestId("gdtf-share-update");
   await expect(details).toContainText("Release 2.0 is available");
   await expect(details).toContainText("this file is Release 1.0");
@@ -774,6 +780,9 @@ test("installs a GDTF Share update and moves patched fixtures to it", async ({
   await expect(rows).toHaveCount(2);
   await expect(page.getByTestId("fixture-library-patched-count")).toHaveText(
     "Patched: 3 fixtures",
+  );
+  await expect(page.getByTestId("fixture-library-revision")).toHaveText(
+    "Revision: Release 2.0 · 2024-01-03",
   );
   await expect(details).toHaveCount(0);
   await page.screenshot({

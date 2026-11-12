@@ -64,6 +64,8 @@ impl BuiltinFixtureProfile {
             asset_etag: self.asset_etag.to_string(),
             gdtf_fixture_type_id: None,
             gdtf_revision: None,
+            gdtf_revision_date: None,
+            gdtf_data_version: None,
         }
     }
 

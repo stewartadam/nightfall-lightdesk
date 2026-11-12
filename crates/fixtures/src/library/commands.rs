@@ -225,6 +225,13 @@ pub struct AvailableFixtureInfo {
     /// Text of the GDTF archive's latest revision, which GDTF Share lists as the revision name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gdtf_revision: Option<String>,
+    /// Date of the GDTF archive's latest revision as the archive writes it, such as
+    /// `2024-03-01T12:00:00`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gdtf_revision_date: Option<String>,
+    /// GDTF specification version the archive is written against, such as `1.2`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gdtf_data_version: Option<String>,
 }
 
 /// Response for ListAvailableFixtures command
