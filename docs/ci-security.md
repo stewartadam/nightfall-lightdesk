@@ -141,8 +141,9 @@ pinned to a verified commit in `.github/workflows/actions.lock`, which GitHub
 checks again when each job starts. Workflows name readable version tags; the
 `Workflow lockfile` CI job fails when the lockfile drifts from the workflows or a
 locked commit no longer matches upstream. Composite actions under
-`.github/actions/` keep full commit pins, because zizmor does not accept the
-lockfile for them. Steps call this repository's composite actions as `$/…`,
+`.github/actions/` name the same locked tags, since GitHub refuses a composite
+action whose external action has no lockfile entry; each carries a zizmor
+`unpinned-uses` ignore because zizmor does not yet credit the lockfile there. Steps call this repository's composite actions as `$/…`,
 which loads them from the workflow's own commit instead of from files a job
 restored into its workspace; reusable workflow calls keep `./…`, which GitHub
 already resolves from the caller's commit. zizmor runs with the other

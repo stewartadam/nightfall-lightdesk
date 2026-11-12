@@ -222,10 +222,15 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
 });
 
 /**
- * Composite actions keep full commit pins: zizmor does not accept the workflow lockfile for them,
- * and `gh actions-lock` rewrites them to tags, which must be reverted before committing.
+ * Composite actions name the same tags the lockfile pins: GitHub refuses to run a composite whose
+ * external action has no matching lockfile entry, so a raw commit hash there fails at job start.
  */
-test("composite actions pin external actions to full commits", () => {
+test("composite actions use refs the workflow lockfile pins", () => {
+  const locked = new Set(
+    Object.values(actionsLock.workflows)
+      .flat()
+      .map((uses) => uses.toLowerCase()),
+  );
   const actionsDirectory = new URL("../.github/actions/", import.meta.url);
   const manifests = readdirSync(actionsDirectory, { recursive: true }).filter(
     (path) => /(^|\/)action\.ya?ml$/.test(path),
@@ -234,8 +239,17 @@ test("composite actions pin external actions to full commits", () => {
   for (const path of manifests) {
     const action = parse(readFileSync(new URL(path, actionsDirectory), "utf8"));
     for (const step of action.runs.steps ?? []) {
+      if (step.uses?.startsWith("./")) {
+        assert.fail(`${path} uses ${step.uses}; use $/ instead`);
+      }
       if (step.uses && !step.uses.startsWith("$/")) {
-        assert.match(step.uses, /@[a-f0-9]{40}$/, path);
+        // Sub-path actions such as actions/cache/restore are locked under their repository.
+        const [action, ref] = step.uses.toLowerCase().split("@");
+        const repository = action.split("/").slice(0, 2).join("/");
+        assert.ok(
+          locked.has(`${repository}@${ref}`),
+          `${path}: ${step.uses} is missing from actions.lock`,
+        );
       }
     }
   }
