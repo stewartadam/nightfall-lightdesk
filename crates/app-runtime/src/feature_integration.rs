@@ -66,7 +66,7 @@ impl FeatureIntegrationExt for PluginGroupBuilder {
     #[cfg(feature = "fixture-library")]
     fn maybe_fixture_library(self) -> Self {
         self.add_after::<nightfall_macros::prelude::MacrosPlugin>(FixtureLibraryPlugin)
-            .add_after::<FixtureLibraryPlugin>(nightfall_rig_import::RigImportPlugin)
+            .add_after::<FixtureLibraryPlugin>(nightfall_mvr_import::RigImportPlugin)
     }
 
     #[cfg(not(feature = "fixture-library"))]

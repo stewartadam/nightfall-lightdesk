@@ -1,5 +1,5 @@
 [package]
-name = "nightfall-rig-import"
+name = "nightfall-mvr-import"
 version.workspace = true
 license.workspace = true
 edition.workspace = true
