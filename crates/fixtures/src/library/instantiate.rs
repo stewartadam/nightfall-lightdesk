@@ -184,7 +184,7 @@ fn updated_fixture(
 }
 
 /// Replaces one validated fixture and rebuilds its parameter entities.
-fn replace_fixture(
+pub(crate) fn replace_fixture(
     commands: &mut Commands,
     fixtures: &mut FixtureDataProviderExt,
     fixture: Fixture,

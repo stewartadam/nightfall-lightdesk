@@ -55,7 +55,7 @@ impl HasIdentifiers for Fixture {
 ///
 /// Most older fixtures only have a single element, but modern LED fixtures and
 /// light bars typically have several individually controllable segments.
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct FixtureElement {
     /// Label for the element

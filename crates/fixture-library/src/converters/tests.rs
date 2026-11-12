@@ -383,44 +383,6 @@ mod ofl_tests {
     }
 
     #[test]
-    fn test_parse_dmx_value_number() {
-        let value = Some(serde_json::json!(128));
-        assert_eq!(parse_dmx_value(&value), Some(128.0));
-    }
-
-    #[test]
-    fn test_parse_dmx_value_string() {
-        let value = Some(serde_json::json!("200"));
-        assert_eq!(parse_dmx_value(&value), Some(200.0));
-    }
-
-    #[test]
-    fn test_parse_dmx_value_percentage() {
-        let value = Some(serde_json::json!("50%"));
-        assert_eq!(parse_dmx_value(&value), Some(127.5)); // 50% of 255
-
-        let value = Some(serde_json::json!("100%"));
-        assert_eq!(parse_dmx_value(&value), Some(255.0));
-
-        let value = Some(serde_json::json!("0%"));
-        assert_eq!(parse_dmx_value(&value), Some(0.0));
-    }
-
-    #[test]
-    fn test_parse_dmx_value_none() {
-        assert_eq!(parse_dmx_value(&None), None);
-    }
-
-    #[test]
-    fn test_parse_dmx_value_invalid() {
-        let value = Some(serde_json::json!(true));
-        assert_eq!(parse_dmx_value(&value), None);
-
-        let value = Some(serde_json::json!("invalid"));
-        assert_eq!(parse_dmx_value(&value), None);
-    }
-
-    #[test]
     fn test_matrix_fixture_conversion() {
         use open_fixture_library::OflFixture;
 
@@ -723,5 +685,139 @@ mod ofl_tests {
         assert_eq!(tilt.native_unit, ParameterUnit::Degrees);
         assert_eq!(tilt.logical_min(), -135.0);
         assert_eq!(tilt.logical_max(), 135.0);
+    }
+
+    /// Returns each parameter's attribute and explicit footprint slots, element by element.
+    fn slot_layout(fixture: &Fixture) -> Vec<(String, Attribute, Vec<u16>)> {
+        fixture
+            .elements
+            .iter()
+            .flat_map(|element| {
+                element.parameters.iter().map(|parameter| {
+                    let DmxSlots::Explicit { offsets, .. } = &parameter.dmx_slots else {
+                        panic!("OFL parameters should have explicit slots");
+                    };
+                    (
+                        element.label.clone(),
+                        parameter.attribute.clone(),
+                        offsets.clone(),
+                    )
+                })
+            })
+            .collect()
+    }
+
+    /// Verifies fine aliases widen their coarse channel and, like `null` slots, keep
+    /// every later channel on the address the fixture uses.
+    #[test]
+    fn fine_aliases_and_null_slots_keep_channel_addresses() {
+        use open_fixture_library::OflFixture;
+
+        let fixture_json = r#"{
+            "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture.json",
+            "name": "Test Mover",
+            "categories": ["Moving Head"],
+            "meta": { "authors": ["Test"], "createDate": "2024-01-01", "lastModifyDate": "2024-01-01" },
+            "availableChannels": {
+                "Pan": {
+                    "fineChannelAliases": ["Pan fine"],
+                    "capabilities": [{ "type": "Pan", "dmxRange": [0, 255] }]
+                },
+                "Tilt": {
+                    "fineChannelAliases": ["Tilt fine"],
+                    "capabilities": [{ "type": "Tilt", "dmxRange": [0, 255] }]
+                },
+                "Dimmer": {
+                    "capabilities": [{ "type": "Intensity", "dmxRange": [0, 255] }]
+                },
+                "Red": {
+                    "capabilities": [{ "type": "ColorIntensity", "color": "Red", "dmxRange": [0, 255] }]
+                }
+            },
+            "modes": [
+                { "name": "16-bit", "channels": ["Pan", "Pan fine", "Tilt", "Tilt fine", "Dimmer", null, "Red"] },
+                { "name": "8-bit", "channels": ["Pan", "Tilt", "Dimmer"] }
+            ]
+        }"#;
+        let ofl = OflFixture::from_json(fixture_json).expect("fixture JSON should parse");
+
+        let (fixture, _) = convert_ofl_to_fixture(&ofl, "16-bit", 1).expect("16-bit mode");
+        let main = "Main".to_string();
+        assert_eq!(
+            slot_layout(&fixture),
+            vec![
+                (main.clone(), Attribute::Pan, vec![1, 2]),
+                (main.clone(), Attribute::Tilt, vec![3, 4]),
+                (main.clone(), Attribute::Intensity, vec![5]),
+                (main.clone(), Attribute::Red, vec![7]),
+            ]
+        );
+        let pan = &fixture.elements[0].parameters[0];
+        assert_eq!(pan.resolution, DmxValueResolution::Fine);
+        assert_eq!(pan.max, 65_535.0);
+
+        let (fixture, _) = convert_ofl_to_fixture(&ofl, "8-bit", 1).expect("8-bit mode");
+        let pan = &fixture.elements[0].parameters[0];
+        assert_eq!(pan.resolution, DmxValueResolution::Coarse);
+        assert_eq!(
+            slot_layout(&fixture),
+            vec![
+                (main.clone(), Attribute::Pan, vec![1]),
+                (main.clone(), Attribute::Tilt, vec![2]),
+                (main, Attribute::Intensity, vec![3]),
+            ]
+        );
+    }
+
+    /// Verifies matrix pixels take their channel order from the mode, not from the
+    /// template map, and that a master channel listed last stays on the last address.
+    #[test]
+    fn matrix_channels_follow_mode_order() {
+        use open_fixture_library::OflFixture;
+
+        let fixture_json = r#"{
+            "$schema": "https://raw.githubusercontent.com/OpenLightingProject/open-fixture-library/master/schemas/fixture.json",
+            "name": "Test Bar",
+            "categories": ["Pixel Bar"],
+            "meta": { "authors": ["Test"], "createDate": "2024-01-01", "lastModifyDate": "2024-01-01" },
+            "matrix": { "pixelKeys": [["1", "2"]], "pixelCount": [2, 1, 1] },
+            "templateChannels": {
+                "Red $pixelKey": { "capabilities": [{ "type": "ColorIntensity", "color": "Red", "dmxRange": [0, 255] }] },
+                "Green $pixelKey": { "capabilities": [{ "type": "ColorIntensity", "color": "Green", "dmxRange": [0, 255] }] },
+                "Blue $pixelKey": {
+                    "fineChannelAliases": ["Blue $pixelKey fine"],
+                    "capabilities": [{ "type": "ColorIntensity", "color": "Blue", "dmxRange": [0, 255] }]
+                }
+            },
+            "availableChannels": {
+                "Dimmer": { "capabilities": [{ "type": "Intensity", "dmxRange": [0, 255] }] }
+            },
+            "modes": [{
+                "name": "8-channel",
+                "channels": ["Blue 1", "Blue 1 fine", "Red 1", "Green 1", "Blue 2", "Red 2", "Green 2", "Dimmer"]
+            }]
+        }"#;
+        // HashMap iteration order varies between maps, so parse and convert repeatedly.
+        for _ in 0..8 {
+            let ofl = OflFixture::from_json(fixture_json).expect("fixture JSON should parse");
+            let (fixture, _) = convert_ofl_to_fixture(&ofl, "8-channel", 1).expect("matrix mode");
+            let (master, pixel_1, pixel_2) = (
+                "Master".to_string(),
+                "Pixel 1".to_string(),
+                "Pixel 2".to_string(),
+            );
+            assert_eq!(
+                slot_layout(&fixture),
+                vec![
+                    (master, Attribute::Intensity, vec![8]),
+                    (pixel_1.clone(), Attribute::Blue, vec![1, 2]),
+                    (pixel_1.clone(), Attribute::Red, vec![3]),
+                    (pixel_1, Attribute::Green, vec![4]),
+                    (pixel_2.clone(), Attribute::Blue, vec![5]),
+                    (pixel_2.clone(), Attribute::Red, vec![6]),
+                    (pixel_2, Attribute::Green, vec![7]),
+                ]
+            );
+        }
     }
 }

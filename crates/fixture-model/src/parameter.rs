@@ -363,7 +363,7 @@ pub struct ParameterFunction {
 }
 
 /// Metadata for a parameter.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct ParameterMetadata {
     /// Where this parameter's bytes are placed in the fixture footprint.

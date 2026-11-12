@@ -125,6 +125,7 @@ pub fn crud_events(
 mod tests {
     use bevy_app::{App, Update};
     use nightfall::prelude::Identifiers;
+    use nightfall_fixture_model::prelude::{MergeStrategy, ParameterMetadata};
     use uuid::Uuid;
 
     use super::*;
@@ -211,6 +212,86 @@ mod tests {
                 outcome: CommandOutcome::Succeeded { output: None },
             }] if *result_command_id == command_id
         ));
+    }
+
+    /// Builds an 8-bit parameter for `attribute` on sequential DMX slots.
+    fn coarse_parameter(attribute: nightfall_dmx::prelude::Attribute) -> ParameterMetadata {
+        ParameterMetadata {
+            dmx_slots: Default::default(),
+            functions: Vec::new(),
+            default_dmx: None,
+            highlight_dmx: None,
+            resolution: nightfall_dmx::prelude::DmxValueResolution::Coarse,
+            native_unit: attribute.native_unit(),
+            value_polarity: attribute.value_polarity(),
+            attribute,
+            min: 0.0,
+            max: 255.0,
+            offset: nightfall_dmx::prelude::ParameterValue::Absolute { value: 0.0 },
+            is_inverted: false,
+            is_snap: false,
+            merge_type: MergeStrategy::LTP,
+            use_grandmaster: false,
+        }
+    }
+
+    /// Verifies a stored fixture gets live parameter entities, that re-storing it with the
+    /// same elements keeps them, and that different elements despawn the old entities and
+    /// spawn new ones.
+    #[test]
+    fn store_fixture_spawns_and_rebuilds_parameters() {
+        use nightfall_dmx::prelude::Attribute;
+
+        let mut app = fixture_command_app();
+        let mut fixture = create_test_fixture(42);
+        fixture.elements = vec![FixtureElement {
+            label: "Main".to_string(),
+            parameters: vec![
+                coarse_parameter(Attribute::Intensity),
+                coarse_parameter(Attribute::Red),
+            ],
+        }];
+        let uid = fixture.identifiers.uid;
+        submit_fixture_command(&mut app, FixtureCommand::StoreFixture(fixture.clone()));
+        app.update();
+
+        let first = app
+            .world()
+            .resource::<FixtureDataProviderExt>()
+            .parameter_entities_for_fixture(uid);
+        assert_eq!(first.len(), 2);
+        assert!(
+            first
+                .iter()
+                .all(|parameter| app.world().get_entity(parameter.entity()).is_ok())
+        );
+
+        fixture.identifiers.label = "renamed".to_string();
+        submit_fixture_command(&mut app, FixtureCommand::StoreFixture(fixture.clone()));
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<FixtureDataProviderExt>()
+                .parameter_entities_for_fixture(uid),
+            first,
+            "an edit that keeps the elements should keep the live parameters"
+        );
+
+        fixture.elements[0].parameters = vec![coarse_parameter(Attribute::Intensity)];
+        submit_fixture_command(&mut app, FixtureCommand::StoreFixture(fixture));
+        app.update();
+
+        let second = app
+            .world()
+            .resource::<FixtureDataProviderExt>()
+            .parameter_entities_for_fixture(uid);
+        assert_eq!(second.len(), 1);
+        assert!(
+            first
+                .iter()
+                .all(|parameter| app.world().get_entity(parameter.entity()).is_err()),
+            "old parameter entities should be despawned"
+        );
     }
 
     /// Verifies a missing fixture rename returns one structured failure.
