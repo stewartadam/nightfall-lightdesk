@@ -5,6 +5,8 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
+indexmap = { version = "2.14.2", features = ["serde"] }
+regex = "1.13.1"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
