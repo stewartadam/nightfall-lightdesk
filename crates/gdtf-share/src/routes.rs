@@ -344,6 +344,7 @@ async fn check_updates(
     if !share.account.is_signed_in().await {
         return Ok(Json(GdtfShareUpdates {
             updates: Vec::new(),
+            listed: Vec::new(),
         }));
     }
     let (catalog, stale) = share

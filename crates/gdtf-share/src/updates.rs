@@ -72,6 +72,19 @@ pub struct GdtfShareUpdate {
 pub struct GdtfShareUpdates {
     /// One entry per library file with a newer revision on GDTF Share.
     pub updates: Vec<GdtfShareUpdate>,
+    /// Every library file GDTF Share still lists, with the revision it is, so the library
+    /// can link to its page.
+    pub listed: Vec<GdtfShareListing>,
+}
+
+/// A library file GDTF Share still lists.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[typeshare::typeshare]
+pub struct GdtfShareListing {
+    /// The library's fingerprint of the file.
+    pub asset_etag: String,
+    /// The GDTF Share revision the file is.
+    pub fixture: GdtfShareFixture,
 }
 
 /// Which GDTF Share revision a library file is.
@@ -188,7 +201,18 @@ pub fn find_updates(
             })
         })
         .collect();
-    GdtfShareUpdates { updates }
+    let listed = fixtures
+        .iter()
+        .zip(&identified)
+        .filter_map(|(fixture, identified)| match identified {
+            Some(Identified::Listed(listed)) => Some(GdtfShareListing {
+                asset_etag: fixture.asset_etag.clone(),
+                fixture: (*listed).clone(),
+            }),
+            _ => None,
+        })
+        .collect();
+    GdtfShareUpdates { updates, listed }
 }
 
 /// The GDTF Share revision id of every file Nightfall installed, by file fingerprint.

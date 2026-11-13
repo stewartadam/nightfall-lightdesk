@@ -236,13 +236,22 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     Boolean(capabilities()?.gdtf_share),
   );
 
+  /** What GDTF Share says about library files: their revisions and newer ones. */
+  const gdtfShare = createGdtfShareUpdates(gdtfShareAvailable);
+
   /** Newer GDTF Share revisions of library files, by file fingerprint. */
-  const updates = createGdtfShareUpdates(gdtfShareAvailable);
+  const updates = () => gdtfShare().updates;
 
   /** The newer GDTF Share revision of the selected profile, if one was found. */
   const selectedUpdate = createMemo(() => {
     const fixture = selectedFixture();
     return fixture ? updates().get(fixture.asset_etag) : undefined;
+  });
+
+  /** The GDTF Share revision the selected profile is, when GDTF Share lists it. */
+  const selectedListing = createMemo(() => {
+    const fixture = selectedFixture();
+    return fixture ? gdtfShare().listed.get(fixture.asset_etag) : undefined;
   });
 
   /** How many patched fixtures use each library revision. */
@@ -398,6 +407,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
         selectedFixture={selectedFixture}
         unloadableFile={selectedUnloadable}
         update={selectedUpdate}
+        listing={selectedListing}
         patchedCount={selectedPatchedCount}
         onShowFixture={showLibraryCopy}
       />

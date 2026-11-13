@@ -38,7 +38,7 @@ import {
   fixtures,
 } from "../../../state/appStores";
 import type * as types from "../../../types";
-import { GdtfShareUpdateDetails } from "../../gdtf-share";
+import { GdtfSharePageLink, GdtfShareUpdateDetails } from "../../gdtf-share";
 import { patchedModeGroups } from "../revision-update";
 import LibraryFixturePreview from "./library-fixture-preview";
 import { RevisionUpdateDialog } from "./revision-update-dialog";
@@ -49,6 +49,8 @@ interface FixtureLibraryPropertiesProps {
   unloadableFile: Accessor<types.UnloadableFixtureFile | null>;
   /** A newer GDTF Share revision of the selected fixture's file, if one was found. */
   update: Accessor<types.GdtfShareUpdate | undefined>;
+  /** The GDTF Share revision the selected fixture's file is, when GDTF Share lists it. */
+  listing: Accessor<types.GdtfShareFixture | undefined>;
   /** How many patched fixtures use the selected fixture's revision. */
   patchedCount: Accessor<number>;
   /** Selects another library entry, such as an installed update. */
@@ -338,6 +340,17 @@ export default function FixtureLibraryProperties(
                   <div data-testid="fixture-library-revision">
                     <span class="text-neutral-400">Revision:</span>{" "}
                     {libraryRevisionLabel(fixture())}
+                    <Show when={props.listing()}>
+                      {(listing) => (
+                        <>
+                          {" "}
+                          <GdtfSharePageLink
+                            fixture={listing()}
+                            data-testid="fixture-library-gdtf-share-link"
+                          />
+                        </>
+                      )}
+                    </Show>
                     <Show when={libraryRevisionDate(fixture())}>
                       {(date) => (
                         <span class="text-neutral-400"> · {date()}</span>

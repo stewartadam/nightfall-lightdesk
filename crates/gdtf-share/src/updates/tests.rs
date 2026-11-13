@@ -248,3 +248,32 @@ async fn record_is_rebuilt_from_file_names_and_saved() {
         ])
     );
 }
+
+/// Every identified file GDTF Share still lists is reported with its revision, whether or
+/// not it has an update, while replaced and unidentified files are not.
+#[test]
+fn listed_files_report_their_revision() {
+    let catalog = Catalog::new(
+        0,
+        vec![listed(10, "v1", 100, false), listed(11, "v2", 200, false)],
+    );
+    let installs = [("old".to_string(), 10), ("gone".to_string(), 9)]
+        .into_iter()
+        .collect();
+    let result = find_updates(
+        &catalog,
+        &installs,
+        &[
+            library("old", None),
+            library("new", Some("v2")),
+            library("gone", None),
+            library("mine", Some("my own edit")),
+        ],
+    );
+    let listed: Vec<_> = result
+        .listed
+        .iter()
+        .map(|listing| (listing.asset_etag.as_str(), listing.fixture.rid))
+        .collect();
+    assert_eq!(listed, [("old", 10), ("new", 11)]);
+}

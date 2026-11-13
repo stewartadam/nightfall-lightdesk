@@ -544,6 +544,10 @@ async function standInForWashUpdate(
               },
             ]
           : [],
+        listed: [
+          ...(hasOld ? [{ asset_etag: installedEtag, fixture: WASH }] : []),
+          ...(hasNew ? [{ asset_etag: updateEtag, fixture: WASH_UPDATE }] : []),
+        ],
       },
     });
   });
@@ -666,7 +670,13 @@ test("offers newer GDTF Share revisions of library fixtures", async ({
   await expect(page.getByText("Source Format: GDTF 1.2")).toBeVisible();
   const details = page.getByTestId("gdtf-share-update");
   await expect(details).toContainText("Release 2.0 is available");
-  await expect(details).toContainText("this file is Release 1.0");
+  await expect(details).not.toContainText("this file");
+  await expect(
+    page.getByTestId("fixture-library-gdtf-share-link"),
+  ).toHaveAttribute(
+    "href",
+    "https://gdtf-share.com/share.php?page=home&manu=Nightfall%20Test&fix=E2E%20Wash&rev=101",
+  );
   await expect(details.getByTestId("gdtf-share-update-link")).toHaveAttribute(
     "href",
     "https://gdtf-share.com/share.php?page=home&manu=Nightfall%20Test&fix=E2E%20Wash&rev=105",

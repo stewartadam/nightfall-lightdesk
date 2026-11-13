@@ -21,6 +21,7 @@ import { fixtureLibrary } from "../../state/appStores";
 import { activeShellDialog } from "../../state/shell-dialog";
 import type {
   AvailableFixtureInfo,
+  GdtfShareFixture,
   GdtfShareLibraryFixture,
   GdtfShareUpdate,
   GdtfShareUpdates,
@@ -69,9 +70,23 @@ function requestUpdates(
   });
 }
 
+/** What GDTF Share says about the fixture library's files, each keyed by file fingerprint. */
+export interface GdtfShareLibraryStatus {
+  /** Newer revisions of library files. */
+  updates: ReadonlyMap<string, GdtfShareUpdate>;
+  /** The GDTF Share revision each library file is, for files GDTF Share still lists. */
+  listed: ReadonlyMap<string, GdtfShareFixture>;
+}
+
+/** Status before a check answers, or while checks are off. */
+const UNKNOWN_STATUS: GdtfShareLibraryStatus = {
+  updates: new Map(),
+  listed: new Map(),
+};
+
 /**
- * Tracks newer GDTF Share revisions of the fixture library's files, keyed by file
- * fingerprint, while `enabled` holds.
+ * Tracks which GDTF Share revision each of the fixture library's files is, and newer
+ * revisions of them, while `enabled` holds.
  *
  * Checks again shortly after the library changes, and whenever a shell dialog such as
  * Settings closes, so signing in shows updates without reopening the panel. A failed check
@@ -79,12 +94,11 @@ function requestUpdates(
  */
 export function createGdtfShareUpdates(
   enabled: Accessor<boolean>,
-): Accessor<ReadonlyMap<string, GdtfShareUpdate>> {
+): Accessor<GdtfShareLibraryStatus> {
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $shellDialog = useStore(activeShellDialog);
-  const [updates, setUpdates] = createSignal<
-    ReadonlyMap<string, GdtfShareUpdate>
-  >(new Map());
+  const [status, setStatus] =
+    createSignal<GdtfShareLibraryStatus>(UNKNOWN_STATUS);
 
   /**
    * The library files the check sends. Rebuilt from each entry's fields, since the library
@@ -105,24 +119,30 @@ export function createGdtfShareUpdates(
       [enabled, checkedKey, () => $shellDialog() === null],
       ([active, , noDialog]) => {
         if (!active) {
-          setUpdates(new Map());
+          setStatus(UNKNOWN_STATUS);
           return;
         }
         if (!noDialog) return;
         const fixtures = untrack(checked);
         if (fixtures.length === 0) {
-          setUpdates(new Map());
+          setStatus(UNKNOWN_STATUS);
           return;
         }
         const abort = new AbortController();
         const timer = setTimeout(async () => {
           try {
             const found = await requestUpdates(fixtures, abort.signal);
-            setUpdates(
-              new Map(
+            setStatus({
+              updates: new Map(
                 found.updates.map((update) => [update.asset_etag, update]),
               ),
-            );
+              listed: new Map(
+                found.listed.map((listing) => [
+                  listing.asset_etag,
+                  listing.fixture,
+                ]),
+              ),
+            });
           } catch (failure) {
             if (!abort.signal.aborted) {
               log.warn("Could not check GDTF Share for updates", failure);
@@ -137,5 +157,5 @@ export function createGdtfShareUpdates(
     ),
   );
 
-  return updates;
+  return status;
 }

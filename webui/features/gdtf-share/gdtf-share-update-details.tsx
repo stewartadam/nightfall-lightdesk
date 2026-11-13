@@ -6,12 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { ArrowSquareOutIcon } from "@squidlab/phosphor-solid/arrow-square-out";
 import { Show } from "solid-js";
 import { Button } from "../../components/ui/visual-language/button";
 import type { GdtfShareUpdate } from "../../types";
-import { gdtfSharePageUrl } from "./fixtures";
 import { formatDate } from "./format";
+import { GdtfSharePageLink } from "./gdtf-share-page-link";
 
 export interface GdtfShareUpdateDetailsProps {
   /** The newer revision found for the selected library file. */
@@ -27,45 +26,36 @@ export interface GdtfShareUpdateDetailsProps {
 
 /**
  * Tells the user a newer GDTF Share revision of the selected library file exists: which
- * revision, when GDTF Share last changed it, and a link to its page there. The caller
- * decides the single action it offers, such as updating or showing the library copy.
+ * revision, with a link to its GDTF Share page, and when GDTF Share last changed it. The
+ * caller decides the single action it offers, such as updating or showing the library copy.
  */
 export function GdtfShareUpdateDetails(props: GdtfShareUpdateDetailsProps) {
   return (
     <div class="space-y-2 text-sm" data-testid="gdtf-share-update">
       <h3 class="font-medium">Update on GDTF Share</h3>
       <p>
-        {props.update.latest.revision || "A new revision"} is available
+        {props.update.latest.revision || "A new revision"} is available{" "}
+        <GdtfSharePageLink
+          fixture={props.update.latest}
+          data-testid="gdtf-share-update-link"
+        />
         <span class="text-neutral-400">
           {" "}
-          · {formatDate(props.update.latest.last_modified)} · this file is{" "}
-          {props.update.installed?.revision || "an older revision"}
+          · {formatDate(props.update.latest.last_modified)}
         </span>
       </p>
-      <div class="flex items-center gap-3">
-        <Show when={props.actionLabel}>
-          {(label) => (
-            <Button
-              size="compact"
-              variant="primary"
-              onClick={() => props.onAction()}
-              data-testid="gdtf-share-update-action"
-            >
-              {label()}
-            </Button>
-          )}
-        </Show>
-        <a
-          class="inline-flex items-center gap-1 text-blue-300 underline"
-          href={gdtfSharePageUrl(props.update.latest)}
-          target="_blank"
-          rel="noopener noreferrer"
-          data-testid="gdtf-share-update-link"
-        >
-          View on GDTF Share
-          <ArrowSquareOutIcon class="size-3.5" aria-hidden />
-        </a>
-      </div>
+      <Show when={props.actionLabel}>
+        {(label) => (
+          <Button
+            size="compact"
+            variant="primary"
+            onClick={() => props.onAction()}
+            data-testid="gdtf-share-update-action"
+          >
+            {label()}
+          </Button>
+        )}
+      </Show>
     </div>
   );
 }

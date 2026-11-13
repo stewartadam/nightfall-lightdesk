@@ -41,7 +41,8 @@ pub mod prelude {
         GdtfShareDownloadProgress, GdtfShareInstall, GdtfShareInstallEvent, GdtfShareInstallFailure,
     };
     pub use crate::updates::{
-        GdtfShareLibraryFixture, GdtfShareUpdate, GdtfShareUpdateCheck, GdtfShareUpdates,
+        GdtfShareLibraryFixture, GdtfShareListing, GdtfShareUpdate, GdtfShareUpdateCheck,
+        GdtfShareUpdates,
     };
     pub use crate::{GdtfShareFolders, register_routes as register_gdtf_share_routes};
 }
