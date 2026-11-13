@@ -20,14 +20,13 @@ use nightfall_fixtures::library::catalog::{
 };
 use nightfall_fixtures::library::commands::{
     FixtureLibraryCommand, FixtureLibraryCommandResult, FixtureLibraryCommandSuccess,
-    GetFixtureProfileResponse, ListAvailableFixturesResponse, finish_fixture_library_commands,
-    fixture_profile_not_found, publish_available_fixtures, publish_fixture_profile,
-    register_fixture_library_commands,
+    GetFixtureProfileResponse, LibraryRevisionDetails, LibraryRevisionMode,
+    ListAvailableFixturesResponse, finish_fixture_library_commands, fixture_profile_not_found,
+    publish_available_fixtures, publish_fixture_profile, register_fixture_library_commands,
 };
 use nightfall_fixtures::library::instantiate::{
-    LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixtures,
+    LibraryFixtureRequest, LibraryFixtureStore, LibraryFixtureTemplate,
 };
-use nightfall_fixtures::prelude::FixtureDataProviderExt;
 
 /// Serves fixture-library commands from the compiled built-in catalog.
 ///
@@ -53,9 +52,8 @@ impl Plugin for BuiltinFixtureLibraryPlugin {
 
 /// Applies fixture-library commands against the built-in catalog and records each outcome.
 pub fn handle_builtin_fixture_library_commands(
-    mut commands: Commands,
     mut events: MessageReader<CommandEnvelope<FixtureLibraryCommand>>,
-    mut fixtures: ResMut<FixtureDataProviderExt>,
+    mut store: LibraryFixtureStore,
     broadcaster: Res<ClientEventSink>,
     mut results: MessageWriter<FixtureLibraryCommandResult>,
 ) {
@@ -100,10 +98,11 @@ pub fn handle_builtin_fixture_library_commands(
                     update_existing_ids,
                     *update_existing_only,
                 );
-                create_library_fixtures(&mut commands, &mut fixtures, &request, || {
-                    builtin_template(make, model, asset_etag.as_deref(), mode)
-                })
-                .map(|()| FixtureLibraryCommandSuccess::Applied)
+                store
+                    .create(event.command_id, event.undo_id, &request, || {
+                        builtin_template(make, model, asset_etag.as_deref(), mode)
+                    })
+                    .map(|()| FixtureLibraryCommandSuccess::Applied)
             }
             FixtureLibraryCommand::CreateFixturesFromLibrary {
                 make,
@@ -117,11 +116,28 @@ pub fn handle_builtin_fixture_library_commands(
                     instances: instances.clone(),
                     update_existing_ids,
                 };
-                create_library_fixtures(&mut commands, &mut fixtures, &request, || {
-                    builtin_template(make, model, asset_etag.as_deref(), mode)
-                })
-                .map(|()| FixtureLibraryCommandSuccess::Applied)
+                store
+                    .create(event.command_id, event.undo_id, &request, || {
+                        builtin_template(make, model, asset_etag.as_deref(), mode)
+                    })
+                    .map(|()| FixtureLibraryCommandSuccess::Applied)
             }
+            FixtureLibraryCommand::GetRevisionDetails {
+                make,
+                model,
+                asset_etag,
+            } => builtin_revision_details(make, model, asset_etag)
+                .map(FixtureLibraryCommandSuccess::RevisionDetails),
+            FixtureLibraryCommand::UpdateFixturesToRevision {
+                make,
+                model,
+                asset_etag,
+                fixtures: updates,
+            } => store
+                .update_to_revision(event.command_id, event.undo_id, updates, |mode| {
+                    builtin_template(make, model, Some(asset_etag), mode)
+                })
+                .map(|()| FixtureLibraryCommandSuccess::Applied),
             FixtureLibraryCommand::UploadFixture { .. }
             | FixtureLibraryCommand::DeleteFixtures(_)
             | FixtureLibraryCommand::DeleteUnloadableFiles(_) => {
@@ -158,6 +174,35 @@ fn builtin_fixture_profile(
         requested_mode: Some(requested_mode.to_string()),
         fixture: Some(fixture),
         geometry: None,
+    })
+}
+
+/// Describes a built-in revision for an update review: every mode with the fixture it
+/// builds, and no revision notes, since built-ins have none.
+fn builtin_revision_details(
+    make: &str,
+    model: &str,
+    revision: &str,
+) -> Result<LibraryRevisionDetails, CommandError> {
+    let profile = find_builtin_revision(make, model, Some(revision))?;
+    let modes = profile
+        .mode_names()
+        .into_iter()
+        .map(|name| {
+            let fixture = profile.create_fixture(0, &name);
+            let error = fixture
+                .is_none()
+                .then(|| mode_not_found(make, model, &name));
+            LibraryRevisionMode {
+                name,
+                fixture,
+                error,
+            }
+        })
+        .collect();
+    Ok(LibraryRevisionDetails {
+        modes,
+        revision_notes: Vec::new(),
     })
 }
 
@@ -227,16 +272,26 @@ mod tests {
         engine: &mut crate::BrowserEngine,
         command: Value,
     ) -> (Uuid, Vec<Value>) {
+        run_command(engine, "FixtureLibraryCommand", command)
+    }
+
+    /// Submits one client command of `module` and returns every publication from the next
+    /// frames.
+    fn run_command(
+        engine: &mut crate::BrowserEngine,
+        module: &str,
+        command: Value,
+    ) -> (Uuid, Vec<Value>) {
         let command_id = Uuid::new_v4();
         let envelope = serde_json::from_value(json!({
             "command_id": command_id,
-            "module": "FixtureLibraryCommand",
+            "module": module,
             "command": command,
         }))
-        .expect("fixture-library envelope should deserialize");
+        .expect("command envelope should deserialize");
         engine
             .enqueue_command_core(envelope)
-            .expect("fixture-library command should enqueue");
+            .expect("command should enqueue");
         engine.tick_core(16.0);
         engine.tick_core(16.0);
         let messages = engine
@@ -417,6 +472,141 @@ mod tests {
                 .get::<nightfall_fixtures::prelude::Parameter>(parameter.entity())
                 .is_some()
         }));
+    }
+
+    /// Returns the outcome type (`Succeeded`, `Failed`, …) of one command's result.
+    fn outcome_type(messages: &[Value], command_id: Uuid) -> Value {
+        command_result(messages, command_id)
+            .pointer("/data/outcome/type")
+            .cloned()
+            .unwrap_or(Value::Null)
+    }
+
+    /// Returns the stored fixture with this ID.
+    fn stored_fixture(
+        engine: &crate::BrowserEngine,
+        id: u32,
+    ) -> nightfall_fixtures::prelude::Fixture {
+        engine
+            .app
+            .world()
+            .resource::<nightfall_fixtures::prelude::FixtureDataProviderExt>()
+            .inner
+            .from_id(id)
+            .expect("fixture should be stored")
+            .clone()
+    }
+
+    /// Verifies moving a fixture to another revision keeps its identity, and that undo puts
+    /// the previous revision back and redo moves it forward again, each as one step.
+    #[test]
+    fn update_fixtures_to_revision_undoes_and_redoes_as_one_step() {
+        let mut engine = sample_engine();
+        for id in [901, 902] {
+            let (created, messages) = run_fixture_library_command(
+                &mut engine,
+                json!({
+                    "type": "CreateFixtureFromLibrary",
+                    "data": {
+                        "id": id,
+                        "make": "Generic",
+                        "model": "Moving Head Spot 16ch",
+                        "mode": "Spot"
+                    }
+                }),
+            );
+            assert_eq!(outcome_type(&messages, created), json!("Succeeded"));
+        }
+        let current = stored_fixture(&engine, 901)
+            .library_asset_etag
+            .expect("library fixtures record their revision");
+        {
+            let world = engine.app.world_mut();
+            let mut fixtures =
+                world.resource_mut::<nightfall_fixtures::prelude::FixtureDataProviderExt>();
+            for id in [901, 902] {
+                let mut fixture = fixtures.inner.from_id(id).unwrap().clone();
+                fixture.library_asset_etag = Some("builtin:older-revision".to_string());
+                fixtures.inner.remove(&fixture.identifiers.uid).unwrap();
+                fixtures.inner.add(fixture).unwrap();
+            }
+        }
+        let uid = stored_fixture(&engine, 901).identifiers.uid;
+
+        let (partial, messages) = run_fixture_library_command(
+            &mut engine,
+            json!({
+                "type": "UpdateFixturesToRevision",
+                "data": {
+                    "make": "Generic",
+                    "model": "Moving Head Spot 16ch",
+                    "asset_etag": current,
+                    "fixtures": [{ "id": 901, "mode": "Spot" }]
+                }
+            }),
+        );
+        assert_eq!(
+            command_result(&messages, partial).pointer("/data/outcome/data/code"),
+            Some(&json!("fixture_library.mixed_revisions")),
+            "leaving fixture 902 on the older revision must be rejected"
+        );
+
+        let (updated, messages) = run_fixture_library_command(
+            &mut engine,
+            json!({
+                "type": "UpdateFixturesToRevision",
+                "data": {
+                    "make": "Generic",
+                    "model": "Moving Head Spot 16ch",
+                    "asset_etag": current,
+                    "fixtures": [
+                        { "id": 901, "mode": "Spot" },
+                        { "id": 902, "mode": "Spot" }
+                    ]
+                }
+            }),
+        );
+        assert_eq!(outcome_type(&messages, updated), json!("Succeeded"));
+        let fixture = stored_fixture(&engine, 901);
+        assert_eq!(fixture.identifiers.uid, uid);
+        assert_eq!(
+            fixture.library_asset_etag.as_deref(),
+            Some(current.as_str())
+        );
+
+        let (undo, messages) = run_command(
+            &mut engine,
+            "UndoCommand",
+            json!({ "type": "Undo", "data": {} }),
+        );
+        assert_eq!(
+            outcome_type(&messages, undo),
+            json!("Succeeded"),
+            "{:#?}",
+            command_result(&messages, undo)
+        );
+        for id in [901, 902] {
+            assert_eq!(
+                stored_fixture(&engine, id).library_asset_etag.as_deref(),
+                Some("builtin:older-revision"),
+                "one undo should restore fixture {id}"
+            );
+        }
+        assert_eq!(stored_fixture(&engine, 901).identifiers.uid, uid);
+
+        let (redo, messages) = run_command(
+            &mut engine,
+            "UndoCommand",
+            json!({ "type": "Redo", "data": {} }),
+        );
+        assert_eq!(outcome_type(&messages, redo), json!("Succeeded"));
+        for id in [901, 902] {
+            assert_eq!(
+                stored_fixture(&engine, id).library_asset_etag.as_deref(),
+                Some(current.as_str()),
+                "redo should move fixture {id} forward again"
+            );
+        }
     }
 
     /// Verifies library file management reports a stable unavailable failure.

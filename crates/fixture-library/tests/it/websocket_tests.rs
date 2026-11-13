@@ -124,6 +124,9 @@ fn test_available_fixture_info_serialization() {
         source_format: "GDTF".to_string(),
         asset_etag: "v1".to_string(),
         gdtf_fixture_type_id: None,
+        gdtf_revision: None,
+        gdtf_revision_date: None,
+        gdtf_data_version: None,
     };
 
     let json = serde_json::to_value(&info).unwrap();
@@ -155,6 +158,9 @@ fn test_list_available_fixtures_response_serialization() {
                 source_format: "GDTF".to_string(),
                 asset_etag: "v1".to_string(),
                 gdtf_fixture_type_id: None,
+                gdtf_revision: None,
+                gdtf_revision_date: None,
+                gdtf_data_version: None,
             },
             AvailableFixtureInfo {
                 make: "Generic".to_string(),
@@ -163,6 +169,9 @@ fn test_list_available_fixtures_response_serialization() {
                 source_format: "OFL".to_string(),
                 asset_etag: "v2".to_string(),
                 gdtf_fixture_type_id: None,
+                gdtf_revision: None,
+                gdtf_revision_date: None,
+                gdtf_data_version: None,
             },
         ],
         unloadable: vec![UnloadableFixtureFile {
@@ -198,6 +207,9 @@ fn test_get_fixture_profile_response_serialization() {
             source_format: "GDTF".to_string(),
             asset_etag: "v1".to_string(),
             gdtf_fixture_type_id: None,
+            gdtf_revision: None,
+            gdtf_revision_date: None,
+            gdtf_data_version: None,
         },
         requested_mode: Some("6 Channel".to_string()),
         fixture: None,

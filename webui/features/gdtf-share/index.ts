@@ -6,5 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+export { kilobytes } from "./format";
 export { GdtfShareBrowser } from "./gdtf-share-browser";
+export { GdtfSharePageLink } from "./gdtf-share-page-link";
 export { GdtfShareSettings } from "./gdtf-share-settings";
+export { GdtfShareUpdateDetails } from "./gdtf-share-update-details";
+export { installIntoLibrary, installOutcomeNote } from "./install";
+export {
+  createGdtfShareUpdates,
+  type GdtfShareLibraryStatus,
+} from "./updates";

@@ -31,6 +31,7 @@ import {
 } from "../../../lib/data-grid-types";
 import {
   libraryDefinitionId,
+  libraryRevisionDate,
   libraryRevisionLabel,
 } from "../../../lib/fixture-service";
 import { fixtureLibrary, runtimeCapabilities } from "../../../state/appStores";
@@ -53,6 +54,7 @@ const FIXTURE_COLUMNS: GridColumn[] = [
   { id: "modes", title: "Modes", width: 72, sizing: "fixed", align: "right" },
   { id: "format", title: "Format", width: 88, minWidth: 72, maxWidth: 140 },
   { id: "revision", title: "Revision", width: 112, minWidth: 80 },
+  { id: "revised", title: "Revised", width: 96, minWidth: 80 },
 ];
 
 /** Projects one library definition into a sortable cell for the fixture picker. */
@@ -86,10 +88,16 @@ function fixtureCell(
         data: fixture.source_format,
         contentAlign: "left",
       };
+    case "revised":
+      return {
+        kind: GridCellKind.Text,
+        data: libraryRevisionDate(fixture),
+        contentAlign: "left",
+      };
     default:
       return {
         kind: GridCellKind.Text,
-        data: libraryRevisionLabel(fixture.asset_etag),
+        data: libraryRevisionLabel(fixture),
         contentAlign: "left",
       };
   }

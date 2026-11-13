@@ -8,6 +8,7 @@
 
 import type * as types from "../types/index";
 import type { FixtureLibraryCommand } from "../types/index";
+import { commandOutputValue, requireCommandSuccess } from "./command-result";
 import { fixtureWireLayout } from "./dmx";
 import { commandClient } from "./engine-commands";
 import { getLogger } from "./logger";
@@ -156,12 +157,26 @@ export function libraryDefinitionId(info: {
 }
 
 /**
- * Returns a short label telling library revisions of one make/model apart:
- * the leading characters of the content fingerprint, like an abbreviated
- * commit hash, or "built-in" for definitions shipped with the app.
+ * Returns a short label telling library revisions of one make/model apart: "built-in" for
+ * definitions shipped with the app, the GDTF file's revision name, such as "Release 2.0",
+ * or else the leading characters of the content fingerprint, like an abbreviated commit hash.
  */
-export function libraryRevisionLabel(assetEtag: string): string {
-  return assetEtag.startsWith("builtin:") ? "built-in" : assetEtag.slice(0, 8);
+export function libraryRevisionLabel(
+  info: Pick<types.AvailableFixtureInfo, "asset_etag" | "gdtf_revision">,
+): string {
+  if (info.asset_etag.startsWith("builtin:")) return "built-in";
+  return info.gdtf_revision || info.asset_etag.slice(0, 8);
+}
+
+/**
+ * Returns the day a GDTF file's latest revision was made as `YYYY-MM-DD`, which sorts in
+ * order as text, the archive's own text when it isn't a date, or "" when it records none.
+ */
+export function libraryRevisionDate(
+  info: Pick<types.AvailableFixtureInfo, "gdtf_revision_date">,
+): string {
+  const date = info.gdtf_revision_date?.trim() ?? "";
+  return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : date;
 }
 
 /**
@@ -239,6 +254,45 @@ export async function createFixturesFromLibrary(
   );
 
   return result;
+}
+
+/**
+ * Describes one library revision for reviewing an update to it: every mode with the
+ * fixture it builds, and the revision notes its GDTF archive records. Rejects with the
+ * engine's message when the revision is not in the library.
+ */
+export async function fetchRevisionDetails(
+  make: string,
+  model: string,
+  assetEtag: string,
+): Promise<types.LibraryRevisionDetails> {
+  const result = await commandClient.invoke("FixtureLibraryCommand", {
+    type: "GetRevisionDetails",
+    data: { make, model, asset_etag: assetEtag },
+  });
+  requireCommandSuccess(result);
+  return commandOutputValue(result) as types.LibraryRevisionDetails;
+}
+
+/**
+ * Moves patched fixtures to another library revision, each rebuilt from the mode named
+ * for it, as one undoable engine change. Rejects with the engine's message when the
+ * update is refused, in which case no fixture changed.
+ */
+export async function updateFixturesToRevision(
+  make: string,
+  model: string,
+  assetEtag: string,
+  fixtures: types.LibraryFixtureModeUpdate[],
+): Promise<void> {
+  const result = await commandClient.invoke("FixtureLibraryCommand", {
+    type: "UpdateFixturesToRevision",
+    data: { make, model, asset_etag: assetEtag, fixtures },
+  });
+  requireCommandSuccess(result);
+  log.info(
+    `Updated ${fixtures.length} fixture(s) to library revision: ${make} ${model}`,
+  );
 }
 
 /**

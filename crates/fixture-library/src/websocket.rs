@@ -12,13 +12,13 @@ use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::library::catalog::BUILTIN_SOURCE_FORMAT;
 use nightfall_fixtures::library::commands::{
-    FixtureLibraryCommandResult, FixtureLibraryCommandSuccess, fixture_profile_not_found,
-    publish_available_fixtures, publish_fixture_profile,
+    FixtureLibraryCommandResult, FixtureLibraryCommandSuccess, LibraryRevisionDetails,
+    LibraryRevisionMode, fixture_profile_not_found, publish_available_fixtures,
+    publish_fixture_profile,
 };
 use nightfall_fixtures::library::instantiate::{
-    LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixtures,
+    LibraryFixtureRequest, LibraryFixtureStore, LibraryFixtureTemplate,
 };
-use nightfall_fixtures::prelude::FixtureDataProviderExt;
 
 use crate::commands::{
     AvailableFixtureInfo, FixtureLibraryCommand, FixtureLibraryEntry, GetFixtureProfileResponse,
@@ -29,10 +29,9 @@ use crate::watcher::FixtureLibraryEvent;
 
 /// Applies fixture-library commands and emits one domain-local result per request.
 pub fn handle_fixture_library_commands(
-    mut commands: Commands,
     mut events: MessageReader<CommandEnvelope<FixtureLibraryCommand>>,
     mut library: ResMut<FixtureLibraryManager>,
-    mut fixtures: ResMut<FixtureDataProviderExt>,
+    mut store: LibraryFixtureStore,
     broadcaster: Res<ClientEventSink>,
     mut results: MessageWriter<FixtureLibraryCommandResult>,
 ) {
@@ -68,9 +67,9 @@ pub fn handle_fixture_library_commands(
                 update_existing_ids,
                 update_existing_only,
             } => create_fixtures_from_library(
-                &mut commands,
+                &mut store,
+                event,
                 &library,
-                &mut fixtures,
                 make,
                 model,
                 asset_etag.as_deref(),
@@ -90,9 +89,9 @@ pub fn handle_fixture_library_commands(
                 fixtures: instances,
                 update_existing_ids,
             } => create_fixtures_from_library(
-                &mut commands,
+                &mut store,
+                event,
                 &library,
-                &mut fixtures,
                 make,
                 model,
                 asset_etag.as_deref(),
@@ -102,6 +101,22 @@ pub fn handle_fixture_library_commands(
                     update_existing_ids,
                 },
             ),
+            FixtureLibraryCommand::GetRevisionDetails {
+                make,
+                model,
+                asset_etag,
+            } => revision_details(&library, make, model, asset_etag)
+                .map(FixtureLibraryCommandSuccess::RevisionDetails),
+            FixtureLibraryCommand::UpdateFixturesToRevision {
+                make,
+                model,
+                asset_etag,
+                fixtures: updates,
+            } => store
+                .update_to_revision(event.command_id, event.undo_id, updates, |mode| {
+                    library_template(&library, make, model, Some(asset_etag), mode)
+                })
+                .map(|()| FixtureLibraryCommandSuccess::Applied),
             FixtureLibraryCommand::UploadFixture { filename, content } => {
                 upload_fixture(&library, filename, content)
             }
@@ -260,36 +275,87 @@ fn delete_unloadable_files(
 }
 
 /// Converts the requested library revision once, then validates and commits every
-/// requested creation and update.
+/// requested creation and update as one undo step.
 fn create_fixtures_from_library(
-    commands: &mut Commands,
+    store: &mut LibraryFixtureStore,
+    event: &CommandEnvelope<FixtureLibraryCommand>,
     library: &FixtureLibraryManager,
-    fixtures: &mut FixtureDataProviderExt,
     make: &str,
     model: &str,
     revision: Option<&str>,
     mode: &str,
     request: &LibraryFixtureRequest<'_>,
 ) -> Result<FixtureLibraryCommandSuccess, CommandError> {
-    create_library_fixtures(commands, fixtures, request, || {
-        let profile = library
-            .find_revision(make, model, revision)
-            .ok_or_else(|| fixture_profile_not_found(make, model))?;
-        let asset_etag = profile.revision.clone();
-        let (fixture, _) = library
-            .create_fixture_from_revision(make, model, Some(&asset_etag), mode, 0)
-            .map_err(|error| {
-                CommandError::new(
-                    "fixture_library.create_failed",
-                    format!("Failed to create fixture: {error}"),
-                )
-            })?;
-        Ok(LibraryFixtureTemplate {
-            fixture,
-            asset_etag,
-        })
+    store.create(event.command_id, event.undo_id, request, || {
+        library_template(library, make, model, revision, mode)
     })?;
     Ok(FixtureLibraryCommandSuccess::Applied)
+}
+
+/// Describes one library revision for an update review: every mode converted to the
+/// fixture it builds (or why it can't be), and the GDTF revision notes.
+fn revision_details(
+    library: &FixtureLibraryManager,
+    make: &str,
+    model: &str,
+    asset_etag: &str,
+) -> Result<LibraryRevisionDetails, CommandError> {
+    let profile = library
+        .find_revision(make, model, Some(asset_etag))
+        .ok_or_else(|| fixture_profile_not_found(make, model))?;
+    let modes = profile
+        .mode_names()
+        .into_iter()
+        .map(|name| {
+            match library.create_fixture_from_revision(make, model, Some(asset_etag), &name, 0) {
+                Ok((fixture, _)) => LibraryRevisionMode {
+                    name,
+                    fixture: Some(fixture),
+                    error: None,
+                },
+                Err(error) => LibraryRevisionMode {
+                    name,
+                    fixture: None,
+                    error: Some(error.to_string()),
+                },
+            }
+        })
+        .collect();
+    let revision_notes = match &profile.source {
+        FixtureSource::Gdtf(metadata) => metadata.revision_notes.clone(),
+        FixtureSource::Ofl(_) | FixtureSource::BuiltIn { .. } => Vec::new(),
+    };
+    Ok(LibraryRevisionDetails {
+        modes,
+        revision_notes,
+    })
+}
+
+/// Converts one mode of a library revision, or the default revision when none is named,
+/// into the fixture template new and updated fixtures are copied from.
+fn library_template(
+    library: &FixtureLibraryManager,
+    make: &str,
+    model: &str,
+    revision: Option<&str>,
+    mode: &str,
+) -> Result<LibraryFixtureTemplate, CommandError> {
+    let profile = library
+        .find_revision(make, model, revision)
+        .ok_or_else(|| fixture_profile_not_found(make, model))?;
+    let asset_etag = profile.revision.clone();
+    let (fixture, _) = library
+        .create_fixture_from_revision(make, model, Some(&asset_etag), mode, 0)
+        .map_err(|error| {
+            CommandError::new(
+                "fixture_library.create_failed",
+                format!("Failed to create fixture: {error}"),
+            )
+        })?;
+    Ok(LibraryFixtureTemplate {
+        fixture,
+        asset_etag,
+    })
 }
 
 /// Broadcasts available fixtures when a library scan completes.
@@ -322,6 +388,18 @@ fn available_fixture_info(profile: &FixtureProfile) -> AvailableFixtureInfo {
             FixtureSource::Gdtf(metadata) => metadata.fixture_type_id.clone(),
             FixtureSource::Ofl(_) | FixtureSource::BuiltIn { .. } => None,
         },
+        gdtf_revision: match &profile.source {
+            FixtureSource::Gdtf(metadata) => metadata.revision.clone(),
+            FixtureSource::Ofl(_) | FixtureSource::BuiltIn { .. } => None,
+        },
+        gdtf_revision_date: match &profile.source {
+            FixtureSource::Gdtf(metadata) => metadata.revision_date.clone(),
+            FixtureSource::Ofl(_) | FixtureSource::BuiltIn { .. } => None,
+        },
+        gdtf_data_version: match &profile.source {
+            FixtureSource::Gdtf(metadata) => metadata.data_version.clone(),
+            FixtureSource::Ofl(_) | FixtureSource::BuiltIn { .. } => None,
+        },
     }
 }
 
@@ -330,6 +408,7 @@ mod tests {
     use bevy_app::{App, Update};
     use bevy_ecs::message::Messages;
     use nightfall_fixtures::library::commands::finish_fixture_library_commands;
+    use nightfall_fixtures::prelude::FixtureDataProviderExt;
     use tempfile::TempDir;
 
     use super::*;
@@ -397,6 +476,69 @@ mod tests {
             CommandOutcome::Succeeded { output: Some(ref output) }
                 if output.value["fixtures"].as_array().is_some_and(|fixtures| !fixtures.is_empty())
         ));
+    }
+
+    /// Verifies revision details list every mode with the fixture it builds and the GDTF
+    /// revision notes, oldest first.
+    #[test]
+    fn revision_details_list_modes_and_revision_notes() {
+        use crate::testing::{ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec};
+
+        let temp_dir = TempDir::new().expect("temporary library directory should exist");
+        GdtfBuilder::new("Notes Test", "Wash")
+            .geometry(GeometrySpec::generic("Body"))
+            .mode(ModeSpec::new("Basic", "Body").channel(ChannelSpec::new("Body", "Dimmer", &[1])))
+            .mode(ModeSpec::new("Extended", "Body").channel(ChannelSpec::new(
+                "Body",
+                "Dimmer",
+                &[1, 2],
+            )))
+            .revision("Created")
+            .revision("Added extended mode")
+            .write_to(&temp_dir.path().join("wash.gdtf"));
+        let mut app = fixture_library_app(&temp_dir);
+        let revision = app
+            .world()
+            .resource::<FixtureLibraryManager>()
+            .find_fixture("Notes Test", "Wash")
+            .expect("test GDTF should be indexed")
+            .revision
+            .clone();
+        submit_command(
+            &mut app,
+            FixtureLibraryCommand::GetRevisionDetails {
+                make: "Notes Test".to_string(),
+                model: "Wash".to_string(),
+                asset_etag: revision,
+            },
+        );
+
+        app.update();
+
+        let CommandOutcome::Succeeded {
+            output: Some(output),
+        } = take_result(&mut app).outcome
+        else {
+            panic!("revision details should succeed with output");
+        };
+        let details: LibraryRevisionDetails =
+            serde_json::from_value(output.value).expect("output should be revision details");
+        assert_eq!(
+            details
+                .modes
+                .iter()
+                .map(|mode| (mode.name.as_str(), mode.fixture.is_some()))
+                .collect::<Vec<_>>(),
+            vec![("Basic", true), ("Extended", true)]
+        );
+        assert_eq!(
+            details
+                .revision_notes
+                .iter()
+                .map(|note| note.text.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Created", "Added extended mode"]
+        );
     }
 
     /// Verifies an unknown profile returns one stable fixture-library failure.

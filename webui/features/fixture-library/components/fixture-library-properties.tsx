@@ -27,15 +27,34 @@ import {
 } from "solid-js";
 import { fixtureWireLayout, parameterDmxBreak } from "../../../lib/dmx";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
-import { fetchFixtureProfile } from "../../../lib/fixture-service";
-import { fixtureProfile } from "../../../state/appStores";
+import {
+  fetchFixtureProfile,
+  libraryRevisionDate,
+  libraryRevisionLabel,
+} from "../../../lib/fixture-service";
+import {
+  fixtureLibrary,
+  fixtureProfile,
+  fixtures,
+} from "../../../state/appStores";
 import type * as types from "../../../types";
+import { GdtfSharePageLink, GdtfShareUpdateDetails } from "../../gdtf-share";
+import { patchedModeGroups } from "../revision-update";
 import LibraryFixturePreview from "./library-fixture-preview";
+import { RevisionUpdateDialog } from "./revision-update-dialog";
 
 interface FixtureLibraryPropertiesProps {
   selectedFixture: Accessor<types.AvailableFixtureInfo | null>;
   /** The selected library file that failed to load, shown with its error instead of a profile. */
   unloadableFile: Accessor<types.UnloadableFixtureFile | null>;
+  /** A newer GDTF Share revision of the selected fixture's file, if one was found. */
+  update: Accessor<types.GdtfShareUpdate | undefined>;
+  /** The GDTF Share revision the selected fixture's file is, when GDTF Share lists it. */
+  listing: Accessor<types.GdtfShareFixture | undefined>;
+  /** How many patched fixtures use the selected fixture's revision. */
+  patchedCount: Accessor<number>;
+  /** Selects another library entry, such as an installed update. */
+  onShowFixture: (fixture: types.AvailableFixtureInfo) => void;
 }
 
 type ParameterDisplayRow = {
@@ -216,6 +235,8 @@ export default function FixtureLibraryProperties(
   props: FixtureLibraryPropertiesProps,
 ) {
   const $fixtureProfile = useStore(fixtureProfile);
+  const $fixtureLibrary = useStore(fixtureLibrary);
+  const $fixtures = useStore(fixtures);
   /** Provides the currently selected fixture library row. */
   const selectedFixture = createMemo(() => props.selectedFixture());
   /** Tracks fixture identity changes that should reset mode-local state. */
@@ -311,6 +332,37 @@ export default function FixtureLibraryProperties(
                 <div>
                   <span class="text-neutral-400">Source Format:</span>{" "}
                   {fixture().source_format}
+                  <Show when={fixture().gdtf_data_version}>
+                    {(version) => ` ${version()}`}
+                  </Show>
+                </div>
+                <Show when={!fixture().asset_etag.startsWith("builtin:")}>
+                  <div data-testid="fixture-library-revision">
+                    <span class="text-neutral-400">Revision:</span>{" "}
+                    {libraryRevisionLabel(fixture())}
+                    <Show when={props.listing()}>
+                      {(listing) => (
+                        <>
+                          {" "}
+                          <GdtfSharePageLink
+                            fixture={listing()}
+                            data-testid="fixture-library-gdtf-share-link"
+                          />
+                        </>
+                      )}
+                    </Show>
+                    <Show when={libraryRevisionDate(fixture())}>
+                      {(date) => (
+                        <span class="text-neutral-400"> · {date()}</span>
+                      )}
+                    </Show>
+                  </div>
+                </Show>
+                <div data-testid="fixture-library-patched-count">
+                  <span class="text-neutral-400">Patched:</span>{" "}
+                  {props.patchedCount() === 1
+                    ? "1 fixture"
+                    : `${props.patchedCount()} fixtures`}
                 </div>
                 <div>
                   <label
@@ -339,6 +391,61 @@ export default function FixtureLibraryProperties(
                 </div>
               </div>
             </div>
+
+            {/* Keyed by file, so a dialog left open never carries over to another fixture. */}
+            <Show when={props.update()?.asset_etag} keyed>
+              {(_etag: string) => {
+                const [open, setOpen] = createSignal(false);
+                /**
+                 * The library entry that already is the newest revision, when no patched
+                 * fixture of this make and model, on this file or another old one, still
+                 * needs moving to it, so the section only has to point at it.
+                 */
+                const readyCopy = createMemo(() => {
+                  const etag = props.update()?.library_copy;
+                  if (!etag) return undefined;
+                  const waiting = patchedModeGroups(
+                    Object.values($fixtures()),
+                    fixture().make,
+                    fixture().model,
+                    etag,
+                  );
+                  if (waiting.length > 0) return undefined;
+                  return $fixtureLibrary().find(
+                    (entry) => entry.asset_etag === etag,
+                  );
+                });
+                return (
+                  <Show when={props.update()}>
+                    {(update) => (
+                      <>
+                        <div class="border-t border-neutral-700" />
+                        <GdtfShareUpdateDetails
+                          update={update()}
+                          actionLabel={readyCopy() ? "Show update" : "Update…"}
+                          onAction={() => {
+                            const copy = readyCopy();
+                            if (copy) props.onShowFixture(copy);
+                            else setOpen(true);
+                          }}
+                        />
+                        <Show when={open()}>
+                          <RevisionUpdateDialog
+                            from={fixture()}
+                            update={update()}
+                            onDismiss={() => setOpen(false)}
+                            onDone={(entry) => {
+                              setOpen(false);
+                              props.onShowFixture(entry);
+                            }}
+                          />
+                        </Show>
+                      </>
+                    )}
+                  </Show>
+                );
+              }}
+            </Show>
 
             <div class="border-t border-neutral-700" />
 

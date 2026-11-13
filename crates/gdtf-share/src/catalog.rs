@@ -155,6 +155,8 @@ struct SavedCatalog {
 pub struct Catalog {
     fetched_at: u64,
     revisions: HashMap<u32, GdtfShareFixture>,
+    /// Revision ids listed under each fixture type id.
+    by_type: HashMap<String, Vec<u32>>,
     latest: Vec<search::Indexed>,
 }
 
@@ -164,7 +166,7 @@ impl Catalog {
     /// Revisions of one fixture type share its id; those without one are grouped by
     /// manufacturer and fixture name. The most recently changed revision of each group
     /// is the one searched.
-    fn new(fetched_at: u64, fixtures: Vec<GdtfShareFixture>) -> Self {
+    pub(crate) fn new(fetched_at: u64, fixtures: Vec<GdtfShareFixture>) -> Self {
         let mut newest: HashMap<String, &GdtfShareFixture> = HashMap::new();
         for fixture in &fixtures {
             let key = fixture.fixture_type_id.clone().unwrap_or_else(|| {
@@ -187,8 +189,15 @@ impl Catalog {
             .into_values()
             .map(|fixture| search::Indexed::new(fixture.clone()))
             .collect();
+        let mut by_type: HashMap<String, Vec<u32>> = HashMap::new();
+        for fixture in &fixtures {
+            if let Some(id) = &fixture.fixture_type_id {
+                by_type.entry(id.clone()).or_default().push(fixture.rid);
+            }
+        }
         Self {
             fetched_at,
+            by_type,
             revisions: fixtures
                 .into_iter()
                 .map(|fixture| (fixture.rid, fixture))
@@ -200,6 +209,18 @@ impl Catalog {
     /// Looks up any listed revision, including ones a newer revision hides from search.
     pub fn revision(&self, rid: u32) -> Option<&GdtfShareFixture> {
         self.revisions.get(&rid)
+    }
+
+    /// Every listed revision of fixture type `fixture_type_id`, in no particular order.
+    pub fn revisions_of_type<'a>(
+        &'a self,
+        fixture_type_id: &str,
+    ) -> impl Iterator<Item = &'a GdtfShareFixture> + 'a {
+        self.by_type
+            .get(fixture_type_id)
+            .into_iter()
+            .flatten()
+            .filter_map(|rid| self.revisions.get(rid))
     }
 
     /// When the list was fetched, in Unix seconds.
