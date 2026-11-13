@@ -15,7 +15,11 @@
 //! code these functions reach is compiled into the bridge.
 #![allow(clippy::missing_errors_doc)]
 
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ops::RangeInclusive,
+    time::Duration,
+};
 
 use nightfall::prelude::{
     project_resolved_spatial_selection as project_resolved_spatial_selection_impl, FixtureRef,
@@ -76,9 +80,9 @@ struct SpatialSelectionResolutionRequest {
 
 /// Read-only browser snapshot implementing the pure selection lookup contract.
 struct BrowserSelectionDataSource {
-    fixtures_by_id: HashMap<u32, SelectionFixture>,
+    fixtures_by_id: BTreeMap<u32, SelectionFixture>,
     fixtures_by_uid: HashMap<uuid::Uuid, SelectionFixture>,
-    groups_by_id: HashMap<u32, SelectionGroup>,
+    groups_by_id: BTreeMap<u32, SelectionGroup>,
     groups_by_uid: HashMap<uuid::Uuid, SelectionGroup>,
     groups_by_label: HashMap<String, SelectionGroup>,
 }
@@ -86,7 +90,7 @@ struct BrowserSelectionDataSource {
 impl BrowserSelectionDataSource {
     /// Builds indexed resolver lookup tables from one browser snapshot.
     fn new(fixtures: Vec<BrowserSelectionFixture>, groups: Vec<Group>) -> Self {
-        let mut fixtures_by_id = HashMap::with_capacity(fixtures.len());
+        let mut fixtures_by_id = BTreeMap::new();
         let mut fixtures_by_uid = HashMap::with_capacity(fixtures.len());
         for fixture in fixtures {
             let resolved = SelectionFixture {
@@ -100,7 +104,7 @@ impl BrowserSelectionDataSource {
             fixtures_by_uid.insert(fixture.fixture_uid, resolved);
         }
 
-        let mut groups_by_id = HashMap::with_capacity(groups.len());
+        let mut groups_by_id = BTreeMap::new();
         let mut groups_by_uid = HashMap::with_capacity(groups.len());
         let mut groups_by_label = HashMap::with_capacity(groups.len());
         for group in groups {
@@ -138,9 +142,22 @@ impl SelectionDataSource for BrowserSelectionDataSource {
         self.fixtures_by_uid.get(&fixture_ref.fixture_uid).cloned()
     }
 
+    /// Lists the snapshot fixture IDs inside `range` from the ordered ID index.
+    fn fixture_ids_in(&self, range: RangeInclusive<u32>) -> Vec<u32> {
+        self.fixtures_by_id
+            .range(range)
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     /// Reports that the browser snapshot includes group lookup data.
     fn groups_available(&self) -> bool {
         true
+    }
+
+    /// Lists the snapshot group IDs inside `range` from the ordered ID index.
+    fn group_ids_in(&self, range: RangeInclusive<u32>) -> Vec<u32> {
+        self.groups_by_id.range(range).map(|(id, _)| *id).collect()
     }
 
     /// Finds a group by stable identity.

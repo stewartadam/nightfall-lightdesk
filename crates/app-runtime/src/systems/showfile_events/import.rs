@@ -564,6 +564,7 @@ fn retarget_group_ref_expr(group_ref_expr: &mut GroupRefExpr, remap: &HashMap<Uu
         | GroupRefExpr::ByLabel(_)
         | GroupRefExpr::RangeById { .. }
         | GroupRefExpr::MissingById(_)
+        | GroupRefExpr::MissingRangeById { .. }
         | GroupRefExpr::MissingByLabel(_) => {}
     }
 }

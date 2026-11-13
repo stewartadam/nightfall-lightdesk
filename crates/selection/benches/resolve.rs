@@ -6,12 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::{collections::HashMap, env, hint::black_box};
+use std::{collections::HashMap, env, hint::black_box, ops::RangeInclusive};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nightfall::prelude::{FixtureRef, SelectionExpr, SpatialSelection, UnresolvedFixtureRef};
 use nightfall_selection::{
     SelectionDataSource, SelectionFixture, SelectionResolver, SpatialSelectionResolver,
+    ids_in_range,
 };
 use uuid::Uuid;
 
@@ -30,6 +31,21 @@ impl SelectionDataSource for BenchDataSource {
 
     fn fixture_by_ref(&self, fixture_ref: &FixtureRef) -> Option<SelectionFixture> {
         self.by_uid.get(&fixture_ref.fixture_uid).cloned()
+    }
+
+    /// Lists the benchmark fixture IDs inside `range`, probing or filtering like the engine.
+    fn fixture_ids_in(&self, range: RangeInclusive<u32>) -> Vec<u32> {
+        ids_in_range(
+            range,
+            self.by_id.len(),
+            |id| self.by_id.contains_key(&id),
+            || self.by_id.keys().copied(),
+        )
+    }
+
+    /// Benchmarks hold no groups.
+    fn group_ids_in(&self, _range: RangeInclusive<u32>) -> Vec<u32> {
+        Vec::new()
     }
 }
 

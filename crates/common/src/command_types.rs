@@ -249,6 +249,16 @@ pub enum GroupRefExpr {
     ///
     /// This marker never binds to a group that later acquires the same ID.
     MissingById(u32),
+    /// Persisted marker for a run of IDs inside an authored numeric range that matched no
+    /// group.
+    ///
+    /// Like [`Self::MissingById`], this marker never binds to groups that later take these IDs.
+    MissingRangeById {
+        /// Lowest missing ID.
+        start: u32,
+        /// Highest missing ID.
+        end: u32,
+    },
     /// Persisted marker for an authored label alias that could not be resolved.
     ///
     /// This marker never binds to a group that later acquires the same label.
@@ -304,6 +314,9 @@ impl std::fmt::Display for GroupRefExpr {
             GroupRefExpr::ByLabel(label) => write!(f, "\"{}\"", label),
             GroupRefExpr::RangeById { start, end } => write!(f, "{}>{}", start, end),
             GroupRefExpr::MissingById(id) => write!(f, "missing-id:{}", id),
+            GroupRefExpr::MissingRangeById { start, end } => {
+                write!(f, "missing-id:{}>{}", start, end)
+            }
             GroupRefExpr::MissingByLabel(label) => write!(f, "missing-label:\"{}\"", label),
             GroupRefExpr::Add { lhs, rhs } => write!(f, "{} + {}", lhs, rhs),
             GroupRefExpr::Sub { lhs, rhs } => write!(f, "{} - {}", lhs, rhs),
