@@ -73,6 +73,7 @@ export const NOTE_TYPES = {
   improvement: "Improvements",
   fix: "Fixes",
   change: "Changes",
+  misc: "Other changes",
 };
 
 /** Feature areas an entry can declare, with the name used when grouping notes by area. */
@@ -96,6 +97,7 @@ export const NOTE_AREAS = {
   workspace: "Panels, layouts and settings",
   app: "Desktop app, updates and privacy",
   guide: "Welcome Guide and user guide",
+  other: "Other",
 };
 
 /**

@@ -75,7 +75,7 @@ published prerelease, rather than repeating the whole series.
 The collector walks all parents between that baseline and the target. It looks up
 associated merged PRs and includes only PRs whose merge commit is in that range,
 deduplicated by PR number. Entries are grouped by the type in their
-`type(area):` tag (New features, Improvements, Fixes, Changes), and the JSON
+`type(area):` tag (New features, Improvements, Fixes, Changes, Other changes), and the JSON
 report keeps each entry's area for grouping by feature area. Untagged entries
 from PRs merged before tags existed take their type from the PR title: `feat` is
 an improvement, `fix` a fix, and anything else a change. The entry text comes

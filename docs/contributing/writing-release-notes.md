@@ -39,6 +39,7 @@ few seconds by someone who never saw the code or the discussion.
 | `improvement` | Something that already worked now works better or is easier.   |
 | `fix`         | Something that was broken now works as intended.               |
 | `change`      | Different behavior or names users must know about, such as a rename or removal. |
+| `misc`        | A user-visible change that fits none of the types above.       |
 
 ### Areas
 
@@ -66,8 +67,10 @@ of the code.
 | `workspace`   | Panels, layouts, dialogs, notifications and settings in general.  |
 | `app`         | The desktop app, installers, updates, privacy and diagnostics.    |
 | `guide`       | The Welcome Guide and the user guide.                             |
+| `other`       | A user-visible change that fits none of the areas above.          |
 
-Pick the area where a user would look for the change. Areas are a fixed list,
+Pick the area where a user would look for the change. Use `misc` and `other`
+only when nothing else fits, and consider whether a new area would. Areas are a fixed list,
 checked by CI; add a new one to `NOTE_AREAS` in `scripts/release-notes.mjs` and to
 this table together.
 

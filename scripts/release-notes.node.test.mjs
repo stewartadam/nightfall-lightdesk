@@ -209,6 +209,19 @@ test("reports untagged, overlong and too many entries", () => {
   );
 });
 
+/** The catch-all misc type and other area are accepted for changes that fit no other group. */
+test("accepts the catch-all type and area", () => {
+  assert.deepEqual(
+    parseReleaseNote("Notes: misc(other): The app looks different."),
+    {
+      kind: "notes",
+      entries: [
+        { type: "misc", area: "other", text: "The app looks different." },
+      ],
+    },
+  );
+});
+
 /** Unknown types and areas fail outright, since their entries would match no release group. */
 test("rejects unknown entry types and areas", () => {
   assert.throws(
