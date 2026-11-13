@@ -15,6 +15,7 @@ nightfall-fixture-library = { path = "../fixture-library" }
 nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-mvr = { path = "../mvr" }
+nightfall-programming = { path = "../programming" }
 nightfall-websocket = { path = "../websocket" }
 serde.workspace = true
 tempfile.workspace = true

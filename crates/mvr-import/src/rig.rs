@@ -106,6 +106,8 @@ pub struct RigFixture {
     pub layer: String,
     /// Name of the hanging position the fixture belongs to, if any.
     pub hanging_position: Option<String>,
+    /// Name of the class the fixture is in, if any.
+    pub class: Option<String>,
     /// Things about the fixture the import leaves out or adjusts.
     pub warnings: Vec<String>,
 }
@@ -167,6 +169,10 @@ pub fn read_rig<R: Read + Seek>(reader: R, file_name: &str) -> Result<RigFile, R
         .positions()
         .map(|position| (position.uuid, position.name.clone()))
         .collect();
+    let classes: BTreeMap<Uuid, String> = scene
+        .classes()
+        .map(|class| (class.uuid, class.name.clone()))
+        .collect();
     let mut specs: Vec<String> = Vec::new();
     let mut fixtures = Vec::new();
     for placed in scene.placed_fixtures() {
@@ -183,7 +189,7 @@ pub fn read_rig<R: Read + Seek>(reader: R, file_name: &str) -> Result<RigFile, R
         {
             specs.push(spec.clone());
         }
-        fixtures.push(rig_fixture(fixture, &placed, &positions));
+        fixtures.push(rig_fixture(fixture, &placed, &positions, &classes));
     }
 
     let fixture_types = specs
@@ -209,6 +215,7 @@ fn rig_fixture(
     fixture: &Fixture,
     placed: &PlacedObject<'_>,
     positions: &BTreeMap<Uuid, String>,
+    classes: &BTreeMap<Uuid, String>,
 ) -> RigFixture {
     let mut warnings = Vec::new();
     let converted = convert_transform(&placed.world);
@@ -260,6 +267,7 @@ fn rig_fixture(
         hanging_position: fixture
             .position
             .and_then(|uuid| positions.get(&uuid).cloned()),
+        class: fixture.class.and_then(|uuid| classes.get(&uuid).cloned()),
         warnings,
     }
 }

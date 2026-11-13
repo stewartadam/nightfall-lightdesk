@@ -34,9 +34,13 @@ import {
   fixtureTypeStatusLabel,
   formatPatch,
   formatPosition,
+  GROUP_SOURCE_OPTIONS,
+  importButtonLabel,
+  importDoneMessage,
   libraryKey,
   type NumberingChoice,
   numberingOption,
+  previewHasChanges,
   rigImportDialogOpen,
   withMappingMode,
   withTypeMapping,
@@ -71,6 +75,10 @@ export function RigImportDialog() {
   const [numbering, setNumbering] = createSignal<NumberingChoice>("FromFile");
   const [numberingValue, setNumberingValue] = createSignal(1);
   const [addToUserLibrary, setAddToUserLibrary] = createSignal(false);
+  const [updateExisting, setUpdateExisting] = createSignal(true);
+  const [groupSource, setGroupSource] = createSignal<types.RigGroupSource>(
+    types.RigGroupSource.Auto,
+  );
   const [mappings, setMappings] = createSignal<types.FixtureTypeMapping[]>([]);
   const [dragging, setDragging] = createSignal(false);
   let fileInput: HTMLInputElement | undefined;
@@ -79,6 +87,8 @@ export function RigImportDialog() {
   /** Collects the dialog's choices into the options the engine plans with. */
   const options = (): types.RigImportOptions => ({
     numbering: numberingOption(numbering(), numberingValue()),
+    updateExisting: updateExisting(),
+    groups: groupSource(),
     addToUserLibrary: addToUserLibrary(),
     typeMappings: mappings(),
   });
@@ -95,6 +105,8 @@ export function RigImportDialog() {
     setNumbering("FromFile");
     setNumberingValue(1);
     setAddToUserLibrary(false);
+    setUpdateExisting(true);
+    setGroupSource(types.RigGroupSource.Auto);
     setMappings([]);
     setStage("pick");
   };
@@ -141,7 +153,14 @@ export function RigImportDialog() {
   /** Re-plans the import whenever an option changes after the first preview. */
   createEffect(
     on(
-      [numbering, numberingValue, addToUserLibrary, mappings],
+      [
+        numbering,
+        numberingValue,
+        addToUserLibrary,
+        updateExisting,
+        groupSource,
+        mappings,
+      ],
       () => {
         if (stage() === "preview") void refreshPreview();
       },
@@ -153,20 +172,21 @@ export function RigImportDialog() {
   const runImport = async () => {
     const id = session();
     const current = preview();
-    if (!id || !current || current.newFixtures === 0) return;
+    if (!id || !current || !previewHasChanges(current)) return;
     setStage("import");
     setError(undefined);
     try {
       await commitRig(id, options());
       const ids = current.fixtures
-        .filter((fixture) => fixture.status === types.FixtureImportStatus.New)
+        .filter(
+          (fixture) =>
+            fixture.status === types.FixtureImportStatus.New ||
+            fixture.status === types.FixtureImportStatus.Update,
+        )
         .map((fixture) => fixture.fixtureId)
         .filter((fixtureId): fixtureId is number => fixtureId !== undefined);
-      pushToast(
-        "success",
-        `Imported ${ids.length} fixtures from ${current.fileName}`,
-      );
-      revealPatchFixtures(ids);
+      pushToast("success", importDoneMessage(current));
+      if (ids.length > 0) revealPatchFixtures(ids);
       setStage("preview");
       close();
     } catch (failure) {
@@ -178,7 +198,19 @@ export function RigImportDialog() {
   /** Opens the file picker. */
   const chooseFile = () => fileInput?.click();
 
-  const importCount = () => preview()?.newFixtures ?? 0;
+  /** Whether the current preview would change the show, which enables the import button. */
+  const canImport = () => {
+    const current = preview();
+    return current !== undefined && previewHasChanges(current);
+  };
+  /** Whether any fixture in the file is already in the show, which offers the update choice. */
+  const hasExistingFixtures = () =>
+    preview()?.fixtures.some(
+      (fixture) =>
+        fixture.status === types.FixtureImportStatus.Update ||
+        fixture.status === types.FixtureImportStatus.Unchanged ||
+        fixture.status === types.FixtureImportStatus.AlreadyInShow,
+    ) ?? false;
   const hasEmbeddedTypes = () =>
     preview()?.fixtureTypes.some((type) => type.status.type === "Embedded") ??
     false;
@@ -292,7 +324,11 @@ export function RigImportDialog() {
                 </Show>
                 {": "}
                 {current().newFixtures} of {current().fixtures.length} fixtures
-                will be added.
+                will be added
+                <Show when={current().updatedFixtures > 0}>
+                  , {current().updatedFixtures} updated
+                </Show>
+                .
               </p>
               <Show when={current().warnings.length > 0}>
                 <ul class="list-disc pl-5 text-xs text-amber-300">
@@ -331,6 +367,35 @@ export function RigImportDialog() {
                         setNumberingValue(Number(event.currentTarget.value))
                       }
                     />
+                  </label>
+                </Show>
+                <label class="flex min-w-48 flex-col gap-1 text-xs font-medium uppercase text-gray-400">
+                  Groups
+                  <NativeSelect
+                    aria-label="Make groups from"
+                    value={groupSource()}
+                    onChange={(event) =>
+                      setGroupSource(
+                        event.currentTarget.value as types.RigGroupSource,
+                      )
+                    }
+                  >
+                    <For each={GROUP_SOURCE_OPTIONS}>
+                      {(option) => (
+                        <option value={option.value}>{option.label}</option>
+                      )}
+                    </For>
+                  </NativeSelect>
+                </label>
+                <Show when={hasExistingFixtures()}>
+                  <label class="flex items-center gap-2 text-sm text-gray-300">
+                    <Checkbox
+                      checked={updateExisting()}
+                      onChange={(event) =>
+                        setUpdateExisting(event.currentTarget.checked)
+                      }
+                    />
+                    Update fixtures already in the show to match the file
                   </label>
                 </Show>
                 <Show when={hasEmbeddedTypes()}>
@@ -470,6 +535,44 @@ export function RigImportDialog() {
                 </div>
               </section>
 
+              <Show when={current().groups.length > 0}>
+                <section class="flex flex-col gap-2">
+                  <h3 class="text-xs font-semibold uppercase text-gray-400">
+                    Groups
+                  </h3>
+                  <div class="overflow-hidden rounded border border-gray-700">
+                    <Table aria-label="Groups the import makes">
+                      <thead class="text-left">
+                        <tr>
+                          <th scope="col" class="w-16">
+                            ID
+                          </th>
+                          <th scope="col">Name</th>
+                          <th scope="col" class="w-28">
+                            Action
+                          </th>
+                          <th scope="col" class="w-20 text-right">
+                            Fixtures
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <For each={current().groups}>
+                          {(group) => (
+                            <tr>
+                              <td>{group.groupId}</td>
+                              <td>{group.name}</td>
+                              <td>{group.existing ? "Refresh" : "New"}</td>
+                              <td class="text-right">{group.fixtureCount}</td>
+                            </tr>
+                          )}
+                        </For>
+                      </tbody>
+                    </Table>
+                  </div>
+                </section>
+              </Show>
+
               <section class="flex min-h-0 flex-col gap-2">
                 <h3 class="text-xs font-semibold uppercase text-gray-400">
                   Fixtures
@@ -509,6 +612,12 @@ export function RigImportDialog() {
                             <td>{fixture.hangingPosition ?? fixture.layer}</td>
                             <td>
                               {fixtureStatusLabel(fixture.status)}
+                              <Show when={fixture.changes.length > 0}>
+                                <span class="text-gray-500">
+                                  {" "}
+                                  ({fixture.changes.join(", ")})
+                                </span>
+                              </Show>
                               <Show when={fixture.warnings.length > 0}>
                                 <span class="text-amber-400"> ⚠</span>
                               </Show>
@@ -535,14 +644,15 @@ export function RigImportDialog() {
         <Button
           variant="primary"
           type="button"
-          disabled={stage() !== "preview" || importCount() === 0}
+          disabled={stage() !== "preview" || !canImport()}
           onClick={() => void runImport()}
         >
           {stage() === "import"
             ? "Importing…"
-            : importCount() > 0
-              ? `Import ${importCount()} fixtures`
-              : "Import"}
+            : (() => {
+                const current = preview();
+                return current ? importButtonLabel(current) : "Import";
+              })()}
         </Button>
       </DialogFooter>
     </Dialog>
