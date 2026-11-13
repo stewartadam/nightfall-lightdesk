@@ -10,12 +10,14 @@
 
 use std::collections::{HashMap, HashSet};
 
-use bevy_ecs::prelude::Resource;
+use bevy_ecs::prelude::{MessageWriter, ResMut, Resource};
+use bevy_ecs::system::SystemParam;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::descriptor::ActionInputKind;
-use crate::invocation::{ActionInput, ActionReference};
+use crate::descriptor::{ActionInputKind, ActionSurface};
+use crate::flash::FlashStates;
+use crate::invocation::{ActionInput, ActionInvocation, ActionReference};
 use crate::registry::ActionRegistry;
 
 /// Level at or above which a continuous control counts as pressed.
@@ -158,6 +160,12 @@ impl From<Uuid> for EdgeKey {
 /// Outside suppression, a release still only fires for a press the binding saw, so a control
 /// held while it was being bound does not fire its release binding when let go.
 ///
+/// Hold and Flash bindings ignore a repeated press without a release in between, such as a
+/// second note on after a controller is replugged, so one release always ends the hold.
+/// When a binding held by a live Hold or Flash press is forgotten, its release is queued for
+/// [`dispatch_forgotten_releases`], so editing, deleting, or unplugging a held control ends
+/// what its press started instead of latching it.
+///
 /// State is kept per [`EdgeKey`], so senders sharing a binding each keep their own edges.
 #[derive(Debug, Default, Resource)]
 pub struct SourceEdgeStates {
@@ -165,6 +173,10 @@ pub struct SourceEdgeStates {
     pressed: HashMap<EdgeKey, bool>,
     /// Bindings and senders whose current press was swallowed, so their release is too.
     swallowed: HashSet<EdgeKey>,
+    /// Release to invoke for each live Hold or Flash press whose binding is forgotten.
+    held: HashMap<EdgeKey, ActionInvocation>,
+    /// Releases of forgotten held bindings, waiting to be dispatched.
+    forgotten: Vec<ActionInvocation>,
 }
 
 impl SourceEdgeStates {
@@ -189,10 +201,11 @@ impl SourceEdgeStates {
             ControlBehavior::Press => self
                 .adapt_direct(binding, kind, signal, suppressed)
                 .and_then(action),
-            ControlBehavior::Release => (!self.edge(binding, signal, suppressed)? && !suppressed)
+            ControlBehavior::Release => (!self.edge(binding, signal, suppressed, true)?
+                && !suppressed)
                 .then_some((BindingTarget::Action, ActionInput::Trigger)),
             ControlBehavior::Hold if kind == ActionInputKind::Trigger => {
-                let target = if self.edge(binding, signal, suppressed)? {
+                let target = if self.edge(binding, signal, suppressed, false)? {
                     BindingTarget::Action
                 } else {
                     BindingTarget::HoldRelease
@@ -200,7 +213,7 @@ impl SourceEdgeStates {
                 Some((target, ActionInput::Trigger))
             }
             ControlBehavior::Hold | ControlBehavior::Flash => {
-                action(button_input(self.edge(binding, signal, suppressed)?))
+                action(button_input(self.edge(binding, signal, suppressed, false)?))
             }
         }
     }
@@ -225,17 +238,29 @@ impl SourceEdgeStates {
             (ActionInputKind::Trigger, SourceSignal::Pulse) => {
                 (!suppressed).then_some(ActionInput::Trigger)
             }
-            _ => self.edge(binding, signal, suppressed).map(button_input),
+            _ => self
+                .edge(binding, signal, suppressed, true)
+                .map(button_input),
         }
     }
 
     /// Returns the button edge a signal dispatches: `true` for a press, `false` for a release.
     ///
     /// Pulses have no edges, and levels only report an edge when crossing the press threshold.
+    /// A button press while already pressed counts as a new press only when `repeat_presses`
+    /// is set, which suits triggers on controls that never send a release, but not bindings
+    /// that pair each press with one release.
+    ///
     /// Press state is tracked even while `suppressed`, but a suppressed press is swallowed along
     /// with its eventual release. A release only passes when it completes a press this binding
     /// dispatched live, so a control held while it was bound does not fire on letting go.
-    fn edge(&mut self, binding: &EdgeKey, signal: SourceSignal, suppressed: bool) -> Option<bool> {
+    fn edge(
+        &mut self,
+        binding: &EdgeKey,
+        signal: SourceSignal,
+        suppressed: bool,
+        repeat_presses: bool,
+    ) -> Option<bool> {
         let (pressed, was_pressed) = match signal {
             SourceSignal::Pulse => return None,
             SourceSignal::Button(pressed) => {
@@ -243,6 +268,9 @@ impl SourceEdgeStates {
                     .pressed
                     .insert(binding.clone(), pressed)
                     .unwrap_or(false);
+                if pressed && previous && !repeat_presses {
+                    return None;
+                }
                 (pressed, previous)
             }
             SourceSignal::Level(value) => {
@@ -277,19 +305,44 @@ impl SourceEdgeStates {
     /// action's release counterpart for the release half of a Hold. Unknown actions still
     /// dispatch as triggers so the registry reports them as unregistered. While `suppressed`,
     /// only releases completing a live press resolve.
+    ///
+    /// A Hold or Flash press also records the release `surface` must send should the binding
+    /// be forgotten before the control is let go.
     pub fn resolve(
         &mut self,
         registry: &ActionRegistry,
         key: impl Into<EdgeKey>,
+        surface: ActionSurface,
         action: &ActionReference,
         behavior: ControlBehavior,
         signal: SourceSignal,
         suppressed: bool,
     ) -> Option<(ActionReference, ActionInput)> {
+        let key = key.into();
         let kind = registry
             .input_kind(&action.id)
             .unwrap_or(ActionInputKind::Trigger);
-        let (target, input) = self.adapt(key, kind, behavior, signal, suppressed)?;
+        let (target, input) = self.adapt(key.clone(), kind, behavior, signal, suppressed)?;
+        if matches!(behavior, ControlBehavior::Hold | ControlBehavior::Flash) {
+            let pressed = target == BindingTarget::Action && input != ActionInput::Release;
+            let release = if !pressed {
+                None
+            } else if kind == ActionInputKind::Trigger {
+                registry
+                    .hold_release_action(action)
+                    .map(|release| ActionInvocation::trigger(release, surface))
+            } else {
+                Some(ActionInvocation::new(
+                    action.clone(),
+                    surface,
+                    ActionInput::Release,
+                ))
+            };
+            match release {
+                Some(release) => self.held.insert(key, release),
+                None => self.held.remove(&key),
+            };
+        }
         let action = match target {
             BindingTarget::Action => action.clone(),
             BindingTarget::HoldRelease => registry.hold_release_action(action)?,
@@ -297,10 +350,70 @@ impl SourceEdgeStates {
         Some((action, input))
     }
 
-    /// Forgets press state from every sender for a binding that was removed or replaced.
+    /// Forgets press state from every sender for a binding that was removed, replaced, or
+    /// whose device went away.
+    ///
+    /// Live Hold and Flash presses on the binding queue their release, which
+    /// [`dispatch_forgotten_releases`] invokes, so the held action ends now rather than
+    /// never: the control's eventual release no longer reaches the binding.
     pub fn forget(&mut self, binding: Uuid) {
         self.pressed.retain(|key, _| key.binding != binding);
         self.swallowed.retain(|key| key.binding != binding);
+        let forgotten = &mut self.forgotten;
+        self.held.retain(|key, release| {
+            if key.binding != binding {
+                return true;
+            }
+            forgotten.push(release.clone());
+            false
+        });
+    }
+
+    /// Drops every press, swallowed press, and queued release without dispatching anything,
+    /// for a show load that replaces the targets those presses were holding.
+    fn end_for_show_load(&mut self) {
+        self.pressed.clear();
+        self.swallowed.clear();
+        self.held.clear();
+        self.forgotten.clear();
+    }
+}
+
+/// Invokes the releases of held Hold and Flash bindings that were forgotten since the last
+/// frame, ending flashes and held actions whose control can no longer release them.
+pub fn dispatch_forgotten_releases(
+    mut edges: ResMut<SourceEdgeStates>,
+    mut invocations: MessageWriter<ActionInvocation>,
+) {
+    if edges.forgotten.is_empty() {
+        return;
+    }
+    invocations.write_batch(edges.forgotten.drain(..));
+}
+
+/// Held control state that outlives a single input message: press edges and active flashes.
+#[derive(SystemParam)]
+pub struct ControlHolds<'w> {
+    /// Press state per binding and sender.
+    edges: Option<ResMut<'w, SourceEdgeStates>>,
+    /// Active flashes and the levels they restore.
+    flashes: Option<ResMut<'w, FlashStates>>,
+}
+
+impl ControlHolds<'_> {
+    /// Ends every held control and flash without restoring anything, for an in-place show
+    /// load.
+    ///
+    /// The new show reuses IDs for different targets, so restoring a captured level or running
+    /// a release counterpart would act on the wrong object. Controls still physically held
+    /// release into nothing, since their press was never seen by the new show.
+    pub fn end_for_show_load(&mut self) {
+        if let Some(edges) = self.edges.as_deref_mut() {
+            edges.end_for_show_load();
+        }
+        if let Some(flashes) = self.flashes.as_deref_mut() {
+            flashes.end_for_show_load();
+        }
     }
 }
 

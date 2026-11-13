@@ -238,6 +238,7 @@ fn handle_osc_events(
             let Some((action, input)) = edges.resolve(
                 &registry,
                 EdgeKey::new(mapping.id).with_sender(sender_host(&osc_event.source)),
+                ActionSurface::Osc,
                 &mapping.action,
                 mapping.behavior,
                 mapping.signal(osc_event),
