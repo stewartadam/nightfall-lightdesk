@@ -4,7 +4,7 @@
 
 FX Editor configures an effect's selection, affected attributes, and movement over time. Open a waveform effect from **FX List**. Step FX and module FX entries do not currently open in this editor.
 
-For waveform effects, choose a waveform such as Sine, Triangle, Sawtooth, Square, or Pulse and set its parameters. Choose the fixture selection and attributes explicitly. Relative values offset another value; absolute values specify the effect's own targets.
+For waveform effects, choose a waveform such as Sine, Triangle, Sawtooth, Square, or Pulse and set its parameters. Choose the fixture selection and attributes explicitly. A waveform's range is a share of each attribute's full range, so a full-range sine on Pan sweeps from one end of the pan to the other. Absolute values specify the effect's own targets. Relative values offset another value, centred on the middle of the waveform's range: the lower half moves the attribute down and the upper half moves it up, so a full-range relative sine on Pan swings the head either side of its programmed position.
 
 **Timing** sets whether the effect runs on the clock or on the beat. With **Seconds**, each **Cycle length** is a time in seconds. With **Beats**, each cycle length is a number of beats of the [show tempo](../tempo.md), so a 4-beat cycle always lasts one bar in 4/4 and follows every tap, nudge and tempo change. A beat-timed effect starts on the beat that is playing when you launch it. On a timeline, it follows the timeline's BPM instead of the live tempo.
 

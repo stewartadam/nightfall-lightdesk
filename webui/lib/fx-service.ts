@@ -7,11 +7,9 @@
  */
 
 import { v4 as uuidv4 } from "uuid";
-import type { FlowWaveform } from "../types";
 import * as types from "../types";
 import { WaveformKind } from "../types";
 import { requireCommandSuccess } from "./command-result";
-import { durationToSeconds, secondsToDuration } from "./duration";
 import { commandClient } from "./engine-commands";
 import { engineRuntime } from "./engine-runtime";
 import { getLogger } from "./logger";
@@ -25,20 +23,6 @@ type FxPreviewUpdate =
   | { type: "StartPreview"; data: types.Fx }
   | { type: "UpdatePreview"; data: types.Fx }
   | { type: "StopPreview" };
-
-/**
- * Converts UI seconds into the backend duration shape used by FX commands.
- */
-function toDuration(seconds: number): types.Duration {
-  return secondsToDuration(seconds);
-}
-
-/**
- * Converts a backend FX duration into seconds for UI editors and waveform controls.
- */
-function fromDuration(duration: types.Duration): number {
-  return durationToSeconds(duration);
-}
 
 /**
  * Stores an FX definition through the backend FX command channel.
@@ -116,7 +100,7 @@ export function createDefaultFx(id: number, label?: string): types.Fx {
         params: {
           kind: WaveformKind.Sin,
           min: 0,
-          max: 255,
+          max: 1,
           duty_cycle: 1.0,
         },
       },
@@ -255,103 +239,4 @@ export function stopFxPreview(): void {
   };
   engineRuntime.sendUpdate("FxPreviewUpdate", update);
   log.info("Stopped fx preview");
-}
-
-/**
- * Clamps numeric waveform fields before mapping them to backend FX ranges.
- */
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
-
-const waveformMinMax = (waveform: FlowWaveform) => {
-  const min = clamp(waveform.base, 0, 1) * 255;
-  const max = clamp(waveform.base + waveform.amplitude, 0, 1) * 255;
-  return {
-    min: Math.round(min),
-    max: Math.round(max),
-  };
-};
-
-/**
- * Convert FlowWaveform to FxWaveform for backend API calls.
- * @param waveform - The FlowWaveform to convert
- * @param isRelative - The is_relative flag (FX-specific)
- */
-export function flowWaveformToFxWaveform(
-  waveform: FlowWaveform,
-  isRelative = false,
-): types.FxWaveform {
-  const { min, max } = waveformMinMax(waveform);
-  const dutyCycle = waveform.duty_cycle ?? 1.0;
-  const phaseStart = waveform.phase;
-  const phaseEnd = phaseStart + 2 * Math.PI;
-  // Construct the object in the format the Rust backend expects
-  // The Rust FxWaveform has params: FxWaveformParams, not waveform: WaveType
-  return {
-    params: {
-      kind: waveform.kind, // WaveformKind values are already the correct format
-      min,
-      max,
-      duty_cycle: dutyCycle,
-    },
-    phase_range: [phaseStart, phaseEnd],
-    cycle_length: toDuration(waveform.cycle_length_secs),
-    width: 1.0,
-    is_relative: isRelative,
-  };
-}
-
-/**
- * Convert FxWaveform to FlowWaveform when loading from backend.
- * @param waveform - The FxWaveform to convert
- */
-export function fxWaveformToFlowWaveform(
-  waveform: types.FxWaveform,
-): FlowWaveform {
-  const params = (
-    waveform as unknown as {
-      params?: {
-        kind?: string;
-        min?: number;
-        max?: number;
-        duty_cycle?: number;
-      };
-    }
-  )?.params;
-  if (!params) {
-    log.warn(
-      "fxWaveformToFlowWaveform: waveform params are missing or malformed",
-      waveform,
-    );
-    return createDefaultFlowWaveform();
-  }
-
-  const min = clamp((params.min ?? 0) / 255, 0, 1);
-  const max = clamp((params.max ?? 255) / 255, 0, 1);
-  // params.kind is already a WaveformKind value (lowercase string)
-  const kind = (params.kind as WaveformKind) ?? WaveformKind.Sin;
-  const dutyCycle = params.duty_cycle ?? 1.0;
-
-  return {
-    kind,
-    cycle_length_secs: fromDuration(waveform.cycle_length),
-    amplitude: clamp(max - min, 0, 1),
-    phase: waveform.phase_range?.[0] ?? 0,
-    base: min,
-    duty_cycle: dutyCycle,
-  };
-}
-
-/**
- * Create a default FlowWaveform.
- */
-export function createDefaultFlowWaveform(): FlowWaveform {
-  return {
-    kind: WaveformKind.Sin,
-    cycle_length_secs: 1,
-    amplitude: 1,
-    phase: 0,
-    base: 0,
-    duty_cycle: 1.0,
-  };
 }

@@ -92,7 +92,7 @@ async function seedShowfileObjects(page: Page): Promise<void> {
             params: {
               kind: "Sin",
               min: 0,
-              max: 255,
+              max: 1,
               duty_cycle: 1,
             },
           },

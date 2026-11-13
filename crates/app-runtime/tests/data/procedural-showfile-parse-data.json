@@ -1,7 +1,7 @@
 {
   "metadata": {
     "nightfallVersion": "0.1.0-alpha.5",
-    "showfileVersion": 26,
+    "showfileVersion": 27,
     "lastSavedUnixSec": 1800000000
   },
   "fixtures": [
@@ -181,7 +181,8 @@
       "dmx_output_rate_hz": 44,
       "artnet_sync_enabled": false,
       "sacn_sync_enabled": false,
-      "sacn_sync_universe": 1
+      "sacn_sync_universe": 1,
+      "sacn_priority": 100
     },
     "panelLayouts": {
       "layouts": [],
@@ -777,8 +778,8 @@
         "VirtualIntensity": {
           "params": {
             "kind": "sin",
-            "min": 10.0,
-            "max": 100.0,
+            "min": 0.03999999910593033,
+            "max": 0.4000000059604645,
             "duty_cycle": 1.0
           },
           "phase_range": [

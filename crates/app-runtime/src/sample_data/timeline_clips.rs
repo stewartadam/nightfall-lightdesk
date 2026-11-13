@@ -671,8 +671,8 @@ fn add_sparkles(world: &mut World) {
     let waveform = |phase_start: f32| FxWaveform {
         params: FxWaveformParams {
             kind: WaveformKind::Sin,
-            min: 0.0,
-            max: 255.0,
+            min: Percentage::from(0.0),
+            max: Percentage::from(1.0),
             duty_cycle: 1.0,
         },
         phase_range: (phase_start, phase_start + 2.0 * std::f32::consts::PI),

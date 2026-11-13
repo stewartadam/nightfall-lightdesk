@@ -35,7 +35,7 @@ test("FX waveform uses shared fields and persists cycle length and relative edit
       },
       attributes: {
         Intensity: {
-          params: { kind: "sin", min: 0, max: 255, duty_cycle: 1 },
+          params: { kind: "sin", min: 0, max: 1, duty_cycle: 1 },
           cycle_length: { secs: 1, nanos: 0 },
           phase_range: [0, 0],
           width: 1,
@@ -125,7 +125,7 @@ test("FX editor Timing switch saves a beat-timed effect", async ({
           },
           attributes: {
             Intensity: {
-              params: { kind: "sin", min: 0, max: 255, duty_cycle: 1 },
+              params: { kind: "sin", min: 0, max: 1, duty_cycle: 1 },
               cycle_length: { secs: 4, nanos: 0 },
               phase_range: [0, 0],
               width: 1,

@@ -15,6 +15,7 @@ nightfall-clips = { path = "../clips" }
 nightfall-compositor = { path = "../compositor" }
 nightfall-dmx = { path = "../dmx" }
 nightfall-engine = { path = "../engine" }
+nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-fixtures = { path = "../fixtures" }
 nightfall-instances = { path = "../instances" }
 nightfall-playback-planner = { path = "../playback-planner" }
@@ -39,7 +40,6 @@ criterion.workspace = true
 minicbor-serde.workspace = true
 moonshine-kind.workspace = true
 nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
-nightfall-fixture-model = { path = "../fixture-model" }
 nightfall-io = { path = "../io" }
 
 [[bench]]
