@@ -37,7 +37,7 @@ pub mod prelude {
     pub use crate::context::UndoContext;
     pub use crate::dispatcher::UndoRegistry;
     pub use crate::manager::{RedoGroup, UndoConfig, UndoEntry, UndoGroup, UndoManager};
-    pub use crate::traits::Undoable;
+    pub use crate::traits::{UndoCoalesceKey, Undoable};
 }
 
 /// Plugin that enables undo/redo functionality across the console.

@@ -26,6 +26,7 @@ fn generate_inverse_entries(world: &World, group: &UndoGroup) -> Option<Vec<Undo
                 command: inverse,
                 description: entry.description.clone(),
                 command_id: None,
+                coalesce_key: None,
             })
         })
         .collect()
@@ -325,6 +326,7 @@ mod tests {
                 command: Box::new(ConflictingCommand),
                 description: "Conflicting operation".to_string(),
                 command_id: None,
+                coalesce_key: None,
             },
             undo_id,
             false,
@@ -389,6 +391,7 @@ mod tests {
                 command: Box::new(ReplayOperation(7)),
                 description: "Replay action".to_string(),
                 command_id: None,
+                coalesce_key: None,
             },
             stored_undo_id,
             false,
@@ -398,6 +401,7 @@ mod tests {
                 command: Box::new(ReplayOperation(8)),
                 description: "Second replay action".to_string(),
                 command_id: None,
+                coalesce_key: None,
             },
             stored_undo_id,
             false,

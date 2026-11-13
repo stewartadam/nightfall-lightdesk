@@ -129,6 +129,7 @@ impl UndoRegistry {
                     command: operation.inverse(ctx)?,
                     description: operation.description(),
                     command_id,
+                    coalesce_key: operation.coalesce_key(),
                 })
             }),
         );

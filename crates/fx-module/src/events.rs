@@ -104,6 +104,7 @@ fn push_forwarded_undo(
             command: Box::new(command) as Box<dyn Undoable>,
             description,
             command_id: Some(event.command_id),
+            coalesce_key: None,
         },
         event.undo_id,
         true,

@@ -213,6 +213,7 @@ mod tests {
             command: Box::new(TestUndoCommand),
             description: "Add fixture".to_string(),
             command_id: Some(CommandId::new()),
+            coalesce_key: None,
         };
         app.world_mut()
             .resource_mut::<UndoManager>()
