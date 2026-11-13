@@ -79,6 +79,7 @@ pub mod prelude {
         SequenceStepTiming, SequenceStepTimingSummary, SequenceTimingSummary, Transition,
         TransitionMode, cue_authored_duration, evaluate_cubic_bezier, sequence_activation_interval,
         sequence_next_activation_position, sequence_timing_summary,
+        sequence_wraparound_is_zero_length,
     };
     pub use crate::value_source::ValueSource;
     pub use crate::variables::VariableValue;

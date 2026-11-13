@@ -6,6 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::borrow::Cow;
+
 use nightfall_engine::prelude::DataProvider;
 use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 
@@ -24,29 +26,46 @@ impl MaterializedCue {
             .max(profile.cue_entry_duration());
     }
 
-    /// Returns direct values or the current values selected by a live Blueprint application.
+    /// Returns an instruction's direct values, or the values its Blueprint application currently
+    /// selects, without logging.
+    ///
+    /// Direct values are borrowed. An application whose Blueprint can't be read yields the reason
+    /// as an error, so callers that run often (such as duration planning) can stay quiet while
+    /// materialization reports it.
+    pub(crate) fn applied_instruction_values<'a>(
+        instruction: &'a AssertionSet,
+        blueprint_data_provider: Option<&DataProvider<Blueprint>>,
+    ) -> Result<Cow<'a, HashMap<Attribute, ValueSource>>, &'static str> {
+        let Some(application) = &instruction.blueprint_application else {
+            return Ok(Cow::Borrowed(&instruction.values));
+        };
+        let provider = blueprint_data_provider
+            .ok_or("Blueprint application could not materialize without a Blueprint provider")?;
+        let blueprint = provider
+            .get(application.blueprint_uid)
+            .map_err(|_| "Blueprint application references a missing definition")?;
+        Ok(Cow::Owned(blueprint.selected_values(&application.selector)))
+    }
+
+    /// Returns direct values or the current values selected by a live Blueprint application,
+    /// warning and returning no values when the application's Blueprint can't be read.
     fn resolved_instruction_values(
         instruction: &AssertionSet,
         blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     ) -> HashMap<Attribute, ValueSource> {
-        let Some(application) = &instruction.blueprint_application else {
-            return instruction.values.clone();
-        };
-        let Some(provider) = blueprint_data_provider else {
-            tracing::warn!(
-                blueprint_uid = %application.blueprint_uid,
-                "Blueprint application could not materialize without a Blueprint provider"
-            );
-            return HashMap::new();
-        };
-        let Ok(blueprint) = provider.get(application.blueprint_uid) else {
-            tracing::warn!(
-                blueprint_uid = %application.blueprint_uid,
-                "Blueprint application references a missing definition"
-            );
-            return HashMap::new();
-        };
-        blueprint.selected_values(&application.selector)
+        match Self::applied_instruction_values(instruction, blueprint_data_provider) {
+            Ok(values) => values.into_owned(),
+            Err(reason) => {
+                tracing::warn!(
+                    blueprint_uid = ?instruction
+                        .blueprint_application
+                        .as_ref()
+                        .map(|application| application.blueprint_uid),
+                    "{reason}"
+                );
+                HashMap::new()
+            }
+        }
     }
 
     /// Resolves a single fixture reference into potentially multiple fixture references.

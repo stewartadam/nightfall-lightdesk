@@ -16,8 +16,8 @@
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use bevy_ecs::schedule::ApplyDeferred;
-use nightfall::prelude::{ColorPath, ColorPathId, ObjectRef, builtin_color_paths};
+use bevy_ecs::schedule::{ApplyDeferred, SystemCondition};
+use nightfall::prelude::{Blueprint, ColorPath, ColorPathId, ObjectRef, builtin_color_paths};
 use nightfall_clips::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
 use nightfall_engine::prelude::*;
 use nightfall_instances::{InstanceId, InstanceKind};
@@ -154,7 +154,10 @@ impl Plugin for CuePlugin {
         app.add_client_feed::<websocket::CuesFeed>();
         app.add_client_feed::<websocket::CueDurationProfilesFeed>()
             .resync_after(resync_client_feed::<websocket::CuesFeed>)
-            .on_change(resource_changed::<nightfall_fixtures::prelude::FixtureDataProviderExt>);
+            .on_change(
+                resource_changed::<nightfall_fixtures::prelude::FixtureDataProviderExt>
+                    .or_eager(resource_exists_and_changed::<DataProvider<Blueprint>>),
+            );
         app.add_client_feed::<websocket::SequencesFeed>()
             .resync_after(resync_client_feed::<websocket::CueDurationProfilesFeed>);
         app.add_client_feed::<websocket::ColorPathsFeed>()

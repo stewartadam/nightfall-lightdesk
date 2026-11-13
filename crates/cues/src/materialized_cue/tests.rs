@@ -162,6 +162,75 @@ fn materialized_absolute_value(
     }
 }
 
+/// Verifies the planner's cue duration profile times Blueprint-applied values the same way live
+/// materialization does, so follow cues after a Blueprint fade are planned at the same moment
+/// they fire live.
+#[test]
+fn duration_profile_includes_blueprint_applied_values() {
+    let mut app = App::new();
+    app.init_resource::<DataProvider<Group>>();
+    app.init_resource::<DataProvider<Blueprint>>();
+    app.init_resource::<FixtureDataProviderExt>();
+    let (fixture_ref, _parameters) =
+        add_single_element_fixture(app.world_mut(), 402, &[(Attribute::Red, 0.0, 255.0)]);
+    let blueprint_uid = Uuid::new_v4();
+    app.world_mut()
+        .resource_mut::<DataProvider<Blueprint>>()
+        .add(Blueprint {
+            identifiers: Identifiers {
+                id: 6,
+                uid: blueprint_uid,
+                label: "Color".to_owned(),
+            },
+            values: HashMap::from([(
+                Attribute::Red,
+                ValueSource::Inline(ParameterValue::Absolute { value: 64.0 }),
+            )]),
+            ..Default::default()
+        })
+        .expect("blueprint should be insertable");
+    let cue = Cue {
+        transitions: PartialTransition {
+            fade_in: Some(TransitionMode::Fixed(Duration::from_secs(5))),
+            ..Default::default()
+        },
+        instructions: vec![BoundAssertionSet {
+            selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
+            assertions: AssertionSet {
+                blueprint_application: Some(BlueprintApplication {
+                    blueprint_uid,
+                    selector: BlueprintSelector::Category(AttributeCategory::Color),
+                }),
+                ..Default::default()
+            },
+        }],
+        ..Default::default()
+    };
+
+    let materialized = make_materialized_cue_with_blueprints(app.world_mut(), &cue);
+    assert_eq!(
+        materialized.duration_profile().cue_entry_duration(),
+        Duration::from_secs(5)
+    );
+
+    let mut system_state = SystemState::<(
+        Res<FixtureDataProviderExt>,
+        Res<DataProvider<Blueprint>>,
+        SpatialSelectionResolver,
+    )>::new(app.world_mut());
+    let (fixture_data_provider, blueprint_data_provider, selection_resolver) = system_state
+        .get(app.world_mut())
+        .expect("test system parameters should be available");
+    assert_eq!(
+        fixture_data_provider.cue_duration_profile(
+            &cue,
+            Some(&blueprint_data_provider),
+            &selection_resolver,
+        ),
+        materialized.duration_profile()
+    );
+}
+
 /// Live category applications re-read values and category membership while absolute copies do not.
 #[test]
 fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
@@ -2240,7 +2309,7 @@ fn materialize_cue_parts_share_start_and_override_in_order() {
         .get(app.world_mut())
         .expect("test system parameters should be available");
     assert_eq!(
-        fixture_data_provider.cue_duration_profile(&cue, &selection_resolver),
+        fixture_data_provider.cue_duration_profile(&cue, None, &selection_resolver),
         duration_profile
     );
     assert_eq!(

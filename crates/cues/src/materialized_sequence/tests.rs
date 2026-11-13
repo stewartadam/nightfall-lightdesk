@@ -2694,6 +2694,83 @@ fn sequence_release_complete_waits_for_noop_release_cue_timing() {
     );
 }
 
+/// Verifies a wrapping sequence whose cues all take zero time advances once to its last cue and
+/// then holds there, instead of running the per-tick advance cap and landing on a different cue
+/// every frame.
+#[test]
+fn zero_length_wrapping_sequence_holds_on_last_cue() {
+    let mut sequence = terminated_sequence();
+    sequence.sequence.wrap = true;
+    sequence.wrap = true;
+    let mut first = test_cue(1, "One");
+    first.trigger = CueTriggerType::AfterDelay(Duration::ZERO);
+    let second = test_cue(2, "Two");
+    let third = test_cue(3, "Three");
+    sequence.steps = vec![first, second, third];
+    sequence.mcues = sequence
+        .steps
+        .iter()
+        .map(|cue| MaterializedCue {
+            cue: cue.clone(),
+            ..Default::default()
+        })
+        .collect();
+    sequence.transition_source_layers = vec![None, None, None];
+    sequence.cue_activation_positions = vec![Some(Duration::ZERO), None, None];
+
+    let clock = InstanceClock {
+        position: Duration::from_secs(1),
+        ..Default::default()
+    };
+    assert_eq!(sequence.advance_autonomous_at_clock(Some(&clock)), 2);
+    assert_eq!(sequence.position(), 3);
+
+    let later_clock = InstanceClock {
+        position: Duration::from_secs(2),
+        ..Default::default()
+    };
+    assert_eq!(sequence.advance_autonomous_at_clock(Some(&later_clock)), 0);
+    assert_eq!(sequence.position(), 3);
+}
+
+/// Verifies a running chase flows through the placeholder that stands in for a missing cue and
+/// reaches the authored cue after it, keeping that cue at its authored position.
+#[test]
+fn chase_flows_through_missing_cue_placeholder() {
+    let first = test_cue(1, "One");
+    let third = test_cue(3, "Three");
+    let missing_uid = uuid::Uuid::new_v4();
+    let mut cue_data_provider = DataProvider::<Cue>::default();
+    cue_data_provider.add(first.clone()).unwrap();
+    cue_data_provider.add(third.clone()).unwrap();
+    let mut sequence = terminated_sequence();
+    sequence.sequence.steps = vec![
+        first.identifiers.uid.into(),
+        missing_uid.into(),
+        third.identifiers.uid.into(),
+    ];
+    sequence.steps =
+        super::materialize::resolved_sequence_steps(&sequence.sequence, &cue_data_provider);
+    sequence.mcues = sequence
+        .steps
+        .iter()
+        .map(|cue| MaterializedCue {
+            cue: cue.clone(),
+            ..Default::default()
+        })
+        .collect();
+    sequence.transition_source_layers = vec![None, None, None];
+    sequence.cue_activation_positions = vec![Some(Duration::ZERO), None, None];
+
+    let clock = InstanceClock {
+        position: Duration::from_secs(1),
+        ..Default::default()
+    };
+    assert_eq!(sequence.advance_autonomous_at_clock(Some(&clock)), 2);
+    assert_eq!(sequence.position(), 3);
+    assert_eq!(sequence.current().identifiers.uid, third.identifiers.uid);
+}
+
 /// Verifies sequence-end release behavior ignores a wrapped transition back to the first cue.
 #[test]
 fn advance_sequences_does_not_release_after_wraparound() {

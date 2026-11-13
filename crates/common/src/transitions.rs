@@ -85,7 +85,7 @@ pub enum CueTriggerType {
 }
 
 /// Delay, fade, and curve settings applied when values enter or leave a state.
-#[derive(Partial, Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Partial, Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 #[partially(derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq))]
 pub struct Transition {
@@ -241,6 +241,27 @@ pub fn sequence_next_activation_position(
             }
         }
     }
+}
+
+/// Reports whether an autonomous wrap back to cue 1 would complete a cycle that took no time.
+///
+/// `first_step_activation` is where cue 1 was last activated and `current_activation` is where
+/// the last cue was activated. When every step in a wrapping sequence follows the previous one
+/// with zero duration, the wrap lands on the position cue 1 started this cycle at and every later
+/// advance stays due at it, so autonomous playback would spin through the cues within a single
+/// tick. Callers hold on the last cue instead of wrapping in that case. A cue 1 anchor later than
+/// the current one is left over from before a re-anchor and says nothing about this cycle, so it
+/// never blocks a wrap.
+pub fn sequence_wraparound_is_zero_length(
+    is_wraparound: bool,
+    next_activation: Duration,
+    current_activation: Duration,
+    first_step_activation: Option<Duration>,
+) -> bool {
+    is_wraparound
+        && first_step_activation.is_some_and(|first_activation| {
+            first_activation <= current_activation && next_activation <= first_activation
+        })
 }
 
 /// Returns the source-local interval from one cue activation to the next.
@@ -572,6 +593,43 @@ impl MaterializedTransition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Verifies only a wrap that lands on this cycle's cue 1 anchor counts as zero-length, and a
+    /// stale cue 1 anchor later than the current cue never blocks a wrap.
+    #[test]
+    fn wraparound_zero_length_detection() {
+        let at = Duration::from_secs;
+        assert!(sequence_wraparound_is_zero_length(
+            true,
+            at(2),
+            at(2),
+            Some(at(2))
+        ));
+        assert!(!sequence_wraparound_is_zero_length(
+            false,
+            at(2),
+            at(2),
+            Some(at(2))
+        ));
+        assert!(!sequence_wraparound_is_zero_length(
+            true,
+            at(3),
+            at(2),
+            Some(at(0))
+        ));
+        assert!(!sequence_wraparound_is_zero_length(
+            true,
+            at(3),
+            at(2),
+            Some(at(5))
+        ));
+        assert!(!sequence_wraparound_is_zero_length(
+            true,
+            at(2),
+            at(2),
+            None
+        ));
+    }
 
     #[test]
     fn test_fixed_returns_same_duration_for_all() {

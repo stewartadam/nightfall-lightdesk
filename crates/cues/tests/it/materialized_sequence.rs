@@ -3261,8 +3261,10 @@ fn sequence_cue_default_tracking_mode_inherits_sequence_tracking_mode() {
     );
 }
 
+/// Verifies a sequence whose only cue reference is missing materializes one empty step that
+/// keeps the missing cue's UID and follows the previous cue.
 #[test]
-fn test_materialize_sequence_skips_missing_cues() {
+fn test_materialize_sequence_holds_missing_cue_position() {
     let mut app = App::new();
     app.init_resource::<DataProvider<Cue>>();
     app.init_resource::<DataProvider<Group>>();
@@ -3290,11 +3292,14 @@ fn test_materialize_sequence_skips_missing_cues() {
         &selection_resolver,
     );
 
-    assert!(msequence.mcues.is_empty());
+    assert_eq!(msequence.mcues.len(), 1);
+    assert_eq!(msequence.current().identifiers.uid, missing_uid);
+    assert_eq!(msequence.current().trigger, CueTriggerType::FollowPrevious);
 }
 
+/// Verifies a missing cue reference keeps its step so later cues stay at their authored positions.
 #[test]
-fn test_materialize_sequence_filters_missing_cues_preserving_order() {
+fn test_materialize_sequence_missing_cues_preserve_positions() {
     let mut app = App::new();
     app.init_resource::<DataProvider<Cue>>();
     app.init_resource::<DataProvider<Group>>();
@@ -3337,8 +3342,9 @@ fn test_materialize_sequence_filters_missing_cues_preserving_order() {
         &selection_resolver,
     );
 
-    assert_eq!(msequence.mcues.len(), 1);
-    assert_eq!(msequence.current().identifiers.uid, cue_uid);
+    assert_eq!(msequence.mcues.len(), 2);
+    assert_eq!(msequence.current().identifiers.uid, missing_uid);
+    assert_eq!(msequence.step(2).identifiers.uid, cue_uid);
 }
 
 /// Verifies wrapped sequences use the last cue as the tracking base for the first cue.
@@ -6676,6 +6682,7 @@ fn sequence_release_duration_planner_matches_timing_only_htp_release() {
             },
             Some(&sequence_data_provider),
             &fixture_data_provider,
+            None,
             &selection_resolver,
         )
         .expect("sequence clip should have a planned release duration")
@@ -7374,6 +7381,160 @@ fn sequence_definition_change_rematerializes_embedded_release_cue() {
     msequence.release_from_rendered_assertions(&fixture_data_provider, &parameter_query);
 
     assert_eq!(msequence.max_release_duration(), Duration::from_secs(2));
+}
+
+/// Verifies a releasing playback keeps its frozen release look and release anchor when its own
+/// sequence or any other sequence is edited mid-fade, so the fade-out never restarts.
+#[test]
+fn sequence_definition_change_keeps_release_of_releasing_playback() {
+    let mut app = App::new();
+    app.init_resource::<DataProvider<Cue>>();
+    app.init_resource::<DataProvider<Sequence>>();
+    app.init_resource::<DataProvider<Group>>();
+    app.init_resource::<FixtureDataProviderExt>();
+    app.add_systems(
+        Update,
+        rematerialize_sequences_after_sequence_definition_change,
+    );
+
+    let (fixture_ref, _parameter) =
+        add_single_parameter_fixture(app.world_mut(), 708, Attribute::Intensity);
+    let cue_uid = Uuid::new_v4();
+    let cue = cue_with_parameter(
+        1,
+        cue_uid,
+        "releasing",
+        fixture_ref,
+        Attribute::Intensity,
+        ParameterValue::Absolute { value: 200.0 },
+        PartialTransition {
+            fade_out: Some(TransitionMode::Fixed(Duration::from_secs(5))),
+            ..Default::default()
+        },
+    );
+    {
+        let mut cue_data_provider = app.world_mut().resource_mut::<DataProvider<Cue>>();
+        cue_data_provider.add(cue).unwrap();
+    }
+
+    let releasing_sequence = build_sequence("releasing sequence", vec![cue_uid.into()]);
+    let mut other_sequence = build_sequence("other sequence", vec![cue_uid.into()]);
+    other_sequence.identifiers.id = 2;
+    {
+        let mut sequence_data_provider = app.world_mut().resource_mut::<DataProvider<Sequence>>();
+        sequence_data_provider
+            .add(releasing_sequence.clone())
+            .unwrap();
+        sequence_data_provider.add(other_sequence.clone()).unwrap();
+    }
+
+    let mut msequence = materialize_sequence(&mut app, &releasing_sequence);
+    let _ = render_sequence_layer(&mut app, &mut msequence);
+    {
+        let mut system_state = SystemState::<(
+            Res<FixtureDataProviderExt>,
+            Query<InstanceRef<Parameter>>,
+        )>::new(app.world_mut());
+        let (fixture_data_provider, parameter_query) = system_state
+            .get(app.world_mut())
+            .expect("test system parameters should be available");
+        msequence.release_from_rendered_assertions_at_position(
+            &fixture_data_provider,
+            &parameter_query,
+            Some(Duration::from_secs(2)),
+        );
+    }
+    assert!(msequence.is_releasing());
+    let release_duration = msequence.max_release_duration();
+    let msequence_entity = app
+        .world_mut()
+        .spawn((
+            msequence,
+            ReleaseMarker::default(),
+            InstanceClock {
+                position: Duration::from_millis(2500),
+                ..Default::default()
+            },
+        ))
+        .id();
+
+    for edited in [other_sequence, releasing_sequence] {
+        let mut edited = edited;
+        edited.default_timing = Transition {
+            fade_in: TransitionMode::Fixed(Duration::from_secs(3)),
+            ..Default::default()
+        };
+        app.world_mut()
+            .resource_mut::<DataProvider<Sequence>>()
+            .add(edited)
+            .unwrap();
+        app.update();
+
+        let msequence = app
+            .world()
+            .get::<MaterializedSequence>(msequence_entity)
+            .expect("releasing playback should still exist");
+        assert!(
+            msequence.is_releasing(),
+            "a sequence edit must not discard the frozen release look"
+        );
+        assert_eq!(
+            msequence.release_started_position(),
+            Some(Duration::from_secs(2)),
+            "a sequence edit must not re-anchor the release fade"
+        );
+        assert_eq!(msequence.max_release_duration(), release_duration);
+    }
+}
+
+/// Verifies a sequence that references a missing cue keeps one step per authored position, so
+/// jumping to a position lands on the authored cue there instead of the next stored one.
+#[test]
+fn missing_cue_reference_keeps_authored_positions() {
+    let mut app = App::new();
+    app.init_resource::<DataProvider<Cue>>();
+    app.init_resource::<DataProvider<Group>>();
+    app.init_resource::<FixtureDataProviderExt>();
+
+    let cue_1 = Cue {
+        identifiers: Identifiers {
+            id: 1,
+            uid: Uuid::new_v4(),
+            label: "One".to_string(),
+        },
+        ..Default::default()
+    };
+    let cue_3 = Cue {
+        identifiers: Identifiers {
+            id: 3,
+            uid: Uuid::new_v4(),
+            label: "Three".to_string(),
+        },
+        ..Default::default()
+    };
+    let missing_uid = Uuid::new_v4();
+    {
+        let mut cue_data_provider = app.world_mut().resource_mut::<DataProvider<Cue>>();
+        cue_data_provider.add(cue_1.clone()).unwrap();
+        cue_data_provider.add(cue_3.clone()).unwrap();
+    }
+
+    let sequence = build_sequence(
+        "sequence with a dangling cue",
+        vec![
+            cue_1.identifiers.uid.into(),
+            missing_uid.into(),
+            cue_3.identifiers.uid.into(),
+        ],
+    );
+    let mut msequence = materialize_sequence(&mut app, &sequence);
+    msequence.set_position(3);
+    assert_eq!(msequence.position(), 3);
+    assert_eq!(msequence.current().identifiers.uid, cue_3.identifiers.uid);
+
+    msequence.set_position(2);
+    assert_eq!(msequence.position(), 2);
+    assert_eq!(msequence.current().identifiers.uid, missing_uid);
 }
 
 /// Verifies running sequence rematerialization preserves the active cue by UID after reorder.

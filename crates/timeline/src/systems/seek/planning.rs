@@ -21,6 +21,8 @@ pub struct TimelineSeekPlanningParams<'w, 's> {
     pub(super) fx_data_provider: Option<Res<'w, DataProvider<Fx>>>,
     /// Fixture data used to resolve cue and sequence duration profiles.
     pub(super) fixture_data_provider: Res<'w, FixtureDataProviderExt>,
+    /// Optional Blueprints whose selected values time Blueprint-applied cue instructions.
+    pub(super) blueprint_data_provider: Option<Res<'w, DataProvider<Blueprint>>>,
     /// Spatial resolver used to derive source duration profiles.
     pub(super) selection_resolver: SpatialSelectionResolver<'w>,
     /// Clips available for source and owner resolution.
@@ -229,6 +231,7 @@ pub(super) fn plan_timeline_reconstruction(
     let sequence_data_provider = planning.sequence_data_provider.as_deref();
     let fx_data_provider = planning.fx_data_provider.as_deref();
     let fixture_data_provider = &planning.fixture_data_provider;
+    let blueprint_data_provider = planning.blueprint_data_provider.as_deref();
     let selection_resolver = &planning.selection_resolver;
     let exec_query = &planning.exec_query;
     let step_fx_query = &planning.step_fx_query;
@@ -306,6 +309,7 @@ pub(super) fn plan_timeline_reconstruction(
                     cue_data_provider,
                     sequence_data_provider,
                     fixture_data_provider,
+                    blueprint_data_provider,
                     selection_resolver,
                     timeline.timeline.beats_per_second(),
                 ),
@@ -324,6 +328,7 @@ pub(super) fn plan_timeline_reconstruction(
                                 cue_data_provider,
                                 sequence_data_provider,
                                 fixture_data_provider,
+                                blueprint_data_provider,
                                 selection_resolver,
                                 timeline.timeline.beats_per_second(),
                             ),
