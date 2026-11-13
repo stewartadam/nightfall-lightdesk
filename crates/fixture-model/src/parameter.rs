@@ -496,6 +496,18 @@ impl ParameterMetadata {
         }
     }
 
+    /// Converts a DMX integer at this parameter's resolution to the value that outputs it,
+    /// the exact inverse of [`Self::dmx_value`]: range, inversion and calibration offset are
+    /// all undone, so asserting the result writes `dmx` back to the wire.
+    ///
+    /// DMX values that only a clamped offset could reach map to the edge of the range.
+    pub fn value_from_dmx(&self, dmx: u32) -> ParameterDmxValue {
+        let min = self.logical_min();
+        let max = self.logical_max();
+        let offset = self.offset.resolve_as_dmx_offset(min, max);
+        (self.logical_value_from_dmx(dmx) - offset).clamp(min, max)
+    }
+
     /// Returns the value operators see for a logical `value`: clamped to the
     /// logical range and inverted when configured, without calibration offset.
     ///
@@ -712,6 +724,29 @@ mod tests {
                     metadata.dmx_value(metadata.logical_value_from_dmx(dmx)),
                     dmx,
                     "inverted={is_inverted} range={min}..{max}"
+                );
+            }
+        }
+    }
+
+    /// Verifies the DMX-to-value inverse undoes the calibration offset as well as inversion, so
+    /// the value it returns writes the same DMX back.
+    #[test]
+    fn value_from_dmx_round_trips_through_offset_and_inversion() {
+        for (is_inverted, offset) in [(false, 10.0), (true, 0.0), (true, -20.0)] {
+            let metadata = ParameterMetadata {
+                attribute: Attribute::Pan,
+                resolution: DmxValueResolution::Coarse,
+                max: 255.0,
+                offset: ParameterValue::Absolute { value: offset },
+                is_inverted,
+                ..Default::default()
+            };
+            for dmx in [40u32, 128, 200] {
+                assert_eq!(
+                    metadata.dmx_value(metadata.value_from_dmx(dmx)),
+                    dmx,
+                    "inverted={is_inverted} offset={offset}"
                 );
             }
         }
