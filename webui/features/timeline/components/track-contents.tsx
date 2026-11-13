@@ -232,6 +232,8 @@ const TrackContents = (props: TrackListProps) => {
       fxModules: $fxModules(),
     }),
   );
+  /** Snap settings for insertion, rebuilt only when the grid changes rather than per pointer move. */
+  const snapConfig = createMemo(() => timelineSnapConfig(ctx));
   /** Flattens timeline actions so clip stop actions can live on any track. */
   const allActions = createMemo(() =>
     props.tracks.flatMap((track) => track.actions),
@@ -249,11 +251,11 @@ const TrackContents = (props: TrackListProps) => {
     source: InsertionIntent["source"],
   ): InsertionIntent => {
     const positionMs = Math.max(
-      0,
+      ctx.start(),
       snapPositionMs(
         ctx.start() + pixelsToMs(rawPositionPx, ctx.zoom()),
         ctx.zoom(),
-        timelineSnapConfig(ctx),
+        snapConfig(),
       ),
     );
     return {

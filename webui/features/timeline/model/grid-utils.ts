@@ -88,6 +88,7 @@ export interface SnapConfig {
   beatsPerBar?: number; // Number of beats per bar (for bar-level snapping)
   markers?: number[]; // Explicit marker positions in milliseconds
   anchorMs?: number; // Optional beat anchor offset in milliseconds
+  anchorBeatIndex?: number; // Beat number of the anchor, counted from the first downbeat
 }
 
 export interface SeekQuantizeConfig {
@@ -140,8 +141,8 @@ export function timelineSnapConfig(source: TimelineSnapSource): SnapConfig {
     };
   }
 
-  const markerTimes =
-    source.beatgrid()?.markers.map((marker) => durationToMs(marker.time)) ?? [];
+  const markers = source.beatgrid()?.markers ?? [];
+  const markerTimes = markers.map((marker) => durationToMs(marker.time));
   return {
     enabled: source.snapEnabled(),
     interval: msPerBeat(source.bpm()),
@@ -150,6 +151,7 @@ export function timelineSnapConfig(source: TimelineSnapSource): SnapConfig {
     beatsPerBar: source.beatsPerBar(),
     markers: markerTimes.length > 1 ? markerTimes : undefined,
     anchorMs: markerTimes[0] ?? 0,
+    anchorBeatIndex: markers[0]?.beat_index ?? 0,
   };
 }
 
@@ -199,13 +201,17 @@ export function snapPositionMs(
   // Calculate snapping points based on mode
   if (config.isBeat && config.beatsPerBar) {
     // In BPM mode, we want to snap to beats and bars
+    // Beats and bars count from the first downbeat, as the ruler draws them, and no grid
+    // points exist before it.
     const beatMs = config.interval;
     const barMs = beatMs * config.beatsPerBar;
-    const anchorMs = config.anchorMs ?? 0;
-    const relativeMs = positionMs - anchorMs;
+    const firstDownbeatMs =
+      (config.anchorMs ?? 0) - (config.anchorBeatIndex ?? 0) * beatMs;
+    const relativeMs = positionMs - firstDownbeatMs;
 
     // First check if we're close to a bar boundary (higher priority)
-    const nearestBarMs = anchorMs + Math.round(relativeMs / barMs) * barMs;
+    const nearestBarMs =
+      firstDownbeatMs + Math.max(0, Math.round(relativeMs / barMs)) * barMs;
     const thresholdMs = pixelDistanceToMs(config.threshold * 1.5, zoom); // Slightly higher threshold for bars
 
     if (Math.abs(positionMs - nearestBarMs) <= thresholdMs) {
@@ -214,7 +220,8 @@ export function snapPositionMs(
     }
 
     // If not close to a bar boundary, try snapping to beat
-    const nearestBeatMs = anchorMs + Math.round(relativeMs / beatMs) * beatMs;
+    const nearestBeatMs =
+      firstDownbeatMs + Math.max(0, Math.round(relativeMs / beatMs)) * beatMs;
     const beatThresholdMs = pixelDistanceToMs(config.threshold, zoom);
 
     if (Math.abs(positionMs - nearestBeatMs) <= beatThresholdMs) {

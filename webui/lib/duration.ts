@@ -19,11 +19,16 @@ export function durationToSeconds(duration: Duration | undefined): number {
   return durationToMs(duration) / 1000;
 }
 
+/**
+ * Converts milliseconds into a backend duration, rounded to the nearest nanosecond so a
+ * computed grid time such as a beat at 130 BPM reads back as the same time. Negative times
+ * become zero.
+ */
 export function msToDuration(ms: number): Duration {
-  const normalizedMs = Math.max(0, ms);
+  const totalNanos = Math.round(Math.max(0, ms) * 1_000_000);
   return {
-    secs: Math.trunc(normalizedMs / 1000),
-    nanos: Math.trunc((normalizedMs % 1000) * 1_000_000),
+    secs: Math.floor(totalNanos / 1_000_000_000),
+    nanos: totalNanos % 1_000_000_000,
   };
 }
 

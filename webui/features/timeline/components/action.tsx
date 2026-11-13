@@ -46,7 +46,7 @@ import {
   resolveActionDisplayLabel,
   resolveActionEditorTarget,
 } from "../model/action-targets";
-import { timelineSnapConfig } from "../model/grid-utils";
+import { type SnapConfig, timelineSnapConfig } from "../model/grid-utils";
 import type { TimelineActionKind } from "../model/timeline-action-kind";
 
 const log = getLogger(import.meta.url);
@@ -101,6 +101,8 @@ type DragSessionAction = {
 type DragSession = {
   anchorOriginalTrackIndex: number;
   anchorPositionMs: number;
+  /** Snap settings captured when the drag starts, so pointer moves don't rebuild them. */
+  snapConfig: SnapConfig;
   actions: DragSessionAction[];
   canceled: boolean;
 };
@@ -249,7 +251,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
         dragSession !== undefined ? [dragSession.anchorPositionMs] : undefined,
       timelineStartMs: ctx.start(),
       zoom: ctx.zoom(),
-      snapConfig: timelineSnapConfig(ctx),
+      snapConfig: dragSession?.snapConfig ?? timelineSnapConfig(ctx),
     });
     return { ...position, trackId: target.trackId };
   };
@@ -304,6 +306,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     return {
       anchorOriginalTrackIndex: anchorItem.originalTrackIndex,
       anchorPositionMs: anchorItem.originalPositionMs,
+      snapConfig: timelineSnapConfig(ctx),
       actions,
       canceled: false,
     };
