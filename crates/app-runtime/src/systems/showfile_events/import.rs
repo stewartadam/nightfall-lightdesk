@@ -7,7 +7,7 @@
  */
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::{Component, Path, PathBuf},
 };
 
@@ -633,6 +633,9 @@ where
 }
 
 /// Merge patch-scoped color path defaults by fixture reference.
+///
+/// Merge keeps one entry per fixture in first-seen order, with later entries (incoming over
+/// current) replacing earlier ones, so the result never depends on hash iteration order.
 fn merge_color_path_defaults(
     current: Vec<ColorPathDefault>,
     incoming: Vec<ColorPathDefault>,
@@ -642,14 +645,18 @@ fn merge_color_path_defaults(
         ShowfileImportPolicy::Skip => current,
         ShowfileImportPolicy::Overwrite | ShowfileImportPolicy::Replace => incoming,
         ShowfileImportPolicy::Merge => {
-            let mut by_fixture = current
-                .into_iter()
-                .map(|default| (default.fixture.clone(), default))
-                .collect::<HashMap<_, _>>();
-            for default in incoming {
-                by_fixture.insert(default.fixture.clone(), default);
+            let mut merged = Vec::<ColorPathDefault>::with_capacity(current.len());
+            let mut index_by_fixture = HashMap::new();
+            for default in current.into_iter().chain(incoming) {
+                match index_by_fixture.get(&default.fixture) {
+                    Some(&index) => merged[index] = default,
+                    None => {
+                        index_by_fixture.insert(default.fixture.clone(), merged.len());
+                        merged.push(default);
+                    }
+                }
             }
-            by_fixture.into_values().collect()
+            merged
         }
     }
 }
@@ -877,10 +884,10 @@ fn merge_single<T>(current: T, incoming: T, policy: ShowfileImportPolicy) -> T {
 
 /// Merge global variables by name according to the requested import policy.
 fn merge_variables(
-    current: HashMap<String, VariableValue>,
-    incoming: HashMap<String, VariableValue>,
+    current: BTreeMap<String, VariableValue>,
+    incoming: BTreeMap<String, VariableValue>,
     policy: ShowfileImportPolicy,
-) -> HashMap<String, VariableValue> {
+) -> BTreeMap<String, VariableValue> {
     match policy {
         ShowfileImportPolicy::Skip => current,
         ShowfileImportPolicy::Overwrite => incoming,
@@ -998,5 +1005,59 @@ mod blueprint_step_fx_tests {
         assert_eq!(steps[0].blueprint_uid, Some(current_uid));
         assert_eq!(steps[1].blueprint_uid, None);
         assert_eq!(steps[1].target, ParameterValue::Absolute { value: 25.0 });
+    }
+}
+
+#[cfg(test)]
+mod color_path_default_merge_tests {
+    use super::*;
+
+    /// Build a whole-fixture default pointing at the given color path.
+    fn default_for(fixture_uid: Uuid, color_path: u32) -> ColorPathDefault {
+        ColorPathDefault {
+            fixture: FixtureRef {
+                fixture_uid,
+                index: None,
+            },
+            color_path_id: ColorPathId(color_path),
+        }
+    }
+
+    /// Merging keeps existing defaults in place, collapses duplicate fixtures, replaces matching
+    /// fixtures and appends new ones, so the merged list is the same on every run and the show's
+    /// saved hash is stable.
+    #[test]
+    fn merge_keeps_current_order_and_appends_new_fixtures() {
+        let fixtures = (0..8).map(|_| Uuid::new_v4()).collect::<Vec<_>>();
+        let mut current = fixtures[..6]
+            .iter()
+            .map(|uid| default_for(*uid, 1))
+            .collect::<Vec<_>>();
+        current.push(default_for(fixtures[0], 3));
+        let incoming = vec![
+            default_for(fixtures[7], 2),
+            default_for(fixtures[2], 2),
+            default_for(fixtures[6], 2),
+        ];
+
+        let merged = merge_color_path_defaults(current, incoming, ShowfileImportPolicy::Merge);
+
+        let order = merged
+            .iter()
+            .map(|default| (default.fixture.fixture_uid, default.color_path_id.0))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            order,
+            vec![
+                (fixtures[0], 3),
+                (fixtures[1], 1),
+                (fixtures[2], 2),
+                (fixtures[3], 1),
+                (fixtures[4], 1),
+                (fixtures[5], 1),
+                (fixtures[7], 2),
+                (fixtures[6], 2),
+            ]
+        );
     }
 }

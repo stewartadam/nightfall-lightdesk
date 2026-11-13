@@ -234,15 +234,27 @@ fn read_showfile_json_with_limit(
 }
 
 /// Hash a showfile snapshot after replacing volatile save metadata with a stable baseline.
+///
+/// The hash covers a canonical JSON form with every object's keys sorted, so two snapshots of
+/// identical state hash the same even when a persisted `HashMap` iterates in a different order.
 pub(super) fn hash_showfile_snapshot_with_metadata(
     snapshot: &ShowfileSnapshot,
     metadata: &ShowfileMetadata,
 ) -> Result<u64, String> {
-    let mut snapshot = snapshot.clone();
-    snapshot.metadata = metadata.clone();
-    let json = serialize_showfile_snapshot_json(&snapshot)?;
+    let to_value = |value: Result<serde_json::Value, serde_json::Error>| {
+        value.map_err(|error| format!("failed to serialize showfile json: {error}"))
+    };
+    let mut value = to_value(serde_json::to_value(snapshot))?;
+    let serde_json::Value::Object(fields) = &mut value else {
+        return Err("failed to serialize showfile json: snapshot is not an object".to_string());
+    };
+    fields.insert(
+        "metadata".to_string(),
+        to_value(serde_json::to_value(metadata))?,
+    );
+    value.sort_all_objects();
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    json.hash(&mut hasher);
+    value.to_string().hash(&mut hasher);
     Ok(hasher.finish())
 }
 
@@ -343,6 +355,43 @@ mod tests {
         assert_eq!(
             showfile_size_limit_error("tour/showfile.json.gz", MAX_SHOWFILE_JSON_BYTES),
             "Showfile tour/showfile.json.gz is too large. The maximum uncompressed snapshot size is 1 GiB."
+        );
+    }
+
+    /// Snapshots that differ only in JSON object key order hash the same, so a saved show whose
+    /// maps iterate in a different order on the next autosave still reads as clean.
+    #[test]
+    fn snapshot_hash_ignores_object_key_order() {
+        let metadata = nightfall_showfile::current_showfile_metadata();
+        let snapshot_with_audio_settings = |pairs: &[(&str, &str)]| {
+            let mut fields = serde_json::Map::new();
+            for (key, value) in pairs {
+                fields.insert(key.to_string(), serde_json::json!(value));
+            }
+            let mut snapshot = ShowfileSnapshot {
+                metadata: metadata.clone(),
+                ..Default::default()
+            };
+            snapshot
+                .settings
+                .insert("audio".to_string(), serde_json::Value::Object(fields));
+            snapshot
+        };
+        let forward = snapshot_with_audio_settings(&[("input", "mic"), ("output", "speakers")]);
+        let reverse = snapshot_with_audio_settings(&[("output", "speakers"), ("input", "mic")]);
+        assert_ne!(
+            serialize_showfile_snapshot_json(&forward).unwrap(),
+            serialize_showfile_snapshot_json(&reverse).unwrap(),
+            "fixture must exercise differing key order"
+        );
+        assert_eq!(
+            hash_showfile_snapshot_with_metadata(&forward, &metadata).unwrap(),
+            hash_showfile_snapshot_with_metadata(&reverse, &metadata).unwrap()
+        );
+        let changed = snapshot_with_audio_settings(&[("input", "line"), ("output", "speakers")]);
+        assert_ne!(
+            hash_showfile_snapshot_with_metadata(&forward, &metadata).unwrap(),
+            hash_showfile_snapshot_with_metadata(&changed, &metadata).unwrap()
         );
     }
 
