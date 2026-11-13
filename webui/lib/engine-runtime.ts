@@ -9,6 +9,8 @@
 import { createSignal } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import type { PerformanceMeasureStats } from "../state/appStores";
+import { endShowfileTransition } from "../state/showfile-transition";
+import { scopedWebsocketUrl } from "./api";
 import { browserDemoAudioHost } from "./browser-demo-audio";
 import { getLogger } from "./logger";
 import { setStoreAction } from "./nanostore-action";
@@ -525,10 +527,26 @@ function evalStatementOf(data: object): string | undefined {
 
 export type { EngineRuntimeConfig } from "./engine-runtime-protocol";
 
+/**
+ * Narrows a connection to part of the engine's state, for a window that has no use for the
+ * show, such as the fixture editor. The engine sends such a client only the message types it
+ * names, and the client loads its own state instead of a full resync. The show's resync
+ * signals, such as `resyncComplete`, never settle on a scoped connection, so a scoped window
+ * must not render code that waits on them.
+ */
+export interface EngineSessionScope {
+  /** Message types the window handles; the engine sends it no others. */
+  messageTypes: readonly string[];
+  /** Loads the window's state when a connection opens and when the engine replaces its world. */
+  requestSessionState: () => void;
+}
+
 /** Transport-neutral facade used by UI features to communicate with the engine. */
 export const engineRuntime = {
   worker: null as Worker | null,
   config: null as EngineRuntimeConfig | null,
+  /** Part of the engine's state this connection is limited to, or none for all of it. */
+  scope: null as EngineSessionScope | null,
   isRunning: false,
 
   /**
@@ -537,6 +555,13 @@ export const engineRuntime = {
    * replaces its world behind an existing connection.
    */
   requestBackendSessionState() {
+    if (this.scope) {
+      // A scoped window has no show resync to wait for, so a world replacement settles at once.
+      endShowfileTransition();
+      this.scope.requestSessionState();
+      scheduleWebsocketPull();
+      return;
+    }
     cancelPendingSelectionFlattenConfirmation(
       BACKEND_SESSION_CHANGED_CONFIRMATION_CANCEL_REASON,
     );
@@ -572,10 +597,24 @@ export const engineRuntime = {
     scheduleWebsocketPull();
   },
 
-  /** Starts a fresh engine connection using the selected runtime adapter. */
-  start(config: EngineRuntimeConfig) {
+  /**
+   * Starts a fresh engine connection using the selected runtime adapter, limited to `scope`
+   * when given. The embedded demo engine has no message filter, so a scope there only
+   * replaces the full resync.
+   */
+  start(config: EngineRuntimeConfig, scope?: EngineSessionScope) {
     if (this.isRunning) this.stop();
+    if (scope && config.mode === "remote") {
+      config = {
+        ...config,
+        websocketUrl: scopedWebsocketUrl(
+          config.websocketUrl,
+          scope.messageTypes,
+        ),
+      };
+    }
     this.config = config;
+    this.scope = scope ?? null;
     this.isRunning = true;
     configureActiveShowfileUrl(
       config.mode === "embedded-demo"
@@ -655,13 +694,17 @@ export const engineRuntime = {
             "WebSocket worker requested resync:",
             msg.reason ?? "unspecified reason",
           );
-          markResyncPending();
-          this.sendCommand({
-            module: "EngineCommand",
-            command: {
-              type: "ResyncState",
-            } as types.EngineCommand,
-          });
+          if (this.scope) {
+            this.scope.requestSessionState();
+          } else {
+            markResyncPending();
+            this.sendCommand({
+              module: "EngineCommand",
+              command: {
+                type: "ResyncState",
+              } as types.EngineCommand,
+            });
+          }
           this.worker?.postMessage({ type: "resumeAfterResyncRequest" });
           break;
 
@@ -778,6 +821,7 @@ export const engineRuntime = {
       this.worker = null;
     }
     this.config = null;
+    this.scope = null;
     setConnectionStatus(EngineRuntimeStatus.Disconnected);
   },
 

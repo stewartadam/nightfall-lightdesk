@@ -20,13 +20,13 @@ import { getLogger } from "../../../lib/logger";
 import { fixtureDrafts } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { createDraftQueue, type DraftChange } from "../services/draft-queue";
+import { draftListError } from "../services/editor-session";
 import {
   discardDraft,
   editDraft,
   listAttributes,
   openDraft,
   redoDraft,
-  refreshDrafts,
   type SaveOptions,
   saveDraft,
   undoDraft,
@@ -68,22 +68,20 @@ export default function FixtureEditorWindow() {
   /** The draft the discard confirmation asks about, kept current with other windows' changes. */
   const pendingDiscard = createMemo(() => draftById(discardId()));
 
+  const listError = useStore(draftListError);
+
+  /** Shows above the page why the open drafts could not be listed when the connection opened. */
+  createEffect(
+    on(listError, (message) => {
+      if (message) setError(message);
+    }),
+  );
+
   /** Withdraws the discard confirmation once its draft is closed elsewhere. */
   createEffect(() => {
     if (discardId() !== null && connected() && !pendingDiscard())
       setDiscardId(null);
   });
-
-  /** Reloads the draft list each time the connection opens, since broadcasts sent while away were missed. */
-  createEffect(
-    on(connected, (isConnected) => {
-      if (!isConnected) return;
-      refreshDrafts().catch((cause: unknown) => {
-        log.error("Could not list fixture drafts", { error: cause });
-        setError(errorMessage(cause));
-      });
-    }),
-  );
 
   /** Returns to the start page when the open draft is discarded, here or in another window. */
   createEffect(() => {
