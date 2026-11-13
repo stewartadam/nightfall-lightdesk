@@ -284,6 +284,7 @@ dependencies = [
  "nightfall-instances",
  "nightfall-io",
  "nightfall-macros",
+ "nightfall-mvr-import",
  "nightfall-object-library",
  "nightfall-output-artnet",
  "nightfall-output-sacn",
@@ -6084,6 +6085,35 @@ dependencies = [
  "quick-xml 0.42.0",
  "serde",
  "thiserror 2.0.21",
+ "uuid",
+ "zip",
+]
+
+[[package]]
+name = "nightfall-mvr-import"
+version = "0.1.0-alpha.5"
+dependencies = [
+ "async-channel",
+ "axum",
+ "bevy_app",
+ "bevy_ecs",
+ "futures-util",
+ "nightfall",
+ "nightfall-engine",
+ "nightfall-fixture-library",
+ "nightfall-fixture-model",
+ "nightfall-fixtures",
+ "nightfall-io",
+ "nightfall-mvr",
+ "nightfall-websocket",
+ "nightfall-workspace-hack",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "typeshare",
  "uuid",
  "zip",
 ]

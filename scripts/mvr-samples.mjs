@@ -33,7 +33,7 @@ function usage() {
 
 Downloads the real MVR exports listed in crates/mvr/tests/samples/manifest.json
 into NIGHTFALL_MVR_SAMPLES_DIR, verifying each file's pinned SHA-256, then runs
-the MVR reader tests against them. With "fetch", only downloads.
+the MVR reader and rig import tests against them. With "fetch", only downloads.
 
 Environment (exported or set in the worktree .env):
   NIGHTFALL_MVR_SAMPLES_DIR  Directory the samples are stored in
@@ -140,15 +140,16 @@ export async function fetchSamples(manifest, dir, fetchImpl = fetch) {
 }
 
 /**
- * Runs the ignored sample tests of the MVR reader with the samples directory set.
+ * Runs the ignored sample tests of the MVR reader and rig import with the samples
+ * directory set.
  */
 function runSampleTests(dir, extra) {
   const args = [
     "test",
     "-p",
     "nightfall-mvr",
-    "--test",
-    "samples",
+    "-p",
+    "nightfall-mvr-import",
     "--",
     "--ignored",
     ...extra,
