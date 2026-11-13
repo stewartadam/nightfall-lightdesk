@@ -89,6 +89,24 @@ pub struct StepDownRequest {
     pub key: String,
 }
 
+/// Route on which a backup that leaves the pair tells its primary, so the primary forgets it.
+///
+/// It skips pairing like [`STEP_DOWN_PATH`]; only the remembered backup peer with the pair key
+/// is listened to.
+pub const LEAVE_PATH: &str = "/api/public/backup/leave";
+
+/// Tells a primary that its backup left the pair.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeaveRequest {
+    /// Port the sender's server listens on, which with its address names the backup.
+    pub port: u16,
+    /// The key the two hosts share, which proves the sender is this host's backup.
+    pub key: String,
+}
+
+/// `host:port` of a backup that told this host it left the pair, until the world reports it.
+static BACKUP_LEFT: Mutex<Option<String>> = Mutex::new(None);
+
 /// The backup that last received a checkpoint from this host, when, and the same time as Unix
 /// milliseconds.
 static LAST_PEER_REQUEST: Mutex<Option<(String, Instant, u64)>> = Mutex::new(None);
@@ -103,6 +121,9 @@ pub(crate) enum PeerCheck {
     Following,
     /// The backup answered as a primary itself, without a newer epoch than this host's.
     Primary,
+    /// The backup answered without following anyone or having a show open, so it sends nothing,
+    /// as while it waits at startup.
+    Idle,
     /// The backup did not answer.
     Unreachable,
 }
@@ -243,6 +264,40 @@ pub fn request_step_down(ip: IpAddr, request: &StepDownRequest) -> bool {
     tracing::warn!(%address, epoch = request.epoch, "A newer primary asked this host to step down");
     crate::link::process_backup_link().request_rejoin(address, request.epoch);
     true
+}
+
+/// Answers a leave notice from the host at `ip`: when it comes from this host's remembered backup
+/// with the key the two share, this host forgets that backup and the key, so it runs without a
+/// backup until another one pairs. Returns whether the notice was accepted.
+pub fn request_leave(ip: IpAddr, request: &LeaveRequest) -> bool {
+    let address = peer_address(ip, request.port);
+    if backup_peer().as_deref() != Some(address.as_str()) || !is_pair_key(&request.key) {
+        tracing::warn!(%address, "Ignored a leave notice that is not from this host's backup");
+        return false;
+    }
+    let (_, error) = preferences::update(preferences::preferences_path().as_deref(), |stored| {
+        stored.backup_peer = None;
+        stored.pair_key = None;
+    });
+    if let Some(error) = error {
+        tracing::warn!(%error, "Could not forget the backup that left the pair");
+    }
+    // The key goes first, so a checkpoint request still in flight cannot record the backup again.
+    share_pair_key(None);
+    set_backup_peer(None);
+    tracing::info!(%address, "This host's backup left the pair");
+    *BACKUP_LEFT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(address);
+    true
+}
+
+/// Takes the address of a backup that left the pair since the last call, if any.
+pub(crate) fn take_backup_left() -> Option<String> {
+    BACKUP_LEFT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
 }
 
 /// Returns whether a host with status `own` steps down for a takeover with `epoch`.
@@ -395,6 +450,7 @@ fn peer_state(check: Option<PeerCheck>, since_request: Option<Duration>) -> Back
         None => BackupPeerState::Checking,
         Some(PeerCheck::Unreachable) => BackupPeerState::Unreachable,
         Some(PeerCheck::Primary) => BackupPeerState::AlsoPrimary,
+        Some(PeerCheck::Idle) => BackupPeerState::NotInStep,
         Some(PeerCheck::Following)
             if since_request.is_some_and(|since| since <= PEER_IN_STEP_WINDOW) =>
         {
@@ -462,8 +518,8 @@ mod tests {
 
     /// A host that took over asks only a peer still running as a primary from before its
     /// takeover to step down, and a primary steps down only for a newer takeover, sent by the
-    /// backup it remembers with the key the two share. A backup's checkpoints are served only
-    /// with that key, and not after this host left the pair.
+    /// backup it remembers with the key the two share, which a leave notice needs too. A backup's
+    /// checkpoints are served only with that key, and not after this host left the pair.
     #[test]
     fn steps_down_only_for_a_newer_takeover() {
         let host = |following, epoch| HostStatus {
@@ -496,6 +552,19 @@ mod tests {
             "192.0.2.11".parse().unwrap(),
             &without_key
         ));
+        // The same goes for a leave notice, which would otherwise let anyone unpair this host.
+        let leave = LeaveRequest {
+            port: 3000,
+            key: "pair-key".into(),
+        };
+        assert!(!request_leave("192.0.2.12".parse().unwrap(), &leave));
+        let stale_leave = LeaveRequest {
+            key: "not-the-pair-key".into(),
+            ..leave
+        };
+        assert!(!request_leave("192.0.2.11".parse().unwrap(), &stale_leave));
+        assert_eq!(backup_peer().as_deref(), Some("192.0.2.11:3000"));
+        assert_eq!(take_backup_left(), None);
 
         // A backup's checkpoint requests need the key, and stop being served once this host
         // leaves the pair; other requests are not this check's business. Kept in this test,
@@ -563,6 +632,12 @@ mod tests {
         assert_eq!(
             peer_state(Some(PeerCheck::Primary), recent),
             BackupPeerState::AlsoPrimary
+        );
+        // A backup that runs on its own without a show sends nothing, so it is not a second
+        // primary.
+        assert_eq!(
+            peer_state(Some(PeerCheck::Idle), recent),
+            BackupPeerState::NotInStep
         );
     }
 

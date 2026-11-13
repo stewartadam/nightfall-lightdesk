@@ -653,11 +653,13 @@ test("an unreachable primary is not followed", async ({ page }, testInfo) => {
 });
 
 /**
- * A backup leaves its role either with Leave the pair, which closes the copied show and returns
- * to the welcome screen, or by opening a show from the Showfiles dialog, which replaces it.
+ * A backup leaves its role either with Leave the pair, which closes the copied show, returns to
+ * the welcome screen and tells the primary to forget it, or by opening a show from the Showfiles
+ * dialog, which replaces it.
  */
 test("a backup leaves the pair for the welcome screen, or opens a show instead", async ({
   page,
+  browser,
   backendSlot,
 }, testInfo) => {
   test.setTimeout(300_000);
@@ -671,8 +673,8 @@ test("a backup leaves the pair for the welcome screen, or opens a show instead",
     await expect(page.getByTestId("startup-splash")).toHaveCount(0);
 
     await banner.getByTestId("backup-leave-pair").click();
-    const confirm = page.getByRole("dialog", { name: "Leave the pair" });
-    await expect(confirm).toContainText("close the copied show");
+    const confirm = page.getByRole("dialog", { name: "Unpair from primary" });
+    await expect(confirm).toContainText("stop acting as a backup");
     await page.screenshot({
       path: testInfo.outputPath("15-backup-leaves-pair.png"),
     });
@@ -683,6 +685,23 @@ test("a backup leaves the pair for the welcome screen, or opens a show instead",
     await page.screenshot({
       path: testInfo.outputPath("15b-welcome-after-leaving.png"),
     });
+    // The primary is told and forgets its backup, rather than reading it as a second primary.
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await primaryPage.setViewportSize({ width: 1600, height: 1000 });
+    try {
+      await openPanel(primaryPage, "I/O Transports");
+      const primarySettings = primaryPage.getByTestId("backup-server-settings");
+      await expect(
+        primarySettings.getByTestId("backup-this-machine"),
+      ).toContainText("not paired", { timeout: 10_000 });
+      await expect(primarySettings.getByTestId("backup-peer")).toHaveCount(0);
+    } finally {
+      await primaryPage.context().close();
+    }
     await welcome.getByRole("button", { name: "New showfile" }).click();
     const created = page.getByRole("dialog", { name: "New Showfile" });
     await created
@@ -764,7 +783,9 @@ test("a primary that leaves the pair releases its backup", async ({
       path: testInfo.outputPath("21-failover-primary.png"),
     });
     await settings.getByTestId("backup-leave-pair").click();
-    const confirm = primaryPage.getByRole("dialog", { name: "Leave the pair" });
+    const confirm = primaryPage.getByRole("dialog", {
+      name: "Unpair from backup",
+    });
     await expect(confirm).toBeVisible();
     await primaryPage.screenshot({
       path: testInfo.outputPath("22-leave-the-pair.png"),

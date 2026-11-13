@@ -207,6 +207,7 @@ pub(crate) fn register_backup_http_routes(registry: &mut HttpRouteRegistry) {
     );
     registry.register(nightfall_backup::LIVE_STATE_PATH, get(current_live_state));
     registry.register(nightfall_backup::failover::STEP_DOWN_PATH, post(step_down));
+    registry.register(nightfall_backup::failover::LEAVE_PATH, post(backup_left));
     registry.register(
         nightfall_backup::failover::PAIR_KEY_PATH,
         post(issue_pair_key),
@@ -223,6 +224,19 @@ async fn issue_pair_key() -> Response {
     match nightfall_backup::failover::issue_pair_key() {
         Ok(key) => key.into_response(),
         Err(message) => (StatusCode::CONFLICT, message).into_response(),
+    }
+}
+
+/// Forgets this host's backup when the request comes from it with the key the two share.
+/// Answers 409 when it does not.
+async fn backup_left(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(request): Json<nightfall_backup::failover::LeaveRequest>,
+) -> StatusCode {
+    if nightfall_backup::failover::request_leave(peer.ip(), &request) {
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::CONFLICT
     }
 }
 

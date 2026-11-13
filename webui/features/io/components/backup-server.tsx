@@ -146,11 +146,13 @@ function LeavePairButton(props: { size?: "compact" | "inline" }) {
       </Button>
       <DeleteConfirmModal
         isOpen={confirming()}
-        title="Leave the pair"
+        title={
+          state().primary_address ? "Unpair from primary" : "Unpair from backup"
+        }
         message={
           state().primary_address
-            ? `This Nightfall instance will unpair from ${partner()}, close the copied show without sending it, and return to the welcome screen. Pairing the two again needs a PIN.`
-            : `This Nightfall instance will unpair from ${partner()} and keep sending its show, with no backup. ${partner()} closes its copy of the show and returns to the welcome screen. Pairing the two again needs a PIN.`
+            ? `This Nightfall instance will stop acting as a backup and unpair from the primary at ${partner()}, returning to the welcome screen.`
+            : `This Nightfall instance will unpair from the backup at ${partner()} and keep sending its show. The backup machine will close its copy of the show and return to the welcome screen.`
         }
         confirmLabel="Leave the pair"
         focusCancel
@@ -210,30 +212,31 @@ function describeBackupPeer(peer: BackupPeer): string {
   }
 }
 
-/** Badge tone for how this primary's backup is doing. */
+/**
+ * Badge tone for the backup tag of this primary's backup: yellow like every backup tag, or red
+ * when it cannot be reached or sends output too.
+ */
 function peerTone(state: BackupPeerState): BadgeTone {
   switch (state) {
-    case BackupPeerState.InStep:
-      return "success";
+    case BackupPeerState.Unreachable:
     case BackupPeerState.AlsoPrimary:
       return "danger";
-    case BackupPeerState.Checking:
-      return "neutral";
     default:
       return "warning";
   }
 }
 
-/** Badge tone for how the link to the primary stands. */
+/**
+ * Badge tone for the primary tag of the primary this backup follows: grey, since this machine
+ * is not the primary, or red when it cannot be reached or asks for its PIN again.
+ */
 function linkTone(link: BackupLinkStatus): BadgeTone {
   switch (link) {
-    case BackupLinkStatus.Synced:
-      return "success";
     case BackupLinkStatus.PairingRequired:
     case BackupLinkStatus.Unreachable:
-      return "warning";
+      return "danger";
     default:
-      return "info";
+      return "neutral";
   }
 }
 
@@ -300,7 +303,7 @@ function PairRoleRows() {
               </RoleRow>
               <RoleRow
                 label="Backup"
-                tone="neutral"
+                tone="warning"
                 testId="backup-this-machine"
               >
                 this machine
@@ -313,7 +316,7 @@ function PairRoleRows() {
             <>
               <RoleRow
                 label="Primary"
-                tone="neutral"
+                tone="success"
                 testId="backup-this-machine"
               >
                 this machine{tookOverNotice()}
@@ -466,7 +469,7 @@ export function FollowPrimarySection(props: { onFollowed?: () => void }) {
           {(primary) => (
             <div class="text-xs text-gray-300">
               <p class="flex flex-wrap items-center gap-2">
-                <Badge tone={linkTone(state().link)} uppercase>
+                <Badge tone="warning" uppercase>
                   Backup
                 </Badge>
                 <span>

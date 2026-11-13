@@ -428,6 +428,32 @@ impl BackupLink {
         generation
     }
 
+    /// Tells the primary at `address` that this host, its backup, left the pair, so it forgets
+    /// this host straight away. Runs in the background and only logs a failure: a primary that
+    /// misses the notice still sees this host is no longer following it.
+    pub(crate) fn tell_primary_of_leave(&self, address: String, key: String) {
+        let Some(port) = failover::own_port() else {
+            tracing::debug!("No own port to tell the primary this host left the pair with");
+            return;
+        };
+        let spawned = std::thread::Builder::new()
+            .name("backup-leave".into())
+            .spawn(move || {
+                match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime.block_on(send_leave_notice(&address, port, key)),
+                    Err(error) => {
+                        tracing::warn!(%error, "Could not tell the primary this host left")
+                    }
+                }
+            });
+        if let Err(error) = spawned {
+            tracing::warn!(%error, "Could not tell the primary this host left");
+        }
+    }
+
     /// Takes the outcome of probe `generation` once it finished: the pairing token to follow the
     /// primary with, or why it cannot be followed.
     pub(crate) fn take_probe(&self, generation: u64) -> Option<Result<Option<String>, String>> {
@@ -574,7 +600,11 @@ async fn watch_backup_peer(shared: &Mutex<LinkShared>) {
                     if failover::should_ask_to_step_down(own.epoch, &status) {
                         ask_to_step_down(&client, &base, &peer, own.epoch).await;
                     }
-                    failover::PeerCheck::Primary
+                    if status.show_open {
+                        failover::PeerCheck::Primary
+                    } else {
+                        failover::PeerCheck::Idle
+                    }
                 }
                 Err(error) => {
                     tracing::debug!(?error, %peer, "backup_peer_check_failed");
@@ -622,6 +652,46 @@ async fn ask_to_step_down(client: &reqwest::Client, base: &str, peer: &str, epoc
         Err(error) => tracing::debug!(%error, %peer, "step_down_request_failed"),
     }
 }
+
+/// Sends the primary at `address` the notice that this host, listening on `port`, left the pair,
+/// with the `key` the two shared.
+async fn send_leave_notice(address: &str, port: u16, key: String) {
+    let client = match host_client(STATUS_TIMEOUT) {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, %address, "Could not tell the primary this host left");
+            return;
+        }
+    };
+    let body = serde_json::to_string(&failover::LeaveRequest { port, key }).unwrap_or_default();
+    for attempt in 1..=LEAVE_NOTICE_ATTEMPTS {
+        let request = client
+            .post(format!("http://{address}{}", failover::LEAVE_PATH))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body.clone());
+        match request.send().await {
+            Ok(response) if response.status().is_success() => {
+                tracing::info!(%address, "Told the primary this host left the pair");
+                return;
+            }
+            // A refusal will not change on a retry.
+            Ok(response) => {
+                tracing::warn!(%address, status = %response.status(), "The primary refused the leave notice");
+                return;
+            }
+            Err(error) if attempt == LEAVE_NOTICE_ATTEMPTS => {
+                tracing::warn!(%error, %address, "Could not tell the primary this host left");
+            }
+            Err(error) => {
+                tracing::debug!(%error, %address, attempt, "leave_notice_failed");
+                tokio::time::sleep(PEER_CHECK_INTERVAL).await;
+            }
+        }
+    }
+}
+
+/// How many times a backup that leaves tries to tell its primary before giving up.
+const LEAVE_NOTICE_ATTEMPTS: u32 = 5;
 
 /// Records the outcome of probe `generation`, unless a newer probe or a cancel replaced it.
 fn finish_probe(
@@ -866,6 +936,10 @@ async fn follow_show_and_checkpoints(
                 match fetched {
                     Ok(LiveStateAnswer::LeftPair) => shared.primary_left = true,
                     Ok(LiveStateAnswer::Checkpoint(snapshot, primary_wait)) => {
+                        if shared.report.status == BackupLinkStatus::PairingRequired {
+                            shared.report.status = BackupLinkStatus::Synced;
+                            shared.report.error = None;
+                        }
                         let round_trip = requested_at.elapsed().saturating_sub(primary_wait);
                         shared.checkpoint = Some(LiveCheckpoint {
                             sequence: CHECKPOINT_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1,
@@ -873,6 +947,12 @@ async fn follow_show_and_checkpoints(
                             received_at: Instant::now(),
                             transit: round_trip / 2,
                         });
+                    }
+                    // The show itself may still be readable, as on the same computer where
+                    // pairing is skipped, but without checkpoints this host is not in step.
+                    Err(LinkError::Unauthorized(message)) => {
+                        shared.report.status = BackupLinkStatus::PairingRequired;
+                        shared.report.error = Some(message);
                     }
                     Err(error) => {
                         tracing::debug!(?error, "backup_live_state_fetch_failed");

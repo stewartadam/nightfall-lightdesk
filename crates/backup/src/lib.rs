@@ -455,6 +455,7 @@ fn handle_backup_commands(
             // Handled above, since it completes only once the primary was checked.
             BackupCommand::FollowPrimary { .. } | BackupCommand::OpenFailoverShow => continue,
             BackupCommand::LeavePair if state.is_backup() => {
+                tell_primary_of_leave(&state);
                 Ok(leave_pair_closing_copied_show(&mut closing, &mut close))
             }
             BackupCommand::LeavePair => {
@@ -660,6 +661,14 @@ fn leave_pair(show: LeftShow) -> RoleChange {
     (stored, save_error)
 }
 
+/// Tells the primary this host follows that it is leaving the pair, while the two still share
+/// their key, so the primary forgets this host as its backup.
+fn tell_primary_of_leave(state: &BackupState) {
+    if let (Some(address), Some(key)) = (state.primary_address.clone(), failover::pair_key()) {
+        link::process_backup_link().tell_primary_of_leave(address, key);
+    }
+}
+
 /// Leaves the pair as a backup and asks the world to close the copied show, holding its output in
 /// standby until the empty world replaces it, and returns the new role.
 fn leave_pair_closing_copied_show(
@@ -682,6 +691,7 @@ pub fn leave_backup_role_for_show_load(state: &mut BackupState) -> Option<String
     if !state.is_backup() {
         return None;
     }
+    tell_primary_of_leave(state);
     let (stored, save_error) = leave_pair(LeftShow::Kept);
     state.apply_preferences(&stored);
     save_error
@@ -862,6 +872,21 @@ fn leave_when_primary_left(
     notifications.write(UiNotification::toast(
         ToastLevel::Warning,
         format!("{primary} left the failover pair, so this instance closed the copied show."),
+    ));
+}
+
+/// Forgets this primary's backup once that backup said it left the pair, and tells every client.
+fn forget_backup_that_left(
+    mut state: ResMut<BackupState>,
+    mut notifications: MessageWriter<UiNotification>,
+) {
+    let Some(address) = failover::take_backup_left() else {
+        return;
+    };
+    state.backup = None;
+    notifications.write(UiNotification::toast(
+        ToastLevel::Warning,
+        format!("The backup {address} left the failover pair, so this instance has no backup."),
     ));
 }
 
@@ -1092,6 +1117,7 @@ impl Plugin for BackupPlugin {
                 take_over_when_primary_is_lost,
                 rejoin_when_backup_took_over,
                 leave_when_primary_left,
+                forget_backup_that_left,
                 sync_backup_link,
             )
                 .chain()
