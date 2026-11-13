@@ -35,6 +35,8 @@ pub struct TimelinePlannedCueInputs<'w, 's> {
     cue_data_provider: Res<'w, DataProvider<Cue>>,
     /// Fixture data used to resolve cue durations.
     fixture_data_provider: Res<'w, FixtureDataProviderExt>,
+    /// Optional Blueprints whose selected values time Blueprint-applied cue instructions.
+    blueprint_data_provider: Option<Res<'w, DataProvider<Blueprint>>>,
     /// Group definitions that spatial selection resolution reads for cue durations.
     group_data_provider: Res<'w, DataProvider<Group>>,
     /// Spatial resolver used to resolve cue durations.
@@ -118,7 +120,7 @@ impl TimelinePlannedCueCache {
 ///
 /// Timeline and clip edits always recompute. Cue and sequence edits only recompute when they
 /// touch a sequence a navigation action steers, and resolved sequence timings are cached so a
-/// sequence restarted many times on a timeline is resolved once. Fixture and group edits, and
+/// sequence restarted many times on a timeline is resolved once. Fixture, group and Blueprint edits, and
 /// bulk replacements such as a showfile load, drop the cache. Published cues are only
 /// replaced when the result differs so clients are not re-sent identical data.
 pub fn update_timeline_planned_cues_system(
@@ -153,6 +155,10 @@ pub fn update_timeline_planned_cues_system(
         || (sequences_changed && changed_sequences.is_empty());
     let timing_inputs_changed = inputs.fixture_data_provider.is_changed()
         || inputs.group_data_provider.is_changed()
+        || inputs
+            .blueprint_data_provider
+            .as_ref()
+            .is_some_and(|provider| provider.is_changed())
         || bulk_definition_change;
     if timing_inputs_changed {
         cache.sequences.clear();
@@ -198,6 +204,7 @@ fn resolved_sequence_timing<'a>(
                 &sequence,
                 &inputs.cue_data_provider,
                 &inputs.fixture_data_provider,
+                inputs.blueprint_data_provider.as_deref(),
                 &inputs.selection_resolver,
             ),
             duration_profile: playback_duration_profile_for_source(
@@ -205,6 +212,7 @@ fn resolved_sequence_timing<'a>(
                 &inputs.cue_data_provider,
                 Some(sequence_data_provider),
                 &inputs.fixture_data_provider,
+                inputs.blueprint_data_provider.as_deref(),
                 &inputs.selection_resolver,
                 1.0,
             ),

@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 use uuid::Uuid;
 
-use super::materialize::cue_with_sequence_default_timing;
+use super::materialize::{cue_with_sequence_default_timing, resolved_sequence_steps};
 use super::release::mark_materialized_cue_released_at_position;
 use super::*;
 
@@ -29,30 +29,6 @@ enum SequenceDefinitionReconciliation {
 }
 
 impl MaterializedSequence {
-    /// Builds cue snapshots referenced by a sequence, skipping unresolved cue UIDs.
-    fn refreshed_sequence_steps(
-        sequence: &Sequence,
-        cue_data_provider: &DataProvider<Cue>,
-    ) -> Vec<Cue> {
-        let mut steps = Vec::new();
-        for cue_uid in &sequence.steps {
-            let cue_id: uuid::Uuid = (*cue_uid).into();
-            match cue_data_provider.get(cue_id) {
-                Ok(cue_ref) => steps.push((*cue_ref).clone()),
-                Err(err) => {
-                    tracing::warn!(
-                        uid = %sequence.identifiers.uid,
-                        cue_uid = %cue_id,
-                        "Skipping missing cue while rematerializing sequence '{}': {}",
-                        sequence.identifiers.label,
-                        err
-                    );
-                }
-            }
-        }
-        steps
-    }
-
     /// Selects the cue that should remain active after sequence membership changes.
     fn reconciled_active_cue_uid(
         old_steps: &[Cue],
@@ -129,7 +105,7 @@ impl MaterializedSequence {
         let old_cue_activation_positions = std::mem::take(&mut self.cue_activation_positions);
         let old_composition_order = std::mem::take(&mut self.composition_order);
         let mut old_mcues_by_index = old_mcues.into_iter().map(Some).collect::<Vec<_>>();
-        let new_steps = Self::refreshed_sequence_steps(&sequence, cue_data_provider);
+        let new_steps = resolved_sequence_steps(&sequence, cue_data_provider);
         let old_active_uid = old_steps
             .get(old_active_index)
             .map(|cue| cue.identifiers.uid);
@@ -370,7 +346,12 @@ pub fn rematerialize_sequences_after_cue_definition_change(
     }
 }
 
-/// Rematerializes embedded setup and release cues after stored sequence definitions change.
+/// Reconciles running playbacks whose stored sequence definition differs from the one they
+/// materialized, and rebuilds their embedded setup and release cues.
+///
+/// Playbacks of other sequences keep their runtime state untouched. Releasing playbacks are
+/// skipped: their release fade runs from a frozen snapshot, and reconciling would discard that
+/// snapshot and restart the fade from the active look.
 pub fn rematerialize_sequences_after_sequence_definition_change(
     mut commands: Commands,
     sequence_data_provider: Res<DataProvider<Sequence>>,
@@ -380,7 +361,10 @@ pub fn rematerialize_sequences_after_sequence_definition_change(
     fixture_data_provider: Res<FixtureDataProviderExt>,
     parameter_query: Query<InstanceRef<Parameter>>,
     selection_resolver: SpatialSelectionResolver,
-    mut msequence_query: Query<(Entity, &mut MaterializedSequence, Option<&InstanceClock>)>,
+    mut msequence_query: Query<
+        (Entity, &mut MaterializedSequence, Option<&InstanceClock>),
+        Without<ReleaseMarker>,
+    >,
 ) {
     if !sequence_data_provider.is_changed() {
         return;
@@ -391,6 +375,9 @@ pub fn rematerialize_sequences_after_sequence_definition_change(
         let Ok(sequence_ref) = sequence_data_provider.get(uid) else {
             continue;
         };
+        if *sequence_ref == msequence.sequence {
+            continue;
+        }
         let sequence = (*sequence_ref).clone();
         let setup_start_time = msequence.setup_cue.activation_time;
         let setup_start_position = msequence.setup_cue.start_position;

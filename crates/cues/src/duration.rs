@@ -11,10 +11,10 @@
 use std::time::Duration;
 
 use nightfall::prelude::{
-    AttributeTransitions, FixtureRef, MaterializedTransition, PartialTransition, Transition,
-    ValueSource,
+    AttributeTransitions, Blueprint, FixtureRef, MaterializedTransition, PartialTransition,
+    Transition, ValueSource,
 };
-use nightfall_engine::prelude::BoundAssertionSet;
+use nightfall_engine::prelude::{BoundAssertionSet, DataProvider};
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
 use nightfall_playback_planner::{PlaybackDurationProfile, PlaybackExtent};
 use nightfall_selection::filter_existing_selection;
@@ -135,20 +135,26 @@ impl CueDurationProfile {
 /// Resolves cue-definition timing profiles without creating runtime instance entities.
 pub trait CueDurationResolver {
     /// Resolves the timing profile for a cue definition.
+    ///
+    /// Instructions that apply a Blueprint are timed from the values the Blueprint selects, so
+    /// the profile matches what runtime materialization asserts.
     fn cue_duration_profile(
         &self,
         cue: &Cue,
+        blueprint_data_provider: Option<&DataProvider<Blueprint>>,
         selection_resolver: &SpatialSelectionResolver,
     ) -> CueDurationProfile;
 }
 
 impl CueDurationResolver for FixtureDataProviderExt {
+    /// Resolves cue timing against this fixture store and the optional Blueprint store.
     fn cue_duration_profile(
         &self,
         cue: &Cue,
+        blueprint_data_provider: Option<&DataProvider<Blueprint>>,
         selection_resolver: &SpatialSelectionResolver,
     ) -> CueDurationProfile {
-        resolve_cue_duration_profile(cue, self, selection_resolver)
+        resolve_cue_duration_profile(cue, self, blueprint_data_provider, selection_resolver)
     }
 }
 
@@ -156,6 +162,7 @@ impl CueDurationResolver for FixtureDataProviderExt {
 pub fn resolve_cue_duration_profile(
     cue: &Cue,
     data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) -> CueDurationProfile {
     let mut profile = CueDurationProfile::default();
@@ -165,6 +172,7 @@ pub fn resolve_cue_duration_profile(
         &cue.transitions,
         &cue.transitions_by_attribute,
         data_provider,
+        blueprint_data_provider,
         selection_resolver,
     );
 
@@ -178,6 +186,7 @@ pub fn resolve_cue_duration_profile(
             &part_transition,
             &part_attribute_transitions,
             data_provider,
+            blueprint_data_provider,
             selection_resolver,
         );
     }
@@ -192,6 +201,7 @@ fn record_instruction_durations(
     transitions: &PartialTransition,
     transitions_by_attribute: &AttributeTransitions,
     data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) {
     for bound_instructions in instructions {
@@ -202,6 +212,11 @@ fn record_instruction_durations(
             data_provider,
         );
         let total_indexes = selection.iter_non_empty_indexes().count();
+        let values = MaterializedCue::applied_instruction_values(
+            &bound_instructions.assertions,
+            blueprint_data_provider,
+        )
+        .unwrap_or_default();
 
         for (selection_index, resolved_index) in selection.iter_non_empty_indexes().enumerate() {
             let fixture_refs: Vec<FixtureRef> = resolved_index
@@ -212,7 +227,7 @@ fn record_instruction_durations(
                 })
                 .collect();
 
-            for (attribute, source) in bound_instructions.assertions.values.iter() {
+            for (attribute, source) in values.iter() {
                 if matches!(source, ValueSource::Release | ValueSource::HoldPosition) {
                     continue;
                 }

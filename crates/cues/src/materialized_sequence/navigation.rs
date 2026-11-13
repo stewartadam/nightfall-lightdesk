@@ -540,6 +540,14 @@ impl MaterializedSequence {
             self.playback_start_position,
             is_wraparound,
         )?;
+        if sequence_wraparound_is_zero_length(
+            is_wraparound,
+            next_activation_position,
+            self.last_activation_position,
+            self.cue_activation_positions.first().copied().flatten(),
+        ) {
+            return None;
+        }
 
         let clock = clock?;
 

@@ -416,7 +416,7 @@ impl ReferenceSource for Cue {
 }
 
 /// Definition of a sequence
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct Sequence {
     /// Identifiers for the sequence

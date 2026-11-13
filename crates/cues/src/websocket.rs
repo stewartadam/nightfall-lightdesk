@@ -14,7 +14,7 @@
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use moonshine_kind::InstanceRef;
-use nightfall::prelude::ColorPath;
+use nightfall::prelude::{Blueprint, ColorPath};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
 use nightfall_instances::InstanceOptions;
@@ -161,12 +161,17 @@ pub enum CueWsMessage<'a> {
 pub fn cue_duration_profile_message(
     cue: &Cue,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) -> CueDurationProfileMessage {
     CueDurationProfileMessage {
         cue_uid: cue.identifiers.uid,
         cue_id: cue.identifiers.id,
-        profile: fixture_data_provider.cue_duration_profile(cue, selection_resolver),
+        profile: fixture_data_provider.cue_duration_profile(
+            cue,
+            blueprint_data_provider,
+            selection_resolver,
+        ),
     }
 }
 
@@ -174,13 +179,19 @@ pub fn cue_duration_profile_message(
 pub fn cue_duration_profile_messages(
     cue_data_provider: &DataProvider<Cue>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) -> Vec<CueDurationProfileMessage> {
     cue_data_provider
         .iter()
         .map(|entry| {
             let cue = entry.value();
-            cue_duration_profile_message(cue, fixture_data_provider, selection_resolver)
+            cue_duration_profile_message(
+                cue,
+                fixture_data_provider,
+                blueprint_data_provider,
+                selection_resolver,
+            )
         })
         .collect()
 }
@@ -271,12 +282,13 @@ impl ClientFeed for CuesFeed<'static> {
     }
 }
 
-/// The resolved cue duration profiles feed, resent when fixture data changes how cue timing
-/// resolves.
+/// The resolved cue duration profiles feed, resent when fixture or Blueprint data changes how cue
+/// timing resolves.
 #[derive(SystemParam)]
 pub(crate) struct CueDurationProfilesFeed<'w> {
     cues: Res<'w, DataProvider<Cue>>,
     fixture_data_provider: Res<'w, FixtureDataProviderExt>,
+    blueprint_data_provider: Option<Res<'w, DataProvider<Blueprint>>>,
     selection_resolver: SpatialSelectionResolver<'w>,
 }
 
@@ -286,6 +298,7 @@ impl ClientFeed for CueDurationProfilesFeed<'static> {
         let profiles = cue_duration_profile_messages(
             &feed.cues,
             &feed.fixture_data_provider,
+            feed.blueprint_data_provider.as_deref(),
             &feed.selection_resolver,
         );
         sink.publish(
@@ -342,10 +355,16 @@ impl ClientFeed for ColorPathsFeed<'static> {
 pub fn send_cue_definition_update(
     cue: &Cue,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
     broadcaster: &ClientEventSink,
 ) {
-    let profile = cue_duration_profile_message(cue, fixture_data_provider, selection_resolver);
+    let profile = cue_duration_profile_message(
+        cue,
+        fixture_data_provider,
+        blueprint_data_provider,
+        selection_resolver,
+    );
 
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,
@@ -453,6 +472,7 @@ pub fn forward_commands(
 pub fn send_cue_definition_changes(
     mut events: MessageReader<CueDefinitionChange>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
+    blueprint_data_provider: Option<Res<DataProvider<Blueprint>>>,
     selection_resolver: SpatialSelectionResolver,
     broadcaster: Res<ClientEventSink>,
 ) {
@@ -461,6 +481,7 @@ pub fn send_cue_definition_changes(
             CueDefinitionChange::Updated(cue) => send_cue_definition_update(
                 cue,
                 &fixture_data_provider,
+                blueprint_data_provider.as_deref(),
                 &selection_resolver,
                 &broadcaster,
             ),
@@ -690,7 +711,7 @@ mod tests {
             .get(app.world_mut())
             .expect("test system parameters should be available");
         let profiles =
-            cue_duration_profile_messages(&cues, &fixture_data_provider, &selection_resolver);
+            cue_duration_profile_messages(&cues, &fixture_data_provider, None, &selection_resolver);
 
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].cue_uid, cue_uid);

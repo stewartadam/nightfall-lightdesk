@@ -48,6 +48,7 @@ pub(super) fn sequence_auto_end_release_completed(
     exec_query: &Query<(Entity, &Clip)>,
     sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) -> bool {
     let target = instance.target();
@@ -63,6 +64,7 @@ pub(super) fn sequence_auto_end_release_completed(
         clip,
         sequence_data_provider,
         fixture_data_provider,
+        blueprint_data_provider,
         selection_resolver,
     )
 }
@@ -336,6 +338,7 @@ pub(super) fn planned_release_reconstruction_timing_for_clip_stop(
     cue_data_provider: &DataProvider<Cue>,
     sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver<'_>,
     timeline_beats_per_second: f64,
 ) -> Option<PlaybackReconstructionTiming> {
@@ -363,6 +366,7 @@ pub(super) fn planned_release_reconstruction_timing_for_clip_stop(
                 cue_data_provider,
                 None,
                 fixture_data_provider,
+                blueprint_data_provider,
                 selection_resolver,
                 1.0,
             ),
@@ -444,6 +448,7 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
     cue_data_provider: &DataProvider<Cue>,
     sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver<'_>,
     intervention_kind: PlannedPlaybackInterventionKind,
     timeline_beats_per_second: f64,
@@ -472,6 +477,7 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
                 cue_data_provider,
                 sequence_data_provider,
                 fixture_data_provider,
+                blueprint_data_provider,
                 selection_resolver,
                 timeline_beats_per_second,
             ),
@@ -535,6 +541,7 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
         sequence_data_provider?,
         cue_data_provider,
         fixture_data_provider,
+        blueprint_data_provider,
         selection_resolver,
         origin_position,
     )?
@@ -600,6 +607,7 @@ pub(super) fn playback_duration_profile_for_source(
     cue_data_provider: &DataProvider<Cue>,
     sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver<'_>,
     timeline_beats_per_second: f64,
 ) -> PlaybackDurationProfile {
@@ -609,7 +617,7 @@ pub(super) fn playback_duration_profile_for_source(
             .ok()
             .map(|cue| {
                 fixture_data_provider
-                    .cue_duration_profile(&cue, selection_resolver)
+                    .cue_duration_profile(&cue, blueprint_data_provider, selection_resolver)
                     .to_playback_duration_profile()
             })
             .unwrap_or_else(PlaybackDurationProfile::unknown),
@@ -617,6 +625,7 @@ pub(super) fn playback_duration_profile_for_source(
             sequence_uid,
             sequence_data_provider,
             fixture_data_provider,
+            blueprint_data_provider,
             selection_resolver,
         )
         .map(|profile| {

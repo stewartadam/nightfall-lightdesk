@@ -12,9 +12,9 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use nightfall::prelude::{
-    AttributeTransitions, CueTriggerType, FixtureRef, MaterializedTransition, PartialTransition,
-    SequenceStepTiming, Transition, sequence_activation_interval,
-    sequence_next_activation_position,
+    AttributeTransitions, Blueprint, CueTriggerType, FixtureRef, MaterializedTransition,
+    PartialTransition, SequenceStepTiming, Transition, sequence_activation_interval,
+    sequence_next_activation_position, sequence_wraparound_is_zero_length,
 };
 use nightfall_clips::{Clip, Source};
 use nightfall_dmx::prelude::Attribute;
@@ -88,20 +88,6 @@ impl SequenceTimelineSeekPlayback {
         )
     }
 
-    /// Builds seek playback state from a sequence and its resolved cue steps.
-    pub fn from_sequence_steps(
-        clip_id: u32,
-        sequence: &Sequence,
-        steps: &[Cue],
-        fixture_data_provider: &FixtureDataProviderExt,
-        selection_resolver: &SpatialSelectionResolver,
-        started_at: Duration,
-    ) -> Option<Self> {
-        let step_timings =
-            sequence_step_timings(sequence, steps, fixture_data_provider, selection_resolver);
-        Self::from_step_timings(clip_id, sequence.wrap, started_at, step_timings)
-    }
-
     /// Builds seek playback state for a sequence clip from available domain data.
     pub fn from_clip(
         clip_id: u32,
@@ -109,6 +95,7 @@ impl SequenceTimelineSeekPlayback {
         sequence_data_provider: Option<&DataProvider<Sequence>>,
         cue_data_provider: &DataProvider<Cue>,
         fixture_data_provider: &FixtureDataProviderExt,
+        blueprint_data_provider: Option<&DataProvider<Blueprint>>,
         selection_resolver: &SpatialSelectionResolver<'_>,
         started_at: Duration,
     ) -> Option<Self> {
@@ -121,6 +108,7 @@ impl SequenceTimelineSeekPlayback {
             sequence_data_provider?,
             cue_data_provider,
             fixture_data_provider,
+            blueprint_data_provider,
             selection_resolver,
             started_at,
         )
@@ -135,6 +123,7 @@ impl SequenceTimelineSeekPlayback {
         sequence_data_provider: &DataProvider<Sequence>,
         cue_data_provider: &DataProvider<Cue>,
         fixture_data_provider: &FixtureDataProviderExt,
+        blueprint_data_provider: Option<&DataProvider<Blueprint>>,
         selection_resolver: &SpatialSelectionResolver<'_>,
         started_at: Duration,
     ) -> Option<Self> {
@@ -143,6 +132,7 @@ impl SequenceTimelineSeekPlayback {
             &sequence,
             cue_data_provider,
             fixture_data_provider,
+            blueprint_data_provider,
             selection_resolver,
         )?;
         Self::from_step_timings(clip_id, sequence.wrap, started_at, step_timings)
@@ -420,6 +410,7 @@ impl SequenceTimelineSeekPlayback {
         clip: &Clip,
         sequence_data_provider: Option<&DataProvider<Sequence>>,
         fixture_data_provider: &FixtureDataProviderExt,
+        blueprint_data_provider: Option<&DataProvider<Blueprint>>,
         selection_resolver: &SpatialSelectionResolver<'_>,
     ) -> bool {
         let Some(completed_at) = self.completed_at() else {
@@ -432,6 +423,7 @@ impl SequenceTimelineSeekPlayback {
             clip,
             sequence_data_provider,
             fixture_data_provider,
+            blueprint_data_provider,
             selection_resolver,
         ) else {
             return false;
@@ -519,6 +511,14 @@ impl SequenceTimelineSeekPlayback {
             Duration::ZERO,
             is_wraparound,
         )?;
+        if sequence_wraparound_is_zero_length(
+            is_wraparound,
+            next_transition_started_at,
+            self.started_at,
+            self.step_started_at.first().copied().flatten(),
+        ) {
+            return None;
+        }
 
         (target_position >= next_transition_started_at)
             .then_some((next_position, next_transition_started_at))
@@ -585,6 +585,7 @@ pub fn sequence_release_duration_for_clip(
     clip: &Clip,
     sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver<'_>,
 ) -> Option<Duration> {
     let Some(Source::Sequence(sequence_uid)) = clip.source else {
@@ -594,6 +595,7 @@ pub fn sequence_release_duration_for_clip(
     Some(sequence_release_duration(
         &sequence,
         fixture_data_provider,
+        blueprint_data_provider,
         selection_resolver,
     ))
 }
@@ -603,11 +605,16 @@ pub fn sequence_playback_duration_profile(
     sequence_uid: Uuid,
     sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver<'_>,
 ) -> Option<PlaybackDurationProfile> {
     let sequence = sequence_data_provider?.get(sequence_uid).ok()?;
-    let release_duration =
-        sequence_release_duration(&sequence, fixture_data_provider, selection_resolver);
+    let release_duration = sequence_release_duration(
+        &sequence,
+        fixture_data_provider,
+        blueprint_data_provider,
+        selection_resolver,
+    );
     Some(PlaybackDurationProfile::indefinite(
         PlaybackExtent::Indefinite,
         PlaybackExtent::Finite(release_duration),
@@ -618,10 +625,14 @@ pub fn sequence_playback_duration_profile(
 fn sequence_release_duration(
     sequence: &Sequence,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver<'_>,
 ) -> Duration {
-    let profile =
-        fixture_data_provider.cue_duration_profile(&sequence.release_cue, selection_resolver);
+    let profile = fixture_data_provider.cue_duration_profile(
+        &sequence.release_cue,
+        blueprint_data_provider,
+        selection_resolver,
+    );
     let release_cue_duration = profile
         .cue_entry_duration()
         .max(sequence.release_cue.authored_duration());
@@ -889,14 +900,18 @@ fn sequence_step_timings(
     sequence: &Sequence,
     steps: &[Cue],
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) -> Vec<SequenceTimelineStepTiming> {
     steps
         .iter()
         .map(|cue| {
             let cue_with_defaults = cue_with_sequence_default_timing(cue, &sequence.default_timing);
-            let profile =
-                fixture_data_provider.cue_duration_profile(&cue_with_defaults, selection_resolver);
+            let profile = fixture_data_provider.cue_duration_profile(
+                &cue_with_defaults,
+                blueprint_data_provider,
+                selection_resolver,
+            );
             SequenceTimelineStepTiming {
                 trigger: cue.trigger,
                 assertion_duration: profile
@@ -916,6 +931,7 @@ pub fn stored_sequence_step_timings(
     sequence: &Sequence,
     cue_data_provider: &DataProvider<Cue>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) -> Option<Vec<SequenceTimelineStepTiming>> {
     let steps = sequence
@@ -928,6 +944,7 @@ pub fn stored_sequence_step_timings(
         sequence,
         &steps,
         fixture_data_provider,
+        blueprint_data_provider,
         selection_resolver,
     ))
 }
@@ -1094,6 +1111,7 @@ mod tests {
             super::sequence_release_duration(
                 &sequence,
                 &fixture_data_provider,
+                None,
                 &selection_resolver,
             ),
             Duration::from_millis(2500)
@@ -1147,6 +1165,7 @@ mod tests {
             super::sequence_release_duration(
                 &sequence,
                 &fixture_data_provider,
+                None,
                 &selection_resolver,
             ),
             Duration::from_millis(3500)
@@ -1183,6 +1202,7 @@ mod tests {
             super::sequence_release_duration(
                 &sequence,
                 &fixture_data_provider,
+                None,
                 &selection_resolver,
             ),
             Duration::from_millis(3500)
@@ -1217,6 +1237,7 @@ mod tests {
             &sequence,
             &[cue],
             &fixture_data_provider,
+            None,
             &selection_resolver,
         );
 
@@ -1386,6 +1407,41 @@ mod tests {
 
         assert_eq!(target.position, 1);
         assert_eq!(target.started_at, Duration::from_secs(1));
+    }
+
+    /// Verifies seek replay of a wrapping sequence whose steps all take zero time holds on the
+    /// last cue instead of spinning through cycles that never move the activation forward.
+    #[test]
+    fn zero_length_wrapping_seek_playback_holds_on_last_step() {
+        let zero_follow = SequenceTimelineStepTiming {
+            trigger: CueTriggerType::FollowPrevious,
+            assertion_duration: Duration::ZERO,
+        };
+        let mut playback = SequenceTimelineSeekPlayback::from_step_timings(
+            9,
+            true,
+            Duration::ZERO,
+            vec![
+                SequenceTimelineStepTiming {
+                    trigger: CueTriggerType::AfterDelay(Duration::ZERO),
+                    assertion_duration: Duration::ZERO,
+                },
+                zero_follow,
+                zero_follow,
+            ],
+        )
+        .expect("sequence should be plannable");
+
+        playback.advance_autonomous_until_source_position(Duration::from_secs(1));
+        assert_eq!(playback.target().position, 3);
+        assert_eq!(playback.target().started_at, Duration::ZERO);
+
+        playback.advance_autonomous_until_source_position(Duration::from_secs(2));
+        assert_eq!(
+            playback.target().position,
+            3,
+            "replay should stay on the last cue on every later evaluation"
+        );
     }
 
     /// Verifies deterministic seek treats cue 1 AfterDelay as wrap delay only.

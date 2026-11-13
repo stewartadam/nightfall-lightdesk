@@ -122,6 +122,7 @@ pub(super) fn materialize_timeline_sequences(
             materializer.sequence_data_provider.as_deref(),
             &materializer.cue_data_provider,
             &materializer.fixture_data_provider,
+            materializer.blueprint_data_provider.as_deref(),
             &materializer.selection_resolver,
             interval.started_at_timeline,
         )
@@ -206,6 +207,7 @@ pub(super) fn materialize_timeline_sequences(
             &materializer.exec_query,
             materializer.sequence_data_provider.as_deref(),
             &materializer.fixture_data_provider,
+            materializer.blueprint_data_provider.as_deref(),
             &materializer.selection_resolver,
         ) {
             continue;
