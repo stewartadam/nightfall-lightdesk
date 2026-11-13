@@ -138,7 +138,8 @@ pub(crate) fn emit_browser_audio_directives(
             .copied()
             .unwrap_or((Duration::ZERO, false));
         let offset = timeline.get_playback_position(current_time);
-        let playing = timeline.is_active && timeline.timeline.audio_enabled && timecode_running;
+        let playing = timeline.timeline.audio_enabled
+            && timeline.audio_transport_playing(current_time, timecode_running);
 
         if !timeline.audio_needs_sync {
             if timeline.take_audio_clock_report(playing, offset) {
@@ -186,7 +187,7 @@ pub(crate) fn emit_browser_audio_directives(
                     offset,
                 },
             );
-            if timecode_running {
+            if playing {
                 publish(
                     &broadcaster,
                     &TimelineAudioDirective::Play {
