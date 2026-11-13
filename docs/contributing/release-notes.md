@@ -3,22 +3,22 @@
 Part of the [contributing guide](../../CONTRIBUTING.md).
 
 Every PR declares its release-note intent in its description. Notes stay on GitHub;
-there are no per-change fragments in the development branch. Review the wording
-alongside the code: describe the effect on users, conditions under which a fix
-matters, and any action required when upgrading.
+there are no per-change fragments in the development branch. What to write, with
+good and bad examples, is in [Writing release notes](writing-release-notes.md);
+this page covers the syntax and how notes reach a release.
 
 Use one sentence:
 
 ```markdown
-Notes: Fixed an issue where stopping a cue left fixtures at their previous intensity.
+Notes: fix(cues): Stopping a cue no longer leaves fixtures at their previous intensity.
 ```
 
 Or one complete entry per bullet:
 
 ```markdown
 Notes:
-- Added controls for adjusting parameter lanes in the timeline.
-- Fixed playback jumping when changing the selected cue.
+- feature(timeline): Timeline parameter lanes can be adjusted with new controls.
+- fix(cues): Playback no longer jumps when you change the selected cue.
 ```
 
 For an intentional omission, supply a specific reason:
@@ -30,8 +30,11 @@ Notes: none (test coverage only; no user-visible behavior changed)
 Bare `none`, empty declarations, duplicate declarations, and placeholders such as
 `TODO` fail. Comments and fenced code examples do not count. Put a blank line or
 a Markdown heading after the entry, before the next PR section. A skip label is
-not necessary and does not bypass the check. Reviewers decide whether prose is
-useful and whether the omission is justified; the check validates structure.
+not necessary and does not bypass the check. The check also fails an entry without a
+known `type(area):` tag, an entry longer than 160 characters, or more than five
+entries; release preparation does not apply
+those limits to PRs that already merged. Reviewers, including the Claude
+mergeability review, judge the prose and omissions against the writing guide.
 
 ## Required check and rollout
 
@@ -71,8 +74,11 @@ published prerelease, rather than repeating the whole series.
 
 The collector walks all parents between that baseline and the target. It looks up
 associated merged PRs and includes only PRs whose merge commit is in that range,
-deduplicated by PR number. `feat` titles group notes under Improvements, `fix`
-titles under Fixes, and other titles under Changes. The actual entry text comes
+deduplicated by PR number. Entries are grouped by the type in their
+`type(area):` tag (New features, Improvements, Fixes, Changes, Other changes), and the JSON
+report keeps each entry's area for grouping by feature area. Untagged entries
+from PRs merged before tags existed take their type from the PR title: `feat` is
+an improvement, `fix` a fix, and anything else a change. The entry text comes
 from `Notes:`, not the title. Explicit omissions stay in the JSON report but do
 not appear in the published notes. Commits without a matching PR appear with
 their commit subjects under Additional commits, making direct pushes visible;
