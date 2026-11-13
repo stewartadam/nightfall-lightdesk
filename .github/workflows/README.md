@@ -48,14 +48,14 @@ selection can tell external dependency changes from workspace rewiring.
 | --- | --- | --- | --- |
 | Runtime implementation, runtime tests, ordinary UI changes | No | No | No |
 | Desktop shell or shared startup, shutdown, diagnostics interfaces | Yes | No | No |
-| Desktop crate manifest, build script, configuration, capabilities, icons | Yes | Yes | No |
-| Desktop installer tooling | No (packaging compiles only) | Yes | No |
+| Desktop crate manifest, build script, configuration, capabilities, icons | Yes | No | No |
+| Desktop installer tooling | No | No | No |
 | Browser runtime or browser packaging tooling | No | No | Yes |
-| Shared distribution inputs, root manifests, lockfiles | No (packaging compiles only) | Yes | Yes |
+| Shared distribution inputs, root manifests, lockfiles | No | No | Yes |
 | `Cargo.lock` changes that only rewire workspace crates, without any crate reaching a different set of external crates | No | No | No |
 | Draft PR (any changes) | No | No | No |
 | Main push | No | No | Yes |
-| Develop push | No | No | No |
+| Develop push | No (packaging compiles only) | Yes | No |
 | Release tag | No (packaging compiles only) | Yes | No |
 | Manual dispatch | No (packaging compiles only) | Selectable | Selectable |
 
@@ -86,20 +86,22 @@ The native test job runs
 `cargo test -p app-tauri --all-targets` on Linux after nextest, reusing most of the
 runtime units it just built. Desktop checks run the same command on macOS and
 Windows, without release optimization, frontend generation, or installer creation.
-Packaging only compiles `app-tauri`, so a desktop code change selects the check even
-when it also selects packaging. A check-only Tauri
+PRs never build desktop installers, so the check is the only desktop
+validation a PR gets. A check-only Tauri
 configuration clears frontendDist and omits bundled resources, so checks need no
 webui/dist output even without a development URL. Packaging validates the actual
 frontend and resources using the normal configuration.
 The check and release packaging caches are separate.
 
 Desktop checks link test binaries but do not validate the release build or
-installers. Release-tag builds remain the cross-platform packaging backstop. Main
-pushes skip desktop packaging: the release tag points at the main merge commit, so
-packaging both would build the same installers twice. Use manual dispatch with
-`desktop`, `browser`, or `all` when an artifact is needed before merging or tagging.
-Lockfile selection remains conservative; an ordinary lockfile update selects
-both distributions. Release-note-only changes do not select packaging.
+installers. Installers take long enough on every platform that PRs never build
+them: develop pushes package them after merge, so installer, Tauri configuration
+and dependency breakage shows up on develop before a release, and release-tag
+builds produce the installers that ship. Main pushes skip desktop packaging: the
+release tag points at the main merge commit, so packaging both would build the
+same installers twice. Use manual dispatch with `desktop`, `browser`, or `all`
+when an artifact is needed before merging or tagging. An ordinary lockfile update
+selects the browser distribution. Release-note-only changes do not select packaging.
 
 PRs that touch `docs/` (or the CI scope policy and workflow) also run the
 **Documentation** job, which builds every mdBook under `docs/` with the mdBook

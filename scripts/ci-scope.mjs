@@ -9,6 +9,8 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+// Inputs every distribution builds from. PRs never package the desktop app, so on a PR these
+// select only the browser distribution.
 const sharedPackaging = [
   /^Cargo\.(toml|lock)$/,
   /^package\.json$/,
@@ -27,12 +29,6 @@ const sharedPackaging = [
   /^crates\/wasm-bridge\//,
   /^crates\/app-runtime\/assets\//,
   /^webui\/(index\.html$|public\/|lib\/engine-runtime|lib\/runtime-config\.ts$)/,
-];
-const desktopPackaging = [
-  /^desktop\/app-tauri\/(Cargo\.toml$|build\.rs$|tauri.*\.json$|capabilities\/|icons\/)/,
-  /^crates\/app-runtime\/Cargo\.toml$/,
-  /^scripts\/desktop-artifacts/,
-  /^\.github\/workflows\/(desktop-artifacts|desktop-check|release)\.yml$/,
 ];
 const desktopChecks = [
   /^desktop\/app-tauri\//,
@@ -187,11 +183,12 @@ export function lockfileChangesOnlyWorkspaceEdges(base, head) {
 }
 
 /**
- * Select validation by integration risk. Packaging compiles the desktop app but does not run
- * its tests, so desktop code or build-configuration changes select the desktop check even when
- * packaging also runs; shared inputs such as the lockfile rely on packaging alone. A lockfile
- * change that only rewires workspace packages (`workspaceOnlyLockfile`) is left to the Rust
- * tests, because no workspace package compiles a different set of external packages.
+ * Select validation by integration risk. Desktop installers are slow to build on every platform,
+ * so PRs never package the desktop app: desktop code and build configuration select the desktop
+ * check, and develop pushes package the installers after merge, with release tags building the
+ * ones that ship. A PR that changes a shared distribution input packages the browser runtime
+ * only. A lockfile change that only rewires workspace packages (`workspaceOnlyLockfile`) is left
+ * to the Rust tests, because no workspace package compiles a different set of external packages.
  *
  * The WASM packages, native backend, WebUI checks and Chromium product flows (`app`) run for every
  * push and manual run, but only for PRs that change an app input: any path outside
@@ -304,9 +301,11 @@ export function selectScope({
     desktopPackage = distribution !== "browser";
     browserPackage = distribution !== "desktop";
   } else if (event === "push") {
-    // The release tag points at the main merge commit, so packaging main as well would build
-    // the same installers twice; only the tag's build ships.
-    desktopPackage = ref.startsWith("refs/tags/v");
+    // Develop pushes catch packaging breakage after merge. The release tag points at the main
+    // merge commit, so packaging main as well would build the same installers twice; only the
+    // tag's build ships.
+    desktopPackage =
+      ref === "refs/heads/develop" || ref.startsWith("refs/tags/v");
     browserPackage = ref === "refs/heads/main";
   } else if (event === "pull_request") {
     app = touchesApp();
@@ -314,18 +313,14 @@ export function selectScope({
     docs = touchesDocumentation();
     browserPreview = previewTarget && sameRepository && (app || docs);
     rust = toolsTouch("rust");
-    desktopPackage = browserPackage = toolsTouch("packaging");
+    browserPackage = toolsTouch("packaging");
     for (const path of filePaths) {
       const rewiresWorkspace = path === "Cargo.lock" && workspaceOnlyLockfile;
       if (
         !rewiresWorkspace &&
         sharedPackaging.some((pattern) => pattern.test(path))
-      ) {
-        desktopPackage = true;
+      )
         browserPackage = true;
-      }
-      if (desktopPackaging.some((pattern) => pattern.test(path)))
-        desktopPackage = true;
       if (browserPackaging.some((pattern) => pattern.test(path)))
         browserPackage = true;
       if (desktopChecks.some((pattern) => pattern.test(path)))
