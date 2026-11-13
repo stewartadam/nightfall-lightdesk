@@ -40,13 +40,41 @@ pub struct ConvertedPlacement {
 /// Scale is removed from the rotation because fixtures are drawn at their real size. A
 /// scaled or mirrored transform still yields the nearest rotation, with a warning.
 pub fn convert_transform(world: &Transform) -> ConvertedPlacement {
-    let origin = world.origin;
-    let position = PlacementPosition {
-        x: (origin[0] / 1000.0) as f32,
-        y: (origin[2] / 1000.0) as f32,
-        z: (-origin[1] / 1000.0) as f32,
-    };
+    let (rotation, problems) = rigid_rotation(world);
+    ConvertedPlacement {
+        placement: nightfall_placement(world.origin, &rotation),
+        warning: (!problems.is_empty()).then(|| problems.join(", and ")),
+    }
+}
 
+/// Splits an object's MVR world transform into the rigid placement Nightfall stores and
+/// the rest, expressed in the object's own space.
+///
+/// The rest holds whatever the placement cannot: scale, and mirroring. Geometry mapped by
+/// it and then placed by the placement lands exactly where `world` puts it, so a scaled
+/// truss keeps its size when its model is baked with the rest.
+pub fn split_transform(world: &Transform) -> (FixturePlacement, Transform) {
+    let (rotation, _) = rigid_rotation(world);
+    // The rotation's rows are the columns of its inverse (its transpose), which is how a
+    // `Transform` lists its axes.
+    let unrotate = Transform {
+        axes: rotation,
+        origin: [0.0; 3],
+    };
+    let inverse = Transform {
+        axes: rotation,
+        origin: unrotate.apply_vector(world.origin).map(|value| -value),
+    };
+    (
+        nightfall_placement(world.origin, &rotation),
+        inverse.then(world),
+    )
+}
+
+/// Returns the nearest rotation to a world transform, as a matrix whose columns are the
+/// object's unit axes, with why it differs from the transform: scale is taken out, and a
+/// mirrored transform has its local X axis flipped back.
+fn rigid_rotation(world: &Transform) -> ([[f64; 3]; 3], Vec<String>) {
     let scale = world.scale();
     let mut problems = Vec::new();
     if scale
@@ -65,19 +93,24 @@ pub fn convert_transform(world: &Transform) -> ConvertedPlacement {
             row[0] = -row[0];
         }
     }
+    (rotation, problems)
+}
 
-    let nightfall = multiply(&multiply(&AXIS_CHANGE, &rotation), &transpose(&AXIS_CHANGE));
+/// Builds a Nightfall placement from an MVR origin in millimetres and an MVR rotation.
+fn nightfall_placement(origin: [f64; 3], rotation: &[[f64; 3]; 3]) -> FixturePlacement {
+    let nightfall = multiply(&multiply(&AXIS_CHANGE, rotation), &transpose(&AXIS_CHANGE));
     let [x, y, z] = euler_xyz_degrees(&nightfall);
-    ConvertedPlacement {
-        placement: FixturePlacement {
-            position,
-            rotation: PlacementRotation {
-                x: x as f32,
-                y: y as f32,
-                z: z as f32,
-            },
+    FixturePlacement {
+        position: PlacementPosition {
+            x: (origin[0] / 1000.0) as f32,
+            y: (origin[2] / 1000.0) as f32,
+            z: (-origin[1] / 1000.0) as f32,
         },
-        warning: (!problems.is_empty()).then(|| problems.join(", and ")),
+        rotation: PlacementRotation {
+            x: x as f32,
+            y: y as f32,
+            z: z as f32,
+        },
     }
 }
 
@@ -250,6 +283,38 @@ mod tests {
         assert_round_trip([[c, s, 0.0], [-s * c, c * c, s], [s * s, -s * c, c]]);
         assert_round_trip([[0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]);
         assert_round_trip([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]]);
+    }
+
+    /// Splitting a scaled, mirrored and turned transform leaves only the scale and the
+    /// mirroring in the local part, and the two parts compose back into the original.
+    #[test]
+    fn split_keeps_scale_in_the_local_part() {
+        let world = transform(
+            [[0.0, -2.0, 0.0], [-3.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+            [1000.0, 2000.0, 3000.0],
+        );
+        let (placement, local) = split_transform(&world);
+        assert_eq!(placement.position.x, 1.0);
+        assert_eq!(placement.position.z, -2.0);
+        let (rotation, _) = rigid_rotation(&world);
+        let rigid = Transform {
+            axes: std::array::from_fn(|column| std::array::from_fn(|row| rotation[row][column])),
+            origin: world.origin,
+        };
+        let rebuilt = rigid.then(&local);
+        for point in [[0.0, 0.0, 0.0], [1.0, 2.0, 3.0], [-5.0, 0.5, 2.0]] {
+            let expected = world.apply_point(point);
+            let actual = rebuilt.apply_point(point);
+            for axis in 0..3 {
+                assert!(
+                    (expected[axis] - actual[axis]).abs() < 1e-9,
+                    "{actual:?} != {expected:?}"
+                );
+            }
+        }
+        let scale = local.scale();
+        assert!((scale[0] - 2.0).abs() < 1e-9 && (scale[1] - 3.0).abs() < 1e-9);
+        assert!(local.origin.iter().all(|value| value.abs() < 1e-9));
     }
 
     /// Scale is dropped from the rotation and reported.

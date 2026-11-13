@@ -17,13 +17,16 @@ use nightfall_engine::prelude::*;
 use nightfall_fixture_library::FixtureLibraryManager;
 use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::{FixtureCommand, PatchRoute, RigFixtureUpdate, RouteEndpoint};
+use nightfall_object_library::manager::showfile_object_snapshot_dir;
 use nightfall_programming::prelude::GroupCommand;
+use nightfall_scene_objects::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::plan::{ImportPlan, ShowFixture, ShowFixtures, ShowGroup, plan_import};
 use crate::preview::RigImportOptions;
-use crate::rig::{RigFile, RigPatch};
+use crate::rig::{RigFile, RigPatch, RigScenery};
+use crate::scenery::{PlannedScenery, ShowSceneObject};
 use crate::sessions::RigImportSessions;
 
 /// Commands for importing a rig the upload route has read.
@@ -75,6 +78,7 @@ pub struct ShowState<'w> {
     output_routes: Res<'w, OutputRoutes>,
     /// Groups in the show.
     groups: Res<'w, DataProvider<Group>>,
+    scene_objects: Res<'w, SceneObjectDataProvider>,
 }
 
 impl ShowState<'_> {
@@ -142,6 +146,26 @@ impl ShowState<'_> {
                 members: plain_members(&entry.selection),
             })
             .collect();
+        for entry in self.scene_objects.iter() {
+            show.scenery.ids.insert(entry.identifiers.id);
+            show.scenery.objects.insert(
+                entry.identifiers.uid,
+                ShowSceneObject {
+                    id: entry.identifiers.id,
+                    label: entry.identifiers.label.clone(),
+                    placement: FixturePlacement {
+                        position: entry.placement.position.into(),
+                        rotation: entry.placement.rotation.into(),
+                    },
+                    model_path: match &entry.properties {
+                        SceneObjectProperties::Custom(properties) => {
+                            Some(properties.model_path.clone())
+                        }
+                        _ => None,
+                    },
+                },
+            );
+        }
         show
     }
 }
@@ -243,7 +267,7 @@ pub fn expand_rig_import_commits(
             continue;
         };
         let plan = plan_import(session, &rig, &*library, &show, &options);
-        let commands = match build_import(&rig, &plan, &mut library, &show_state.groups, &options) {
+        let commands = match build_import(&rig, &plan, &mut library, &show_state, &options) {
             Ok(commands) => commands,
             Err(error) => {
                 log_lifecycle(responder.fail(envelope.command_id, error));
@@ -278,7 +302,7 @@ fn build_import(
     rig: &RigFile,
     plan: &ImportPlan,
     library: &mut FixtureLibraryManager,
-    groups: &DataProvider<Group>,
+    show: &ShowState,
     options: &RigImportOptions,
 ) -> Result<Vec<DynEnginePayload>, CommandError> {
     if plan.is_empty() {
@@ -357,7 +381,7 @@ fn build_import(
                 })
                 .collect(),
         ));
-        let group = match planned.existing.and_then(|uid| groups.get(uid).ok()) {
+        let group = match planned.existing.and_then(|uid| show.groups.get(uid).ok()) {
             Some(existing) => Group {
                 selection,
                 ..(*existing).clone()
@@ -374,7 +398,104 @@ fn build_import(
         };
         commands.push(Box::new(GroupCommand::StoreGroup(group)));
     }
+    if !plan.scenery.objects.is_empty() {
+        let folder = write_scenery_bundles(rig, &plan.scenery.objects)?;
+        tracing::debug!(folder = %folder.display(), "rig_import_scenery_written");
+        for planned in &plan.scenery.objects {
+            let scenery = &rig.scenery[planned.index];
+            let existing = scenery_object(show, scenery.uid, planned.existing);
+            commands.push(Box::new(SceneObjectCommand::StoreSceneObject(
+                scene_object_for(scenery, planned, existing),
+            )));
+        }
+    }
     Ok(commands)
+}
+
+/// Returns the scene object already in the show for an update, if it is still there.
+fn scenery_object(show: &ShowState, uid: Uuid, existing: bool) -> Option<SceneObject> {
+    existing
+        .then(|| show.scene_objects.get(uid).ok())
+        .flatten()
+        .map(|object| (*object).clone())
+}
+
+/// Builds the scene object to store for a piece of scenery: a custom object drawing the
+/// imported model around its own origin.
+///
+/// An object already in the show keeps its ID, colour and scale, and its label unless the
+/// plan renames it.
+fn scene_object_for(
+    scenery: &RigScenery,
+    planned: &PlannedScenery,
+    existing: Option<SceneObject>,
+) -> SceneObject {
+    let placement = SceneObjectPlacement {
+        position: scenery.placement.position.into(),
+        rotation: scenery.placement.rotation.into(),
+    };
+    let mut object = existing.unwrap_or_else(|| SceneObject {
+        identifiers: Identifiers {
+            id: planned.id,
+            uid: scenery.uid,
+            label: String::new(),
+        },
+        object_type: SceneObjectType::Custom,
+        placement: SceneObjectPlacement::default(),
+        properties: SceneObjectProperties::Custom(CustomProperties::default()),
+    });
+    if let Some(label) = &planned.label {
+        object.identifiers.label = label.clone();
+    }
+    object.placement = placement;
+    let mut properties = match object.properties {
+        SceneObjectProperties::Custom(properties) => properties,
+        _ => CustomProperties::default(),
+    };
+    properties.model_path = planned.model_path.clone();
+    properties.keep_model_origin = true;
+    properties.library_object_name = None;
+    properties.library_object_version = None;
+    object.object_type = SceneObjectType::Custom;
+    object.properties = SceneObjectProperties::Custom(properties);
+    object
+}
+
+/// Copies the model bundle of every planned scene object into the show's scene object
+/// folder, skipping bundles already there, and returns the folder.
+fn write_scenery_bundles(
+    rig: &RigFile,
+    planned: &[PlannedScenery],
+) -> Result<PathBuf, CommandError> {
+    let failed = |error: String| {
+        CommandError::new(
+            "rig_import.scenery_failed",
+            format!("Could not add the scenery models to the show: {error}"),
+        )
+    };
+    let folder = showfile_object_snapshot_dir().map_err(|error| failed(error.to_string()))?;
+    std::fs::create_dir_all(&folder).map_err(|error| failed(error.to_string()))?;
+    for planned in planned {
+        let destination = folder.join(&planned.bundle);
+        if destination.exists() {
+            continue;
+        }
+        let scenery = &rig.scenery[planned.index];
+        let model = scenery
+            .model
+            .as_ref()
+            .ok_or_else(|| failed(format!("{} has no model", scenery.name)))?;
+        // Copied under a temporary name and renamed, so a half-written bundle never carries
+        // the final name the existence check above trusts.
+        let partial = folder.join(format!("{}.partial", planned.bundle));
+        std::fs::copy(&model.path, &partial)
+            .and_then(|_| std::fs::rename(&partial, &destination))
+            .map_err(|error| {
+                let _ = std::fs::remove_file(&partial);
+                failed(error.to_string())
+            })?;
+    }
+    Ok(folder)
 }
 
 /// Builds the route patching one break of a fixture to its console address.

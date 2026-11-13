@@ -7,8 +7,23 @@
  */
 
 import { useStore } from "@nanostores/solid";
+import { CaretLeftIcon } from "@squidlab/phosphor-solid/caret-left";
 import { CloudArrowUpIcon } from "@squidlab/phosphor-solid/cloud-arrow-up";
-import { createEffect, createSignal, For, on, Show } from "solid-js";
+import { WarningIcon } from "@squidlab/phosphor-solid/warning";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  Match,
+  on,
+  Show,
+  Switch,
+} from "solid-js";
+import { Alert } from "../../../components/ui/alert";
+import { Badge, type BadgeTone } from "../../../components/ui/badge";
 import {
   Dialog,
   DialogBody,
@@ -21,6 +36,7 @@ import {
   NativeSelect,
 } from "../../../components/ui/form-controls";
 import { ProgressBar } from "../../../components/ui/progress-bar";
+import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
 import { Table, TableScroll } from "../../../components/ui/table";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getLogger } from "../../../lib/logger";
@@ -30,18 +46,27 @@ import * as types from "../../../types";
 import { revealPatchFixtures } from "../../patch";
 import {
   fixtureStatusLabel,
+  fixtureStatusTone,
   fixtureTypeNeedsChoice,
   fixtureTypeStatusLabel,
+  fixtureTypeStatusTone,
   formatPatch,
   formatPosition,
   GROUP_SOURCE_OPTIONS,
-  importButtonLabel,
+  importBlockedReason,
   importDoneMessage,
   libraryKey,
   type NumberingChoice,
   numberingOption,
   previewHasChanges,
+  RIG_IMPORT_TAB_LABELS,
+  type RigImportTab,
   rigImportDialogOpen,
+  rigImportTabCount,
+  rigImportTabs,
+  sceneryKindLabel,
+  sceneryStatusLabel,
+  sceneryStatusTone,
   withMappingMode,
   withTypeMapping,
 } from "../model/rig-import-model";
@@ -53,6 +78,9 @@ import {
 } from "../services/rig-import-service";
 
 const log = getLogger(import.meta.url);
+
+/** Fills the tab panel with the active tab's table, which scrolls on its own. */
+const TAB_TABLE_CLASS = "min-h-0 flex-1 rounded border border-gray-700";
 
 /** Where the dialog is in the import. */
 type Stage = "pick" | "upload" | "preview" | "import";
@@ -79,8 +107,12 @@ export function RigImportDialog() {
   const [groupSource, setGroupSource] = createSignal<types.RigGroupSource>(
     types.RigGroupSource.Auto,
   );
+  const [scenery, setScenery] = createSignal(true);
   const [mappings, setMappings] = createSignal<types.FixtureTypeMapping[]>([]);
   const [dragging, setDragging] = createSignal(false);
+  const [tab, setTab] = createSignal<RigImportTab>("fixtures");
+  const tabsId = createUniqueId();
+  const contentId = `${tabsId}-content`;
   let fileInput: HTMLInputElement | undefined;
   let previewRequest = 0;
 
@@ -89,6 +121,7 @@ export function RigImportDialog() {
     numbering: numberingOption(numbering(), numberingValue()),
     updateExisting: updateExisting(),
     groups: groupSource(),
+    scenery: scenery(),
     addToUserLibrary: addToUserLibrary(),
     typeMappings: mappings(),
   });
@@ -107,7 +140,9 @@ export function RigImportDialog() {
     setAddToUserLibrary(false);
     setUpdateExisting(true);
     setGroupSource(types.RigGroupSource.Auto);
+    setScenery(true);
     setMappings([]);
+    setTab("fixtures");
     setStage("pick");
   };
 
@@ -127,6 +162,10 @@ export function RigImportDialog() {
       const id = await uploadRigFile(file, setProgress);
       setSession(id);
       await refreshPreview();
+      const needsChoice = preview()?.fixtureTypes.some((type) =>
+        fixtureTypeNeedsChoice(type.status),
+      );
+      setTab(needsChoice ? "types" : "fixtures");
       setStage("preview");
     } catch (failure) {
       log.warn(`Reading ${file.name} failed: ${String(failure)}`);
@@ -159,6 +198,7 @@ export function RigImportDialog() {
         addToUserLibrary,
         updateExisting,
         groupSource,
+        scenery,
         mappings,
       ],
       () => {
@@ -211,9 +251,36 @@ export function RigImportDialog() {
         fixture.status === types.FixtureImportStatus.Unchanged ||
         fixture.status === types.FixtureImportStatus.AlreadyInShow,
     ) ?? false;
+  /** Whether the file has trusses or scenery, which offers the scenery choice. */
+  const hasScenery = () => (preview()?.scenery.length ?? 0) > 0;
+  /** Whether the file has fixture types of its own, which offers copying them to the library. */
   const hasEmbeddedTypes = () =>
     preview()?.fixtureTypes.some((type) => type.status.type === "Embedded") ??
     false;
+
+  /**
+   * The tabs the current preview has content for, each labelled with its row count. The
+   * fixture types tab is flagged while a type still needs a library fixture, since the
+   * fixtures of that type are left out until one is chosen.
+   */
+  const tabOptions = createMemo(() => {
+    const current = preview();
+    if (!current) return [];
+    const typesNeedChoice = current.fixtureTypes.some((type) =>
+      fixtureTypeNeedsChoice(type.status),
+    );
+    return rigImportTabs(current).map((key) => ({
+      key,
+      label: `${RIG_IMPORT_TAB_LABELS[key]} (${rigImportTabCount(current, key)})${
+        key === "types" && typesNeedChoice ? " ⚠" : ""
+      }`,
+    }));
+  });
+  /** The chosen tab, or the fixtures tab when a new preview no longer has the chosen one. */
+  const activeTab = createMemo(
+    (): RigImportTab =>
+      tabOptions().some((option) => option.key === tab()) ? tab() : "fixtures",
+  );
 
   return (
     <Dialog
@@ -222,14 +289,21 @@ export function RigImportDialog() {
       usePortal={false}
       title="Import Rig from MVR"
       closeLabel="Close rig import dialog"
-      class="max-w-5xl max-h-[90vh]"
+      class={`max-w-5xl max-h-[90vh] ${
+        stage() === "preview" || stage() === "import"
+          ? "h-[min(90vh,52rem)]"
+          : ""
+      }`}
       busy={stage() === "upload" || stage() === "import"}
       onDismiss={close}
       onSubmit={() => {
         if (stage() === "preview") void runImport();
       }}
     >
-      <DialogBody class="flex max-h-[calc(90vh-8rem)] flex-col gap-4 overflow-y-auto">
+      <DialogBody
+        scrollable={false}
+        class="flex flex-col gap-4 overflow-y-auto"
+      >
         <input
           ref={(element) => {
             fileInput = element;
@@ -290,10 +364,6 @@ export function RigImportDialog() {
             <p class="text-sm font-medium text-gray-300">
               Drop an .mvr file here or click to browse
             </p>
-            <p class="mt-1 text-xs text-gray-500">
-              Exported from Vectorworks, Capture, grandMA3 or another MVR tool.
-              The fixtures are added to the current show.
-            </p>
           </div>
         </Show>
 
@@ -328,10 +398,27 @@ export function RigImportDialog() {
                 <Show when={current().updatedFixtures > 0}>
                   , {current().updatedFixtures} updated
                 </Show>
+                <Show when={current().sceneryChanges > 0}>
+                  , with {current().sceneryChanges} scenery{" "}
+                  {current().sceneryChanges === 1 ? "object" : "objects"}
+                </Show>
                 .
               </p>
+              <Show when={importBlockedReason(current())}>
+                {(reason) => (
+                  <Alert
+                    variant="warning"
+                    density="compact"
+                    role="status"
+                    class="shrink-0"
+                    data-testid="rig-import-blocked"
+                  >
+                    {reason()}
+                  </Alert>
+                )}
+              </Show>
               <Show when={current().warnings.length > 0}>
-                <ul class="list-disc pl-5 text-xs text-amber-300">
+                <ul class="max-h-20 shrink-0 list-disc overflow-y-auto pl-5 text-xs text-amber-300">
                   <For each={current().warnings}>
                     {(warning) => <li>{warning}</li>}
                   </For>
@@ -398,6 +485,17 @@ export function RigImportDialog() {
                     Update fixtures already in the show to match the file
                   </label>
                 </Show>
+                <Show when={hasScenery()}>
+                  <label class="flex items-center gap-2 text-sm text-gray-300">
+                    <Checkbox
+                      checked={scenery()}
+                      onChange={(event) =>
+                        setScenery(event.currentTarget.checked)
+                      }
+                    />
+                    Import trusses and scenery
+                  </label>
+                </Show>
                 <Show when={hasEmbeddedTypes()}>
                   <label class="flex items-center gap-2 text-sm text-gray-300">
                     <Checkbox
@@ -411,224 +509,300 @@ export function RigImportDialog() {
                 </Show>
               </div>
 
-              <section class="flex flex-col gap-2">
-                <h3 class="text-xs font-semibold uppercase text-gray-400">
-                  Fixture types
-                </h3>
-                <div class="overflow-hidden rounded border border-gray-700">
-                  <Table aria-label="Fixture types in the rig">
-                    <thead class="text-left">
-                      <tr>
-                        <th scope="col">Type in file</th>
-                        <th scope="col">Fixture</th>
-                        <th scope="col" class="w-28">
-                          Source
-                        </th>
-                        <th scope="col" class="w-20 text-right">
-                          Count
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <For each={current().fixtureTypes}>
-                        {(type) => {
-                          const mapping = () =>
-                            mappings().find(
-                              (candidate) => candidate.spec === type.spec,
-                            );
-                          const mappedModes = () =>
-                            library().find(
-                              (fixture) =>
-                                fixture.make === mapping()?.make &&
-                                fixture.model === mapping()?.model &&
-                                fixture.asset_etag === mapping()?.revision,
-                            )?.modes ?? [];
-                          return (
-                            <tr>
-                              <td class="font-mono text-xs">{type.spec}</td>
-                              <td>
-                                <Show
-                                  when={
-                                    fixtureTypeNeedsChoice(type.status) ||
-                                    mapping()
-                                  }
-                                  fallback={`${type.make ?? ""} ${type.model ?? ""}`}
-                                >
-                                  <div class="flex flex-wrap gap-2">
-                                    <NativeSelect
-                                      aria-label={`Library fixture for ${type.spec}`}
-                                      value={(() => {
-                                        const current = mapping();
-                                        if (!current) return "";
-                                        return JSON.stringify([
-                                          current.make,
-                                          current.model,
-                                          current.revision,
-                                        ]);
-                                      })()}
-                                      onChange={(event) =>
-                                        setMappings(
-                                          withTypeMapping(
-                                            mappings(),
-                                            type.spec,
-                                            event.currentTarget.value,
-                                            library(),
-                                          ),
-                                        )
+              <SegmentedTabs
+                id={tabsId}
+                density="compact"
+                contentId={contentId}
+                label="Rig contents"
+                options={tabOptions()}
+                value={activeTab()}
+                onChange={setTab}
+              />
+              <div
+                id={contentId}
+                role="tabpanel"
+                aria-labelledby={`${tabsId}-${activeTab()}`}
+                class="flex min-h-48 flex-1 flex-col"
+              >
+                <Switch>
+                  <Match when={activeTab() === "types"}>
+                    <TableScroll
+                      aria-label="Fixture types in the rig"
+                      class={TAB_TABLE_CLASS}
+                    >
+                      <Table aria-label="Fixture types in the rig">
+                        <thead class="text-left">
+                          <tr>
+                            <th scope="col" class="w-48">
+                              Status
+                            </th>
+                            <th scope="col">Type in file</th>
+                            <th scope="col">Fixture</th>
+                            <th scope="col" class="w-20 text-right">
+                              Count
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <For each={current().fixtureTypes}>
+                            {(type) => {
+                              const mapping = () =>
+                                mappings().find(
+                                  (candidate) => candidate.spec === type.spec,
+                                );
+                              const mappedModes = () =>
+                                library().find(
+                                  (fixture) =>
+                                    fixture.make === mapping()?.make &&
+                                    fixture.model === mapping()?.model &&
+                                    fixture.asset_etag === mapping()?.revision,
+                                )?.modes ?? [];
+                              return (
+                                <tr>
+                                  <StatusCell
+                                    label={fixtureTypeStatusLabel(type.status)}
+                                    tone={fixtureTypeStatusTone(type.status)}
+                                    title={
+                                      type.status.type === "Unreadable"
+                                        ? type.status.data.reason
+                                        : undefined
+                                    }
+                                  >
+                                    <Show when={type.missing3dModel}>
+                                      <Badge
+                                        tone="warning"
+                                        appearance="soft"
+                                        icon={WarningIcon}
+                                        title="This GDTF has no 3D model files, so its fixtures are drawn from simple shapes or as placeholder boxes."
+                                      >
+                                        Missing 3D
+                                      </Badge>
+                                    </Show>
+                                  </StatusCell>
+                                  <td class="font-mono text-xs">{type.spec}</td>
+                                  <td>
+                                    <Show
+                                      when={
+                                        fixtureTypeNeedsChoice(type.status) ||
+                                        mapping()
                                       }
+                                      fallback={`${type.make ?? ""} ${type.model ?? ""}`}
                                     >
-                                      <option value="">
-                                        Choose a library fixture…
-                                      </option>
-                                      <For each={library()}>
-                                        {(fixture) => (
-                                          <option value={libraryKey(fixture)}>
-                                            {fixture.make} {fixture.model}
-                                          </option>
-                                        )}
-                                      </For>
-                                    </NativeSelect>
-                                    <Show when={mapping()}>
-                                      {(current) => (
+                                      <div class="flex flex-wrap gap-2">
                                         <NativeSelect
-                                          aria-label={`Mode for ${type.spec}`}
-                                          value={current().mode}
+                                          aria-label={`Library fixture for ${type.spec}`}
+                                          value={(() => {
+                                            const current = mapping();
+                                            if (!current) return "";
+                                            return JSON.stringify([
+                                              current.make,
+                                              current.model,
+                                              current.revision,
+                                            ]);
+                                          })()}
                                           onChange={(event) =>
                                             setMappings(
-                                              withMappingMode(
+                                              withTypeMapping(
                                                 mappings(),
                                                 type.spec,
                                                 event.currentTarget.value,
+                                                library(),
                                               ),
                                             )
                                           }
                                         >
-                                          <For each={mappedModes()}>
-                                            {(mode) => (
-                                              <option value={mode}>
-                                                {mode}
+                                          <option value="">
+                                            Choose a library fixture…
+                                          </option>
+                                          <For each={library()}>
+                                            {(fixture) => (
+                                              <option
+                                                value={libraryKey(fixture)}
+                                              >
+                                                {fixture.make} {fixture.model}
                                               </option>
                                             )}
                                           </For>
                                         </NativeSelect>
-                                      )}
+                                        <Show when={mapping()}>
+                                          {(current) => (
+                                            <NativeSelect
+                                              aria-label={`Mode for ${type.spec}`}
+                                              value={current().mode}
+                                              onChange={(event) =>
+                                                setMappings(
+                                                  withMappingMode(
+                                                    mappings(),
+                                                    type.spec,
+                                                    event.currentTarget.value,
+                                                  ),
+                                                )
+                                              }
+                                            >
+                                              <For each={mappedModes()}>
+                                                {(mode) => (
+                                                  <option value={mode}>
+                                                    {mode}
+                                                  </option>
+                                                )}
+                                              </For>
+                                            </NativeSelect>
+                                          )}
+                                        </Show>
+                                      </div>
                                     </Show>
-                                  </div>
-                                </Show>
-                              </td>
-                              <td
-                                title={
-                                  type.status.type === "Unreadable"
-                                    ? type.status.data.reason
-                                    : undefined
-                                }
-                              >
-                                {fixtureTypeStatusLabel(type.status)}
-                              </td>
-                              <td class="text-right">{type.fixtureCount}</td>
-                            </tr>
-                          );
-                        }}
-                      </For>
-                    </tbody>
-                  </Table>
-                </div>
-              </section>
-
-              <Show when={current().groups.length > 0}>
-                <section class="flex flex-col gap-2">
-                  <h3 class="text-xs font-semibold uppercase text-gray-400">
-                    Groups
-                  </h3>
-                  <div class="overflow-hidden rounded border border-gray-700">
-                    <Table aria-label="Groups the import makes">
-                      <thead class="text-left">
-                        <tr>
-                          <th scope="col" class="w-16">
-                            ID
-                          </th>
-                          <th scope="col">Name</th>
-                          <th scope="col" class="w-28">
-                            Action
-                          </th>
-                          <th scope="col" class="w-20 text-right">
-                            Fixtures
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <For each={current().groups}>
-                          {(group) => (
-                            <tr>
-                              <td>{group.groupId}</td>
-                              <td>{group.name}</td>
-                              <td>{group.existing ? "Refresh" : "New"}</td>
-                              <td class="text-right">{group.fixtureCount}</td>
-                            </tr>
-                          )}
-                        </For>
-                      </tbody>
-                    </Table>
-                  </div>
-                </section>
-              </Show>
-
-              <section class="flex min-h-0 flex-col gap-2">
-                <h3 class="text-xs font-semibold uppercase text-gray-400">
-                  Fixtures
-                </h3>
-                <TableScroll
-                  aria-label="Fixtures in the rig"
-                  class="max-h-80 rounded border border-gray-700"
-                >
-                  <Table aria-label="Fixtures in the rig">
-                    <thead class="text-left">
-                      <tr>
-                        <th scope="col" class="w-16">
-                          ID
-                        </th>
-                        <th scope="col">Name</th>
-                        <th scope="col">Mode</th>
-                        <th scope="col">Patch</th>
-                        <th scope="col">Position (m)</th>
-                        <th scope="col">Layer</th>
-                        <th scope="col">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <For each={current().fixtures}>
-                        {(fixture) => (
-                          <tr
-                            title={fixture.warnings.join("\n") || undefined}
-                            data-status={fixture.status}
-                          >
-                            <td>{fixture.fixtureId ?? "–"}</td>
-                            <td>{fixture.label || fixture.name}</td>
-                            <td>{fixture.mode ?? "–"}</td>
-                            <td>{formatPatch(fixture.patch)}</td>
-                            <td class="font-mono text-xs">
-                              {formatPosition(fixture.placement)}
-                            </td>
-                            <td>{fixture.hangingPosition ?? fixture.layer}</td>
-                            <td>
-                              {fixtureStatusLabel(fixture.status)}
-                              <Show when={fixture.changes.length > 0}>
-                                <span class="text-gray-500">
-                                  {" "}
-                                  ({fixture.changes.join(", ")})
-                                </span>
-                              </Show>
-                              <Show when={fixture.warnings.length > 0}>
-                                <span class="text-amber-400"> ⚠</span>
-                              </Show>
-                            </td>
+                                  </td>
+                                  <td class="text-right">
+                                    {type.fixtureCount}
+                                  </td>
+                                </tr>
+                              );
+                            }}
+                          </For>
+                        </tbody>
+                      </Table>
+                    </TableScroll>
+                  </Match>
+                  <Match when={activeTab() === "groups"}>
+                    <TableScroll
+                      aria-label="Groups the import makes"
+                      class={TAB_TABLE_CLASS}
+                    >
+                      <Table aria-label="Groups the import makes">
+                        <thead class="text-left">
+                          <tr>
+                            <th scope="col" class="w-48">
+                              Status
+                            </th>
+                            <th scope="col" class="w-16">
+                              ID
+                            </th>
+                            <th scope="col">Name</th>
+                            <th scope="col" class="w-20 text-right">
+                              Fixtures
+                            </th>
                           </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </Table>
-                </TableScroll>
-              </section>
+                        </thead>
+                        <tbody>
+                          <For each={current().groups}>
+                            {(group) => (
+                              <tr>
+                                <StatusCell
+                                  label={group.existing ? "Refresh" : "New"}
+                                  tone={group.existing ? "info" : "success"}
+                                />
+                                <td>{group.groupId}</td>
+                                <td>{group.name}</td>
+                                <td class="text-right">{group.fixtureCount}</td>
+                              </tr>
+                            )}
+                          </For>
+                        </tbody>
+                      </Table>
+                    </TableScroll>
+                  </Match>
+                  <Match when={activeTab() === "scenery"}>
+                    <TableScroll
+                      aria-label="Scenery in the rig"
+                      class={TAB_TABLE_CLASS}
+                    >
+                      <Table aria-label="Scenery in the rig">
+                        <thead class="text-left">
+                          <tr>
+                            <th scope="col" class="w-48">
+                              Status
+                            </th>
+                            <th scope="col" class="w-16">
+                              ID
+                            </th>
+                            <th scope="col">Name</th>
+                            <th scope="col">Kind</th>
+                            <th scope="col">Layer</th>
+                            <th scope="col" class="text-right">
+                              Triangles
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <For each={current().scenery}>
+                            {(object) => (
+                              <tr
+                                title={object.warnings.join("\n") || undefined}
+                                data-status={object.status}
+                              >
+                                <StatusCell
+                                  label={sceneryStatusLabel(object.status)}
+                                  tone={sceneryStatusTone(object.status)}
+                                  changes={object.changes}
+                                  warnings={object.warnings}
+                                />
+                                <td>{object.sceneObjectId ?? "–"}</td>
+                                <td>{object.label}</td>
+                                <td>{sceneryKindLabel(object.kind)}</td>
+                                <td>{object.layer || "–"}</td>
+                                <td class="text-right">
+                                  {object.triangles.toLocaleString()}
+                                </td>
+                              </tr>
+                            )}
+                          </For>
+                        </tbody>
+                      </Table>
+                    </TableScroll>
+                  </Match>
+                  <Match when={activeTab() === "fixtures"}>
+                    <TableScroll
+                      aria-label="Fixtures in the rig"
+                      class={TAB_TABLE_CLASS}
+                    >
+                      <Table aria-label="Fixtures in the rig">
+                        <thead class="text-left">
+                          <tr>
+                            <th scope="col" class="w-48">
+                              Status
+                            </th>
+                            <th scope="col" class="w-16">
+                              ID
+                            </th>
+                            <th scope="col">Name</th>
+                            <th scope="col">Mode</th>
+                            <th scope="col">Patch</th>
+                            <th scope="col">Position (m)</th>
+                            <th scope="col">Layer</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <For each={current().fixtures}>
+                            {(fixture) => (
+                              <tr
+                                title={fixture.warnings.join("\n") || undefined}
+                                data-status={fixture.status}
+                              >
+                                <StatusCell
+                                  label={fixtureStatusLabel(fixture.status)}
+                                  tone={fixtureStatusTone(fixture.status)}
+                                  changes={fixture.changes}
+                                  warnings={fixture.warnings}
+                                />
+                                <td>{fixture.fixtureId ?? "–"}</td>
+                                <td>{fixture.label || fixture.name}</td>
+                                <td>{fixture.mode ?? "–"}</td>
+                                <td>{formatPatch(fixture.patch)}</td>
+                                <td class="font-mono text-xs">
+                                  {formatPosition(fixture.placement)}
+                                </td>
+                                <td>
+                                  {fixture.hangingPosition ?? fixture.layer}
+                                </td>
+                              </tr>
+                            )}
+                          </For>
+                        </tbody>
+                      </Table>
+                    </TableScroll>
+                  </Match>
+                </Switch>
+              </div>
             </>
           )}
         </Show>
@@ -636,8 +810,14 @@ export function RigImportDialog() {
 
       <DialogFooter>
         <Show when={stage() === "preview" || stage() === "import"}>
-          <Button type="button" onClick={reset} disabled={stage() === "import"}>
-            Choose another file
+          <Button
+            type="button"
+            class="mr-auto"
+            onClick={reset}
+            disabled={stage() === "import"}
+          >
+            <CaretLeftIcon class="size-4" aria-hidden />
+            Back
           </Button>
         </Show>
         <DialogCancelButton />
@@ -647,14 +827,59 @@ export function RigImportDialog() {
           disabled={stage() !== "preview" || !canImport()}
           onClick={() => void runImport()}
         >
-          {stage() === "import"
-            ? "Importing…"
-            : (() => {
-                const current = preview();
-                return current ? importButtonLabel(current) : "Import";
-              })()}
+          {stage() === "import" ? "Importing…" : preview() ? "Import" : "Next"}
         </Button>
       </DialogFooter>
     </Dialog>
+  );
+}
+
+/** What a review row's status cell shows. */
+interface StatusCellProps {
+  /** What the import does with the row. */
+  label: string;
+  /** Badge color for the label. */
+  tone: BadgeTone;
+  /** Tooltip for the cell, such as why a fixture type can't be read. */
+  title?: string;
+  /** What an update changes ("moved", "repatched"), shown after the badge. */
+  changes?: readonly string[];
+  /** Problems the file has with the row; a warning badge lists them on hover. */
+  warnings?: readonly string[];
+  /** Further badges, such as a missing 3D model. */
+  children?: JSX.Element;
+}
+
+/**
+ * The first cell of every review table: the row's status as a badge, then any further
+ * badges, a warning badge when the file has problems with the row, and what an update
+ * changes.
+ */
+function StatusCell(props: StatusCellProps) {
+  return (
+    <td title={props.title}>
+      <div class="flex flex-wrap items-center gap-1">
+        <Badge tone={props.tone} appearance="soft">
+          {props.label}
+        </Badge>
+        {props.children}
+        <Show when={(props.warnings?.length ?? 0) > 0}>
+          <Badge
+            tone="warning"
+            appearance="soft"
+            icon={WarningIcon}
+            title={props.warnings?.join("\n")}
+          >
+            Warning
+          </Badge>
+        </Show>
+        <Show when={(props.changes?.length ?? 0) > 0}>
+          <span class="text-xs text-gray-400">
+            {" "}
+            ({props.changes?.join(", ")})
+          </span>
+        </Show>
+      </div>
+    </td>
   );
 }

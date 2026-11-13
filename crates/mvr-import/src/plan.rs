@@ -22,6 +22,7 @@ use crate::preview::{
     GroupPreview, PatchPreview, RigGroupSource, RigImportOptions, RigImportPreview,
 };
 use crate::rig::{RigFile, RigFixture, RigPatch, RigTypeSource};
+use crate::scenery::{SceneryPlan, ShowScenery, plan_scenery};
 
 /// How far, in metres, a fixture may be from its place in the file and still count as
 /// unmoved.
@@ -36,6 +37,12 @@ pub trait LibraryLookup {
     /// Returns the mode names of a library fixture revision (the default revision when
     /// `revision` is `None`), or `None` when the library does not have it.
     fn modes(&self, make: &str, model: &str, revision: Option<&str>) -> Option<Vec<String>>;
+
+    /// Whether a library fixture revision is a GDTF without a 3D model mesh. Lookups that
+    /// don't know say no, so nothing is flagged by mistake.
+    fn missing_3d_model(&self, _make: &str, _model: &str, _revision: Option<&str>) -> bool {
+        false
+    }
 }
 
 impl LibraryLookup for nightfall_fixture_library::FixtureLibraryManager {
@@ -43,6 +50,17 @@ impl LibraryLookup for nightfall_fixture_library::FixtureLibraryManager {
     fn modes(&self, make: &str, model: &str, revision: Option<&str>) -> Option<Vec<String>> {
         self.find_revision(make, model, revision)
             .map(|profile| profile.mode_names())
+    }
+
+    /// Reads the 3D model check the library made when it scanned the GDTF.
+    fn missing_3d_model(&self, make: &str, model: &str, revision: Option<&str>) -> bool {
+        self.find_revision(make, model, revision)
+            .is_some_and(|profile| {
+                matches!(
+                    &profile.source,
+                    nightfall_fixture_library::FixtureSource::Gdtf(metadata) if !metadata.has_models
+                )
+            })
     }
 }
 
@@ -91,6 +109,8 @@ pub struct ShowFixtures {
     pub fixtures: HashMap<Uuid, ShowFixture>,
     /// Groups.
     pub groups: Vec<ShowGroup>,
+    /// Scene objects.
+    pub scenery: ShowScenery,
 }
 
 impl ShowFixtures {
@@ -139,6 +159,7 @@ impl ShowFixtures {
                 }),
             }
         }
+        self.scenery.apply(rig, &plan.scenery);
     }
 }
 
@@ -215,12 +236,17 @@ pub struct ImportPlan {
     pub updates: Vec<PlannedUpdate>,
     /// Groups to make or refresh.
     pub groups: Vec<PlannedGroup>,
+    /// Scene objects to add or change for the rig's scenery.
+    pub scenery: SceneryPlan,
 }
 
 impl ImportPlan {
     /// Whether committing the plan would change the show.
     pub fn is_empty(&self) -> bool {
-        self.fixtures.is_empty() && self.updates.is_empty() && self.groups.is_empty()
+        self.fixtures.is_empty()
+            && self.updates.is_empty()
+            && self.groups.is_empty()
+            && self.scenery.objects.is_empty()
     }
 }
 
@@ -361,6 +387,7 @@ pub fn plan_import(
 
     let group_source = resolve_group_source(rig, options.groups);
     let groups = plan_groups(rig, &previews, group_source, show, &mut warnings);
+    let scenery = plan_scenery(rig, &show.scenery, options);
 
     ImportPlan {
         preview: RigImportPreview {
@@ -381,11 +408,14 @@ pub fn plan_import(
                 })
                 .collect(),
             fixtures: previews,
+            scenery_changes: scenery.objects.len() as u32,
+            scenery: scenery.previews.clone(),
             warnings,
         },
         fixtures,
         updates,
         groups,
+        scenery,
     }
 }
 
@@ -446,7 +476,7 @@ fn compare_existing(
 }
 
 /// Whether two placements are the same within the tolerances.
-fn same_placement(a: &FixturePlacement, b: &FixturePlacement) -> bool {
+pub(crate) fn same_placement(a: &FixturePlacement, b: &FixturePlacement) -> bool {
     let close = |x: f32, y: f32, tolerance: f32| (x - y).abs() <= tolerance;
     let turned = |x: f32, y: f32| {
         let difference = (x - y).rem_euclid(360.0);
@@ -580,6 +610,11 @@ fn resolve_type(
                     modes: modes.clone(),
                     status: FixtureTypeStatus::Mapped,
                     fixture_count: 0,
+                    missing_3d_model: library.missing_3d_model(
+                        &mapping.make,
+                        &mapping.model,
+                        revision.as_deref(),
+                    ),
                 };
                 return (
                     preview,
@@ -620,6 +655,7 @@ fn resolve_type(
                     FixtureTypeStatus::Embedded
                 },
                 fixture_count: 0,
+                missing_3d_model: !gdtf.has_models,
             };
             let source = TypeSource {
                 make: gdtf.make.clone(),
@@ -653,6 +689,7 @@ fn unresolved(spec: &str, status: FixtureTypeStatus) -> FixtureTypePreview {
         modes: Vec::new(),
         status,
         fixture_count: 0,
+        missing_3d_model: false,
     }
 }
 

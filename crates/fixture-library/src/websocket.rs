@@ -322,6 +322,7 @@ fn available_fixture_info(profile: &FixtureProfile) -> AvailableFixtureInfo {
             FixtureSource::Gdtf(metadata) => metadata.fixture_type_id.clone(),
             FixtureSource::Ofl(_) | FixtureSource::BuiltIn { .. } => None,
         },
+        missing_3d_model: matches!(&profile.source, FixtureSource::Gdtf(metadata) if !metadata.has_models),
     }
 }
 

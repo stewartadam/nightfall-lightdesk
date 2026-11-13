@@ -20,11 +20,13 @@
 //!    `FixtureCommand::PatchRig` plus group stores, so one undo reverts the whole import.
 
 pub mod commands;
+pub mod geometry;
 pub mod http;
 pub mod placement;
 pub mod plan;
 pub mod preview;
 pub mod rig;
+pub mod scenery;
 pub mod sessions;
 
 use bevy_app::prelude::*;

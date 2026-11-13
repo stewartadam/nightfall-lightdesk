@@ -8,13 +8,15 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type * as types from "../../../types";
+import * as types from "../../../types";
 import {
   formatPatch,
-  importButtonLabel,
+  importBlockedReason,
   importDoneMessage,
   libraryKey,
   numberingOption,
+  rigImportTabCount,
+  rigImportTabs,
   withMappingMode,
   withTypeMapping,
 } from "./rig-import-model";
@@ -97,33 +99,79 @@ test("type mappings", () => {
   assert.deepEqual(withTypeMapping(mappings, "Wash.gdtf", "", library), []);
 });
 
-/** The import button says what the import does, from adding fixtures to only refreshing groups. */
-test("import button label", () => {
+/**
+ * The blocked-import banner names what keeps the import from changing the show, most
+ * actionable first, and stays empty while the import would change something.
+ */
+test("import blocked reason", () => {
+  const Status = types.FixtureImportStatus;
   const preview = (
-    newFixtures: number,
-    updatedFixtures: number,
-    groups = 0,
+    statuses: types.FixtureImportStatus[],
+    newFixtures = 0,
+    sceneryChanges = 0,
   ) => ({
     newFixtures,
-    updatedFixtures,
-    groups: Array.from({ length: groups }),
+    updatedFixtures: 0,
+    sceneryChanges,
+    groups: [],
+    fixtures: statuses.map((status) => ({ status })),
+    scenery: [] as { status: types.SceneryImportStatus }[],
   });
-  assert.equal(importButtonLabel(preview(2, 0)), "Import 2 fixtures");
-  assert.equal(importButtonLabel(preview(0, 1)), "Update 1 fixture");
-  assert.equal(importButtonLabel(preview(3, 4)), "Import 3, update 4");
-  assert.equal(importButtonLabel(preview(0, 0, 2)), "Refresh groups");
-  assert.equal(importButtonLabel(preview(0, 0)), "Import");
+  assert.equal(importBlockedReason(preview([Status.New], 1)), undefined);
+  assert.equal(importBlockedReason(preview([], 0, 2)), undefined);
+  assert.match(
+    importBlockedReason(
+      preview([Status.NeedsFixtureType, Status.NeedsFixtureType]),
+    ) ?? "",
+    /^2 fixtures have a fixture type Nightfall can't load/,
+  );
+  assert.match(
+    importBlockedReason(preview([Status.AlreadyInShow, Status.Unchanged])) ??
+      "",
+    /^1 fixture in the show differs from the file/,
+  );
+  assert.equal(
+    importBlockedReason(preview([Status.Unchanged])),
+    "Nothing to import: the show already matches this file.",
+  );
 });
 
 /** The import toast names what changed and the file it came from. */
 test("import done message", () => {
-  const base = { fileName: "rig.mvr", groups: [] };
+  const base = { fileName: "rig.mvr", groups: [], sceneryChanges: 0 };
   assert.equal(
     importDoneMessage({ ...base, newFixtures: 2, updatedFixtures: 1 }),
     "Added 2 fixtures and updated 1 fixture from rig.mvr",
   );
   assert.equal(
+    importDoneMessage({
+      ...base,
+      newFixtures: 1,
+      updatedFixtures: 0,
+      sceneryChanges: 17,
+    }),
+    "Added 1 fixture and imported 17 scenery objects from rig.mvr",
+  );
+  assert.equal(
     importDoneMessage({ ...base, newFixtures: 0, updatedFixtures: 0 }),
     "Refreshed the groups from rig.mvr",
   );
+});
+
+/** Groups and scenery tabs appear only when the preview has rows for them, and counts follow the rows. */
+test("review tabs follow the preview", () => {
+  const preview = {
+    fixtureTypes: [{}, {}],
+    groups: [],
+    scenery: [{}],
+    fixtures: [{}, {}, {}],
+  } as unknown as types.RigImportPreview;
+  assert.deepEqual(rigImportTabs(preview), ["types", "scenery", "fixtures"]);
+  assert.equal(rigImportTabCount(preview, "types"), 2);
+  assert.equal(rigImportTabCount(preview, "scenery"), 1);
+  assert.equal(rigImportTabCount(preview, "fixtures"), 3);
+  assert.deepEqual(rigImportTabs({ ...preview, scenery: [] }), [
+    "types",
+    "fixtures",
+  ]);
 });

@@ -153,6 +153,11 @@ export class SceneManager {
     );
   }
 
+  /** Shows or hides every scene object; hidden objects cannot be picked either. */
+  setSceneObjectsVisible(visible: boolean): void {
+    this.sceneObjectManager.setVisible(visible);
+  }
+
   /**
    * Synchronize scene objects in the scene with the provided data.
    * Scene objects are non-fixture 3D elements like trusses, audience areas, etc.

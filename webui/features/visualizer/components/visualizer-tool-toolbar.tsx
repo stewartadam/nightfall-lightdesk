@@ -7,6 +7,7 @@
  */
 
 import { ArrowsOutCardinalIcon } from "@squidlab/phosphor-solid/arrows-out-cardinal";
+import { BuildingsIcon } from "@squidlab/phosphor-solid/buildings";
 import { CubeIcon } from "@squidlab/phosphor-solid/cube";
 import { DeviceRotateIcon } from "@squidlab/phosphor-solid/device-rotate";
 import { EraserIcon } from "@squidlab/phosphor-solid/eraser";
@@ -304,6 +305,16 @@ export const VisualizerToolToolbar: Component = () => {
               onClick={() => context.setShowGrid(!context.showGrid())}
             >
               <HashIcon class="size-4" aria-hidden />
+            </ToggleToolbarButton>
+
+            <ToggleToolbarButton
+              label={`${context.showSceneObjects() ? "Hide Scenery" : "Show Scenery"} (O)`}
+              pressed={context.showSceneObjects()}
+              onClick={() =>
+                context.setShowSceneObjects(!context.showSceneObjects())
+              }
+            >
+              <BuildingsIcon class="size-4" aria-hidden />
             </ToggleToolbarButton>
           </>
         }

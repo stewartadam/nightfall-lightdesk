@@ -148,6 +148,10 @@ pub struct AvailableFixtureInfo {
     /// Lowercase GDTF `FixtureTypeID`, shared by every revision of a GDTF fixture type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gdtf_fixture_type_id: Option<String>,
+    /// Whether this is a GDTF fixture whose archive has no 3D model mesh, so the visualizer
+    /// draws it from primitive shapes or as a placeholder.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub missing_3d_model: bool,
 }
 
 /// Response for ListAvailableFixtures command

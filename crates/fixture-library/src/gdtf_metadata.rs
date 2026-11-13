@@ -31,6 +31,11 @@ pub struct GdtfMetadata {
     /// the archive leaves it nil.
     #[serde(default)]
     pub fixture_type_id: Option<String>,
+    /// Whether any of the fixture type's models has a 3D mesh in the archive. Without one the
+    /// visualizer can only draw the models' primitive shapes, or a placeholder when they
+    /// define none.
+    #[serde(default = "has_models_by_default")]
+    pub has_models: bool,
     /// File path for on-demand re-parsing
     pub file_path: std::path::PathBuf,
 }
@@ -52,6 +57,7 @@ impl GdtfMetadata {
             model,
             modes,
             fixture_type_id: extract_fixture_type_id(&gdtf_file),
+            has_models: has_model_meshes(&gdtf_file, path),
             file_path: path.to_path_buf(),
         })
     }
@@ -96,6 +102,40 @@ fn extract_fixture_type_id(gdtf: &gdtf::GdtfFile) -> Option<String> {
         .map(|id| id.to_string())
 }
 
+/// Metadata saved before the 3D model check existed is assumed to have models, so it is not
+/// flagged until the file is scanned again.
+fn has_models_by_default() -> bool {
+    true
+}
+
+/// Whether any model of the fixture type names a non-empty mesh in the archive at `path`, as
+/// glTF or 3DS, the formats the visualizer draws. Reads the original archive's entry list
+/// rather than the parsed one, which holds only the description when the file needed repair.
+/// Nothing is decompressed.
+fn has_model_meshes(gdtf: &gdtf::GdtfFile, path: &Path) -> bool {
+    let Some(fixture_type) = gdtf.description.fixture_types.first() else {
+        return false;
+    };
+    let Some(mut archive) = std::fs::File::open(path)
+        .ok()
+        .and_then(|file| zip::ZipArchive::new(file).ok())
+    else {
+        return false;
+    };
+    fixture_type
+        .models
+        .iter()
+        .filter_map(|model| model.file.as_deref())
+        .any(|file| {
+            [
+                format!("models/gltf/{file}.glb"),
+                format!("models/3ds/{file}.3ds"),
+            ]
+            .iter()
+            .any(|entry| archive.by_name(entry).is_ok_and(|mesh| mesh.size() > 0))
+        })
+}
+
 /// Extract DMX mode names from GDTF file
 fn extract_mode_names(gdtf: &gdtf::GdtfFile) -> Vec<String> {
     if let Some(fixture_type) = gdtf.description.fixture_types.first() {
@@ -123,6 +163,35 @@ mod tests {
             .mode(ModeSpec::new("Mode", "Body"))
             .write_metadata(dir.path());
         assert_eq!(metadata.model, "Pixel Line");
+    }
+
+    /// A fixture type has models only when one of its models names a mesh the archive holds;
+    /// primitive-only models and empty mesh files do not count.
+    #[test]
+    fn detects_model_meshes() {
+        let dir = tempfile::tempdir().unwrap();
+        let primitive_only = GdtfBuilder::new("Test", "Box")
+            .model("Body", "Cube", [0.3, 0.3, 0.3])
+            .geometry(GeometrySpec::generic("Body").with_model("Body"))
+            .mode(ModeSpec::new("Mode", "Body"))
+            .write_metadata(dir.path());
+        assert!(!primitive_only.has_models);
+
+        let meshed = GdtfBuilder::new("Test", "Meshed")
+            .model("Body", "Cube", [0.3, 0.3, 0.3])
+            .mesh("body", b"glTF")
+            .geometry(GeometrySpec::generic("Body").with_model("Body"))
+            .mode(ModeSpec::new("Mode", "Body"))
+            .write_metadata(dir.path());
+        assert!(meshed.has_models);
+
+        let empty_mesh = GdtfBuilder::new("Test", "Empty Mesh")
+            .model("Body", "Cube", [0.3, 0.3, 0.3])
+            .mesh("body", b"")
+            .geometry(GeometrySpec::generic("Body").with_model("Body"))
+            .mode(ModeSpec::new("Mode", "Body"))
+            .write_metadata(dir.path());
+        assert!(!empty_mesh.has_models);
     }
 
     /// Reads the archive's `FixtureTypeID`, which GDTF Share lists for the same fixture type.
