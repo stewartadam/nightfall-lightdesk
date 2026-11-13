@@ -80,6 +80,9 @@ pub struct CompositorRunState {
     /// Shard count requested on the last pass and the parameter shards it was split into, kept
     /// until the parameter set changes.
     shard_layout: Option<(u32, Vec<ParameterShard>)>,
+    /// Compositing context of every parameter as of the last pass, so an in-place edit of a
+    /// parameter's default, merge mode or scaling invalidates the cached settled composites.
+    parameter_contexts: ParameterMap<ParameterCompositingContext>,
 }
 
 /// Facts about a layer's assertions that decide when and how it can be cached once settled.
@@ -332,6 +335,36 @@ pub fn compositor<P: CompositorParameter>(
         return;
     }
 
+    // Only parameters whose component changed can have a new compositing context, so the
+    // snapshot is rebuilt when the parameter set changes and otherwise patched from those.
+    let parameter_contexts_changed = if parameter_set_changed {
+        let mut contexts = ParameterMap::new();
+        contexts.extend(
+            parameters
+                .queries
+                .p2()
+                .iter()
+                .map(|parameter| (parameter.instance(), parameter.compositing_context())),
+        );
+        run_state.parameter_contexts = contexts;
+        false
+    } else {
+        let mut changed = false;
+        for parameter in parameters.queries.p0().iter() {
+            let context = parameter.compositing_context();
+            if run_state
+                .parameter_contexts
+                .insert(parameter.instance(), context)
+                != Some(context)
+            {
+                changed = true;
+            }
+        }
+        changed
+    };
+    // Cached settled composites were merged with the old contexts, so any change discards them.
+    let settled_caches_stale = parameter_set_changed || parameter_contexts_changed;
+
     run_state.initialized = true;
     run_state.layer_count = layer_count;
 
@@ -393,7 +426,7 @@ pub fn compositor<P: CompositorParameter>(
         .unzip();
     let settled_prefix_len = settled.iter().take_while(|settled| **settled).count();
     let cached_prefix = run_state.settled_prefix.take().filter(|cached| {
-        !parameter_set_changed
+        !settled_caches_stale
             && cached.layers.len() <= settled_prefix_len
             && cached.layers[..] == layer_keys[..cached.layers.len()]
     });
@@ -441,7 +474,7 @@ pub fn compositor<P: CompositorParameter>(
         )
         .collect();
     let mut previous_runs = std::mem::take(&mut run_state.settled_runs);
-    if parameter_set_changed {
+    if settled_caches_stale {
         previous_runs.clear();
     }
     let mut param_query = parameters.queries.p2();
@@ -743,6 +776,77 @@ mod tests {
                 .absolute
                 .get(parameters[2]),
             Some(&10.0)
+        );
+    }
+
+    /// Editing a parameter's merge mode in place recomposites the cached settled layers with the
+    /// new mode instead of keeping the composite merged the old way.
+    #[test]
+    fn settled_prefix_follows_in_place_merge_mode_change() {
+        let mut world = World::new();
+        world.init_resource::<FinalLayerAttributedAssertions>();
+        world.init_resource::<FinalLayerOutput>();
+        init_removal_tracking(&mut world);
+        let parameters: Vec<_> = [TestMergeMode::Htp, TestMergeMode::Ltp]
+            .into_iter()
+            .map(|merge_mode| {
+                let entity = world
+                    .spawn(TestParameter::new(merge_mode, Attribute::Red))
+                    .id();
+                unsafe { Instance::<TestParameter>::from_entity_unchecked(entity) }
+            })
+            .collect();
+        spawn_fading_layer(
+            &mut world,
+            &parameters[..1],
+            0,
+            200.0,
+            Duration::from_secs(5),
+        );
+        spawn_fading_layer(
+            &mut world,
+            &parameters[..1],
+            0,
+            100.0,
+            Duration::from_secs(5),
+        );
+        let fading = spawn_fading_layer(&mut world, &parameters[1..], 1, 50.0, Duration::ZERO);
+        let mut schedule = Schedule::default();
+        schedule.add_systems(compositor::<TestParameter>);
+
+        for position_ms in [250, 500] {
+            world
+                .get_mut::<LayerCompositingContext>(fading)
+                .expect("fading layer context")
+                .position = Duration::from_millis(position_ms);
+            schedule.run(&mut world);
+        }
+        assert_eq!(
+            world
+                .resource::<FinalLayerOutput>()
+                .0
+                .absolute
+                .get(parameters[0]),
+            Some(&200.0)
+        );
+
+        world
+            .get_mut::<TestParameter>(parameters[0].entity())
+            .expect("HTP parameter")
+            .merge_mode = TestMergeMode::Ltp;
+        world
+            .get_mut::<LayerCompositingContext>(fading)
+            .expect("fading layer context")
+            .position = Duration::from_millis(750);
+        schedule.run(&mut world);
+        assert_matches_from_scratch(&mut world);
+        assert_eq!(
+            world
+                .resource::<FinalLayerOutput>()
+                .0
+                .absolute
+                .get(parameters[0]),
+            Some(&100.0)
         );
     }
 

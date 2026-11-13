@@ -82,6 +82,13 @@ enum SettledOp {
 }
 
 impl SettledOp {
+    /// Returns the value the op sets or compares against.
+    fn value(self) -> ParameterDmxValue {
+        match self {
+            Self::Set(value) | Self::Max(value) => value,
+        }
+    }
+
     /// Returns the op equivalent to applying `self` and then `upper`.
     fn then(self, upper: Self) -> Self {
         match (self, upper) {
@@ -137,7 +144,7 @@ impl SettledRunTable {
         let mut prev_priority = entry_priority;
 
         for (entity, object_ref, layer, context) in layers {
-            let (computed, skipped) = stages::evaluate_transitions_with_compositing_context(
+            let (computed, mut skipped) = stages::evaluate_transitions_with_compositing_context(
                 layer,
                 &empty_base,
                 param_query,
@@ -157,7 +164,13 @@ impl SettledRunTable {
                     SettledOp::Set(*value)
                 };
                 match absolute.get_mut(parameter) {
-                    Some(existing) => *existing = existing.then(op),
+                    Some(existing) => {
+                        // A lower layer of the run that keeps its value also keeps ownership.
+                        if uses_htp && existing.value() >= *value {
+                            skipped.absolute.insert(parameter);
+                        }
+                        *existing = existing.then(op);
+                    }
                     None => {
                         absolute.insert(parameter, op);
                     }
@@ -199,24 +212,27 @@ impl SettledRunTable {
         prev_priority: &mut Option<Priority>,
         shard: ParameterShard,
     ) {
-        self.absolute
-            .for_each_in_shard(shard, |parameter, op| match *op {
-                SettledOp::Set(value) => {
-                    base.absolute.insert(parameter, value);
+        // A value the composite below keeps against a `Max` op also keeps its owner there.
+        self.absolute.for_each_in_shard(shard, |parameter, op| {
+            let run_wins = match *op {
+                SettledOp::Set(_) => true,
+                SettledOp::Max(value) => base
+                    .absolute
+                    .get(parameter)
+                    .is_none_or(|existing| value > *existing),
+            };
+            if run_wins {
+                base.absolute.insert(parameter, op.value());
+                if let Some(entry) = self.attributed_absolute.get(parameter) {
+                    attributed.absolute.insert(parameter, entry.clone());
                 }
-                SettledOp::Max(value) => {
-                    if base
-                        .absolute
-                        .get(parameter)
-                        .is_none_or(|existing| value > *existing)
-                    {
-                        base.absolute.insert(parameter, value);
-                    }
-                }
-            });
+            }
+        });
         self.attributed_absolute
             .for_each_in_shard(shard, |parameter, entry| {
-                attributed.absolute.insert(parameter, entry.clone());
+                if !self.absolute.contains_key(parameter) {
+                    attributed.absolute.insert(parameter, entry.clone());
+                }
             });
         *prev_priority = self.last_priority;
     }
@@ -338,7 +354,7 @@ impl CompositorPipeline {
                 LayerCompositingContext::default()
             }
         };
-        let (computed_layer, skipped) = stages::evaluate_transitions_with_compositing_context(
+        let (computed_layer, mut skipped) = stages::evaluate_transitions_with_compositing_context(
             layer,
             base_layer,
             param_query,
@@ -348,6 +364,10 @@ impl CompositorPipeline {
         );
 
         output_layers.push((entity, computed_layer.to_effective()));
+        let same_priority = prev_priority.is_some_and(|p| p == layer.priority);
+        // A same-priority HTP merge that keeps the lower value also keeps the lower owner.
+        let held_by_base = stages::merge(base_layer, &computed_layer, same_priority, param_query);
+        skipped.absolute.extend(held_by_base);
         stages::merge_layer_with_attribution_skipping(
             attributed_assertions_layer,
             layer,
@@ -355,8 +375,6 @@ impl CompositorPipeline {
             &skipped,
             shard,
         );
-        let same_priority = prev_priority.is_some_and(|p| p == layer.priority);
-        stages::merge(base_layer, &computed_layer, same_priority, param_query);
         *prev_priority = Some(layer.priority);
     }
 
