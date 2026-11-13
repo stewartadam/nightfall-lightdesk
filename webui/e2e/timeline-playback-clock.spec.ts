@@ -227,3 +227,60 @@ test("variable snapshot delivery preserves continuous forward playback", async (
     ).toBeLessThan(41);
   }
 });
+
+/**
+ * A timeline starting at a timecode offset shows its playhead in timeline time: the
+ * timecode position minus `timecode_start`, held at 0 during pre-roll even while the
+ * timecode runs, moved when the offset changes, and seeks go back to the timecode with the
+ * offset added.
+ */
+test("playhead and seeks convert between timecode and timeline time", async ({
+  page,
+}) => {
+  await openPlaybackClock(page);
+  const before = await page.evaluate(async () => {
+    const { playback, timecodeSeeks } =
+      await window.__nightfallHarness.load("timeline-playback");
+    const { TimelineTriggerMode } = (
+      await window.__nightfallHarness.load("visualizer")
+    ).types;
+    playback.setTimecodeStart(10_000);
+    /** Publishes a timecode position in whole seconds. */
+    const snapshot = (secs: number, isActive: boolean) =>
+      playback.syncTimecodeState({
+        currentTime: { secs, nanos: 0 },
+        isActive,
+        triggerMode: TimelineTriggerMode.FollowTimecode,
+      });
+    snapshot(12, false);
+    const afterStart = playback.position();
+    playback.setTimecodeStart(11_000);
+    const movedOffset = playback.position();
+    playback.setTimecodeStart(10_000);
+    timecodeSeeks.length = 0;
+    playback.seek(3_000);
+    const seekedPosition = playback.position();
+    snapshot(8, true);
+    return {
+      afterStart,
+      movedOffset,
+      seekedPosition,
+      seeks: [...timecodeSeeks],
+    };
+  });
+  expect(before).toEqual({
+    afterStart: 2_000,
+    movedOffset: 1_000,
+    seekedPosition: 3_000,
+    seeks: [13_000],
+  });
+  await page.clock.runFor(200);
+  const preRoll = await page.evaluate(async () => {
+    const { playback } =
+      await window.__nightfallHarness.load("timeline-playback");
+    const position = playback.position();
+    playback.reset();
+    return position;
+  });
+  expect(preRoll).toBe(0);
+});

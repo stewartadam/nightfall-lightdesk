@@ -107,25 +107,24 @@ export interface BarSeekQuantizeConfig {
 
 export interface TimelineSeekPositionConfig extends SeekQuantizeConfig {
   x: number;
-  start: number;
   zoom: number;
 }
 
 const BAR_SEEK_EPSILON_MS = 0.001;
 
 /**
- * Snap a position value to the nearest grid point if it's within the threshold
+ * Snaps a lane x-coordinate (pixels from the timeline start) to the nearest beatgrid marker,
+ * bar, beat or time grid point within the snap threshold, and returns it unchanged otherwise.
  */
 export function snapToGrid(
   position: number, // in pixels
   zoom: number,
-  startOffset: number, // in milliseconds
   config: SnapConfig,
 ): number {
   if (!config.enabled) return position;
 
   // Convert position to milliseconds
-  const positionMs = startOffset + pixelsToMs(position, zoom);
+  const positionMs = pixelsToMs(position, zoom);
 
   if (config.markers && config.markers.length > 0) {
     const thresholdMs = pixelsToMs(config.threshold, zoom);
@@ -142,7 +141,7 @@ export function snapToGrid(
     }
 
     if (nearestDistance <= thresholdMs) {
-      return msToPixels(nearestMarker - startOffset, zoom);
+      return msToPixels(nearestMarker, zoom);
     }
     const lastMarker = config.markers[config.markers.length - 1];
     if (positionMs <= lastMarker || !config.isBeat || !config.beatsPerBar) {
@@ -164,7 +163,7 @@ export function snapToGrid(
 
     if (Math.abs(positionMs - nearestBarMs) <= thresholdMs) {
       // Snap to bar boundary
-      return msToPixels(nearestBarMs - startOffset, zoom);
+      return msToPixels(nearestBarMs, zoom);
     }
 
     // If not close to a bar boundary, try snapping to beat
@@ -173,7 +172,7 @@ export function snapToGrid(
 
     if (Math.abs(positionMs - nearestBeatMs) <= beatThresholdMs) {
       // Snap to beat
-      return msToPixels(nearestBeatMs - startOffset, zoom);
+      return msToPixels(nearestBeatMs, zoom);
     }
 
     // Not close enough to either
@@ -188,7 +187,7 @@ export function snapToGrid(
   // If we're close enough to a grid point, snap to it
   if (Math.abs(positionMs - nearestGridPointMs) <= thresholdMs) {
     // Convert back to pixels
-    return msToPixels(nearestGridPointMs - startOffset, zoom);
+    return msToPixels(nearestGridPointMs, zoom);
   }
 
   // Return the original position if no snapping occurs
@@ -441,6 +440,6 @@ export function calculateBeatVisibility(
 export function seekPositionFromTimelineX(
   params: TimelineSeekPositionConfig,
 ): number {
-  const positionMs = params.start + pixelsToMs(params.x, params.zoom);
+  const positionMs = pixelsToMs(params.x, params.zoom);
   return quantizeSeekPositionMs(positionMs, params);
 }

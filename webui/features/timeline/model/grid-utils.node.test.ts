@@ -150,20 +150,18 @@ test("seekPositionByBars falls back to anchored BPM with one downbeat marker", (
 test("seekPositionFromTimelineX returns exact position in time mode", () => {
   const position = seekPositionFromTimelineX({
     x: 175,
-    start: 2_000,
     zoom: 100,
     useBeatgrid: false,
     snapEnabled: false,
     bpm: 120,
   });
 
-  assert.equal(position, 3_750);
+  assert.equal(position, 1_750);
 });
 
 test("seekPositionFromTimelineX snaps to nearest beat in beatgrid mode when snapping is enabled", () => {
   const position = seekPositionFromTimelineX({
     x: 173,
-    start: 0,
     zoom: 100,
     useBeatgrid: true,
     snapEnabled: true,
@@ -177,7 +175,6 @@ test("seekPositionFromTimelineX snaps to nearest beat in beatgrid mode when snap
 test("seekPositionFromTimelineX does not snap in beatgrid mode when snapping is disabled", () => {
   const position = seekPositionFromTimelineX({
     x: 173,
-    start: 0,
     zoom: 100,
     useBeatgrid: true,
     snapEnabled: false,
@@ -187,23 +184,9 @@ test("seekPositionFromTimelineX does not snap in beatgrid mode when snapping is 
   assert.equal(position, 1_730);
 });
 
-test("seekPositionFromTimelineX applies beat snapping with non-zero timeline start", () => {
-  const position = seekPositionFromTimelineX({
-    x: 63,
-    start: 5_000,
-    zoom: 100,
-    useBeatgrid: true,
-    snapEnabled: true,
-    bpm: 120,
-  });
-
-  assert.equal(position, 5_500);
-});
-
 test("seekPositionFromTimelineX snaps from a shifted beatgrid marker anchor", () => {
   const position = seekPositionFromTimelineX({
     x: 173,
-    start: 0,
     zoom: 100,
     useBeatgrid: true,
     snapEnabled: true,
@@ -269,7 +252,7 @@ test("beatgrid mode quantizes seek positions to bpm beats when snap is enabled",
 });
 
 test("beatgrid snapping extrapolates past the final detected marker", () => {
-  const snappedPx = snapToGrid(260, 100, 0, {
+  const snappedPx = snapToGrid(260, 100, {
     enabled: true,
     interval: 500,
     threshold: 15,

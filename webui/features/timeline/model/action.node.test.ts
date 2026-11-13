@@ -179,7 +179,6 @@ test("actionDragPositionFromPointer aligns action start to the pointer", () => {
     clientX: 275,
     laneLeft: 100,
     initialPositionPx: 40,
-    timelineStartMs: 5000,
     zoom: 50,
     snapConfig: snapConfig(false),
   });
@@ -187,7 +186,7 @@ test("actionDragPositionFromPointer aligns action start to the pointer", () => {
   assert.deepEqual(position, {
     positionPx: 175,
     offsetPx: 135,
-    positionMs: 8500,
+    positionMs: 3500,
   });
 });
 
@@ -831,7 +830,6 @@ test("actionDragPositionFromPointer snaps the aligned action start", () => {
     clientX: 148,
     laneLeft: 100,
     initialPositionPx: 10,
-    timelineStartMs: 0,
     zoom: 50,
     snapConfig: snapConfig(true),
   });
@@ -850,7 +848,6 @@ test("actionDragPositionFromPointer prefers original start snap positions", () =
     laneLeft: 100,
     initialPositionPx: 40,
     originalSnapPositionsPx: [40],
-    timelineStartMs: 0,
     zoom: 50,
     snapConfig: snapConfig(true),
   });
@@ -869,7 +866,6 @@ test("actionDragPositionFromPointer keeps original start snap independent", () =
     laneLeft: 100,
     initialPositionPx: 40,
     originalSnapPositionsPx: [40],
-    timelineStartMs: 0,
     zoom: 50,
     snapConfig: snapConfig(false),
   });

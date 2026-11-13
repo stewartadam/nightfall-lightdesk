@@ -204,7 +204,6 @@ export function TimelineActionEdgeHints(props: TimelineActionEdgeHintsProps) {
   /** Rechecks hints when timeline data or horizontal scale changes. */
   createEffect(() => {
     ctx.displayTracks();
-    ctx.start();
     ctx.zoom();
     ctx.end();
     scheduleUpdateHints();

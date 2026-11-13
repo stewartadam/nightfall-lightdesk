@@ -12,6 +12,9 @@ import { createTimelinePlaybackController } from "../../features/timeline/contro
 /** Supplies inert commands while exercising the production playback clock. */
 const ignoreCommand = () => {};
 
+/** Timecode positions, in milliseconds, the controller asked the backend to seek to. */
+export const timecodeSeeks: number[] = [];
+
 export let dispose: () => void;
 export const playback = createRoot((cleanup) => {
   dispose = cleanup;
@@ -21,7 +24,7 @@ export const playback = createRoot((cleanup) => {
     commands: {
       onPlay: ignoreCommand,
       onPause: ignoreCommand,
-      onSeek: ignoreCommand,
+      onSeek: (position: number) => timecodeSeeks.push(position),
       onStop: ignoreCommand,
     },
   });
