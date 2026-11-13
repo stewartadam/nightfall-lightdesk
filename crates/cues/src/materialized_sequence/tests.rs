@@ -1552,10 +1552,10 @@ fn setup_blueprint_rematerialization_invalidates_render_prefix_cache() {
         instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(Vec::new()).into(),
             assertions: AssertionSet {
-                blueprint_application: Some(BlueprintApplication {
+                blueprint_application: Some(BlueprintApplication::new(
                     blueprint_uid,
-                    selector: BlueprintSelector::Attribute(Attribute::Red),
-                }),
+                    BlueprintSelector::Attribute(Attribute::Red),
+                )),
                 ..Default::default()
             },
         }],

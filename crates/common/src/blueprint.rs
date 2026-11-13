@@ -42,6 +42,17 @@ pub enum BlueprintSelector {
     Category(AttributeCategory),
 }
 
+impl BlueprintSelector {
+    /// Returns whether the selector picks `attribute` out of a Blueprint.
+    pub fn selects(&self, attribute: &Attribute) -> bool {
+        match self {
+            Self::All => true,
+            Self::Attribute(selected) => selected == attribute,
+            Self::Category(category) => attribute.category() == *category,
+        }
+    }
+}
+
 /// Stable live relationship between a cue instruction and a Blueprint definition.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -52,6 +63,26 @@ pub struct BlueprintApplication {
     pub blueprint_uid: uuid::Uuid,
     /// Logical attributes selected dynamically from the current definition.
     pub selector: BlueprintSelector,
+    /// Attributes the selector picks that were released from the application afterwards, so
+    /// releasing Pan from a Position Blueprint keeps its live Tilt.
+    #[serde(default)]
+    pub excluded_attributes: Vec<Attribute>,
+}
+
+impl BlueprintApplication {
+    /// Creates an application of every attribute `selector` picks from a Blueprint.
+    pub fn new(blueprint_uid: uuid::Uuid, selector: BlueprintSelector) -> Self {
+        Self {
+            blueprint_uid,
+            selector,
+            excluded_attributes: Vec::new(),
+        }
+    }
+
+    /// Returns whether the application applies `attribute` when the Blueprint holds it.
+    pub fn selects(&self, attribute: &Attribute) -> bool {
+        self.selector.selects(attribute) && !self.excluded_attributes.contains(attribute)
+    }
 }
 
 /// Whether applying a Blueprint retains a live relationship or copies its current values.
@@ -89,20 +120,29 @@ impl HasIdentifiers for Blueprint {
 }
 
 impl Blueprint {
-    /// Returns the Blueprint's authored logical values independent of fixture parameters.
-    pub fn logical_values(&self) -> HashMap<Attribute, ValueSource> {
-        self.values.clone()
-    }
-
     /// Resolves the current logical values selected by one Blueprint application.
     pub fn selected_values(&self, selector: &BlueprintSelector) -> HashMap<Attribute, ValueSource> {
-        self.logical_values()
-            .into_iter()
-            .filter(|(attribute, _)| match selector {
-                BlueprintSelector::All => true,
-                BlueprintSelector::Attribute(selected) => attribute == selected,
-                BlueprintSelector::Category(category) => attribute.category() == *category,
-            })
+        self.values_where(|attribute| selector.selects(attribute))
+    }
+
+    /// Resolves the current logical values an application applies: those its selector picks,
+    /// minus the attributes released from it.
+    pub fn applied_values(
+        &self,
+        application: &BlueprintApplication,
+    ) -> HashMap<Attribute, ValueSource> {
+        self.values_where(|attribute| application.selects(attribute))
+    }
+
+    /// Returns the Blueprint's values for the attributes `selected` accepts.
+    fn values_where(
+        &self,
+        selected: impl Fn(&Attribute) -> bool,
+    ) -> HashMap<Attribute, ValueSource> {
+        self.values
+            .iter()
+            .filter(|(attribute, _)| selected(attribute))
+            .map(|(attribute, value)| (attribute.clone(), value.clone()))
             .collect()
     }
 }

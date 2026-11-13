@@ -187,10 +187,15 @@ mod pipeline_tests {
         let mut param_query_state = world.query::<InstanceMut<Parameter>>();
         let param_query = param_query_state.query_mut(&mut world);
 
-        let (base_layer, _, _) = compose_without_layer_contexts(layers, &param_query);
+        let (base_layer, attributed_assertions_layer, _) =
+            compose_without_layer_contexts(layers, &param_query);
 
-        // With HTP, highest value wins (200)
+        // With HTP, highest value wins (200), and the layer that asserted it stays the owner
+        // although a lower value was merged above it.
         assert_eq!(*base_layer.absolute.get(param).unwrap(), 200.0);
+        let (owner, (value, _)) = attributed_assertions_layer.absolute.get(param).unwrap();
+        assert_eq!(owner, &create_object_ref(2));
+        assert_eq!(*value, ParameterValue::Absolute { value: 200.0 });
     }
 
     #[test]

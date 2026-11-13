@@ -149,7 +149,7 @@ pub(super) fn track_instruction_values(
             .and_then(|application| {
                 blueprint_data_provider
                     .and_then(|provider| provider.get(application.blueprint_uid).ok())
-                    .map(|blueprint| blueprint.selected_values(&application.selector))
+                    .map(|blueprint| blueprint.applied_values(application))
             })
             .unwrap_or_else(|| instruction.assertions.values.clone());
         for (attribute, source) in &logical_values {

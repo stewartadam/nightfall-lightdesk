@@ -44,7 +44,7 @@ impl MaterializedCue {
         let blueprint = provider
             .get(application.blueprint_uid)
             .map_err(|_| "Blueprint application references a missing definition")?;
-        Ok(Cow::Owned(blueprint.selected_values(&application.selector)))
+        Ok(Cow::Owned(blueprint.applied_values(application)))
     }
 
     /// Returns direct values or the current values selected by a live Blueprint application,

@@ -37,6 +37,8 @@ pub struct ProgrammerMutationState<'w> {
     spatial_selection_resolver: SpatialSelectionResolver<'w>,
     /// Supplies fixture element metadata needed by partial releases and overrides.
     fixture_data: Res<'w, FixtureDataProviderExt>,
+    /// Blueprints referenced by live rows, read when a release narrows one.
+    blueprints: Option<Res<'w, DataProvider<Blueprint>>>,
     /// Controls operator confirmation policy for destructive selection flattening.
     settings: Res<'w, crate::settings::ProgrammingSettings>,
     /// Stores single-use capabilities for approved selection flattening.

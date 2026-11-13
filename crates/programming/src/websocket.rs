@@ -156,7 +156,7 @@ fn resolved_programmer_instruction_values(
         .get(application.blueprint_uid)
         .map(|blueprint| {
             (
-                blueprint.selected_values(&application.selector),
+                blueprint.applied_values(application),
                 Some(OutboundBlueprintValueSource {
                     blueprint_uid: blueprint.identifiers.uid,
                     blueprint_id: blueprint.identifiers.id,
@@ -424,10 +424,10 @@ mod tests {
             })
             .expect("Blueprint should be insertable");
         let instruction = AssertionSet {
-            blueprint_application: Some(BlueprintApplication {
+            blueprint_application: Some(BlueprintApplication::new(
                 blueprint_uid,
-                selector: BlueprintSelector::Category(Attribute::Blue.category()),
-            }),
+                BlueprintSelector::Category(Attribute::Blue.category()),
+            )),
             ..Default::default()
         };
 
@@ -455,10 +455,10 @@ mod tests {
         programmer.add_instruction(BoundAssertionSet {
             selection: SpatialSelection::default(),
             assertions: AssertionSet {
-                blueprint_application: Some(BlueprintApplication {
+                blueprint_application: Some(BlueprintApplication::new(
                     blueprint_uid,
-                    selector: BlueprintSelector::All,
-                }),
+                    BlueprintSelector::All,
+                )),
                 ..Default::default()
             },
         });

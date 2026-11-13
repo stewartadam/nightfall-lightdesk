@@ -1536,6 +1536,26 @@ fn test_compositor_resets_inverted_parameter_to_logical_default() {
 /// Builds an app with a manual assertion layer and one 16-bit parameter at `value`, returning
 /// the parameter entity. `components` supply the parameter's resolved console/wire addresses.
 fn manual_channel_app(value: f32, components: impl Bundle) -> (App, Entity) {
+    manual_channel_app_with_metadata(
+        ParameterMetadata {
+            attribute: Attribute::Pan,
+            resolution: DmxValueResolution::Fine,
+            min: 0.0,
+            max: 65535.0,
+            ..Default::default()
+        },
+        value,
+        components,
+    )
+}
+
+/// Builds an app like [`manual_channel_app`] whose parameter uses `metadata`, so tests can
+/// patch an inverted or calibrated parameter.
+fn manual_channel_app_with_metadata(
+    metadata: ParameterMetadata,
+    value: f32,
+    components: impl Bundle,
+) -> (App, Entity) {
     let mut app = App::new();
     add_compositor_removal_observers::<Parameter>(&mut app);
     app.add_message::<CommandEnvelope<FixtureCommand>>();
@@ -1546,13 +1566,6 @@ fn manual_channel_app(value: f32, components: impl Bundle) -> (App, Entity) {
     app.insert_resource(ConsoleDmxUniverses::default());
     app.init_resource::<FinalLayerAttributedAssertions>();
 
-    let metadata = ParameterMetadata {
-        attribute: Attribute::Pan,
-        resolution: DmxValueResolution::Fine,
-        min: 0.0,
-        max: 65535.0,
-        ..Default::default()
-    };
     let fixture = Fixture {
         identifiers: Identifiers {
             id: 1,
@@ -1730,6 +1743,45 @@ fn test_manual_dmx_channel_falls_back_to_wire_address_for_direct_patch() {
         set_manual_channel(&mut app, parameter, 1, 5, 0x80),
         0x8034 as f32
     );
+}
+
+/// `ch U/A` sets the DMX the operator typed on inverted and calibrated parameters: the
+/// written byte is decoded through inversion and offset, and the unwritten fine byte keeps the
+/// byte already on the wire.
+#[test]
+fn test_manual_dmx_channel_honors_inversion_and_offset() {
+    for (is_inverted, offset) in [(true, 0.0), (false, 256.0), (true, 256.0)] {
+        let metadata = ParameterMetadata {
+            attribute: Attribute::Pan,
+            resolution: DmxValueResolution::Fine,
+            min: 0.0,
+            max: 65535.0,
+            offset: ParameterValue::Absolute { value: offset },
+            is_inverted,
+            ..Default::default()
+        };
+        let fine_on_wire = metadata.dmx_value(0x1234 as f32) & 0xFF;
+        let (mut app, parameter) = manual_channel_app_with_metadata(
+            metadata.clone(),
+            0x1234 as f32,
+            ResolvedOutputDestinations {
+                destinations: vec![OutputDestination {
+                    transport: OutputTransport::Sacn {
+                        mode: SacnDelivery::Multicast,
+                    },
+                    universe: 1,
+                    addresses: vec![5, 6],
+                }],
+            },
+        );
+
+        let value = set_manual_channel(&mut app, parameter, 1, 5, 0x80);
+        assert_eq!(
+            metadata.dmx_value(value),
+            0x8000 | fine_on_wire,
+            "inverted={is_inverted} offset={offset}"
+        );
+    }
 }
 
 #[test]

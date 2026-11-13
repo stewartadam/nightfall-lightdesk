@@ -28,7 +28,7 @@ import { useShallowStore } from "../../../lib/use-shallow-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import { blueprints as blueprintStore } from "../../../state/appStores";
 import type * as types from "../../../types";
-import { selectedBlueprintValues } from "../../blueprints";
+import { appliedBlueprintValues } from "../../blueprints";
 import {
   selectedTimeDisplayColumnIds,
   timeUnitContextMenuEntries,
@@ -348,7 +348,7 @@ export function createCueEditorSelectionController(
         : undefined;
       if (!application || !blueprint) continue;
       const referencedAttrs = Object.keys(
-        selectedBlueprintValues(blueprint, application.selector),
+        appliedBlueprintValues(blueprint, application),
       ).map(normalizeAttributeName);
       if (!referencedAttrs.some((attr) => normalizedAttrs.has(attr))) continue;
 
