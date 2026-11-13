@@ -194,13 +194,13 @@ export const LoopRangeBackdrop = () => {
 
   const pointerPositionMs = (clientX: number) => {
     const scrollContainer = rangeRef?.parentElement;
-    if (!scrollContainer) return ctx.start();
+    if (!scrollContainer) return 0;
     const rect = scrollContainer.getBoundingClientRect();
     const positionPx = Math.max(
       0,
       clientX - rect.left + scrollContainer.scrollLeft,
     );
-    return quantizePosition(ctx.start() + pixelsToMs(positionPx, ctx.zoom()));
+    return quantizePosition(pixelsToMs(positionPx, ctx.zoom()));
   };
 
   const loopBounds = createMemo(() => {
@@ -218,7 +218,7 @@ export const LoopRangeBackdrop = () => {
     const bounds = loopBounds();
     if (!bounds) return undefined;
     return {
-      left: `${msToPixels(bounds.startMs - ctx.start(), ctx.zoom())}px`,
+      left: `${msToPixels(bounds.startMs, ctx.zoom())}px`,
       width: `${Math.max(1, msToPixels(bounds.endMs - bounds.startMs, ctx.zoom()))}px`,
     };
   });
@@ -358,11 +358,9 @@ export const TimelineOperatorLane = () => {
     });
 
   const pointerPositionMs = (clientX: number) => {
-    if (!laneRef) return ctx.start();
+    if (!laneRef) return 0;
     const rect = laneRef.getBoundingClientRect();
-    return quantizePosition(
-      ctx.start() + pixelsToMs(clientX - rect.left, ctx.zoom()),
-    );
+    return quantizePosition(pixelsToMs(clientX - rect.left, ctx.zoom()));
   };
 
   const startRegionDrag = (
@@ -456,7 +454,7 @@ export const TimelineOperatorLane = () => {
     if (!currentTarget) return;
     const rect = currentTarget.getBoundingClientRect();
     const positionMs = quantizePosition(
-      ctx.start() + pixelsToMs(event.clientX - rect.left, ctx.zoom()),
+      pixelsToMs(event.clientX - rect.left, ctx.zoom()),
     );
     openContextMenu({
       x: event.clientX,
@@ -491,7 +489,6 @@ export const TimelineOperatorLane = () => {
     const rect = laneRef.getBoundingClientRect();
     const seekPosition = seekPositionFromTimelineX({
       x: clientX - rect.left,
-      start: ctx.start(),
       zoom: ctx.zoom(),
       snapEnabled: ctx.snapEnabled(),
       useBeatgrid: ctx.useBeatgrid(),
@@ -617,7 +614,7 @@ export const TimelineOperatorLane = () => {
           const endMs = () => preview()?.endMs ?? durationToMs(region.end);
 
           /** Converts the region start time to a lane-relative pixel offset. */
-          const leftPx = () => msToPixels(startMs() - ctx.start(), ctx.zoom());
+          const leftPx = () => msToPixels(startMs(), ctx.zoom());
 
           /** Converts the region duration to a visible pixel width. */
           const widthPx = () =>
@@ -711,8 +708,7 @@ export const TimelineOperatorLane = () => {
           const positionMs = () => durationToMs(marker.time);
 
           /** Converts the marker time to a lane-relative pixel offset. */
-          const leftPx = () =>
-            msToPixels(positionMs() - ctx.start(), ctx.zoom());
+          const leftPx = () => msToPixels(positionMs(), ctx.zoom());
 
           /** Returns whether this marker is part of the current marker selection. */
           const selected = () =>
@@ -740,7 +736,7 @@ export const TimelineOperatorLane = () => {
                 onDragEnd: ({ offsetX }) => {
                   setDraggingMarkerUid(undefined);
                   const nextPosition = quantizePosition(
-                    ctx.start() + pixelsToMs(leftPx() + offsetX, ctx.zoom()),
+                    pixelsToMs(leftPx() + offsetX, ctx.zoom()),
                   );
                   ctx.markersActions.storeMarker({
                     ...marker,

@@ -263,15 +263,10 @@ const TrackContents = (props: TrackListProps) => {
     y: number,
     source: InsertionIntent["source"],
   ): InsertionIntent => {
-    const snappedPx = snapToGrid(
-      rawPositionPx,
-      ctx.zoom(),
-      ctx.start(),
-      getSnapConfig(),
-    );
+    const snappedPx = snapToGrid(rawPositionPx, ctx.zoom(), getSnapConfig());
     const positionMs = Math.max(
       0,
-      Math.floor(ctx.start() + pixelsToMs(snappedPx, ctx.zoom())),
+      Math.floor(pixelsToMs(snappedPx, ctx.zoom())),
     );
     return {
       trackId,
@@ -330,7 +325,7 @@ const TrackContents = (props: TrackListProps) => {
     trackId: string,
     positionMs: number,
   ): InsertionIntent => {
-    const positionPx = msToPixels(positionMs - ctx.start(), ctx.zoom());
+    const positionPx = msToPixels(positionMs, ctx.zoom());
     return {
       trackId,
       positionMs,
@@ -478,10 +473,7 @@ const TrackContents = (props: TrackListProps) => {
     const trackId = keyboardInsertTrackId();
     if (!trackId) return;
 
-    const playheadMs = Math.max(
-      Math.ceil(ctx.start()),
-      Math.floor(ctx.position()),
-    );
+    const playheadMs = Math.floor(ctx.position());
     const placementMs = timelinePlacementPosition({
       preference,
       playheadMs,

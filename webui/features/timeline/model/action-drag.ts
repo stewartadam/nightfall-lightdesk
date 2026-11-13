@@ -22,7 +22,6 @@ export function actionDragPositionFromPointer(options: {
   laneLeft: number;
   initialPositionPx: number;
   originalSnapPositionsPx?: number[];
-  timelineStartMs: number;
   zoom: number;
   snapConfig: SnapConfig;
 }): ActionDragPosition {
@@ -37,18 +36,13 @@ export function actionDragPositionFromPointer(options: {
   const positionPx =
     originalPositionPx ??
     (options.snapConfig.enabled
-      ? snapToGrid(
-          rawPositionPx,
-          options.zoom,
-          options.timelineStartMs,
-          options.snapConfig,
-        )
+      ? snapToGrid(rawPositionPx, options.zoom, options.snapConfig)
       : rawPositionPx);
 
   return {
     positionPx,
     offsetPx: positionPx - options.initialPositionPx,
-    positionMs: options.timelineStartMs + pixelsToMs(positionPx, options.zoom),
+    positionMs: pixelsToMs(positionPx, options.zoom),
   };
 }
 

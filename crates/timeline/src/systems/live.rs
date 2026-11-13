@@ -46,16 +46,21 @@ pub fn update_timeline_system(
                 .timeline
                 .loop_range
                 .as_ref()
-                .filter(|range| range.enabled && range.end > range.start)
+                .filter(|range| range.enabled)
+            && let Some(wrapped_position) = loop_range.wrap(
+                timecode
+                    .state
+                    .current_time
+                    .saturating_sub(timeline.timeline.timecode_start),
+            )
         {
-            let timeline_position = timecode
-                .state
-                .current_time
-                .saturating_sub(timeline.timeline.timecode_start);
-            if timeline_position >= loop_range.end {
-                timecode.seek(timeline.timeline.timecode_start + loop_range.start);
-                wrapped_timecodes.insert(*timecode_entity, timecode.state.current_time);
-            }
+            timecode.seek(timeline.timeline.timecode_start + wrapped_position);
+            // Playback is rebuilt at the loop start, so actions in the carried overshoot fire
+            // live on the next scan rather than through seek reconstruction.
+            wrapped_timecodes.insert(
+                *timecode_entity,
+                timeline.timeline.timecode_start + loop_range.start,
+            );
         }
         jumped |= timeline.follow_timecode_transport(TimecodeTransport {
             external: !timecode.is_internal(),
@@ -125,7 +130,8 @@ pub fn handle_timeline_audio_system(
 
         let playback_position = timeline.get_playback_position(current_time);
         let audio_enabled = timeline.timeline.audio_enabled && audio_output_enabled.0;
-        let playing = timeline.is_active && timecode_running && audio_enabled;
+        let playing =
+            audio_enabled && timeline.audio_transport_playing(current_time, timecode_running);
 
         // The timecode leads: playing audio is told where the timecode is, and the audio
         // worker seeks it back when the audio actually played has drifted away.
@@ -545,8 +551,9 @@ mod update_timeline_tests {
     use super::*;
     use crate::prelude::{Timeline, TimelineLoopRange};
 
-    /// Looping one timeline seeks only its UID-associated timecode generator and announces the
-    /// jump, so the timeline is rebuilt at the loop start and its actions fire on every pass.
+    /// Looping one timeline seeks only its UID-associated timecode generator, carrying the
+    /// 20 ms played past the loop end into the next pass, and announces the jump, so the
+    /// timeline is rebuilt at the loop start and its actions fire on every pass.
     #[test]
     fn loop_seek_targets_associated_timecode() {
         let mut app = App::new();
@@ -559,7 +566,7 @@ mod update_timeline_tests {
         let unrelated_entity = app.world_mut().spawn(unrelated_timecode).id();
 
         let mut associated_timecode = TimecodeGenerator::default();
-        associated_timecode.state.current_time = Duration::from_secs(6);
+        associated_timecode.state.current_time = Duration::from_millis(5020);
         let associated_uid = associated_timecode.timecode.identifiers.uid;
         let associated_entity = app.world_mut().spawn(associated_timecode).id();
 
@@ -597,7 +604,7 @@ mod update_timeline_tests {
             .expect("associated timecode should remain materialized");
         assert_eq!(
             associated_timecode.state.current_time,
-            Duration::from_secs(3)
+            Duration::from_millis(3020)
         );
 
         let materialized_timeline = app
