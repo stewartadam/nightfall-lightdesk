@@ -18,7 +18,7 @@ export const Playhead = () => {
 
   /** Calculate position directly from context values */
   const getPixelPosition = () => {
-    return ((context.position() - context.start()) / 1000) * context.zoom();
+    return (context.position() / 1000) * context.zoom();
   };
 
   return (

@@ -122,7 +122,7 @@ export function createTimelineHydrationController(
         ? durationToMs(timeline.end_time)
         : Math.max(untrack(playback.end), trackContentEnd, 60 * 1000),
     );
-    playback.setStart(
+    playback.setTimecodeStart(
       timeline.timecode_start ? durationToMs(timeline.timecode_start) : 0,
     );
     state.setTracks(timeline.tracks);

@@ -72,7 +72,6 @@ export function TimelineContextProvider(props: TimelineContextProviderProps) {
     timelineUid: props.initialTimelineUid,
     componentId: props.initialPanelId,
     timelineHydrated: state.timelineHydrated,
-    start: hydration.playback.start,
     position: hydration.playback.position,
     paused: hydration.playback.paused,
     audioPath: state.audioPath,

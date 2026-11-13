@@ -108,7 +108,6 @@ export interface BarSeekQuantizeConfig {
 
 export interface TimelineSeekPositionConfig extends SeekQuantizeConfig {
   x: number;
-  start: number;
   zoom: number;
 }
 
@@ -493,6 +492,6 @@ export function calculateBeatVisibility(
 export function seekPositionFromTimelineX(
   params: TimelineSeekPositionConfig,
 ): number {
-  const positionMs = params.start + pixelsToMs(params.x, params.zoom);
+  const positionMs = pixelsToMs(params.x, params.zoom);
   return quantizeSeekPositionMs(positionMs, params);
 }

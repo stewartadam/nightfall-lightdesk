@@ -235,7 +235,7 @@ export interface TimelineContextType {
   timelineUid: string;
   componentId: string;
   timelineHydrated: Accessor<boolean>;
-  start: Accessor<number>;
+  /** Playhead in timeline time: milliseconds since the timeline's `timecode_start`. */
   position: Accessor<number>;
   paused: Accessor<boolean>;
   audioPath: Accessor<string>;

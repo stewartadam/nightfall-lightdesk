@@ -529,7 +529,7 @@ export const TimelineController = (props: TimelineControllerProps) => {
     ) => {
       if (!scrollContainerRef) return;
 
-      const pixelPosition = msToPixels(position - (ctx.start() || 0), zoom);
+      const pixelPosition = msToPixels(position, zoom);
       const { scrollLeft, clientWidth } = scrollContainerRef;
       const timelineClientWidth = Math.max(
         0,
@@ -621,7 +621,6 @@ export const TimelineController = (props: TimelineControllerProps) => {
 
     /** Supplies current timeline coordinates to the pointer interaction service. */
     const cursorProjection = () => ({
-      start: ctx.start(),
       zoom: ctx.zoom(),
       setPosition: ctx.setCursorPosition,
     });
