@@ -10,7 +10,7 @@
 
 use std::{ops::Range, time::Duration};
 
-use bevy_ecs::prelude::*;
+use bevy_ecs::{entity::EntityHashMap, prelude::*};
 use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::ParameterValue;
@@ -47,6 +47,15 @@ const FIXTURES_PER_WORK_ITEM: usize = 32;
 /// on one thread.
 #[cfg(not(target_arch = "wasm32"))]
 const MIN_PARALLEL_FIXTURES: usize = 128;
+
+/// Why a playing step FX has nothing to sample, remembered so each cause is logged once.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum StepFxIdleReason {
+    /// The playback references a definition that no longer exists.
+    MissingDefinition,
+    /// The definition's selection resolves to no patched fixture.
+    EmptySelection,
+}
 
 /// A playing step FX that is ready to sample this frame.
 struct StepFxPlayback<'a> {
@@ -116,9 +125,12 @@ pub fn evaluate_step_fx(
     parameter_query: Query<&'static Parameter>,
     selection_resolver: SpatialSelectionResolver,
     mut selection_cache: Local<ResolvedSelectionCache<Entity>>,
+    mut idle_playbacks: Local<EntityHashMap<StepFxIdleReason>>,
+    mut layer_query: Query<&mut Layer>,
     mut commands: Commands,
 ) {
     selection_cache.retain(|entity| active_fx_query.contains(*entity));
+    idle_playbacks.retain(|entity, _| active_fx_query.contains(*entity));
 
     // Re-anchoring lane phase offsets is the only write to playback components, so it runs before
     // everything else reads them.
@@ -154,19 +166,30 @@ pub fn evaluate_step_fx(
                 .map(|preview| &preview.0)
         });
         let Ok(step_fx) = definition else {
-            tracing::warn!("ActiveStepFx references non-existent StepFx entity");
+            if idle_playbacks.insert(entity, StepFxIdleReason::MissingDefinition)
+                != Some(StepFxIdleReason::MissingDefinition)
+            {
+                tracing::warn!("ActiveStepFx references non-existent StepFx entity");
+            }
+            clear_step_fx_layer(entity, &mut layer_query);
             continue;
         };
 
         let selection = selection_cache.resolve(entity, &step_fx.selection, &selection_resolver);
         if selection.is_empty() {
-            tracing::warn!(
-                fx_id = step_fx.identifiers.id,
-                selection = ?step_fx.selection,
-                "StepFx selection resolved to empty set"
-            );
+            if idle_playbacks.insert(entity, StepFxIdleReason::EmptySelection)
+                != Some(StepFxIdleReason::EmptySelection)
+            {
+                tracing::warn!(
+                    fx_id = step_fx.identifiers.id,
+                    selection = ?step_fx.selection,
+                    "StepFx selection resolved to empty set"
+                );
+            }
+            clear_step_fx_layer(entity, &mut layer_query);
             continue;
         }
+        idle_playbacks.remove(&entity);
         resolved.push((
             entity,
             step_fx,
@@ -267,6 +290,23 @@ pub fn evaluate_step_fx(
             .entity(playback.entity)
             .insert((layer, marker, status));
     }
+}
+
+/// Empties the layer of a playing step FX that has nothing to sample this frame, so the values
+/// it asserted last no longer reach the stage.
+///
+/// The layer is only written when it still holds assertions, so an idle playback does not mark
+/// its layer changed every frame.
+fn clear_step_fx_layer(entity: Entity, layer_query: &mut Query<&mut Layer>) {
+    let Ok(mut layer) = layer_query.get_mut(entity) else {
+        return;
+    };
+    if layer.absolute.is_empty() && layer.relative.is_empty() {
+        return;
+    }
+    layer.absolute = Default::default();
+    layer.relative = Default::default();
+    layer.transitioning = Default::default();
 }
 
 /// Splits the selections of all playbacks into work items of at most
@@ -755,6 +795,48 @@ mod tests {
             layer_parameters(&app, active_entity),
             vec![second_parameter.entity()]
         );
+    }
+
+    /// Verifies a playing Step FX whose selection becomes empty, or whose definition disappears,
+    /// stops asserting the values it output before instead of leaving them frozen on stage.
+    #[test]
+    fn evaluate_step_fx_clears_layer_when_nothing_is_left_to_sample() {
+        let mut app = step_fx_test_app();
+        let (fixture_ref, parameter) = add_intensity_fixture(&mut app, 1);
+        let (fx_entity, active_entity) = schedule_cached_step_fx(
+            &mut app,
+            intensity_step_fx(
+                ParameterValue::AbsolutePercent { value: 0.25.into() },
+                SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref.clone()])),
+            ),
+        );
+
+        app.update();
+        assert_eq!(
+            layer_parameters(&app, active_entity),
+            vec![parameter.entity()]
+        );
+
+        app.world_mut()
+            .get_mut::<StepFx>(fx_entity)
+            .expect("step FX definition should exist")
+            .selection = SpatialSelection::identity(SelectionExpr::Resolved(Vec::new()));
+        app.update();
+        assert!(layer_parameters(&app, active_entity).is_empty());
+
+        app.world_mut()
+            .get_mut::<StepFx>(fx_entity)
+            .expect("step FX definition should exist")
+            .selection = SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref]));
+        app.update();
+        assert_eq!(
+            layer_parameters(&app, active_entity),
+            vec![parameter.entity()]
+        );
+
+        app.world_mut().despawn(fx_entity);
+        app.update();
+        assert!(layer_parameters(&app, active_entity).is_empty());
     }
 
     /// Verifies a cached group selection follows edits to the group it references.
