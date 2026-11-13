@@ -97,7 +97,10 @@ impl MtcDecoder {
             });
         }
 
-        let [QUARTER_FRAME, data] = message else {
+        // MIDI data bytes are 7-bit, so a valid quarter frame always names piece 0-7. A byte with
+        // the high bit set is a corrupt or misrouted message and is ignored without touching the
+        // sequence, so it can neither index past `pieces` nor drop an otherwise good lock.
+        let [QUARTER_FRAME, data @ 0..=0x7F] = message else {
             return None;
         };
         let piece = data >> 4;
@@ -213,6 +216,31 @@ mod tests {
             assert!(decoder.decode(&[QUARTER_FRAME, *data], now).is_none());
         }
         assert!(decoder.decode(&[QUARTER_FRAME, pieces[7]], now).is_some());
+    }
+
+    /// Quarter frames whose data byte has the high bit set (pieces 8-15) are ignored in every
+    /// decoder state instead of indexing past the eight pieces, and a locked sequence carries
+    /// on past them.
+    #[test]
+    fn malformed_quarter_frame_data_is_ignored() {
+        let now = Instant::now();
+        let mut fresh = MtcDecoder::default();
+        for data in 0x80..=0xFF_u8 {
+            assert!(fresh.decode(&[QUARTER_FRAME, data], now).is_none());
+        }
+
+        let mut decoder = MtcDecoder::default();
+        let pieces = quarter_frames(0, 0, 1, 0);
+        for data in &pieces[..7] {
+            decoder.decode(&[QUARTER_FRAME, *data], now);
+            for garbage in 0x80..=0xFF_u8 {
+                assert!(decoder.decode(&[QUARTER_FRAME, garbage], now).is_none());
+            }
+        }
+        assert!(
+            decoder.decode(&[QUARTER_FRAME, pieces[7]], now).is_some(),
+            "malformed bytes between pieces must not break the sequence"
+        );
     }
 
     /// A full-frame message is a locate carrying its rate in the hour byte.
