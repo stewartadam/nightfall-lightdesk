@@ -49,6 +49,7 @@ pub(crate) struct ShowfileLoadState<'w, 's> {
     pub(in crate::systems::showfile_events) programmer: Option<ResMut<'w, Programmer>>,
     pub(in crate::systems::showfile_events) controller_mapping_mode:
         Option<ResMut<'w, nightfall_actions::ControllerMappingMode>>,
+    pub(in crate::systems::showfile_events) control_holds: nightfall_actions::ControlHolds<'w>,
     pub(in crate::systems::showfile_events) macro_runs:
         Option<ResMut<'w, nightfall_macros::prelude::MacroRuns>>,
     pub(in crate::systems::showfile_events) armed_launches:
@@ -73,8 +74,8 @@ pub(super) fn load_showfile_in_place(
 }
 
 /// Replaces current runtime state using resources borrowed from a showfile load state. Ends
-/// controller mapping mode and running macros first, since the show they target goes away, and
-/// drops armed clip launches once the new show is in place.
+/// controller mapping mode, held controls, and running macros first, since the show they target
+/// goes away, and drops armed clip launches once the new show is in place.
 pub(super) fn load_showfile_snapshot_from_state(
     showfile_snapshot: ShowfileSnapshot,
     showfile_load_state: &mut ShowfileLoadState<'_, '_>,
@@ -91,6 +92,9 @@ pub(super) fn load_showfile_snapshot_from_state(
         }
         mode.end_for_show_load();
     }
+    // Held controls and flashes point at the current show's targets, so the new show starts
+    // with none instead of restoring old levels onto objects that reuse their IDs.
+    showfile_load_state.control_holds.end_for_show_load();
     if let Some(runs) = showfile_load_state.macro_runs.as_deref_mut() {
         runs.end_all_for_show_load();
     }

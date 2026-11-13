@@ -47,6 +47,7 @@ pub use eval::{
 };
 pub use failures::{FAILURE_REPEAT_WINDOW, InvocationFailureThrottle};
 pub use feedback::{ActionFeedback, FeedbackState};
+pub use flash::FlashStates;
 pub use invocation::{
     ActionInput, ActionInvocation, ActionInvocationFailure, ActionReference,
     ClientActionInvocation, ExternalCommandInvocation, InvocationDispatch, InvocationError,
@@ -62,7 +63,10 @@ use nightfall_engine::prelude::{
     register_command_deserializer, register_ingress_command,
 };
 pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
-pub use source::{BindingTarget, ControlBehavior, EdgeKey, SourceEdgeStates, SourceSignal};
+pub use source::{
+    BindingTarget, ControlBehavior, ControlHolds, EdgeKey, SourceEdgeStates, SourceSignal,
+    dispatch_forgotten_releases,
+};
 pub use targets::{
     ActionTargetTracking, ActionTargets, BindingDiagnostic, bindings_need_diagnosis,
     collect_binding_diagnostics, mark_action_targets_changed,
@@ -80,6 +84,7 @@ impl Plugin for ActionsPlugin {
         app.init_resource::<ActionRegistry>();
         eval::register_eval_action(app);
         app.init_resource::<SourceEdgeStates>();
+        app.init_resource::<FlashStates>();
         app.init_resource::<InvocationFailureThrottle>();
         app.init_resource::<ActionTargets>();
         app.init_resource::<ControllerMappingMode>();
@@ -99,7 +104,9 @@ impl Plugin for ActionsPlugin {
         app.configure_sets(Update, ActionTargetTracking.after(EventHandling));
         app.add_systems(
             Update,
-            dispatch_action_invocations.in_set(ActionInvocationHandling),
+            (dispatch_forgotten_releases, dispatch_action_invocations)
+                .chain()
+                .in_set(ActionInvocationHandling),
         );
         app.add_systems(
             Update,
@@ -231,6 +238,7 @@ fn report_failure(
 #[cfg(test)]
 mod tests {
     use bevy_ecs::prelude::Message;
+    use bevy_ecs::system::RunSystemOnce;
     use nightfall_engine::prelude::{
         CommandError, CommandId, CommandOrigin, CommandOutcome, CommandOutput, CommandReply,
         CommandResult, CommandTracker, EnginePayload, FinishedCommand, IngressCommand,
@@ -630,6 +638,110 @@ mod tests {
             ),
             None
         );
+    }
+
+    /// Creates an action app with a flashable `test.level` action whose level reads 0.4.
+    fn flash_app() -> App {
+        let mut app = action_app();
+        app.insert_resource(TestLevel(0.4));
+        app.register_update_action::<TestArguments, TestApplied, _>(
+            ActionDescriptor::new("test.level", "Test level", "Tests")
+                .with_input(ActionInputKind::Absolute),
+            |_world, _arguments, value| Ok(TestApplied(value)),
+        )
+        .register_flash_level::<TestArguments, _>("test.level", |world, _arguments| {
+            Ok(Some(world.resource::<TestLevel>().0))
+        });
+        app
+    }
+
+    /// Adapts one button edge from a Flash binding on `test.level` the way a MIDI pad would,
+    /// writes the resulting invocation, and runs a frame.
+    fn flash_button(app: &mut App, binding: uuid::Uuid, pressed: bool) {
+        let action = ActionReference::new("test.level", json!({ "value": 1 }));
+        let resolved = app.world_mut().resource_scope(
+            |world, mut edges: bevy_ecs::prelude::Mut<SourceEdgeStates>| {
+                edges.resolve(
+                    world.resource::<ActionRegistry>(),
+                    binding,
+                    ActionSurface::Midi,
+                    &action,
+                    ControlBehavior::Flash,
+                    SourceSignal::Button(pressed),
+                    false,
+                )
+            },
+        );
+        if let Some((action, input)) = resolved {
+            app.world_mut().write_message(ActionInvocation::new(
+                action,
+                ActionSurface::Midi,
+                input,
+            ));
+        }
+        app.update();
+    }
+
+    /// Returns whether a flash still holds `test.level`.
+    fn flash_held(app: &App) -> bool {
+        app.world()
+            .resource::<FlashStates>()
+            .is_held(&ActionReference::new("test.level", json!({ "value": 1 })))
+    }
+
+    /// Verifies forgetting a binding mid-flash, as editing or deleting its mapping does,
+    /// restores the level at once, and the control's later release changes nothing.
+    #[test]
+    fn forgetting_a_held_flash_binding_restores_the_level() {
+        let mut app = flash_app();
+        let binding = uuid::Uuid::from_u128(1);
+
+        flash_button(&mut app, binding, true);
+        app.world_mut()
+            .resource_mut::<SourceEdgeStates>()
+            .forget(binding);
+        app.update();
+
+        assert_eq!(applied(&mut app), vec![TestApplied(1.0), TestApplied(0.4)]);
+        assert!(!flash_held(&app));
+        flash_button(&mut app, binding, false);
+        assert!(applied(&mut app).is_empty());
+    }
+
+    /// Verifies a second note on without a note off between them, as a replugged controller
+    /// can send, does not stack a second hold, so one release restores the level.
+    #[test]
+    fn repeated_flash_press_needs_one_release() {
+        let mut app = flash_app();
+        let binding = uuid::Uuid::from_u128(1);
+
+        flash_button(&mut app, binding, true);
+        assert_eq!(applied(&mut app), vec![TestApplied(1.0)]);
+        flash_button(&mut app, binding, true);
+        assert!(applied(&mut app).is_empty());
+        flash_button(&mut app, binding, false);
+
+        assert_eq!(applied(&mut app), vec![TestApplied(0.4)]);
+        assert!(!flash_held(&app));
+    }
+
+    /// Verifies a show load ends held flashes without restoring their captured level onto the
+    /// new show, and a control still held across the load releases into nothing.
+    #[test]
+    fn show_load_ends_held_flashes_without_restoring() {
+        let mut app = flash_app();
+        let binding = uuid::Uuid::from_u128(1);
+        flash_button(&mut app, binding, true);
+        applied(&mut app);
+
+        app.world_mut()
+            .run_system_once(|mut holds: ControlHolds| holds.end_for_show_load())
+            .expect("show load reset should run");
+        app.update();
+
+        assert!(!flash_held(&app));
+        flash_button(&mut app, binding, false);
+        assert!(applied(&mut app).is_empty());
     }
 
     /// Verifies triggers with a release counterpart support Hold and resolve the counterpart.
