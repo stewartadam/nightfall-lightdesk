@@ -413,8 +413,14 @@ pub(super) fn planned_release_reconstruction_timing_for_clip_stop(
                 timeline_beats_per_second,
             );
             PlaybackReconstructionTiming {
-                started_at: timing.started_at.mul_f64(scale),
-                position: timing.position.mul_f64(scale),
+                started_at: nightfall::playback_speed::saturating_scale_duration(
+                    timing.started_at,
+                    scale,
+                ),
+                position: nightfall::playback_speed::saturating_scale_duration(
+                    timing.position,
+                    scale,
+                ),
                 ..timing
             }
         })

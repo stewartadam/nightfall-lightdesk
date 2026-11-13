@@ -30,6 +30,7 @@ pub mod fan;
 pub mod macros;
 pub mod object_query;
 pub mod partial_result;
+pub mod playback_speed;
 pub mod spanned_selection;
 pub mod spatial_projection;
 pub mod stores;

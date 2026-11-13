@@ -592,7 +592,7 @@ pub fn handle_step_fx_commands(
 
             StepFxCommand::SetSpeed { fx_id, speed } => {
                 let fx_id = *fx_id;
-                let speed = *speed;
+                let speed = nightfall::playback_speed::normalized_playback_speed(*speed);
 
                 // Find the StepFx entity by ID
                 let fx_entity = step_fx_query
