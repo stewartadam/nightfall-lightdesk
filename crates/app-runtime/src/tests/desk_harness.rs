@@ -66,6 +66,12 @@ impl DeskHarness {
         self.submit(EngineCommand::Eval(text.to_string()))
     }
 
+    /// Submits a command, waits for it to finish and asserts it succeeded.
+    pub(super) fn succeed<C: IngressCommand + Clone + 'static>(&mut self, command: C) {
+        let command_id = self.submit(command);
+        assert_eq!(self.wait(command_id), CommandOutcome::succeeded());
+    }
+
     /// Runs one frame and records the command results it produced.
     pub(super) fn step(&mut self) {
         self.app.update();

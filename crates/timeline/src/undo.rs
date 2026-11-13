@@ -213,7 +213,9 @@ impl Undoable for TimelineCommand {
                     Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn Undoable>
                 })
             }
-            TimelineCommand::NudgeTimelineSelection { timeline_id, .. } => {
+            TimelineCommand::NudgeTimelineSelection { timeline_id, .. }
+            | TimelineCommand::ApplyBeatgridProposal { timeline_id, .. }
+            | TimelineCommand::SetBeatgridStart { timeline_id, .. } => {
                 timelines.from_id(*timeline_id).ok().map(|timeline_ref| {
                     let timeline: Timeline = (*timeline_ref).clone();
                     Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn Undoable>
@@ -243,9 +245,18 @@ impl Undoable for TimelineCommand {
             | TimelineCommand::TogglePlayback(_)
             | TimelineCommand::SetTimelineRecording { .. }
             | TimelineCommand::RequestBeatgridDetection { .. }
-            | TimelineCommand::ApplyBeatgridProposal { .. }
-            | TimelineCommand::RejectBeatgridProposal { .. }
-            | TimelineCommand::SetBeatgridStart { .. } => None,
+            | TimelineCommand::RejectBeatgridProposal { .. } => None,
+        }
+    }
+
+    /// Joins repeated beatgrid shifts of one timeline into one undo step; its inverse is a
+    /// whole-timeline snapshot, so the first shift's inverse undoes the whole run.
+    fn coalesce_key(&self) -> Option<UndoCoalesceKey> {
+        match self {
+            TimelineCommand::SetBeatgridStart { timeline_id, .. } => {
+                Some(UndoCoalesceKey::new("timeline.beatgrid_start", timeline_id))
+            }
+            _ => None,
         }
     }
 
@@ -534,6 +545,52 @@ mod tests {
             }
             other => panic!("expected StoreTimeline inverse, got {other:?}"),
         }
+    }
+
+    /// Verifies both beatgrid edits snapshot the timeline, so undo restores the tempo, grid
+    /// flag and beatgrid they overwrite, and only beatgrid shifts coalesce.
+    #[test]
+    fn beatgrid_edits_snapshot_the_timeline() {
+        let mut timeline = Timeline::default();
+        timeline.identifiers.id = 9;
+        timeline.bpm = 120.0;
+        timeline.use_beat_grid = false;
+        let mut timelines = DataProvider::<Timeline>::default();
+        timelines.add(timeline).expect("timeline should be stored");
+        let mut world = World::new();
+        world.insert_resource(timelines);
+        let ctx = UndoContext { world: &world };
+
+        let apply = TimelineCommand::ApplyBeatgridProposal {
+            timeline_id: 9,
+            request_id: Uuid::new_v4(),
+            beats_per_bar: None,
+            downbeat_offset: None,
+        };
+        let shift = TimelineCommand::SetBeatgridStart {
+            timeline_id: 9,
+            audio_fingerprint: String::new(),
+            first_marker_time: Duration::from_millis(250),
+        };
+
+        for command in [&apply, &shift] {
+            let inverse = command
+                .inverse(&ctx)
+                .expect("beatgrid edit should produce an inverse");
+            match inverse.as_any().downcast_ref::<TimelineCommand>() {
+                Some(TimelineCommand::StoreTimeline(restored)) => {
+                    assert_eq!(restored.bpm, 120.0);
+                    assert!(!restored.use_beat_grid);
+                    assert!(restored.beatgrid.is_none());
+                }
+                other => panic!("expected StoreTimeline inverse, got {other:?}"),
+            }
+        }
+        assert!(apply.coalesce_key().is_none());
+        assert_eq!(
+            shift.coalesce_key(),
+            Some(UndoCoalesceKey::new("timeline.beatgrid_start", 9))
+        );
     }
 
     #[test]

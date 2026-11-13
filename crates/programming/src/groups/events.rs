@@ -56,6 +56,7 @@ pub fn action_events(
                                     command: Box::new(inverse) as Box<dyn Undoable>,
                                     description: format!("Store Group {}", group.identifiers.id),
                                     command_id: event.command_id,
+                                    coalesce_key: None,
                                 },
                                 undo_id,
                                 event.command_id.is_some(),

@@ -67,6 +67,7 @@ pub fn action_events(
                                         blueprint.identifiers.id
                                     ),
                                     command_id: event.command_id,
+                                    coalesce_key: None,
                                 },
                                 undo_id,
                                 event.command_id.is_some(),
