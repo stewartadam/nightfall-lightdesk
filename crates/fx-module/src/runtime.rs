@@ -67,10 +67,14 @@ pub enum FxModuleRuntimeError {
     /// Wasmtime failed to compile, link, or instantiate the component.
     #[error("failed to execute fx module component: {0:#}")]
     Wasmtime(#[from] wasmtime::Error),
-    /// A guest call trapped, ran past its time limit, or exceeded its memory limit. The instance
-    /// cannot be called again and must be dropped.
+    /// A guest call trapped or exceeded its memory limit. The instance cannot be called again and
+    /// must be dropped.
     #[error("{0}")]
     Stopped(String),
+    /// A guest call ran past its time limit and was interrupted. The instance cannot be called
+    /// again, but a fresh one may succeed if the overrun was a one-off stall.
+    #[error("{0}")]
+    TimedOut(String),
     /// The guest returned a structured FX module error.
     #[error("{0}")]
     Guest(FxModuleError),
@@ -85,7 +89,12 @@ impl FxModuleRuntimeError {
     /// Wasmtime instances are poisoned after a trap, so retrying would only fail again (or, for a
     /// guest stuck in a loop, burn another full time budget on the engine thread).
     pub fn is_fatal(&self) -> bool {
-        matches!(self, Self::Stopped(_))
+        matches!(self, Self::Stopped(_) | Self::TimedOut(_))
+    }
+
+    /// Whether the guest was interrupted at its time limit rather than crashing outright.
+    pub fn is_timeout(&self) -> bool {
+        matches!(self, Self::TimedOut(_))
     }
 }
 
@@ -234,10 +243,14 @@ impl<H: FxModuleHost + 'static> FxModuleInstance<H> {
 
 /// Describes why a guest call stopped, naming the exceeded limit when one was hit.
 fn stopped_error(call: &str, time_limit: Duration, error: wasmtime::Error) -> FxModuleRuntimeError {
+    if matches!(error.downcast_ref::<Trap>(), Some(Trap::Interrupt)) {
+        return FxModuleRuntimeError::TimedOut(format!(
+            "{call} exceeded its {} ms time limit",
+            time_limit.as_millis()
+        ));
+    }
     let reason = if let Some(limit) = error.downcast_ref::<GuestLimitExceeded>() {
         limit.to_string()
-    } else if matches!(error.downcast_ref::<Trap>(), Some(Trap::Interrupt)) {
-        format!("exceeded its {} ms time limit", time_limit.as_millis())
     } else {
         format!("trapped: {error:#}")
     };
@@ -892,6 +905,10 @@ mod tests {
             "render should return shortly after its time limit"
         );
         assert!(error.is_fatal(), "time limit errors should be fatal");
+        assert!(
+            error.is_timeout(),
+            "time limit errors should be reported as timeouts"
+        );
         assert_eq!(error.to_string(), "render exceeded its 100 ms time limit");
     }
 
@@ -901,6 +918,10 @@ mod tests {
         let error = first_render_error("grow-memory");
 
         assert!(error.is_fatal(), "memory limit errors should be fatal");
+        assert!(
+            !error.is_timeout(),
+            "memory limit errors should stop without a reload"
+        );
         assert_eq!(error.to_string(), "render exceeded its 64 MiB memory limit");
     }
 
