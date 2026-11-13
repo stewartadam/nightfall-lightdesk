@@ -43,13 +43,13 @@ test("parses prose, bullets, comments and explicit omissions", () => {
   );
   assert.deepEqual(
     parseReleaseNote(
-      "Notes:\n- feature(playback): Cues have controls.\n* fix(io): Output no longer stutters.\n\n## Tests",
+      "Notes:\n- feature(cues): Cues have controls.\n* fix(dmx): Output no longer stutters.\n\n## Tests",
     ),
     {
       kind: "notes",
       entries: [
-        { type: "feature", area: "playback", text: "Cues have controls." },
-        { type: "fix", area: "io", text: "Output no longer stutters." },
+        { type: "feature", area: "cues", text: "Cues have controls." },
+        { type: "fix", area: "dmx", text: "Output no longer stutters." },
       ],
     },
   );
@@ -59,13 +59,10 @@ test("parses prose, bullets, comments and explicit omissions", () => {
     ),
     { kind: "none", reason: "only changes test coverage", entries: [] },
   );
-  assert.deepEqual(
-    parseReleaseNote("Notes: fix(playback): Fixed playback.\r\n"),
-    {
-      kind: "notes",
-      entries: [{ type: "fix", area: "playback", text: "Fixed playback." }],
-    },
-  );
+  assert.deepEqual(parseReleaseNote("Notes: fix(cues): Fixed playback.\r\n"), {
+    kind: "notes",
+    entries: [{ type: "fix", area: "cues", text: "Fixed playback." }],
+  });
 });
 
 /** CI planning, rendering, and PR validation consume snapshots without invoking authenticated tooling. */
@@ -88,7 +85,7 @@ test("plans and renders release notes entirely from API snapshots", (t) => {
     "metadata/releases.json",
     JSON.stringify([{ tag_name: "v0.1.0" }]),
   );
-  const pr = pull(7, sha, "Notes: feature(playback): Fixed cue playback.");
+  const pr = pull(7, sha, "Notes: feature(cues): Fixed cue playback.");
   writeFileSync(`metadata/commits/${sha}.json`, JSON.stringify([pr]));
   const script = fileURLToPath(new URL("./release-notes.mjs", import.meta.url));
   const options = {
@@ -126,7 +123,7 @@ test("plans and renders release notes entirely from API snapshots", (t) => {
   writeFileSync("metadata/pr.json", JSON.stringify(pr));
   assert.match(
     execFileSync(process.execPath, [script, "check", ...common], options),
-    /New features · Playback, cues and effects: Fixed cue playback/,
+    /New features · Cues and sequences: Fixed cue playback/,
   );
   writeFileSync(
     "metadata/pr.json",
@@ -181,7 +178,7 @@ test("rejects missing, duplicate, empty and malformed declarations", () => {
 
 /** The PR check requires a type(area): tag and flags long entries and too many entries. */
 test("reports untagged, overlong and too many entries", () => {
-  const short = "fix(playback): Fixed playback.";
+  const short = "fix(cues): Fixed playback.";
   assert.deepEqual(
     releaseNoteProblems(parseReleaseNote(`Notes: ${short}`)),
     [],
@@ -192,7 +189,7 @@ test("reports untagged, overlong and too many entries", () => {
   );
   assert.deepEqual(
     releaseNoteProblems(
-      parseReleaseNote(`Notes: fix(io): ${"é".repeat(MAX_ENTRY_LENGTH)}`),
+      parseReleaseNote(`Notes: fix(dmx): ${"é".repeat(MAX_ENTRY_LENGTH)}`),
     ),
     [],
   );
@@ -202,7 +199,7 @@ test("reports untagged, overlong and too many entries", () => {
   );
   const long = "a".repeat(MAX_ENTRY_LENGTH + 1);
   assert.match(
-    releaseNoteProblems(parseReleaseNote(`Notes: fix(io): ${long}`)).join(),
+    releaseNoteProblems(parseReleaseNote(`Notes: fix(dmx): ${long}`)).join(),
     /Shorten this entry to 160 characters or fewer \(it has 161\)/,
   );
   const many = Array.from({ length: MAX_ENTRIES + 1 }, () => `- ${short}`);
@@ -215,7 +212,7 @@ test("reports untagged, overlong and too many entries", () => {
 /** Unknown types and areas fail outright, since their entries would match no release group. */
 test("rejects unknown entry types and areas", () => {
   assert.throws(
-    () => parseReleaseNote("Notes: bugfix(io): Output works."),
+    () => parseReleaseNote("Notes: bugfix(dmx): Output works."),
     /Unknown release note type "bugfix"/,
   );
   assert.throws(
@@ -223,7 +220,7 @@ test("rejects unknown entry types and areas", () => {
     /Unknown release note area "audio"/,
   );
   assert.throws(
-    () => parseReleaseNote("Notes:\n- fix(io): TODO"),
+    () => parseReleaseNote("Notes:\n- fix(dmx): TODO"),
     /placeholder/,
   );
 });

@@ -77,17 +77,25 @@ export const NOTE_TYPES = {
 
 /** Feature areas an entry can declare, with the name used when grouping notes by area. */
 export const NOTE_AREAS = {
-  playback: "Playback, cues and effects",
-  programming: "Programming and command line",
-  fixtures: "Fixtures and patching",
-  io: "DMX output and input",
-  control: "MIDI, OSC and timecode",
-  visualizer: "Visualizer",
-  shows: "Showfiles",
-  devices: "Devices, network and failover",
-  interface: "Panels, layouts and settings",
+  patch: "Patching and fixture library",
+  programmer: "Programmer, selection and groups",
+  cues: "Cues and sequences",
+  clips: "Clips, faders and masters",
+  fx: "Effects and color paths",
+  timeline: "Timelines and timecode",
+  tempo: "Tempo",
+  boards: "Boards",
+  macros: "Macros",
+  commands: "Command line",
+  controllers: "MIDI and OSC controllers",
+  dmx: "DMX output and input",
+  visualizer: "3D Visualizer",
+  showfiles: "Showfiles",
+  devices: "Phones, tablets and multiple devices",
+  failover: "Backup and failover",
+  workspace: "Panels, layouts and settings",
   app: "Desktop app, updates and privacy",
-  docs: "User guide and Welcome Guide",
+  guide: "Welcome Guide and user guide",
 };
 
 /**
@@ -134,7 +142,7 @@ export function releaseNoteProblems(note) {
   for (const { type, text } of note.entries) {
     if (!type)
       problems.push(
-        `Start this entry with a type(area): tag, such as fix(io): ${text}`,
+        `Start this entry with a type(area): tag, such as fix(dmx): ${text}`,
       );
     if ([...text].length > MAX_ENTRY_LENGTH)
       problems.push(

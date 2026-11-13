@@ -10,15 +10,15 @@ this page covers the syntax and how notes reach a release.
 Use one sentence:
 
 ```markdown
-Notes: fix(playback): Stopping a cue no longer leaves fixtures at their previous intensity.
+Notes: fix(cues): Stopping a cue no longer leaves fixtures at their previous intensity.
 ```
 
 Or one complete entry per bullet:
 
 ```markdown
 Notes:
-- feature(playback): Timeline parameter lanes can be adjusted with new controls.
-- fix(playback): Playback no longer jumps when you change the selected cue.
+- feature(timeline): Timeline parameter lanes can be adjusted with new controls.
+- fix(cues): Playback no longer jumps when you change the selected cue.
 ```
 
 For an intentional omission, supply a specific reason:

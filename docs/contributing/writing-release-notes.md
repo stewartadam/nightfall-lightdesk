@@ -42,19 +42,30 @@ few seconds by someone who never saw the code or the discussion.
 
 ### Areas
 
-| Area          | Covers                                                                    |
-| ------------- | ------------------------------------------------------------------------- |
-| `playback`    | Cues, sequences, clips, faders, masters, effects, timelines and tempo.    |
-| `programming` | The programmer, selection, groups, park, macros and the command line.     |
-| `fixtures`    | The fixture library and editor, imports, patching and DMX routes.         |
-| `io`          | Art-Net, sACN and USB DMX output and DMX input.                            |
-| `control`     | MIDI and OSC controllers, mappings, LED feedback and timecode.             |
-| `visualizer`  | The 3D visualizer and stage objects.                                       |
-| `shows`       | Showfiles: creating, saving, drafts, importing and exporting.             |
-| `devices`     | Phones, tablets and other connected devices, the network and failover.    |
-| `interface`   | Panels, layouts, boards, dialogs, notifications and settings.             |
-| `app`         | The desktop app, installers, updates, privacy and diagnostics.            |
-| `docs`        | The user guide and the Welcome Guide.                                      |
+Areas are features as users know them from the app and the user guide, not parts
+of the code.
+
+| Area          | Covers                                                            |
+| ------------- | ----------------------------------------------------------------- |
+| `patch`       | The Patch panel, Fixture Library, fixture profiles and imports.   |
+| `programmer`  | The Programmer, selecting fixtures, groups, Blueprints and park.  |
+| `cues`        | Cues, sequences and their editors.                                |
+| `clips`       | Clips, faders, Go buttons and masters.                            |
+| `fx`          | FX, Step FX and Color Paths.                                      |
+| `timeline`    | Timelines, timeline audio and timecode.                           |
+| `tempo`       | Show tempo, tap tempo and the Tempo panel.                        |
+| `boards`      | Boards and their buttons.                                         |
+| `macros`      | Macros.                                                           |
+| `commands`    | The command line and command syntax.                              |
+| `controllers` | MIDI and OSC controllers, mappings and LED feedback.              |
+| `dmx`         | Art-Net, sACN and USB DMX output, DMX input and DMX routes.       |
+| `visualizer`  | The 3D Visualizer and scene objects.                              |
+| `showfiles`   | Creating, opening, saving, drafts, importing and exporting shows. |
+| `devices`     | Using Nightfall from phones, tablets and several devices at once. |
+| `failover`    | Backup servers and failover.                                      |
+| `workspace`   | Panels, layouts, dialogs, notifications and settings in general.  |
+| `app`         | The desktop app, installers, updates, privacy and diagnostics.    |
+| `guide`       | The Welcome Guide and the user guide.                             |
 
 Pick the area where a user would look for the change. Areas are a fixed list,
 checked by CI; add a new one to `NOTE_AREAS` in `scripts/release-notes.mjs` and to
@@ -81,22 +92,22 @@ Keep the reason specific: `Notes: none (test-only change)`, not `Notes: none (n/
 
 ```markdown
 Notes:
-- feature(devices): A backup server now takes over on its own when its primary stops answering.
-- improvement(devices): A backup and its primary stay paired across restarts and takeovers, until either one selects Leave the pair.
+- feature(failover): A backup server now takes over on its own when its primary stops answering.
+- improvement(failover): A backup and its primary stay paired across restarts and takeovers, until either one selects Leave the pair.
 ```
 
 ```markdown
 Notes:
-- feature(io): USB DMX output now supports FTDI-based Open DMX dongles.
-- fix(io): Several clones sharing a serial number keep driving their own targets as long as each stays on its USB port.
+- feature(dmx): USB DMX output now supports FTDI-based Open DMX dongles.
+- fix(dmx): Several clones sharing a serial number keep driving their own targets as long as each stays on its USB port.
 ```
 
 ```markdown
-Notes: fix(interface): Notifications now show on top of Settings, About and other dialogs instead of hiding behind them.
+Notes: fix(workspace): Notifications now show on top of Settings, About and other dialogs instead of hiding behind them.
 ```
 
 ```markdown
-Notes: fix(programming): A command typed while the app is reconnecting now fails with an error instead of freezing the command line.
+Notes: fix(commands): A command typed while the app is reconnecting now fails with an error instead of freezing the command line.
 ```
 
 ```markdown
@@ -123,7 +134,7 @@ A how-to with command syntax instead of the change:
 Notes: Park holds fixture parameters over cues, FX, the programmer and masters until you unpark them. Use `park fixture 5` to hold the current value, `park fixture 5 intensity @ 80` to hold a set value, `unpark fixture 5`, or the Parked section in Properties.
 ```
 
-Better: `Notes: feature(programming): Park holds fixture parameters at a fixed value over all playback until you unpark them.`
+Better: `Notes: feature(programmer): Park holds fixture parameters at a fixed value over all playback until you unpark them.`
 
 ## How this is checked
 
