@@ -107,6 +107,7 @@ impl LibraryFixtureUndo {
                     command,
                     description: description.to_string(),
                     command_id: Some(command_id),
+                    coalesce_key: None,
                 },
                 undo_id,
                 true,
