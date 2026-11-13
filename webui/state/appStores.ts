@@ -39,6 +39,7 @@ import {
 import {
   $availableNetworkInterfaces,
   $availableUsbDmxDevices,
+  $backupState,
   $externalControlState,
   $networkInterfaceStatus,
   $settings,
@@ -1083,6 +1084,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     settings: $settings,
     availableNetworkInterfaces: $availableNetworkInterfaces,
     externalControlState: $externalControlState,
+    backupState: $backupState,
     telemetryState: $telemetryState,
     availableUsbDmxDevices: $availableUsbDmxDevices,
     networkInterfaceStatus: $networkInterfaceStatus,
@@ -1210,6 +1212,11 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     send: async (data: object) => {
       const { engineRuntime } = await import("../lib/engine-runtime");
       engineRuntime.sendCommand(data);
+    },
+    /** Send an untracked update, such as a fader move, to the backend via WebSocket. */
+    sendUpdate: async (module: string, update: object) => {
+      const { engineRuntime } = await import("../lib/engine-runtime");
+      engineRuntime.sendUpdate(module, update);
     },
     /** Send a command to the backend and wait for its CommandResult response. */
     sendAndAwait: async (data: object) => {

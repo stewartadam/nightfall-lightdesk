@@ -1,0 +1,33 @@
+[package]
+name = "nightfall-backup"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+bevy_state.workspace = true
+nightfall = { path = "../common" }
+nightfall-actions = { path = "../actions" }
+nightfall-engine = { path = "../engine" }
+nightfall-io = { path = "../io", features = ["ecs"] }
+nightfall-websocket = { path = "../websocket" }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+zip = { version = "9.1", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+axum.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[lints]
+workspace = true

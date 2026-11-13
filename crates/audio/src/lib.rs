@@ -85,6 +85,9 @@ impl AudioSinkInfo {
 pub struct AudioController {
     client: AudioOutputClient,
     sinks: HashMap<AudioSinkId, AudioSinkInfo>,
+    /// Whether every sink plays silently, as on a backup following its primary. Each sink keeps
+    /// its own volume and gets it back when the mute is lifted.
+    muted: bool,
 }
 
 impl AudioController {
@@ -93,13 +96,40 @@ impl AudioController {
         Self {
             client,
             sinks: HashMap::new(),
+            muted: false,
         }
+    }
+
+    /// Returns the volume a sink set to `volume` actually plays at.
+    fn audible_volume(&self, volume: f32) -> f32 {
+        if self.muted { 0.0 } else { volume }
+    }
+
+    /// Silences or restores every sink. Sinks keep playing, so their position stays in step
+    /// with what they follow and unmuting is seamless.
+    pub fn set_muted(&mut self, muted: bool) {
+        if self.muted == muted {
+            return;
+        }
+        self.muted = muted;
+        for (id, sink) in &self.sinks {
+            self.client
+                .set_volume(id.0, self.audible_volume(sink.volume));
+        }
+    }
+
+    /// Returns whether every sink plays silently.
+    pub fn is_muted(&self) -> bool {
+        self.muted
     }
 
     /// Create a new audio sink and return its ID.
     pub fn create_sink(&mut self) -> Option<AudioSinkId> {
         let sink_id = self.client.create_sink().map(AudioSinkId)?;
         self.sinks.insert(sink_id, AudioSinkInfo::default());
+        if self.muted {
+            self.client.set_volume(sink_id.0, 0.0);
+        }
         Some(sink_id)
     }
 
@@ -173,7 +203,7 @@ impl AudioController {
             return false;
         }
 
-        if self.client.set_volume(id.0, volume)
+        if self.client.set_volume(id.0, self.audible_volume(volume))
             && let Some(sink) = self.sinks.get_mut(&id)
         {
             sink.volume = volume;
@@ -256,7 +286,11 @@ impl AudioController {
         let sinks = self
             .sinks
             .iter()
-            .map(|(sink_id, sink)| sink.snapshot(*sink_id))
+            .map(|(sink_id, sink)| {
+                let mut snapshot = sink.snapshot(*sink_id);
+                snapshot.volume = self.audible_volume(snapshot.volume);
+                snapshot
+            })
             .collect();
 
         self.client.reconfigure_output(device_id, sinks)
@@ -295,6 +329,22 @@ impl Plugin for AudioPlugin {
         app.register_settings_section(settings::AudioSettings::SECTION);
         app.add_settings_command(settings::apply);
         output_devices::register(app);
+        app.add_systems(bevy_app::PreUpdate, mute_audio_on_standby);
+    }
+}
+
+/// Silences audio while this host is a standby backup, so it follows its primary's timelines
+/// without both computers playing the same audio, and lets it play again after a takeover.
+///
+/// Runs before `Update`, so a new world, whose standby the backup role sets at startup, is muted
+/// before any of its timelines can create and play a sink.
+fn mute_audio_on_standby(
+    standby: Option<Res<nightfall_io::DmxOutputStandby>>,
+    mut controller: ResMut<AudioController>,
+) {
+    let muted = standby.is_some_and(|standby| standby.is_standby());
+    if controller.is_muted() != muted {
+        controller.set_muted(muted);
     }
 }
 
@@ -313,6 +363,48 @@ mod tests {
     ) -> AudioWorkerCommand {
         rx.try_recv()
             .expect("expected audio worker command to be queued")
+    }
+
+    /// A muted controller silences existing and new sinks while remembering their volume, and
+    /// restores it when unmuted.
+    #[test]
+    fn mute_silences_sinks_and_restores_their_volume() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let client = AudioOutputClient::default();
+        client.set_sender(Some(tx));
+        let mut controller = AudioController::new(client);
+        let first = controller.create_sink().unwrap();
+        next_command(&mut rx);
+        controller.set_volume(first, 0.5);
+        next_command(&mut rx);
+
+        controller.set_muted(true);
+        assert!(matches!(
+            next_command(&mut rx),
+            AudioWorkerCommand::SetVolume(id, volume) if id == first.0 && volume == 0.0
+        ));
+        let second = controller.create_sink().unwrap();
+        next_command(&mut rx);
+        assert!(matches!(
+            next_command(&mut rx),
+            AudioWorkerCommand::SetVolume(id, volume) if id == second.0 && volume == 0.0
+        ));
+        controller.set_volume(first, 0.8);
+        assert!(matches!(
+            next_command(&mut rx),
+            AudioWorkerCommand::SetVolume(_, volume) if volume == 0.0
+        ));
+        assert_eq!(controller.volume(first), Some(0.8));
+
+        controller.set_muted(false);
+        let mut restored: Vec<(u32, f32)> = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|command| match command {
+                AudioWorkerCommand::SetVolume(id, volume) => Some((id, volume)),
+                _ => None,
+            })
+            .collect();
+        restored.sort_by_key(|(id, _)| *id);
+        assert_eq!(restored, vec![(first.0, 0.8), (second.0, 1.0)]);
     }
 
     #[test]

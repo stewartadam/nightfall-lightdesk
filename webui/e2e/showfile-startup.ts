@@ -234,17 +234,16 @@ export async function waitForDockviewApp(
 
     if (outcome === "draft-prompt") {
       await resolveStartupDraftRecoveryIfVisible(page);
-    } else {
+    } else if (outcome === "showfile-prompt") {
       await openStartupShowfileIfPrompted(page, options);
     }
     // Give the prompt a moment to close before startup is sampled again.
     await page
       .waitForFunction(
         (phase) => window.__nightfallTest?.readiness().lifecyclePhase !== phase,
-        outcome === "draft-prompt"
-          ? "startup-draft-prompt"
-          : "startup-showfile-prompt",
-        { timeout: 1_000 },
+        `startup-${outcome}`,
+        // The backup pair dialog closes on its own once the primary's show loads.
+        { timeout: outcome === "backup-prompt" ? remainingMs() : 1_000 },
       )
       .catch(() => undefined);
   }

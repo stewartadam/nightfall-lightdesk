@@ -9,3 +9,6 @@
 pub const APP_LOG_FILE_NAME: &str = "nightfall.log";
 
 pub static SHOW_DATA_DIR: &str = "default.nightfall-show";
+
+/// Folder under the data directory that holds a failover pair's show and its assets.
+pub const FAILOVER_DIR: &str = "failover";

@@ -57,8 +57,9 @@ pub use mapping_mode::{
     ControllerMappingMode, ControllerMappingModeState, MAPPING_MODE_LEASE, MappingLeaseExpired,
 };
 use nightfall_engine::prelude::{
-    ClientDisconnected, ClientFeedAppExt, ClientFeedback, CommandDeserializerRegistry,
-    CommandIngressRouter, EventHandling, InputHandling, PendingCommandExpansion, ResyncRequested,
+    ClientDisconnected, ClientFeedAppExt, ClientFeedback, ClientIngressGate,
+    CommandDeserializerRegistry, CommandIngressRouter, EventHandling, InputHandling,
+    PendingCommandExpansion, READ_ONLY_COMMAND_ERROR, ResyncRequested,
     register_command_deserializer, register_ingress_command,
 };
 pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
@@ -163,13 +164,15 @@ pub fn dispatch_action_invocations(
     }
     let now = web_time::Instant::now();
     for invocation in invocations {
-        let outcome: InvocationOutcome = world
-            .resource_scope(
+        let outcome: InvocationOutcome = match read_only_refusal(world, &invocation) {
+            Some(refusal) => Err(refusal),
+            None => world.resource_scope(
                 |world, registry: bevy_ecs::change_detection::Mut<ActionRegistry>| {
                     registry.invoke(world, &invocation)
                 },
-            )
-            .into();
+            ),
+        }
+        .into();
         let publish =
             world
                 .resource_mut::<InvocationFailureThrottle>()
@@ -189,6 +192,19 @@ pub fn dispatch_action_invocations(
                 outcome,
             });
     }
+}
+
+/// Refuses an invocation from an operator surface (MIDI, OSC, keyboard, boards, clients) while
+/// the engine is read-only, as on a backup. Timeline events stay allowed: they come from the
+/// show's own playback rather than from someone at this computer.
+fn read_only_refusal(world: &World, invocation: &ActionInvocation) -> Option<InvocationError> {
+    if invocation.surface == ActionSurface::Timeline {
+        return None;
+    }
+    let reason = world
+        .get_resource::<ClientIngressGate>()?
+        .read_only_reason()?;
+    Some(InvocationError::new(READ_ONLY_COMMAND_ERROR, reason))
 }
 
 /// Logs one invocation failure and, when admitted, writes it for client publication.
@@ -363,6 +379,39 @@ mod tests {
 
         assert_eq!(applied(&mut app), vec![TestApplied(42.0)]);
         assert_eq!(outcome, InvocationOutcome::Succeeded { output: None });
+    }
+
+    /// Verifies a read-only engine refuses controller surfaces before any domain runs, while the
+    /// show's own timeline events still play.
+    #[test]
+    fn read_only_engine_refuses_controller_surfaces_but_plays_timelines() {
+        let mut app = action_app();
+        register_trigger_action(&mut app);
+        app.world_mut()
+            .get_resource_or_init::<ClientIngressGate>()
+            .set_read_only(Some("This Nightfall is a backup.".into()));
+        let action = ActionReference::new("test.apply", json!({ "value": 7 }));
+
+        for surface in [
+            ActionSurface::Midi,
+            ActionSurface::Osc,
+            ActionSurface::Board,
+        ] {
+            let outcome = invoke(&mut app, ActionInvocation::trigger(action.clone(), surface));
+            assert!(matches!(
+                outcome,
+                InvocationOutcome::Failed(InvocationError { ref code, .. })
+                    if code == READ_ONLY_COMMAND_ERROR
+            ));
+        }
+        assert!(applied(&mut app).is_empty());
+
+        let timeline = invoke(
+            &mut app,
+            ActionInvocation::trigger(action, ActionSurface::Timeline),
+        );
+        assert_eq!(timeline, InvocationOutcome::Succeeded { output: None });
+        assert_eq!(applied(&mut app), vec![TestApplied(7.0)]);
     }
 
     /// Verifies a button press fires a trigger action and its release is ignored.

@@ -7,12 +7,13 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createEffect } from "solid-js";
+import { createEffect, createSignal, onCleanup, untrack } from "solid-js";
 import type { AvailableShowfilesResponse } from "../../../features/showfile";
 import { getBackendUrl } from "../../../lib/api";
 import {
   connectionStatus,
   EngineRuntimeStatus,
+  resyncComplete,
 } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
 import { expectedStartupShowfileName } from "../../../lib/showfile-loading";
@@ -23,6 +24,7 @@ import {
   restartAppLifecycleForBackendSessionReset,
   transitionAppLifecycle,
 } from "../../../state/app-lifecycle";
+import { $backupState } from "../../../state/settings";
 import * as types from "../../../types";
 import {
   bypassBackendReadinessForE2E,
@@ -30,6 +32,31 @@ import {
 } from "./readiness";
 
 const log = getLogger(import.meta.url);
+
+/** Longest startup waits for the backend's backup role before prompting for a show. */
+const BACKUP_ROLE_WAIT_MS = 5_000;
+
+/** Whether the operator chose to continue as the primary of a backup pair at this startup. */
+const [continuedAsPrimary, setContinuedAsPrimary] = createSignal(false);
+
+/**
+ * Leaves the backup pair dialog to open a show as the primary, then runs the usual draft check
+ * and showfile prompt. The dialog stays away for this startup unless this computer becomes a
+ * backup again.
+ */
+export function continueStartupAsPrimary(): void {
+  setContinuedAsPrimary(true);
+  restartAppLifecycleForBackendSessionReset();
+}
+
+/**
+ * Returns whether startup should show the backup pair dialog instead of the showfile prompt:
+ * this computer follows a primary, or remembers a backup and has not chosen to continue as its
+ * primary.
+ */
+function needsBackupPairPrompt(state: types.BackupState): boolean {
+  return !!state.primary_address || (!!state.backup && !continuedAsPrimary());
+}
 
 interface StartupControllerProps {
   enabled: boolean;
@@ -39,7 +66,11 @@ interface StartupControllerProps {
 /** Advances app startup through backend readiness and draft discovery. */
 export function StartupController(props: StartupControllerProps) {
   const lifecycle = useStore(appLifecycle);
+  const backup = useStore($backupState);
   let draftCheckInFlight = false;
+  const [backupRoleWaitOver, setBackupRoleWaitOver] = createSignal(false);
+  let backupRoleTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(backupRoleTimer));
 
   beginAppLifecycleStartup(props.enabled);
 
@@ -88,6 +119,39 @@ export function StartupController(props: StartupControllerProps) {
       restartAppLifecycleForBackendSessionReset();
       return;
     }
+    // Choosing to continue as primary lasts until this computer becomes a backup again.
+    if (backup().primary_address && untrack(continuedAsPrimary)) {
+      setContinuedAsPrimary(false);
+    }
+    if (state.phase === "startup-backup-prompt") {
+      // A show is open and, unless this computer follows a primary, sent from here, as after a
+      // takeover; a backup opens once it holds its primary's show.
+      if (
+        backendState === types.AppState.Ready &&
+        resyncComplete() &&
+        (!backup().primary_address ||
+          backup().link === types.BackupLinkStatus.Synced)
+      ) {
+        transitionAppLifecycle({ type: "interactive" });
+        return;
+      }
+      // After leaving the pair, or continuing as its primary, startup goes on as usual.
+      if (!needsBackupPairPrompt(backup())) {
+        restartAppLifecycleForBackendSessionReset();
+      }
+      return;
+    }
+    // A computer that joins a pair while picking a show, such as a primary that steps down for
+    // a backup that took over, gets the pair dialog instead.
+    if (
+      !props.bypassShowfilePrompt &&
+      (state.phase === "startup-showfile-prompt" ||
+        state.phase === "startup-draft-prompt") &&
+      needsBackupPairPrompt(backup())
+    ) {
+      transitionAppLifecycle({ type: "backup-prompt" });
+      return;
+    }
     // Prompt and world-swap phases are owned by the user's recovery choice.
     // The old world's Ready state can remain visible while a swap is in
     // flight or after it fails back to a prompt.
@@ -106,6 +170,25 @@ export function StartupController(props: StartupControllerProps) {
       (!bypassBackendReadinessForE2E() &&
         connectionStatus() !== EngineRuntimeStatus.Connected)
     ) {
+      return;
+    }
+    // The backup role decides which prompt comes next, so wait for it, but not forever, in case
+    // this backend has no backup support. The embedded demo has none and skips every prompt.
+    if (
+      !props.bypassShowfilePrompt &&
+      !backup().available &&
+      !backupRoleWaitOver()
+    ) {
+      backupRoleTimer ??= setTimeout(
+        () => setBackupRoleWaitOver(true),
+        BACKUP_ROLE_WAIT_MS,
+      );
+      return;
+    }
+    // A computer in a backup pair picks its role before any show: a backup takes its show
+    // from its primary, and a primary may need to follow a backup that took over.
+    if (!props.bypassShowfilePrompt && needsBackupPairPrompt(backup())) {
+      transitionAppLifecycle({ type: "backup-prompt" });
       return;
     }
     if (!props.enabled || state.startupDraftRecoveryChecked) {

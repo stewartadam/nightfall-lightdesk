@@ -129,6 +129,7 @@ export type AnyCommand =
 /** Union of websocket payloads handled on the main thread. */
 export type AnyWsMessage =
   | types.AudioWsMessage
+  | types.BackupWsMessage
   | types.BoardWsMessage
   | types.ClipWsMessage
   | types.ControlsWsMessage

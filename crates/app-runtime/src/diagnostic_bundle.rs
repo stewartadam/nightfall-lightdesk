@@ -347,6 +347,7 @@ mod tests {
                 options(None, mode),
                 Some(DiagnosticShowfile {
                     snapshot,
+                    showfile_name: None,
                     asset_root: source.clone(),
                     source: "current engine state",
                 }),
@@ -390,6 +391,7 @@ mod tests {
             options(None, ShowfileMode::ShowfileReferences),
             Some(DiagnosticShowfile {
                 snapshot,
+                showfile_name: None,
                 asset_root: source.to_owned(),
                 source: "current engine state",
             }),

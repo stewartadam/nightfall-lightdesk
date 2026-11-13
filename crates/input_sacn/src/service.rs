@@ -199,6 +199,11 @@ impl SacnInputWorker {
 
                     match receiver.recv(Some(Duration::from_millis(250))) {
                         Ok(frames) => {
+                            nightfall_io::note_sacn_sources_heard(
+                                frames
+                                    .iter()
+                                    .filter_map(|frame| frame.src_cid.map(|cid| *cid.as_bytes())),
+                            );
                             for frame in frames {
                                 if frame.values.is_empty() || frame.values[0] != 0 {
                                     continue;

@@ -26,6 +26,7 @@ pub mod ast_conv;
 pub mod components;
 pub mod events;
 pub mod external;
+pub mod live_state;
 pub mod systems;
 pub mod timecode;
 mod undo;
@@ -51,6 +52,12 @@ impl Plugin for TimecodePlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering TimecodePlugin");
         register_client_command::<TimecodeCommand>(app, Undo::Captured);
+        app.forward_commands_to_backup::<TimecodeCommand>(&[
+            "StartTimecode",
+            "PauseTimecode",
+            "StopTimecode",
+            "SeekTimecode",
+        ]);
         app.add_message::<EngineOperationEnvelope<TimecodeOperation>>();
         app.add_message::<TimecodeEvent>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<
@@ -59,6 +66,11 @@ impl Plugin for TimecodePlugin {
 
         app.init_resource::<DataProvider<timecode::Timecode>>();
         app.init_resource::<external::ExternalTimecodeFeeds>();
+        app.register_live_state(
+            live_state::TIMECODES_LIVE_STATE,
+            live_state::capture_live_timecodes,
+            live_state::restore_live_timecodes,
+        );
 
         // Register undoable commands
         app.world_mut()

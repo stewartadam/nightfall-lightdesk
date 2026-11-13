@@ -35,7 +35,10 @@ pub mod websocket;
 pub use external_control::commands::ExternalControlCommand;
 pub use external_control::{ExternalControlSettings, ExternalControlState};
 pub use origin::is_local_client;
-pub use pairing::{RemotePairingAttempt, RemotePairingPin, RemotePairingStatus};
+pub use pairing::{
+    PUBLIC_API_PREFIX, RemotePairingAttempt, RemotePairingPin, RemotePairingStatus,
+    backup_pair_key, set_backup_pair_key,
+};
 pub use web_ui::{SharedWebUiAssets, WebUiAssets};
 
 /// Prelude for ergonomic imports
@@ -43,7 +46,7 @@ pub mod prelude {
     pub use crate::is_local_client;
     pub use crate::routes::HttpRouteRegistry;
     pub use crate::websocket::AxumAppState;
-    pub use crate::{SharedWebUiAssets, WebUiAssets, WebsocketHost, WebsocketPlugin};
+    pub use crate::{BackendPort, SharedWebUiAssets, WebUiAssets, WebsocketHost, WebsocketPlugin};
 }
 
 /// Resource used to signal axum task shutdown once we receive an AppExit event.
@@ -105,6 +108,10 @@ struct RunningServer {
     listener_control: external_control::ListenerControl,
 }
 
+/// Port the backend HTTP and WebSocket server listens on, as configured at startup.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BackendPort(pub u16);
+
 /// Plugin for adding WebSocket output on a configured backend port.
 pub struct WebsocketPlugin {
     bind_port: u16,
@@ -136,6 +143,7 @@ impl Plugin for WebsocketPlugin {
         app.insert_resource(AxumShutdownSignal {
             tx: host.shutdown_tx.clone(),
         });
+        app.insert_resource(BackendPort(self.bind_port));
         app.insert_resource(AxumTaskConfig {
             bind_port: self.bind_port,
             shutdown_tx: host.shutdown_tx.clone(),

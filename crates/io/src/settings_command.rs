@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     InputSignalLossPolicy, InputUniverseVisibilityMode, IoRuntimeSettings, NetworkDmxOutputTargets,
     UsbDmxOutputTargets, sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout,
-    sanitize_sacn_sync_universe,
+    sanitize_sacn_priority, sanitize_sacn_sync_universe,
 };
 
 /// Commands that change [`IoRuntimeSettings`].
@@ -49,6 +49,8 @@ pub enum IoSettingsCommand {
     SetSacnSyncEnabled(bool),
     /// Set the universe sACN synchronization packets are sent on; clamped to 1..=63999.
     SetSacnSyncUniverse(u16),
+    /// Set the sACN source priority for every output universe; clamped to 1..=200.
+    SetSacnPriority(u8),
     /// Set whether input views show only external inputs or every detected input.
     SetInputUniverseVisibilityMode(InputUniverseVisibilityMode),
 }
@@ -56,7 +58,8 @@ pub enum IoSettingsCommand {
 impl IngressCommand for IoSettingsCommand {}
 
 /// Writes one transport settings change, sanitizing output targets and clamping the signal-loss
-/// timeout, output rate and sACN sync universe into their supported ranges. These edits cannot fail.
+/// timeout, output rate, sACN priority and sACN sync universe into their supported ranges. These
+/// edits cannot fail.
 pub(crate) fn apply(
     command: &IoSettingsCommand,
     settings: &mut IoRuntimeSettings,
@@ -93,6 +96,9 @@ pub(crate) fn apply(
         IoSettingsCommand::SetSacnSyncEnabled(enabled) => settings.sacn_sync_enabled = *enabled,
         IoSettingsCommand::SetSacnSyncUniverse(universe) => {
             settings.sacn_sync_universe = sanitize_sacn_sync_universe(*universe);
+        }
+        IoSettingsCommand::SetSacnPriority(priority) => {
+            settings.sacn_priority = sanitize_sacn_priority(*priority);
         }
         IoSettingsCommand::SetInputUniverseVisibilityMode(mode) => {
             settings.input_universe_visibility_mode = *mode;
@@ -133,13 +139,25 @@ mod tests {
         );
     }
 
-    /// Verifies the output rate and signal-loss timeout are clamped into their supported ranges,
-    /// since any connected client can send them.
+    /// Verifies the output rate, sACN priority and signal-loss timeout are clamped into their
+    /// supported ranges, since any connected client can send them.
     #[test]
     fn rate_and_timeout_are_clamped() {
         assert_eq!(
             applied(IoSettingsCommand::SetDmxOutputRate(10_000)).dmx_output_rate_hz,
             MAX_DMX_OUTPUT_RATE_HZ
+        );
+        assert_eq!(
+            applied(IoSettingsCommand::SetSacnPriority(0)).sacn_priority,
+            crate::MIN_SACN_PRIORITY
+        );
+        assert_eq!(
+            applied(IoSettingsCommand::SetSacnPriority(201)).sacn_priority,
+            crate::MAX_SACN_PRIORITY
+        );
+        assert_eq!(
+            applied(IoSettingsCommand::SetSacnPriority(150)).sacn_priority,
+            150
         );
         assert_eq!(
             applied(IoSettingsCommand::SetInputSignalLossTimeout(Duration::ZERO))

@@ -20,6 +20,7 @@ use serde_json::Value;
 
 use super::{SettingsAppExt, SettingsSection};
 use crate::prelude::{CommandError, EnginePayload, IngressCommand};
+use crate::protocol::engine_command::EngineIngressMeta;
 
 /// Serialized Dockview panel metadata stored alongside a named panel layout.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -195,10 +196,32 @@ fn apply(command: &PanelLayoutCommand, layouts: &mut PanelLayouts) -> Result<(),
     }
 }
 
+/// The `type` tag of every [`PanelLayoutCommand`] variant.
+const LAYOUT_COMMAND_TYPES: [&str; 7] = [
+    "Create",
+    "SaveArrangement",
+    "Rename",
+    "SetVisibility",
+    "Delete",
+    "Reorder",
+    "SetDefault",
+];
+
 /// Registers the layouts section and its command.
+///
+/// Layout edits stay allowed on a read-only engine: they only arrange panels, the web UI makes
+/// them on its own whenever a show opens without layouts or panels move, and a backup's operator
+/// still arranges panels to watch the show. The next copy from the primary replaces them.
 pub(super) fn build(app: &mut App) {
     app.register_settings_section(PanelLayouts::SECTION);
     app.add_settings_command(apply);
+    for command_type in LAYOUT_COMMAND_TYPES {
+        crate::client_ingress::allow_command_while_read_only(
+            app,
+            PanelLayoutCommand::COMMAND_MODULE,
+            command_type,
+        );
+    }
 }
 
 /// Adds a new named layout at the end of the list.
@@ -592,5 +615,51 @@ mod tests {
         settings.layouts.pop();
         settings.default_layout_id = Some("a".into());
         assert!(matches!(settings.for_showfile(), Cow::Borrowed(_)));
+    }
+
+    /// Every layout command variant is listed as allowed on a read-only engine; the exhaustive
+    /// match stops a new variant from compiling until it is listed here too.
+    #[test]
+    fn every_layout_command_stays_allowed_while_read_only() {
+        let commands = [
+            PanelLayoutCommand::Create(layout("a", true)),
+            PanelLayoutCommand::SaveArrangement(PanelLayoutArrangement {
+                id: "a".into(),
+                version: 2,
+                layout: json!({}),
+                panels: Vec::new(),
+            }),
+            PanelLayoutCommand::Rename(PanelLayoutRename {
+                id: "a".into(),
+                name: "A".into(),
+            }),
+            PanelLayoutCommand::SetVisibility(PanelLayoutVisibility {
+                id: "a".into(),
+                shown_in_switcher: false,
+            }),
+            PanelLayoutCommand::Delete("a".into()),
+            PanelLayoutCommand::Reorder(vec!["a".into()]),
+            PanelLayoutCommand::SetDefault(None),
+        ];
+        for command in &commands {
+            match command {
+                PanelLayoutCommand::Create(_)
+                | PanelLayoutCommand::SaveArrangement(_)
+                | PanelLayoutCommand::Rename(_)
+                | PanelLayoutCommand::SetVisibility(_)
+                | PanelLayoutCommand::Delete(_)
+                | PanelLayoutCommand::Reorder(_)
+                | PanelLayoutCommand::SetDefault(_) => {}
+            }
+            let value = serde_json::to_value(command).expect("layout command serializes");
+            let command_type = value["type"]
+                .as_str()
+                .expect("layout command has a type tag");
+            assert!(
+                LAYOUT_COMMAND_TYPES.contains(&command_type),
+                "{command_type}"
+            );
+        }
+        assert_eq!(commands.len(), LAYOUT_COMMAND_TYPES.len());
     }
 }

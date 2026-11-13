@@ -46,8 +46,10 @@ pub(super) fn import_showfile_path(options: &ShowfileImportOptions) -> Result<Pa
         .map(str::trim)
         .filter(|path| !path.is_empty())
     {
-        Some(path) => resolve_import_showfile_path(Path::new(path), &showfile_root_dir_path()?),
-        None => showfile_path(None),
+        Some(path) => resolve_import_showfile_path(Path::new(path), &showfile_library_root_path()?),
+        None => Ok(showfile_snapshot_path_in_dir(&library_showfile_dir_path(
+            None,
+        )?)),
     }
 }
 

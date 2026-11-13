@@ -37,7 +37,7 @@ use std::{
 pub use input::{
     ARTNET_SOURCE_TIMEOUT, AcceptedDmxFrame, ArtNetRecentFramesByUniverse, DmxInputSet,
     IoRuntimeNotification, RouteTransport, SACN_SOURCE_TIMEOUT, SacnOutputIdentity,
-    UniverseSourceMerge,
+    UniverseSourceMerge, note_sacn_sources_heard, sacn_source_heard_within,
 };
 pub use network_stats::{NetworkOutputSendFailure, NetworkStats};
 #[cfg(feature = "plugin")]
@@ -56,22 +56,24 @@ pub mod prelude {
     pub use crate::{
         ARTNET_SOURCE_TIMEOUT, AcceptedDmxFrame, ArtNetDelivery, ArtNetRecentFramesByUniverse,
         CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ,
-        DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, DEFAULT_USB_DMX_DEVICE_SELECTOR, DmxInputSet,
-        FTDI_FT232R_PRODUCT_ID, FTDI_VENDOR_ID, InputSignalLossPolicy, InputUniverseVisibilityMode,
-        IoRuntimeNotification, IoRuntimeSettings, MAX_DMX_OUTPUT_RATE_HZ, MAX_SACN_UNIVERSE,
-        MIN_DMX_OUTPUT_RATE_HZ, MIN_SACN_UNIVERSE, NetworkDmxDelivery, NetworkDmxOutputTarget,
-        NetworkDmxOutputTargets, NetworkDmxProtocol, NetworkInterfaceInfo, NetworkInterfaceState,
-        NetworkInterfaceStatus, NetworkOutputSendFailure, NetworkStats, OutputTransport,
-        RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS, RouteTransport,
-        SACN_SOURCE_TIMEOUT, SacnDelivery, SacnOutputIdentity, TransportRuntimePolicy,
-        UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UniverseSourceMerge, UsbDmxDeviceIdentity,
-        UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets, dmx_output_interval,
-        get_available_interfaces, get_default_interface, ipv4_directed_broadcast,
-        is_reserved_network_dmx_target_id, is_reserved_usb_dmx_target_id,
-        is_valid_network_dmx_target_id, output_transport_to_target_id,
-        resolve_configured_network_interface, resolve_network_interface_status,
-        resolve_usb_dmx_selectors, sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout,
-        sanitize_sacn_sync_universe, usb_dmx_device_label, usb_dmx_device_selector,
+        DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS, DEFAULT_SACN_PRIORITY,
+        DEFAULT_USB_DMX_DEVICE_SELECTOR, DmxInputSet, DmxOutputStandby, FTDI_FT232R_PRODUCT_ID,
+        FTDI_VENDOR_ID, InputSignalLossPolicy, InputUniverseVisibilityMode, IoRuntimeNotification,
+        IoRuntimeSettings, MAX_DMX_OUTPUT_RATE_HZ, MAX_SACN_PRIORITY, MAX_SACN_UNIVERSE,
+        MIN_DMX_OUTPUT_RATE_HZ, MIN_SACN_PRIORITY, MIN_SACN_UNIVERSE, NetworkDmxDelivery,
+        NetworkDmxOutputTarget, NetworkDmxOutputTargets, NetworkDmxProtocol, NetworkInterfaceInfo,
+        NetworkInterfaceState, NetworkInterfaceStatus, NetworkOutputSendFailure, NetworkStats,
+        OutputTransport, RESERVED_NETWORK_DMX_TARGET_KEYWORDS, RESERVED_USB_DMX_TARGET_KEYWORDS,
+        RouteTransport, SACN_SOURCE_TIMEOUT, SacnDelivery, SacnOutputIdentity,
+        TransportRuntimePolicy, UDMX_PRODUCT_ID, UDMX_VENDOR_ID, UniverseSourceMerge,
+        UsbDmxDeviceIdentity, UsbDmxDeviceInfo, UsbDmxOutputTarget, UsbDmxOutputTargets,
+        dmx_output_interval, effective_sacn_priority, get_available_interfaces,
+        get_default_interface, ipv4_directed_broadcast, is_reserved_network_dmx_target_id,
+        is_reserved_usb_dmx_target_id, is_valid_network_dmx_target_id,
+        output_transport_to_target_id, resolve_configured_network_interface,
+        resolve_network_interface_status, resolve_usb_dmx_selectors, sanitize_dmx_output_rate_hz,
+        sanitize_input_signal_loss_timeout, sanitize_sacn_priority, sanitize_sacn_sync_universe,
+        usb_dmx_device_label, usb_dmx_device_selector,
     };
     #[cfg(feature = "plugin")]
     pub use crate::{IO_SETTINGS_SECTION, IoPlugin, IoSettingsCommand, IoStateSync};
@@ -79,14 +81,16 @@ pub mod prelude {
 
 pub use settings::{
     CurrentNetworkInterfaceMode, DEFAULT_DMX_OUTPUT_RATE_HZ, DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS,
-    DEFAULT_SACN_SYNC_UNIVERSE, InputSignalLossPolicy, IoRuntimeSettings, MAX_DMX_OUTPUT_RATE_HZ,
-    MAX_SACN_UNIVERSE, MIN_DMX_OUTPUT_RATE_HZ, MIN_SACN_UNIVERSE, NetworkInterfaceInfo,
+    DEFAULT_SACN_PRIORITY, DEFAULT_SACN_SYNC_UNIVERSE, DmxOutputStandby, InputSignalLossPolicy,
+    IoRuntimeSettings, MAX_DMX_OUTPUT_RATE_HZ, MAX_SACN_PRIORITY, MAX_SACN_UNIVERSE,
+    MIN_DMX_OUTPUT_RATE_HZ, MIN_SACN_PRIORITY, MIN_SACN_UNIVERSE, NetworkInterfaceInfo,
     NetworkInterfaceState, NetworkInterfaceStatus, TransportRuntimePolicy, UsbDmxDeviceInfo,
     default_dmx_output_rate_hz, default_input_signal_loss_timeout, default_network_input_enabled,
     default_network_output_enabled, default_sacn_sync_universe, default_usb_output_enabled,
-    dmx_output_interval, get_available_interfaces, get_default_interface, ipv4_directed_broadcast,
-    resolve_configured_network_interface, resolve_network_interface_status,
-    sanitize_dmx_output_rate_hz, sanitize_input_signal_loss_timeout, sanitize_sacn_sync_universe,
+    dmx_output_interval, effective_sacn_priority, get_available_interfaces, get_default_interface,
+    ipv4_directed_broadcast, resolve_configured_network_interface,
+    resolve_network_interface_status, sanitize_dmx_output_rate_hz,
+    sanitize_input_signal_loss_timeout, sanitize_sacn_priority, sanitize_sacn_sync_universe,
     usb_dmx_device_label,
 };
 

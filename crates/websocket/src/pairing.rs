@@ -14,6 +14,11 @@
 //! request and websocket upgrade on its own. Tokens live only in memory: restarting the app
 //! or regenerating the PIN signs every device out.
 //!
+//! The one exception is the key a primary and its backup share, set with
+//! [`set_backup_pair_key`]. The backup crate stores it with the backup role, so the two
+//! computers stay paired with each other across restarts, role swaps and new PINs, until either
+//! leaves the pair.
+//!
 //! Browsers on the operator's own computer never need the PIN; devices relayed by a local
 //! dev proxy still do (see [`crate::origin::is_local_client`]). Static web UI
 //! files stay public so a new device can load the page that asks for it; `/ws` and every
@@ -68,6 +73,11 @@ pub struct RemotePairingPin {
 
 /// Endpoint a device uses to learn whether it must pair and to submit the PIN.
 pub(crate) const PAIRING_PATH: &str = "/api/pairing";
+
+/// Prefix of routes any device on the network may read without pairing. They report facts
+/// other Nightfall hosts need before pairing, such as a backup's role, and never control the
+/// backend.
+pub const PUBLIC_API_PREFIX: &str = "/api/public/";
 
 /// Loopback-only endpoint that shows or regenerates the PIN for the operator.
 pub(crate) const PAIRING_PIN_PATH: &str = "/api/pairing/pin";
@@ -145,10 +155,13 @@ impl RemotePairing {
     /// sessions afterwards; a websocket that registers after this returns re-checks its
     /// token and is refused.
     pub(crate) fn regenerate(&self) -> String {
-        let mut state = self.state.lock().unwrap();
-        state.pin = random_pin();
-        state.tokens.clear();
-        state.pin.clone()
+        let pin = {
+            let mut state = self.state.lock().unwrap();
+            state.pin = random_pin();
+            state.tokens.clear();
+            state.pin.clone()
+        };
+        pin
     }
 
     /// Checks a PIN from `peer`, issuing a token on success and throttling repeated misses.
@@ -176,9 +189,12 @@ impl RemotePairing {
         PairingOutcome::Incorrect
     }
 
-    /// Returns whether `token` was issued during this app session and is still valid.
+    /// Returns whether `token` was issued during this app session and is still valid, or is the
+    /// key this host shares with its backup or primary.
     pub(crate) fn token_valid(&self, token: Option<&str>) -> bool {
-        token.is_some_and(|token| self.state.lock().unwrap().tokens.contains(token))
+        token.is_some_and(|token| {
+            is_backup_pair_key(token) || self.state.lock().unwrap().tokens.contains(token)
+        })
     }
 
     /// Extracts this backend's pairing token from the request's `Cookie` headers.
@@ -211,6 +227,35 @@ fn random_pin() -> String {
     format!("{:06}", uuid::Uuid::new_v4().as_u128() % 1_000_000)
 }
 
+/// The key a primary and its backup share, accepted like a pairing token. Kept outside
+/// [`RemotePairing`] since the backup role, not the app session, owns it.
+static BACKUP_PAIR_KEY: Mutex<Option<String>> = Mutex::new(None);
+
+/// Replaces the key a primary and its backup share, or forgets it with `None`. Requests that
+/// carry it in this backend's pairing cookie pass as paired, even after a restart or a new PIN.
+pub fn set_backup_pair_key(key: Option<String>) {
+    *BACKUP_PAIR_KEY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = key;
+}
+
+/// Returns the key this host shares with its backup or primary, if any.
+pub fn backup_pair_key() -> Option<String> {
+    BACKUP_PAIR_KEY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Returns whether `token` is the key this host shares with its backup or primary.
+fn is_backup_pair_key(token: &str) -> bool {
+    BACKUP_PAIR_KEY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_deref()
+        == Some(token)
+}
+
 /// Returns how long an address must wait after its `count`th consecutive miss.
 ///
 /// The first few misses are free so a typo costs nothing; after that the wait doubles with
@@ -222,12 +267,13 @@ fn lockout(count: u32) -> Option<Duration> {
 
 /// Returns whether a path controls the backend and so needs a paired device.
 ///
-/// The pairing endpoint itself stays open so a new device can submit the PIN, and the
-/// web UI files stay open so it can load the page that asks for it.
+/// The pairing endpoint itself stays open so a new device can submit the PIN, the web UI
+/// files stay open so it can load the page that asks for it, and routes under
+/// [`PUBLIC_API_PREFIX`] stay open for other Nightfall hosts.
 fn requires_pairing(path: &str) -> bool {
     let controls_backend =
         path == "/ws" || path.starts_with("/ws/") || path == "/api" || path.starts_with("/api/");
-    controls_backend && path != PAIRING_PATH
+    controls_backend && path != PAIRING_PATH && !path.starts_with(PUBLIC_API_PREFIX)
 }
 
 /// Refuses remote requests to backend routes until the device has paired.
@@ -453,6 +499,22 @@ mod tests {
         assert_eq!(lockout(FREE_ATTEMPTS + 40), Some(MAX_LOCKOUT));
     }
 
+    /// The key shared with a backup passes as paired until it is forgotten, and a new PIN, which
+    /// signs every device out, keeps it.
+    #[test]
+    fn backup_pair_key_passes_until_forgotten() {
+        let pairing = RemotePairing::new(3030);
+        assert!(!pairing.token_valid(Some("pair-key")));
+        set_backup_pair_key(Some("pair-key".into()));
+        assert!(pairing.token_valid(Some("pair-key")));
+        set_backup_pair_key(None);
+        assert!(!pairing.token_valid(Some("pair-key")));
+        set_backup_pair_key(Some("pair-key".into()));
+        pairing.regenerate();
+        assert!(pairing.token_valid(Some("pair-key")));
+        set_backup_pair_key(None);
+    }
+
     /// Regenerating the PIN signs out every paired device.
     #[test]
     fn regenerating_revokes_tokens() {
@@ -473,7 +535,7 @@ mod tests {
         }
     }
 
-    /// Only backend routes other than the pairing endpoint are gated.
+    /// Only backend routes other than the pairing endpoint and public routes are gated.
     #[test]
     fn gate_covers_backend_routes_only() {
         for path in ["/ws", "/api/showfiles", "/api", PAIRING_PIN_PATH] {
@@ -485,6 +547,7 @@ mod tests {
             "/assets/index-abc.js",
             "/cues",
             PAIRING_PATH,
+            "/api/public/backup/status",
         ] {
             assert!(!requires_pairing(path), "{path}");
         }

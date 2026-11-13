@@ -110,6 +110,7 @@ use nightfall_showfile::{
 };
 #[cfg(test)]
 use nightfall_showfile::{ShowfileLoadDomain, ordered_showfile_load_domains};
+pub(crate) use paths::select_library_show_storage;
 use paths::*;
 pub(crate) use save::{
     persist_new_showfile_draft_from_world, refresh_clean_snapshot_hash_after_showfile_bootstrap,
@@ -117,12 +118,12 @@ pub(crate) use save::{
 };
 use save::{save_showfile, update_clean_snapshot_hash, update_clean_snapshot_hash_from_saved_show};
 pub use state::{CurrentShowfile, ShowfileCleanSnapshotHash};
-pub(crate) use storage::read_showfile_snapshot_from_path;
 use storage::{
     hash_showfile_snapshot_with_metadata, read_showfile_snapshot,
     repair_showfile_manifest_for_existing_snapshot_to_dir, replace_showfile_dir_with_temp,
     temporary_showfile_dir, write_showfile_snapshot_with_manifest_to_dir,
 };
+pub(crate) use storage::{live_showfile_revision, read_showfile_snapshot_from_path};
 use trash::{
     empty_showfile_trash_in_root, restore_trashed_showfile_in_root, trash_showfile_in_root,
 };

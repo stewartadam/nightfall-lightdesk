@@ -129,9 +129,22 @@ impl WorldFactory {
             bevy_app.add_plugins(crate::telemetry::TelemetryPlugin { host: host.clone() });
         }
 
-        let clean_hash_result: Result<(), String> = match bootstrap {
+        // A world that fails to build leaves the open show where it is stored.
+        let storage_was_failover = nightfall::show_storage_is_failover();
+        let built = self.bootstrap_world(&mut bevy_app, bootstrap);
+        if built.is_err() {
+            nightfall::set_show_storage_failover(storage_was_failover);
+        }
+        built?;
+
+        Ok(bevy_app)
+    }
+
+    /// Fills a freshly built app from empty, sample, or showfile data.
+    fn bootstrap_world(&self, bevy_app: &mut App, bootstrap: WorldBootstrap) -> Result<(), String> {
+        match bootstrap {
             WorldBootstrap::Empty { showfile_name } => finalize_new_world(
-                &mut bevy_app,
+                bevy_app,
                 showfile_name.as_deref(),
                 false,
                 self.runtime_config.resource_dir.as_deref(),
@@ -139,7 +152,7 @@ impl WorldFactory {
             WorldBootstrap::SampleData { showfile_name } => {
                 sample_data::populate_sample_entities(bevy_app.world_mut());
                 finalize_new_world(
-                    &mut bevy_app,
+                    bevy_app,
                     showfile_name.as_deref(),
                     true,
                     self.runtime_config.resource_dir.as_deref(),
@@ -159,10 +172,7 @@ impl WorldFactory {
                 bevy_app.insert_state(AppState::Ready);
                 Ok(())
             }
-        };
-        clean_hash_result?;
-
-        Ok(bevy_app)
+        }
     }
 
     /// Run a fixed number of update ticks to warm staged systems/resources.
@@ -245,6 +255,7 @@ fn finalize_new_world(
     seeded: bool,
     resource_dir: Option<&std::path::Path>,
 ) -> Result<(), String> {
+    crate::systems::showfile_events::select_library_show_storage();
     add_default_show_masters(&mut app.world_mut().resource_mut::<DataProvider<Master>>())
         .map_err(|error| format!("failed to add default show masters: {error}"))?;
     app.world_mut()

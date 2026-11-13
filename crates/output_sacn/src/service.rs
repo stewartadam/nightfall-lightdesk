@@ -10,13 +10,15 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use bevy_ecs::prelude::Resource;
 use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
-use nightfall_io::prelude::{IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy};
+use nightfall_io::prelude::{
+    DEFAULT_SACN_PRIORITY, IoRuntimeSettings, NetworkInterfaceState, TransportRuntimePolicy,
+};
 use nightfall_service_host::prelude::{
     FixedRatePeriod, FixedRateWorker, ModeWorkerSlot, process_singleton,
 };
@@ -66,7 +68,7 @@ pub struct SacnOutputReport {
 }
 
 /// State shared between ECS clients and the worker thread.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct SacnShared {
     /// Frames transmitted on every tick, replaced by each engine frame.
     frames: Mutex<Arc<Vec<SacnFrame>>>,
@@ -80,6 +82,22 @@ struct SacnShared {
     /// Universe the worker synchronizes on, or 0 for no synchronization, the value E1.31 uses
     /// in data packets for the same meaning.
     sync_universe: AtomicU16,
+    /// Source priority stamped on every universe from the next tick onwards.
+    priority: AtomicU8,
+}
+
+impl Default for SacnShared {
+    /// Starts with no frames, no worker, no synchronization and the standard default priority.
+    fn default() -> Self {
+        Self {
+            frames: Mutex::default(),
+            report: Mutex::default(),
+            running: AtomicBool::new(false),
+            source_cid: Mutex::default(),
+            sync_universe: AtomicU16::new(0),
+            priority: AtomicU8::new(DEFAULT_SACN_PRIORITY),
+        }
+    }
 }
 
 /// sACN output client used inside ECS worlds.
@@ -106,6 +124,16 @@ impl SacnOutputClient {
             .lock()
             .map(|mut report| std::mem::take(&mut *report))
             .unwrap_or_default()
+    }
+
+    /// Sets the source priority the worker stamps on every universe from its next tick onwards.
+    pub fn set_priority(&self, priority: u8) {
+        self.shared.priority.store(priority, Ordering::Relaxed);
+    }
+
+    /// Returns the source priority the worker currently transmits at.
+    pub fn priority(&self) -> u8 {
+        self.shared.priority.load(Ordering::Relaxed)
     }
 
     /// Return the local sACN source CID, if configured.
@@ -242,6 +270,7 @@ fn transmit_tick(
     let mut outcomes = Vec::with_capacity(frames.len());
     let mut flow = ControlFlow::Continue(());
     let sync_universe = client.sync_universe();
+    let priority = client.priority();
 
     for frame in frames.iter() {
         let key = (frame.universe, frame.unicast_ip);
@@ -249,6 +278,7 @@ fn transmit_tick(
             source,
             registered_universes,
             frame,
+            priority,
             sync_universe,
             unicast_port,
         ) {
@@ -375,7 +405,7 @@ fn terminate_unpublished_universes(
     });
 }
 
-/// Sends one universe, registering it with the source first and once more if the source
+/// Sends one universe at `priority`, registering it with the source first and once more if the source
 /// reports it was dropped. Data names `sync_universe` as its synchronization address, so
 /// receivers that support sync hold it until the matching sync packet arrives. The sync
 /// universe itself is never registered, which keeps it out of the source's universe discovery
@@ -384,6 +414,7 @@ fn send_universe(
     source: &mut SacnSource,
     registered_universes: &mut HashSet<u16>,
     frame: &SacnFrame,
+    priority: u8,
     sync_universe: Option<u16>,
     unicast_port: u16,
 ) -> Result<(), SacnError> {
@@ -403,7 +434,7 @@ fn send_universe(
     let dst_ip = frame
         .unicast_ip
         .map(|ip| SocketAddr::new(ip.into(), unicast_port));
-    let result = source.send(&[universe], &payload, Some(100), dst_ip, sync_universe);
+    let result = source.send(&[universe], &payload, Some(priority), dst_ip, sync_universe);
     if !matches!(result, Err(SacnError::UniverseNotRegistered(_))) {
         return result;
     }
@@ -417,7 +448,7 @@ fn send_universe(
         );
     })?;
     registered_universes.insert(universe);
-    source.send(&[universe], &payload, Some(100), dst_ip, sync_universe)
+    source.send(&[universe], &payload, Some(priority), dst_ip, sync_universe)
 }
 
 /// Prefix DMX payload bytes with the required sACN start code byte.

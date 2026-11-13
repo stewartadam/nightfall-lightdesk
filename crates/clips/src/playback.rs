@@ -55,6 +55,12 @@ impl Plugin for ClipsPlugin {
         app.init_resource::<clip_events::PendingClipPlaybackSpeeds>();
         app.init_resource::<ArmedLaunches>();
         app.init_resource::<InstanceIndex>();
+        app.init_resource::<crate::live_state::PendingLiveClips>();
+        app.register_live_state(
+            crate::CLIPS_LIVE_STATE,
+            crate::live_state::capture_live_clips,
+            crate::live_state::restore_live_clips,
+        );
 
         register_client_command::<ClipCommand>(app, Undo::Captured);
         register_engine_operation::<ClipOperation>(app);
@@ -62,6 +68,22 @@ impl Plugin for ClipsPlugin {
         register_clip_source_routing(app);
         crate::register_clip_actions(app);
         register_client_command::<InstanceCommand>(app, Undo::Captured);
+        app.forward_commands_to_backup::<ClipCommand>(&[
+            "StartClip",
+            "StartClipAtTiming",
+            "StopClip",
+            "StopClipAtTiming",
+            "GoClip",
+            "BackClip",
+            "LaunchArmed",
+            "SetSpeed",
+            "GotoClip",
+        ])
+        .forward_commands_to_backup::<InstanceCommand>(&[
+            "StopAll",
+            "StopByTag",
+            "StopByKind",
+        ]);
         register_engine_operation::<PlaybackOperation>(app);
         register_engine_operation::<PlaybackReleaseOperation>(app);
         app.add_message::<InstanceControlUpdate>();
@@ -126,7 +148,12 @@ impl Plugin for ClipsPlugin {
         // they are applied after both, in every update.
         app.add_systems(
             PostUpdate,
-            clip_events::handle_clip_playback_attachments.before(ClientFeedback),
+            (
+                clip_events::handle_clip_playback_attachments,
+                crate::live_state::settle_pending_live_clips,
+            )
+                .chain()
+                .before(ClientFeedback),
         );
 
         app.add_systems(

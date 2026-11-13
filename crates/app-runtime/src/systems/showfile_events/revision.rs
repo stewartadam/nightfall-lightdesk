@@ -24,7 +24,7 @@ pub(super) fn resolve_showfile_revision_directory(
             selection.revision_name
         ));
     }
-    let show_data_dir = showfile_dir_path(Some(&showfile_name))?;
+    let show_data_dir = library_showfile_dir_path(Some(&showfile_name))?;
     let revision_stem = showfile_name_stem(Some(&selection.revision_name))?;
     let revision_name = format!("{revision_stem}.{SHOWFILE_FOLDER_EXTENSION}");
     let revision_dir = list_show_data_backup_directories(&show_data_dir)?

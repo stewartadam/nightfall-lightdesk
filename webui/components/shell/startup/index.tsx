@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal } from "solid-js";
+import { BackupPairStartupDialog } from "../../../features/io";
 import { OpenShowfileModal } from "../../../features/showfile";
 import { markResyncPending } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
@@ -23,6 +24,7 @@ import {
   appLifecycle,
   transitionAppLifecycle,
 } from "../../../state/app-lifecycle";
+import { continueStartupAsPrimary } from "./controller";
 import { shouldShowStartupSplash, startupPhaseForLifecycle } from "./model";
 import {
   clearE2eAutoOpenStartupShowfileRequest,
@@ -232,6 +234,21 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
     }).finally(clearE2eAutoOpenStartupShowfileRequest);
   });
 
+  /**
+   * Closes the picker after following a primary. Startup moves to the backup pair dialog once the
+   * new role arrives, and the dialog opens the app when the primary's show has loaded.
+   */
+  const followFromStartup = () => {
+    setStartupShowfilePickerOpen(false);
+  };
+
+  /** Closes a picker opened from the draft prompt once startup moves to the backup pair dialog. */
+  createEffect(() => {
+    if (lifecycle().phase === "startup-backup-prompt") {
+      setStartupShowfilePickerOpen(false);
+    }
+  });
+
   return (
     <>
       <StartupSplashTransition
@@ -256,6 +273,11 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
         open={showStartupShowfilePicker()}
         onClose={closeStartupShowfilePicker}
         onOpen={openStartupShowfileSelection}
+        onFollowed={followFromStartup}
+      />
+      <BackupPairStartupDialog
+        open={lifecycle().phase === "startup-backup-prompt"}
+        onContinueAsPrimary={continueStartupAsPrimary}
       />
     </>
   );

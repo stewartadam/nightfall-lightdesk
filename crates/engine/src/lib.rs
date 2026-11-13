@@ -30,11 +30,13 @@ mod client;
 pub mod client_bridge;
 pub mod client_feed;
 pub mod client_ingress;
+pub mod command_forwarding;
 pub mod command_lifecycle;
 pub mod data_provider;
 pub mod eval;
 pub mod eval_action;
 pub mod frame_waker;
+pub mod live_state;
 pub mod logging;
 mod metrics;
 pub mod object_changes;
@@ -47,6 +49,7 @@ pub mod reference_index;
 pub mod render_pass;
 pub mod resync;
 pub mod runtime_capabilities;
+pub mod session_history;
 pub mod settings;
 pub mod ui_notification;
 pub mod variables;
@@ -107,7 +110,14 @@ pub mod prelude {
         ClientFeed, ClientFeedAppExt, ClientFeedBuilder, ResourceFeed, ResourceFeedParam, every,
         publish_client_feed, resync_client_feed,
     };
-    pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
+    pub use crate::client_ingress::{
+        ClientIngressGate, CommandJsonEnvelopeReceiver, READ_ONLY_COMMAND_ERROR,
+        UpdateJsonEnvelopeReceiver, allow_command_while_read_only, allow_update_while_read_only,
+    };
+    pub use crate::command_forwarding::{
+        CommandForwarding, CommandForwardingAppExt, FORWARDED_COMMAND_SOURCE, ForwardedEntry,
+        RecordedEntry, apply_forwarded_entry, is_forwarded_origin, latest_forwarded_sequence,
+    };
     pub use crate::command_lifecycle::{
         ActiveCommand, CommandLifecycleError, CommandNoticeReply, CommandRegistrationError,
         CommandReply, CommandResponder, CommandTracker, FinishedCommand, finish_command_in_world,
@@ -116,6 +126,10 @@ pub mod prelude {
     pub use crate::eval::INTERNAL_ACTION_ORIGIN;
     pub use crate::eval_action::EvalOperation;
     pub use crate::frame_waker::FrameWaker;
+    pub use crate::live_state::{
+        LiveStateAppExt, LiveStateRegistry, LiveStateRestore, LiveStateSnapshot,
+        capture_live_state, restore_live_state,
+    };
     pub use crate::logging::{LogCommand, LogConfig, LogFilterError, LoggingPlugin, TracingTarget};
     pub use crate::object_changes::{ObjectChangePublication, ObjectChanged, ObjectChangesAppExt};
     pub use crate::object_crud::{ObjectCrud, apply_object_crud_command};
@@ -153,6 +167,10 @@ pub mod prelude {
     pub use crate::runtime_capabilities::{
         FxModuleCapability, LibraryCapability, RuntimeCapabilities, RuntimeMode,
         TimelineAudioCapability, disk_storage_available,
+    };
+    pub use crate::session_history::{
+        SessionHistoryCommand, SessionHistoryEntry, SessionHistoryKind, SessionHistoryOutcome,
+        SessionHistoryPage, record_session_command, record_session_event,
     };
     pub use crate::settings::{
         SettingsAppExt, SettingsCommandHandling, SettingsPlugin, SettingsRegistry, SettingsSection,
@@ -215,6 +233,7 @@ impl Plugin for EnginePlugin {
                 DmxOutput.after(VdimProcessing),
             ),
         );
+        app.init_resource::<ClientIngressGate>();
         app.configure_sets(PostUpdate, ClientFeedback.before(CommandFeedbackEgress));
         app.init_resource::<CommandDeserializerRegistry>();
         app.init_resource::<UpdateDeserializerRegistry>();
@@ -225,6 +244,7 @@ impl Plugin for EnginePlugin {
         app.add_message::<command_lifecycle::CommandReply>();
         app.add_message::<command_lifecycle::FinishedCommand>();
         app.add_message::<CommandNoticeReply>();
+        session_history::register(app);
         // Add startup transition system
         app.add_systems(
             Update,
@@ -253,9 +273,15 @@ impl Plugin for EnginePlugin {
         app.add_client_feed::<metrics::MetricsFeed>()
             .on_interval(metrics::SEND_INTERVAL);
         app.init_resource::<GlobalVariables>();
+        app.register_live_state(
+            variables::VARIABLES_LIVE_STATE,
+            variables::capture_live_variables,
+            variables::follow_live_variables,
+        );
 
         register_ingress_command::<EngineCommand>(app);
         register_command_deserializer::<EngineCommand>(app, eval::deserialize_engine_command);
+        allow_command_while_read_only(app, EngineCommand::COMMAND_MODULE, "ResyncState");
         protocol::dispatch_ast::register_converter::<ast_conv::EngineAstConverter>();
         app.add_message::<ResyncRequested>();
         app.add_systems(Update, resync::begin_resync.in_set(InputHandling));

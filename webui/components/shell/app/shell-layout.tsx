@@ -11,6 +11,7 @@ import { onCleanup, onMount, Show } from "solid-js";
 import { BoardPaletteCommands } from "../../../features/boards";
 import { ReleaseHeldButtonsCommand } from "../../../features/clips";
 import {
+  BackupBanner,
   MappingModeBanner,
   MappingModeController,
   MidiDeviceDetectedNotice,
@@ -193,6 +194,7 @@ export default function AppShell() {
       >
         <AppHeader />
         <MappingModeBanner />
+        <BackupBanner />
         <div class="min-h-0 flex-1 overflow-hidden">
           <ShellRuntime />
           <ShellContent />

@@ -1755,3 +1755,139 @@ fn despawn_released_active_step_fx(
         commands.entity(entity).despawn();
     }
 }
+
+/// Builds an app that plays step FX clips and indexes their playback, as the live clip restore
+/// needs, with the clips live state section registered.
+fn live_clip_app(step_fx_uid: Uuid, clip_uid: Uuid) -> App {
+    use nightfall_engine::prelude::LiveStateAppExt;
+
+    let mut app = App::new();
+    add_command_lifecycle(&mut app);
+    app.add_message::<EngineOperationEnvelope<ClipOperation>>();
+    app.add_message::<EngineOperationEnvelope<PlaybackReleaseOperation>>();
+    register_fx_clip_sources(&mut app);
+    app.add_message::<EventEnvelope<nightfall_instances::ClipInstanceAttachment>>();
+    app.insert_resource(DataProvider::<Fx>::default());
+    app.init_resource::<InstanceIndex>();
+    app.init_resource::<nightfall_clips::PendingLiveClips>();
+    app.register_live_state(
+        nightfall_clips::CLIPS_LIVE_STATE,
+        nightfall_clips::capture_live_clips,
+        nightfall_clips::restore_live_clips,
+    );
+    app.add_systems(
+        Update,
+        (
+            nightfall_clips::playback::clip_events::route_clip_playback_actions,
+            handle_events,
+            nightfall_clips::playback::clip_events::handle_clip_playback_attachments,
+            add_instances_to_index,
+            nightfall_clips::settle_pending_live_clips,
+        )
+            .chain(),
+    );
+    app.world_mut().spawn(minimal_step_fx(
+        100,
+        step_fx_uid,
+        "stepfx-100",
+        Duration::from_secs(2),
+    ));
+    app.world_mut().spawn(Clip {
+        identifiers: Identifiers {
+            id: 10,
+            uid: clip_uid,
+            label: "exec-10".to_owned(),
+        },
+        source: Some(Source::StepFx(step_fx_uid)),
+        ..Default::default()
+    });
+    app
+}
+
+/// Returns the one running clip's playback entity.
+fn live_clip_playback(app: &mut App) -> bevy_ecs::entity::Entity {
+    let instance = app
+        .world_mut()
+        .query::<&MaterializedClip>()
+        .single(app.world())
+        .expect("one clip should be running")
+        .attached_instance;
+    app.world()
+        .resource::<InstanceIndex>()
+        .get(&instance)
+        .expect("running clip should be indexed")
+}
+
+/// A backup starts a clip its primary runs at the primary's position, level and speed, with a
+/// clock that keeps running, and stops it again when the primary no longer runs it.
+#[test]
+fn live_clip_state_starts_and_stops_backup_playback() {
+    use nightfall_engine::prelude::{LiveStateRestore, capture_live_state, restore_live_state};
+
+    let step_fx_uid = Uuid::new_v4();
+    let clip_uid = Uuid::new_v4();
+    let mut primary = live_clip_app(step_fx_uid, clip_uid);
+    primary
+        .world_mut()
+        .write_message(EngineOperationEnvelope::detached(ClipOperation::Start(
+            IdExpr::Single(10),
+        )));
+    primary.update();
+    primary.update();
+    let playback = live_clip_playback(&mut primary);
+    primary
+        .world_mut()
+        .get_mut::<InstanceControls>(playback)
+        .unwrap()
+        .intensity_scale = 0.4;
+    primary
+        .world_mut()
+        .get_mut::<InstanceClock>(playback)
+        .unwrap()
+        .seek_to(Duration::from_millis(750));
+    let checkpoint = capture_live_state(primary.world_mut());
+
+    let mut backup = live_clip_app(step_fx_uid, clip_uid);
+    let errors = restore_live_state(
+        backup.world_mut(),
+        &checkpoint,
+        LiveStateRestore {
+            age: Duration::from_millis(250),
+        },
+    );
+    assert!(errors.is_empty(), "{errors:?}");
+    backup.update();
+    backup.update();
+
+    let playback = live_clip_playback(&mut backup);
+    let clock = backup.world().get::<InstanceClock>(playback).unwrap();
+    assert_eq!(clock.source, InstanceClockSource::Realtime);
+    assert_eq!(clock.position, Duration::from_secs(1));
+    let controls = backup.world().get::<InstanceControls>(playback).unwrap();
+    assert!((controls.intensity_scale - 0.4).abs() < 1e-6);
+
+    restore_live_state(
+        backup.world_mut(),
+        &nightfall_engine::prelude::LiveStateSnapshot {
+            sections: [(
+                nightfall_clips::CLIPS_LIVE_STATE.to_string(),
+                serde_json::json!([]),
+            )]
+            .into(),
+        },
+        LiveStateRestore::default(),
+    );
+    let operations: Vec<ClipOperation> = backup
+        .world_mut()
+        .resource_mut::<bevy_ecs::message::Messages<EngineOperationEnvelope<ClipOperation>>>()
+        .drain()
+        .map(|envelope| envelope.operation)
+        .collect();
+    assert!(
+        matches!(
+            operations.as_slice(),
+            [ClipOperation::Stop(IdExpr::Single(10))]
+        ),
+        "an empty checkpoint should only stop the running clip, got {operations:?}"
+    );
+}

@@ -13,6 +13,7 @@ import {
   applyAvailableAudioDevicesSnapshot,
   applyAvailableNetworkInterfacesSnapshot,
   applyAvailableUsbDmxDevicesSnapshot,
+  applyBackupStateSnapshot,
   applyClientActionInvocation,
   applyControllerMappingModeSnapshot,
   applyExternalControlStateSnapshot,
@@ -50,6 +51,10 @@ export function registerSettingsSnapshotHandlers(
 
   registry.register("TelemetryState", (message) => {
     applyTelemetryStateSnapshot(message.data);
+  });
+
+  registry.register("BackupState", (message) => {
+    applyBackupStateSnapshot(message.data);
   });
 
   registry.register("AvailableNetworkInterfaces", (message) => {

@@ -326,6 +326,14 @@ export function SettingsOverlay() {
     }
   };
   onCleanup($ioSettings.listen(showSacnSyncUniverse));
+  let sacnPriorityInput: HTMLInputElement | undefined;
+  /** Writes the saved sACN priority into its field, replacing whatever the user typed. */
+  const showSacnPriority = () => {
+    if (sacnPriorityInput) {
+      sacnPriorityInput.value = String($ioSettings.get().sacn_priority);
+    }
+  };
+  onCleanup($ioSettings.listen(showSacnPriority));
 
   /** Refresh cached model information on entry and stop polling when settings closes. */
   createEffect(() => {
@@ -515,6 +523,20 @@ export function SettingsOverlay() {
       "sACN sync universe",
     );
     showSacnSyncUniverse();
+  };
+
+  /** Sends the requested sACN priority; the backend clamps it to 1-200. */
+  const setSacnPriority = async (value: number) => {
+    await sendClampedIoSetting(
+      Number.isFinite(value)
+        ? {
+            type: "SetSacnPriority",
+            data: Math.min(Math.max(Math.trunc(value), 0), 255),
+          }
+        : undefined,
+      "sACN priority",
+    );
+    showSacnPriority();
   };
 
   const setInputSignalLossTimeout = (value: number) => {
@@ -995,6 +1017,27 @@ export function SettingsOverlay() {
                             e.currentTarget.valueAsNumber,
                           )
                         }
+                      />
+                    )}
+                  </SettingsRow>
+                  <SettingsRow
+                    label="sACN priority"
+                    description="Receivers follow the source with the highest priority. A backup server sends one step lower."
+                  >
+                    {(field) => (
+                      <Input
+                        ref={sacnPriorityInput}
+                        id={field.id}
+                        aria-describedby={field.describedBy}
+                        type="number"
+                        min="1"
+                        max="200"
+                        step="1"
+                        value={ioSettings().sacn_priority}
+                        onChange={(e) =>
+                          void setSacnPriority(e.currentTarget.valueAsNumber)
+                        }
+                        data-testid="settings-sacn-priority"
                       />
                     )}
                   </SettingsRow>

@@ -1,0 +1,1100 @@
+// SPDX-License-Identifier: MPL-2.0
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+import { existsSync, readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import type { Browser, Page } from "@playwright/test";
+import {
+  startPlaywrightTestBackend,
+  startPlaywrightWorkerSlot,
+  stopPlaywrightTestBackend,
+  stopPlaywrightWorkerSlot,
+} from "../../scripts/playwright-backend-pool.mjs";
+import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { type BackendSlot, expect, test } from "./playwright-fixtures";
+import { waitForDockviewApp } from "./showfile-startup";
+
+/** Reads the sACN priority from the backend's latest IO settings snapshot. */
+async function storedPriority(page: Page): Promise<number> {
+  return page.evaluate(
+    () => (window as any).appStores.settings.get().io.sacn_priority,
+  );
+}
+
+/** Returns whether the clip with `id` runs according to the page's clip store. */
+async function isClipRunning(page: Page, id: number): Promise<boolean> {
+  return page.evaluate((id) => {
+    const states = (window as any).appStores.clips.get() as Record<
+      string,
+      [{ identifiers: { id: number } }, boolean]
+    >;
+    return Object.values(states).some(
+      ([clip, isActive]) => clip.identifiers.id === id && isActive,
+    );
+  }, id);
+}
+
+/** Reads the tempo the page's engine is easing toward. */
+async function targetBpm(page: Page): Promise<number | undefined> {
+  return page.evaluate(
+    () => (window as any).appStores.showTempo.get()?.snapshot.target_bpm,
+  );
+}
+
+/** Sends one engine command over the page's websocket, as the UI does. */
+async function sendCommand(
+  page: Page,
+  module: string,
+  command: object,
+): Promise<void> {
+  await page.evaluate(
+    ({ module, command }) =>
+      (window as any).appStores.send({ module, command }),
+    { module, command },
+  );
+}
+
+/** Opens a panel from the Command Palette. */
+async function openPanel(page: Page, title: string): Promise<void> {
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  await page
+    .getByPlaceholder("Type a command or search...")
+    .fill(`Open ${title}`);
+  await page.keyboard.press("Enter");
+}
+
+/**
+ * Follows the primary at `address` from the Showfiles dialog's Follow a primary section, which
+ * the I/O Transports panel links to, optionally capturing the filled-in section first.
+ */
+async function followFromShowfiles(
+  page: Page,
+  address: string,
+  screenshotPath?: string,
+): Promise<void> {
+  await openPanel(page, "I/O Transports");
+  await page.getByTestId("backup-open-showfiles").click();
+  const dialog = page.getByRole("dialog", { name: "Open Showfile" });
+  const section = dialog.getByTestId("showfiles-follow-primary");
+  await section.getByTestId("backup-primary-address").fill(address);
+  if (screenshotPath) {
+    await section.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: screenshotPath });
+  }
+  await section.getByTestId("backup-follow").click();
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
+}
+
+/** Types an sACN priority into the Network settings tab and returns the still-open dialog. */
+async function typePriority(page: Page, priority: number) {
+  await page.keyboard.press("ControlOrMeta+,");
+  const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+  await dialog.getByRole("tab", { name: "Network", exact: true }).click();
+  const field = dialog.getByLabel("sACN priority");
+  await field.fill(String(priority));
+  await field.press("Enter");
+  return dialog;
+}
+
+/** Types an sACN priority into the Network settings tab and closes settings again. */
+async function enterPriority(page: Page, priority: number): Promise<void> {
+  const dialog = await typePriority(page, priority);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+}
+
+/**
+ * Opens a browser page on another backend through the run's shared dev server. `path` defaults
+ * to the test mode, which hides the connection-lost overlay. Unless `waitForApp` is off, it opens
+ * the default show at the startup prompt and waits for the app; with it off, the page stays at
+ * whatever startup shows.
+ */
+async function openBackendPage(
+  browser: Browser,
+  baseURL: string,
+  backendPort: number,
+  path = "/?e2e=1",
+  { waitForApp = true }: { waitForApp?: boolean } = {},
+): Promise<Page> {
+  const { hostname } = new URL(baseURL);
+  const context = await browser.newContext({
+    storageState: {
+      cookies: [
+        {
+          name: "nightfall-playwright-backend",
+          value: String(backendPort),
+          domain: hostname,
+          path: "/",
+          expires: -1,
+          httpOnly: false,
+          secure: false,
+          sameSite: "Lax",
+        },
+      ],
+      origins: [
+        {
+          origin: baseURL,
+          localStorage: [
+            ...(waitForApp
+              ? [
+                  {
+                    name: "nightfall.e2eAutoOpenStartupShowfile",
+                    value: "default",
+                  },
+                ]
+              : []),
+            { name: "nightfall.guide.v1.dismissed", value: "true" },
+          ],
+        },
+      ],
+    },
+  });
+  const page = await context.newPage();
+  await page.goto(`${baseURL}${path}`);
+  if (waitForApp) await waitForDockviewApp(page);
+  return page;
+}
+
+/**
+ * Starts another backend beside the test's own, on its own port and data directory. `offset`
+ * keeps the worker slots of several such backends apart.
+ */
+async function startHost(slot: BackendSlot, name: string, offset: number) {
+  const workerSlot = await startPlaywrightWorkerSlot({
+    baseURL: slot.baseURL,
+    runRoot: slot.runRoot,
+    workerIndex: slot.workerIndex + offset,
+  });
+  try {
+    const backend = await startPlaywrightTestBackend({
+      seedDataDir: process.env.NIGHTFALL_PLAYWRIGHT_SEED_DATA_DIR,
+      testId: `${slot.testId}-${name}`,
+      workerSlot,
+    });
+    return { backend, workerSlot };
+  } catch (error) {
+    stopPlaywrightWorkerSlot(workerSlot);
+    throw error;
+  }
+}
+
+/**
+ * Lists the show folders directly in `directory` and in its drafts folder, as
+ * `drafts/<name>` for drafts, so a test can tell whether a host's own showfiles changed.
+ */
+function showFolders(directory: string): string[] {
+  /** Returns the show folder names in one folder, or none when it does not exist. */
+  const list = (folder: string) =>
+    existsSync(folder)
+      ? readdirSync(folder).filter((name) => name.endsWith(".nightfall-show"))
+      : [];
+  return [
+    ...list(directory),
+    ...list(join(directory, "drafts")).map((name) => `drafts/${name}`),
+  ].sort();
+}
+
+/** Starts a second backend for the primary, on its own port and data directory. */
+function startPrimary(backup: BackendSlot) {
+  return startHost(backup, "primary", 100);
+}
+
+/**
+ * A backup follows a primary on this computer, copies a change made on the primary, refuses
+ * changes made on itself, and accepts them again once it takes over.
+ */
+test("backup follows a primary, stays read-only, and takes over", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    await prepareFreshBackendShowfile(primary.backend.backendPort);
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto("/?e2e=1");
+    await waitForDockviewApp(page);
+
+    await followFromShowfiles(
+      page,
+      `127.0.0.1:${primary.backend.backendPort}`,
+      testInfo.outputPath("1-follow-a-primary.png"),
+    );
+    const settings = page.getByTestId("backup-server-settings");
+
+    const banner = page.getByTestId("backup-banner");
+    await expect(banner).toContainText("synchronized", { timeout: 60_000 });
+    await openPanel(page, "I/O Transports");
+    await expect(settings.getByTestId("backup-link-status")).toContainText(
+      `127.0.0.1:${primary.backend.backendPort}: synchronized`,
+    );
+    await page.screenshot({ path: testInfo.outputPath("2-backup-synced.png") });
+
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await enterPriority(primaryPage, 150);
+    await expect.poll(() => storedPriority(primaryPage)).toBe(150);
+    await expect
+      .poll(() => storedPriority(page), { timeout: 60_000 })
+      .toBe(150);
+    await primaryPage.context().close();
+
+    const settingsDialog = await typePriority(page, 120);
+    const refusal = page
+      .locator('[data-component="Toast"]')
+      .filter({ hasText: "This Nightfall is a backup" });
+    await expect(refusal).toBeVisible();
+    await expect(settingsDialog.getByLabel("sACN priority")).toHaveValue("150");
+    await page.screenshot({
+      path: testInfo.outputPath("3-backup-refuses.png"),
+    });
+    expect(await storedPriority(page)).toBe(150);
+    await page.keyboard.press("Escape");
+    await expect(settingsDialog).toBeHidden();
+
+    await banner.getByTestId("backup-take-over").click();
+    const confirm = page.getByRole("dialog", { name: "Take over output" });
+    await expect(confirm).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("4-take-over.png") });
+    await confirm.getByRole("button", { name: "Take over" }).click();
+    await expect(banner).toBeHidden();
+    await openPanel(page, "I/O Transports");
+    await expect(settings.getByTestId("backup-link-status")).toBeHidden();
+
+    await enterPriority(page, 120);
+    await expect.poll(() => storedPriority(page)).toBe(120);
+    await page.screenshot({ path: testInfo.outputPath("5-taken-over.png") });
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});
+
+/**
+ * A backup follows the primary's playback: clips the primary starts and stops, and its tempo,
+ * reach the backup within a checkpoint or two, and a takeover keeps what was running.
+ */
+test("backup follows the primary's playback and keeps it on takeover", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto("/?e2e=1");
+    await waitForDockviewApp(page);
+
+    await followFromShowfiles(page, `127.0.0.1:${primary.backend.backendPort}`);
+    const banner = page.getByTestId("backup-banner");
+    await expect(banner).toContainText("synchronized", {
+      timeout: 60_000,
+    });
+    await expect.poll(() => isClipRunning(page, 1)).toBe(false);
+
+    await sendCommand(primaryPage, "ClipCommand", {
+      type: "StartClip",
+      data: { type: "Single", data: 1 },
+    });
+    await sendCommand(primaryPage, "TempoCommand", {
+      type: "SetBpm",
+      data: 140,
+    });
+    await expect.poll(() => isClipRunning(primaryPage, 1)).toBe(true);
+    await expect
+      .poll(() => isClipRunning(page, 1), { timeout: 30_000 })
+      .toBe(true);
+    await expect
+      .poll(() => targetBpm(page), { timeout: 30_000 })
+      .toBeCloseTo(140, 1);
+    await expect(page.getByTestId("startup-splash")).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await page.screenshot({
+      path: testInfo.outputPath("6-backup-follows-playback.png"),
+    });
+
+    await sendCommand(primaryPage, "ClipCommand", {
+      type: "StopClip",
+      data: { type: "Single", data: 1 },
+    });
+    await sendCommand(primaryPage, "ClipCommand", {
+      type: "StartClip",
+      data: { type: "Single", data: 2 },
+    });
+    await expect
+      .poll(() => isClipRunning(page, 1), { timeout: 30_000 })
+      .toBe(false);
+    await expect
+      .poll(() => isClipRunning(page, 2), { timeout: 30_000 })
+      .toBe(true);
+    await primaryPage.context().close();
+
+    await banner.getByTestId("backup-take-over").click();
+    await page
+      .getByRole("dialog", { name: "Take over output" })
+      .getByRole("button", { name: "Take over" })
+      .click();
+    await expect(banner).toBeHidden();
+    await expect.poll(() => isClipRunning(page, 2)).toBe(true);
+    await expect.poll(() => targetBpm(page)).toBeCloseTo(140, 1);
+    await page.screenshot({
+      path: testInfo.outputPath("7-taken-over-with-playback.png"),
+    });
+    await sendCommand(page, "ClipCommand", {
+      type: "StopClip",
+      data: { type: "Single", data: 2 },
+    });
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});
+
+/** Reads how many commands the page's backend has recorded for its backup. */
+async function forwardedPosition(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/backup/commands");
+    return ((await response.json()) as { latest: number }).latest;
+  });
+}
+
+/** Reads the console value of the fader at `index` from the page's fader store. */
+async function faderValue(
+  page: Page,
+  index: number,
+): Promise<number | undefined> {
+  return page.evaluate(
+    (index) =>
+      (
+        (window as any).appStores.faders.get() as {
+          index: number;
+          console_value: number;
+        }[]
+      ).find((fader) => fader.index === index)?.console_value,
+    index,
+  );
+}
+
+/**
+ * A backup replays the commands and fader moves the primary accepts as they happen, including
+ * fader positions, which live state checkpoints do not carry.
+ */
+test("backup replays the primary's fader moves as they happen", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto("/?e2e=1");
+    await waitForDockviewApp(page);
+
+    await followFromShowfiles(page, `127.0.0.1:${primary.backend.backendPort}`);
+    const banner = page.getByTestId("backup-banner");
+    await expect(banner).toContainText("synchronized", {
+      timeout: 60_000,
+    });
+    await expect(page.getByTestId("startup-splash")).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    // Give the backup a checkpoint to start replaying from.
+    await page.waitForTimeout(1_500);
+
+    const fader = await primaryPage.evaluate(
+      () =>
+        ((window as any).appStores.faders.get() as { index: number }[])[2]
+          ?.index,
+    );
+    expect(fader).toBeDefined();
+    const forwardedBefore = await forwardedPosition(primaryPage);
+    await primaryPage.evaluate(
+      (fader) =>
+        (window as any).appStores.sendUpdate("FaderUpdate", {
+          type: "SetConsoleValue",
+          data: { fader_index: fader, value: 60 },
+        }),
+      fader,
+    );
+    await expect
+      .poll(() => faderValue(primaryPage, fader as number))
+      .toBeCloseTo(60, 1);
+    await expect
+      .poll(() => faderValue(page, fader as number), { timeout: 10_000 })
+      .toBeCloseTo(60, 1);
+    expect(await forwardedPosition(primaryPage)).toBeGreaterThan(
+      forwardedBefore,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath("8-backup-replays-fader.png"),
+    });
+
+    await primaryPage.evaluate(
+      (fader) =>
+        (window as any).appStores.sendUpdate("FaderUpdate", {
+          type: "SetConsoleValue",
+          data: { fader_index: fader, value: 0 },
+        }),
+      fader,
+    );
+    await expect
+      .poll(() => faderValue(page, fader as number), { timeout: 10_000 })
+      .toBeCloseTo(0, 2);
+    await primaryPage.context().close();
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});
+
+/** Makes the page's backend follow the primary on `primaryPort` and waits until it is in step. */
+async function followPrimary(page: Page, primaryPort: number): Promise<void> {
+  await page.goto("/?e2e=1");
+  await waitForDockviewApp(page);
+  await followFromShowfiles(page, `127.0.0.1:${primaryPort}`);
+  await expect(page.getByTestId("backup-banner")).toContainText(
+    "synchronized",
+    { timeout: 60_000 },
+  );
+  await expect(page.getByTestId("startup-splash")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+}
+
+/**
+ * Taking over on the backup while the primary still runs makes the old primary step down: it
+ * finds its backup answering as a newer primary and follows it, silent and read-only.
+ */
+test("a primary whose backup took over steps down and follows it", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await followPrimary(page, primary.backend.backendPort);
+
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await primaryPage.setViewportSize({ width: 1600, height: 1000 });
+    await openPanel(primaryPage, "I/O Transports");
+    await expect(primaryPage.getByTestId("backup-peer")).toContainText(
+      `127.0.0.1:${backendSlot.backendPort}: synchronized`,
+      { timeout: 30_000 },
+    );
+    await primaryPage
+      .getByTestId("backup-server-settings")
+      .scrollIntoViewIfNeeded();
+    await primaryPage.screenshot({
+      path: testInfo.outputPath("8b-primary-backed-up.png"),
+    });
+
+    await page
+      .getByTestId("backup-banner")
+      .getByTestId("backup-take-over")
+      .click();
+    await page
+      .getByRole("dialog", { name: "Take over output" })
+      .getByRole("button", { name: "Take over" })
+      .click();
+    await expect(page.getByTestId("backup-banner")).toBeHidden();
+
+    const primaryBanner = primaryPage.getByTestId("backup-banner");
+    await expect(primaryBanner).toContainText(
+      `Backup of 127.0.0.1:${backendSlot.backendPort}`,
+      { timeout: 30_000 },
+    );
+    await expect(primaryBanner).toContainText("synchronized", {
+      timeout: 60_000,
+    });
+    await expect(primaryPage.getByTestId("startup-splash")).toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await openPanel(primaryPage, "I/O Transports");
+    await primaryPage
+      .getByTestId("backup-server-settings")
+      .scrollIntoViewIfNeeded();
+    await primaryPage.screenshot({
+      path: testInfo.outputPath("9-old-primary-follows.png"),
+    });
+    await primaryPage.context().close();
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});
+
+/**
+ * When the primary stops, its clients are offered the backup, and the backup takes over on its
+ * own once the primary has been silent for a few seconds.
+ */
+test("backup takes over on its own when the primary stops", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  let primaryRunning = true;
+  try {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await followPrimary(page, primary.backend.backendPort);
+
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+      "/",
+    );
+    await primaryPage.setViewportSize({ width: 1600, height: 1000 });
+    await expect
+      .poll(
+        () =>
+          primaryPage.evaluate(
+            () => (window as any).appStores.backupState.get().backup?.address,
+          ),
+        { timeout: 30_000 },
+      )
+      .toBe(`127.0.0.1:${backendSlot.backendPort}`);
+
+    primaryRunning = false;
+    await stopPlaywrightTestBackend(primary.backend);
+
+    const offer = primaryPage.getByTestId("connection-backup");
+    await expect(offer).toBeVisible({ timeout: 30_000 });
+    await expect(
+      offer.getByRole("link", { name: "Open the backup" }),
+    ).toHaveAttribute(
+      "href",
+      `http://${new URL(backendSlot.baseURL).hostname}:${backendSlot.backendPort}/`,
+    );
+    // The offer stays up while the primary is gone, past the overlay's fade-in.
+    await primaryPage.waitForTimeout(3_000);
+    await expect(offer).toBeVisible();
+    await primaryPage.screenshot({
+      path: testInfo.outputPath("10-clients-offered-the-backup.png"),
+    });
+    await primaryPage.context().close();
+
+    await expect(page.getByTestId("backup-banner")).toBeHidden({
+      timeout: 30_000,
+    });
+    await openPanel(page, "I/O Transports");
+    await expect(
+      page.getByTestId("backup-took-over-automatically"),
+    ).toBeVisible();
+    await expect(page.getByTestId("backup-peer")).toContainText(
+      `127.0.0.1:${primary.backend.backendPort}: unreachable`,
+      { timeout: 15_000 },
+    );
+    await page.getByTestId("backup-server-settings").scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath("11-took-over-automatically.png"),
+    });
+  } finally {
+    if (primaryRunning) await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});
+
+/**
+ * Following an address that does not answer leaves the computer as it was, with the reason
+ * shown, and the PIN and address are accepted with stray spaces.
+ */
+test("an unreachable primary is not followed", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto("/?e2e=1");
+  await waitForDockviewApp(page);
+  await openPanel(page, "I/O Transports");
+  await page.getByTestId("backup-open-showfiles").click();
+  const dialog = page.getByRole("dialog", { name: "Open Showfile" });
+  const section = dialog.getByTestId("showfiles-follow-primary");
+  await section.getByTestId("backup-primary-address").fill(" 127.0.0.1 : 9 ");
+  await section.getByTestId("backup-primary-pin").fill("12 34 56");
+  await section.getByTestId("backup-follow").click();
+  await expect(section.getByTestId("backup-follow-error")).toContainText(
+    "127.0.0.1:9",
+    { timeout: 20_000 },
+  );
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId("backup-banner")).toHaveCount(0);
+  await section.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("14-unreachable-primary.png"),
+  });
+});
+
+/**
+ * A backup leaves its role either with Leave the pair, which closes the copied show, returns to
+ * the welcome screen and tells the primary to forget it, or by opening a show from the Showfiles
+ * dialog, which replaces it.
+ */
+test("a backup leaves the pair for the welcome screen, or opens a show instead", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await followPrimary(page, primary.backend.backendPort);
+    const banner = page.getByTestId("backup-banner");
+    // The backup can reload the primary's show once more after it first gets in step.
+    await waitForDockviewApp(page);
+    await expect(page.getByTestId("startup-splash")).toHaveCount(0);
+
+    await banner.getByTestId("backup-leave-pair").click();
+    const confirm = page.getByRole("dialog", { name: "Unpair from primary" });
+    await expect(confirm).toContainText("stop acting as a backup");
+    await page.screenshot({
+      path: testInfo.outputPath("15-backup-leaves-pair.png"),
+    });
+    await confirm.getByRole("button", { name: "Leave the pair" }).click();
+    const welcome = page.getByRole("dialog", { name: "Open Showfile" });
+    await expect(welcome).toBeVisible({ timeout: 30_000 });
+    await expect(banner).toBeHidden();
+    await page.screenshot({
+      path: testInfo.outputPath("15b-welcome-after-leaving.png"),
+    });
+    // The primary is told and forgets its backup, rather than reading it as a second primary.
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await primaryPage.setViewportSize({ width: 1600, height: 1000 });
+    try {
+      await openPanel(primaryPage, "I/O Transports");
+      const primarySettings = primaryPage.getByTestId("backup-server-settings");
+      await expect(
+        primarySettings.getByTestId("backup-this-machine"),
+      ).toContainText("not paired", { timeout: 10_000 });
+      await expect(primarySettings.getByTestId("backup-peer")).toHaveCount(0);
+    } finally {
+      await primaryPage.context().close();
+    }
+    await welcome.getByRole("button", { name: "New showfile" }).click();
+    const created = page.getByRole("dialog", { name: "New Showfile" });
+    await created
+      .getByLabel("Show name")
+      .fill(`after-leaving-${testInfo.workerIndex}-${Date.now()}`);
+    await created.getByRole("button", { name: "Create Show" }).click();
+    // The startup prompt must be gone first, or the app helper tries to answer it.
+    await expect(welcome).toBeHidden({ timeout: 30_000 });
+    await waitForDockviewApp(page);
+    await enterPriority(page, 130);
+    await expect.poll(() => storedPriority(page)).toBe(130);
+
+    await followPrimary(page, primary.backend.backendPort);
+    // A backup's Failover section offers no Showfiles link, so open it from the app menu.
+    await page.locator("button[title='Menu']").click();
+    await page.getByRole("button", { name: "Open Showfile" }).click();
+    const dialog = page.getByRole("dialog", { name: "Open Showfile" });
+    const section = dialog.getByTestId("showfiles-follow-primary");
+    await expect(section).toContainText("Following 127.0.0.1");
+    await section.scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: testInfo.outputPath("16-showfiles-while-following.png"),
+    });
+    await dialog.getByRole("button", { name: "New showfile" }).click();
+    const newDialog = page.getByRole("dialog", { name: "New Showfile" });
+    await newDialog
+      .getByLabel("Show name")
+      .fill(`after-backup-${testInfo.workerIndex}-${Date.now()}`);
+    await newDialog.getByRole("button", { name: "Create Show" }).click();
+    await expect(banner).toBeHidden({ timeout: 30_000 });
+    await expect(
+      page
+        .locator('[data-component="Toast"]')
+        .filter({ hasText: "Opening a show stopped following" }),
+    ).toBeVisible();
+    await waitForDockviewApp(page);
+    await enterPriority(page, 140);
+    await expect.poll(() => storedPriority(page)).toBe(140);
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});
+
+/**
+ * Leaving the pair on the primary ends it on both computers: the primary forgets its backup, and
+ * the backup is told, leaves the pair too, closes the copied show and returns to the welcome
+ * screen.
+ */
+test("a primary that leaves the pair releases its backup", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await followPrimary(page, primary.backend.backendPort);
+
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await primaryPage.setViewportSize({ width: 1600, height: 1000 });
+    await openPanel(primaryPage, "I/O Transports");
+    const settings = primaryPage.getByTestId("backup-server-settings");
+    await expect(settings.getByTestId("backup-this-machine")).toContainText(
+      "this machine",
+    );
+    await expect(settings.getByTestId("backup-peer")).toContainText(
+      `127.0.0.1:${backendSlot.backendPort}: synchronized`,
+      { timeout: 30_000 },
+    );
+    await expect(settings.getByTestId("backup-peer")).toContainText(
+      "ms latency",
+    );
+    await settings.scrollIntoViewIfNeeded();
+    await primaryPage.screenshot({
+      path: testInfo.outputPath("21-failover-primary.png"),
+    });
+    await settings.getByTestId("backup-leave-pair").click();
+    const confirm = primaryPage.getByRole("dialog", {
+      name: "Unpair from backup",
+    });
+    await expect(confirm).toBeVisible();
+    await primaryPage.screenshot({
+      path: testInfo.outputPath("22-leave-the-pair.png"),
+    });
+    await confirm.getByRole("button", { name: "Leave the pair" }).click();
+    await expect(settings.getByTestId("backup-this-machine")).toContainText(
+      "not paired",
+    );
+
+    await expect(page.getByTestId("backup-banner")).toBeHidden({
+      timeout: 30_000,
+    });
+    await expect(
+      page
+        .locator('[data-component="Toast"]')
+        .filter({ hasText: "left the failover pair" }),
+    ).toContainText("closed the copied show");
+    await expect(
+      page.getByRole("dialog", { name: "Open Showfile" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await page.screenshot({
+      path: testInfo.outputPath("23-backup-released-to-welcome.png"),
+    });
+    await primaryPage.context().close();
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});
+
+/** Reads the open show's revision, the hash a backup compares to decide whether to copy it. */
+async function showRevision(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/showfiles/current/revision");
+    return (await response.json()).revision as string;
+  });
+}
+
+/**
+ * Playing a timeline changes only live state, so the show revision stays put and a backup does
+ * not copy the show again on every cue the timeline fires.
+ */
+test("a playing timeline leaves the show revision alone", async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.goto("/?e2e=1");
+  await waitForDockviewApp(page);
+  // Give timeline 1 a parameter lane that ramps a variable, so playback changes its value.
+  await page.evaluate(() => {
+    const stores = (window as any).appStores;
+    const timeline = structuredClone(
+      Object.values(stores.timelines.get()).find(
+        (candidate: any) => candidate.identifiers.id === 1,
+      ),
+    ) as any;
+    timeline.tracks[0].automation_lanes.push({
+      id: "backup-ramp",
+      name: "Backup ramp",
+      color: "White",
+      points: [
+        { position: { secs: 0, nanos: 0 }, value: 0 },
+        { position: { secs: 10, nanos: 0 }, value: 1 },
+      ],
+      parameter_type: { type: "GlobalVariable", data: "backup-ramp" },
+    });
+    return stores.sendAndAwait({
+      module: "TimelineCommand",
+      command: { type: "StoreTimeline", data: timeline },
+    });
+  });
+  const before = await showRevision(page);
+  await sendCommand(page, "TimecodeCommand", {
+    type: "StartTimecode",
+    data: 1,
+  });
+  try {
+    await page.waitForTimeout(5_000);
+    expect(await showRevision(page)).toBe(before);
+  } finally {
+    await sendCommand(page, "TimecodeCommand", {
+      type: "StopTimecode",
+      data: 1,
+    });
+  }
+});
+
+/**
+ * Stopping both computers of a pair and starting them again brings up the Backup server dialog
+ * instead of the show prompt. The primary that was replaced first shows its backup as
+ * unreachable; once the computer that took over starts, the old primary steps down and waits for
+ * its show, and continuing as primary there opens the app on both.
+ */
+test("a restarted pair picks its roles from the backup server dialog", async ({
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(480_000);
+  const first = await startHost(backendSlot, "first", 100);
+  const second = await startHost(backendSlot, "second", 200);
+  const running = new Set([first, second]);
+  /** Stops a host, keeping its data so it can start again. */
+  const stop = async (host: typeof first) => {
+    running.delete(host);
+    await stopPlaywrightTestBackend(host.backend, { keepDataDir: true });
+  };
+  /** Starts a stopped host again with its data, on its port. */
+  const restart = async (host: typeof first) => {
+    host.backend = await startPlaywrightTestBackend({
+      dataDir: host.backend.dataDir,
+      seedDataDir: undefined,
+      testId: host.backend.testId,
+      workerSlot: host.workerSlot,
+    });
+    running.add(host);
+  };
+  const firstAddress = `127.0.0.1:${first.backend.backendPort}`;
+  const secondAddress = `127.0.0.1:${second.backend.backendPort}`;
+  try {
+    const secondPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      second.backend.backendPort,
+    );
+    const ownShows = showFolders(second.backend.dataDir);
+    await followFromShowfiles(secondPage, firstAddress);
+    await expect(secondPage.getByTestId("backup-banner")).toContainText(
+      "synchronized",
+      { timeout: 60_000 },
+    );
+    // The copied show and its draft live in the failover folder, apart from this host's shows.
+    const failoverShows = showFolders(join(second.backend.dataDir, "failover"));
+    expect(failoverShows.length).toBeGreaterThan(0);
+    expect(showFolders(second.backend.dataDir)).toEqual(ownShows);
+    await stop(first);
+    await expect(secondPage.getByTestId("backup-banner")).toBeHidden({
+      timeout: 30_000,
+    });
+    await secondPage.context().close();
+    await stop(second);
+
+    await restart(first);
+    const firstPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      first.backend.backendPort,
+      "/?e2e=1",
+      { waitForApp: false },
+    );
+    await firstPage.setViewportSize({ width: 1400, height: 900 });
+    await expect(
+      firstPage.getByTestId("backup-pair-startup").getByTestId("backup-peer"),
+    ).toContainText(`${secondAddress}: unreachable`, {
+      timeout: 60_000,
+    });
+    await expect(
+      firstPage.getByRole("dialog", { name: "Open Showfile" }),
+    ).toHaveCount(0);
+    await firstPage.screenshot({
+      path: testInfo.outputPath("17-restarted-primary.png"),
+    });
+
+    await restart(second);
+    const restartedSecond = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      second.backend.backendPort,
+      "/?e2e=1",
+      { waitForApp: false },
+    );
+    await restartedSecond.setViewportSize({ width: 1400, height: 900 });
+    await expect(
+      firstPage
+        .getByTestId("backup-pair-startup")
+        .getByTestId("backup-link-status"),
+    ).toContainText(`${secondAddress}: waiting for a show`, {
+      timeout: 60_000,
+    });
+    await firstPage.screenshot({
+      path: testInfo.outputPath("18-stepped-down-waits.png"),
+    });
+    await expect(
+      restartedSecond
+        .getByTestId("backup-pair-startup")
+        .getByTestId("backup-peer"),
+    ).toContainText(`${firstAddress}: pending sync`, {
+      timeout: 30_000,
+    });
+    // The host that took over last ran the pair's show, so continuing opens it again.
+    await expect(
+      restartedSecond.getByTestId("backup-pair-startup"),
+    ).toContainText("the pair's show this instance ran last");
+    await restartedSecond.screenshot({
+      path: testInfo.outputPath("19-continue-as-primary.png"),
+    });
+
+    await restartedSecond.getByTestId("backup-pair-startup-continue").click();
+    await waitForDockviewApp(restartedSecond);
+    await expect(
+      restartedSecond.getByRole("dialog", { name: "Open Showfile" }),
+    ).toHaveCount(0);
+    expect(showFolders(second.backend.dataDir)).toEqual(ownShows);
+    await waitForDockviewApp(firstPage, { timeoutMs: 90_000 });
+    await expect(firstPage.getByTestId("backup-banner")).toContainText(
+      `Backup of ${secondAddress}: synchronized`,
+      { timeout: 60_000 },
+    );
+    await firstPage.screenshot({
+      path: testInfo.outputPath("20-pair-back-in-step.png"),
+    });
+    await firstPage.context().close();
+    await restartedSecond.context().close();
+  } finally {
+    for (const host of [first, second]) {
+      if (running.has(host)) await stopPlaywrightTestBackend(host.backend);
+      else rmSync(host.backend.dataDir, { force: true, recursive: true });
+      stopPlaywrightWorkerSlot(host.workerSlot);
+    }
+  }
+});
+
+/** Opens the Console panel on its Session history tab. */
+async function openSessionHistory(page: Page): Promise<void> {
+  await openPanel(page, "Console");
+  await page.getByRole("tab", { name: "Session history" }).click();
+  await expect(page.getByTestId("session-history")).toBeVisible();
+}
+
+/**
+ * The Console's session history shows the commands each computer accepted, and the backup's
+ * replay of a forwarded command carries the same number as the primary's entry for it, next to
+ * the backup's own events.
+ */
+test("session history lines up the primary's commands with the backup's replay", async ({
+  page,
+  browser,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const primary = await startPrimary(backendSlot);
+  try {
+    const primaryPage = await openBackendPage(
+      browser,
+      backendSlot.baseURL,
+      primary.backend.backendPort,
+    );
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await followPrimary(page, primary.backend.backendPort);
+    await openSessionHistory(page);
+    await expect(
+      page
+        .getByTestId("session-history-entry")
+        .filter({ hasText: "Copied the primary's show" }),
+    ).toHaveCount(1, { timeout: 30_000 });
+    // Give the world the copied show loaded into a checkpoint to start replaying from.
+    await page.waitForTimeout(1_500);
+
+    await sendCommand(primaryPage, "ClipCommand", {
+      type: "StartClip",
+      data: { type: "Single", data: 1 },
+    });
+    await expect
+      .poll(() => isClipRunning(page, 1), { timeout: 30_000 })
+      .toBe(true);
+
+    await openSessionHistory(primaryPage);
+    const primaryEntry = primaryPage
+      .getByTestId("session-history-entry")
+      .filter({ hasText: "StartClip" })
+      .first();
+    await expect(primaryEntry).toContainText("done");
+    const sequence = await primaryEntry.getAttribute("data-forwarded");
+    expect(sequence).toMatch(/^\d+$/);
+
+    const replayed = page.locator(
+      `[data-testid="session-history-entry"][data-forwarded="${sequence}"]`,
+    );
+    await expect(replayed).toHaveAttribute("data-source", "Primary");
+    await expect(replayed).toContainText("StartClip");
+    await expect(replayed).toContainText("done");
+    await expect(
+      page
+        .getByTestId("session-history-entry")
+        .filter({ hasText: "Following 127.0.0.1" }),
+    ).toHaveCount(1);
+    await expect(
+      page
+        .getByTestId("session-history-entry")
+        .filter({ hasText: "FollowPrimary" }),
+    ).toContainText("done");
+    await primaryPage.screenshot({
+      path: testInfo.outputPath("12-primary-session-history.png"),
+    });
+
+    await page.getByTestId("session-history-source").selectOption("Backup");
+    await expect(
+      page.getByTestId("session-history-entry").first(),
+    ).toHaveAttribute("data-source", "Backup");
+    await page.getByTestId("session-history-source").selectOption("");
+    await page.screenshot({
+      path: testInfo.outputPath("13-backup-session-history.png"),
+    });
+
+    await sendCommand(primaryPage, "ClipCommand", {
+      type: "StopClip",
+      data: { type: "Single", data: 1 },
+    });
+  } finally {
+    await stopPlaywrightTestBackend(primary.backend);
+    stopPlaywrightWorkerSlot(primary.workerSlot);
+  }
+});

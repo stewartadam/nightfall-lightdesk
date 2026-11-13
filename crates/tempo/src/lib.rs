@@ -35,6 +35,15 @@ pub mod prelude {
     };
 }
 
+/// Tempo difference, in BPM, a backup tolerates before matching its primary's tempo.
+const FOLLOW_BPM_TOLERANCE: f64 = 0.01;
+
+/// Beat phase difference a backup tolerates before easing toward its primary's beat.
+const FOLLOW_PHASE_TOLERANCE_BEATS: f64 = 0.02;
+
+/// Live state section key of the show tempo.
+pub const TEMPO_LIVE_STATE: &str = "tempo";
+
 /// Plugin that owns the show tempo resource, its commands, actions and client updates.
 pub struct TempoPlugin;
 
@@ -45,9 +54,13 @@ impl Plugin for TempoPlugin {
         tracing::debug!("Registering TempoPlugin");
         app.init_resource::<ShowTempo>();
         register_client_command::<TempoCommand>(app, Undo::Captured);
+        // Taps, resyncs and nudges depend on when they land, so the backup takes the tempo and
+        // phase they produce from checkpoints instead.
+        app.forward_commands_to_backup::<TempoCommand>(&["SetBpm", "Multiply", "SetBeatsPerBar"]);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::TempoAstConverter>(
         );
         actions::register_tempo_actions(app);
+        app.register_live_state(TEMPO_LIVE_STATE, capture_live_tempo, follow_live_tempo);
 
         app.configure_sets(Render, TempoUpdate.in_set(ClockUpdate));
         app.add_systems(Render, advance_show_tempo.in_set(TempoUpdate));
@@ -232,6 +245,38 @@ impl ShowTempo {
         self.launch_quantize = settings.launch_quantize;
     }
 
+    /// Lines this tempo up with another engine's `snapshot` taken `age` ago, as a backup does
+    /// with its primary.
+    ///
+    /// The tempo and bar length jump to the snapshot's. The beat counter jumps when it is more
+    /// than a bar out, as after loading a show, and otherwise eases out small drift, waiting
+    /// while an earlier correction is still easing so repeated snapshots never overshoot.
+    pub fn follow(&mut self, snapshot: &TempoSnapshot, age: std::time::Duration) {
+        let local = self.snapshot();
+        if (local.target_bpm - snapshot.target_bpm).abs() > FOLLOW_BPM_TOLERANCE
+            || local.beats_per_bar != snapshot.beats_per_bar
+        {
+            self.engine
+                .restore(snapshot.target_bpm, snapshot.beats_per_bar);
+        }
+        let expected = snapshot.beat_position + age.as_secs_f64() * snapshot.effective_bpm / 60.0;
+        let drift = expected - local.beat_position;
+        if drift.abs() > f64::from(snapshot.beats_per_bar.max(1)) {
+            self.engine
+                .jump_to(expected, snapshot.bar_origin, snapshot.bars_before_origin);
+        } else {
+            if drift.abs() > FOLLOW_PHASE_TOLERANCE_BEATS && !self.engine.is_settling() {
+                self.engine.nudge(drift);
+            }
+            if (local.bar_origin - snapshot.bar_origin).abs() > FOLLOW_PHASE_TOLERANCE_BEATS
+                || local.bars_before_origin != snapshot.bars_before_origin
+            {
+                self.engine
+                    .set_bar_grid(snapshot.bar_origin, snapshot.bars_before_origin);
+            }
+        }
+    }
+
     /// Advances the beat counter to the current wall-clock time.
     pub fn advance(&mut self) {
         self.advance_to_instant(Instant::now());
@@ -284,6 +329,22 @@ impl ShowTempo {
     }
 }
 
+/// Captures the show tempo for a backup.
+fn capture_live_tempo(world: &mut World) -> Option<TempoSnapshot> {
+    world.get_resource::<ShowTempo>().map(ShowTempo::snapshot)
+}
+
+/// Lines the show tempo up with the primary's.
+fn follow_live_tempo(
+    world: &mut World,
+    snapshot: Option<TempoSnapshot>,
+    context: LiveStateRestore,
+) {
+    if let (Some(snapshot), Some(mut tempo)) = (snapshot, world.get_resource_mut::<ShowTempo>()) {
+        tempo.follow(&snapshot, context.age);
+    }
+}
+
 /// Advances the show tempo once per rendered frame, to the DMX output tick of the render.
 fn advance_show_tempo(mut tempo: ResMut<ShowTempo>, render_pass: Option<Res<RenderPass>>) {
     let at = render_output_instant(render_pass.as_deref());
@@ -333,6 +394,65 @@ mod tests {
         assert!(TempoCommand::Tap(Some(-1.0)).validate().is_err());
         assert!(TempoCommand::Tap(None).validate().is_ok());
         assert!(TempoCommand::Tap(Some(1234.5)).validate().is_ok());
+    }
+
+    /// Builds a primary's tempo snapshot at `bpm` with the counter at `beat_position`.
+    fn primary_snapshot(bpm: f64, beat_position: f64) -> TempoSnapshot {
+        TempoSnapshot {
+            bpm,
+            effective_bpm: bpm,
+            target_bpm: bpm,
+            beats_per_bar: 4,
+            beat_position,
+            bar_origin: 0.0,
+            bars_before_origin: 0,
+        }
+    }
+
+    /// A backup far behind jumps to the primary's tempo and beat, counting the checkpoint's age.
+    #[test]
+    fn follow_jumps_to_a_distant_primary() {
+        let mut tempo = ShowTempo::default();
+        tempo.follow(
+            &primary_snapshot(140.0, 300.0),
+            std::time::Duration::from_secs(3),
+        );
+        let snapshot = tempo.snapshot();
+        assert_eq!(snapshot.target_bpm, 140.0);
+        assert_eq!(snapshot.bpm, 140.0);
+        assert!((snapshot.beat_position - 307.0).abs() < 1e-9);
+        assert!(!tempo.is_settling());
+    }
+
+    /// A backup slightly out of phase eases toward the primary once, without jumping, and a
+    /// repeated checkpoint while that correction is easing adds nothing.
+    #[test]
+    fn follow_eases_small_drift_once() {
+        let mut tempo = ShowTempo::default();
+        let bpm = tempo.snapshot().target_bpm;
+        tempo.follow(&primary_snapshot(bpm, 0.5), std::time::Duration::ZERO);
+        assert_eq!(tempo.snapshot().beat_position, 0.0);
+        assert!(tempo.is_settling());
+        let pending = tempo.engine.clone();
+        tempo.follow(&primary_snapshot(bpm, 0.5), std::time::Duration::ZERO);
+        assert_eq!(tempo.engine.snapshot(), pending.snapshot());
+        assert!(tempo.is_settling());
+    }
+
+    /// A backup in phase with its primary but with downbeats on other beats, as after a bar
+    /// length change rebased each grid at a different bar, takes the primary's grid.
+    #[test]
+    fn follow_copies_the_bar_grid_when_in_phase() {
+        let mut tempo = ShowTempo::default();
+        let bpm = tempo.snapshot().target_bpm;
+        let mut primary = primary_snapshot(bpm, 0.0);
+        primary.bar_origin = 2.0;
+        primary.bars_before_origin = 5;
+        tempo.follow(&primary, std::time::Duration::ZERO);
+        let snapshot = tempo.snapshot();
+        assert_eq!(snapshot.beat_position, 0.0);
+        assert_eq!(snapshot.bar_origin, 2.0);
+        assert_eq!(snapshot.bars_before_origin, 5);
     }
 
     /// Verifies taps timed at their arrival keep exact spacing however late they are applied.

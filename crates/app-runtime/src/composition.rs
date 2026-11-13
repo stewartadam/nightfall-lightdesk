@@ -171,6 +171,11 @@ pub(super) fn init_bevy_with_transport_policy(
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
     );
+    systems::backup_mirror::register_backup_http_routes(
+        &mut app
+            .world_mut()
+            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
+    );
     #[cfg(feature = "beat-detection")]
     crate::beat_model_http::register_routes(
         &mut app
@@ -240,21 +245,40 @@ pub(super) fn init_bevy_with_transport_policy(
         settings.usb_output_enabled = transport_policy.allow_usb_output;
     }
 
+    // A backup accepts opening a show, which ends its role, rather than leaving the operator
+    // stuck on the copied show.
+    for command_type in systems::backup_mirror::SHOW_LOAD_COMMANDS {
+        allow_command_while_read_only(
+            &mut app,
+            nightfall_showfile::ShowfileCommand::COMMAND_MODULE,
+            command_type,
+        );
+    }
+
     // event handling - plugins add more here
     app.add_systems(
         Update,
         (
             // event generation based on showfile
+            systems::backup_mirror::leave_backup_role_for_show_loads,
             systems::showfile_events::handle_events.run_if(disk_storage_available),
             bevy::ecs::schedule::ApplyDeferred,
             systems::deleted_object_instances::release_deleted_object_instances,
             systems::quit_event::handle_events,
+            systems::backup_mirror::load_mirrored_showfiles,
+            systems::backup_mirror::close_copied_shows,
             handle_periodic_draft_autosave,
             save_draft_when_last_client_disconnects,
             handle_process_shutdown_request,
         )
             .chain()
             .in_set(ShowfileHandling),
+    );
+    app.add_systems(
+        Update,
+        systems::backup_mirror::remember_failover_show
+            .run_if(disk_storage_available)
+            .run_if(in_state(AppState::Ready)),
     );
     app.add_systems(
         Update,

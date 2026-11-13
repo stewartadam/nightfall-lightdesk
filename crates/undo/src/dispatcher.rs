@@ -199,6 +199,16 @@ pub fn process_pending_commands(world: &mut World) {
         let registry = world.resource::<UndoRegistry>();
 
         for envelope in commands_to_process {
+            // A backup replays its primary's commands to follow along; they are not the
+            // operator's own changes to undo after a takeover.
+            let forwarded = world
+                .get_resource::<CommandTracker>()
+                .and_then(|tracker| tracker.active_command(envelope.command_id))
+                .is_some_and(|active| is_forwarded_origin(&active.origin));
+            if forwarded {
+                commands_to_dispatch.push(envelope);
+                continue;
+            }
             if let Some(entry) = registry.try_generate_inverse(&envelope, &ctx) {
                 tracing::debug!("Captured undo inverse for: {}", entry.description);
                 let command_id = envelope.command_id;
@@ -250,6 +260,15 @@ pub fn process_pending_actions(world: &mut World) {
         let registry = world.resource::<UndoRegistry>();
 
         for correlated_action in &actions_to_process {
+            let forwarded = correlated_action.command_id.is_some_and(|command_id| {
+                world
+                    .get_resource::<CommandTracker>()
+                    .and_then(|tracker| tracker.active_command(command_id))
+                    .is_some_and(|active| is_forwarded_origin(&active.origin))
+            });
+            if forwarded {
+                continue;
+            }
             if let Some(entry) = registry.try_generate_action_inverse(correlated_action, &ctx) {
                 tracing::debug!(
                     "Captured operation-stage undo inverse for: {}",
@@ -342,6 +361,39 @@ mod tests {
             world.resource::<PendingEngineOperationBuffer>().is_empty(),
             "operation-stage processing should drain PendingEngineOperationBuffer",
         );
+    }
+
+    /// A backup's replay of its primary's operations is not captured for undo, while the same
+    /// operation from the operator is.
+    #[test]
+    fn forwarded_operations_skip_undo_capture() {
+        let mut world = setup_world();
+        world
+            .resource_mut::<UndoRegistry>()
+            .register_operation::<TestUndoOperation>();
+        for origin in [
+            CommandOrigin::Remote(FORWARDED_COMMAND_SOURCE.to_string()),
+            CommandOrigin::WebUi,
+        ] {
+            let command_id = CommandId::new();
+            let undo_id = UndoId::from(command_id);
+            world
+                .resource_mut::<CommandTracker>()
+                .register_context(command_id, undo_id, origin, ReplyTarget::Detached)
+                .unwrap();
+            world.resource_mut::<PendingEngineOperationBuffer>().push(
+                DynEngineOperationEnvelope::for_command(
+                    command_id,
+                    undo_id,
+                    Box::new(TestUndoOperation(1)),
+                ),
+            );
+            process_pending_actions(&mut world);
+            world
+                .resource_mut::<UndoManager>()
+                .finish_group(undo_id, true);
+        }
+        assert_eq!(world.resource::<UndoManager>().undo_depth(), 1);
     }
 
     /// Verifies action registrations rebuild stored inverses as typed engine-operation envelopes.

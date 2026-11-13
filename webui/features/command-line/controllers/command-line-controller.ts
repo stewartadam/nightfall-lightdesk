@@ -38,6 +38,7 @@ import {
   isNewShowPromptCommand,
 } from "../model/keyboard";
 import commandLinePanelDefinition from "../panels/command-line.definition";
+import { setConsoleView } from "../state/console-view";
 import { commandLineHistory, setCommandHistory } from "../state/history";
 import { createCommandAnalysisController } from "./command-analysis-controller";
 import { createCommandHistoryController } from "./command-history-controller";
@@ -194,8 +195,9 @@ export function createCommandLineController(
     commandClient.emit("ProgrammerCommand", command);
   };
 
-  /** Opens or focuses the Console panel, whose scrollback lists running and queued commands. */
+  /** Opens or focuses the Console panel on its scrollback, which lists running and queued commands. */
   const openConsole = () => {
+    setConsoleView("console");
     openOrFocusPanelDefinition(dockApi.get(), commandLinePanelDefinition);
   };
 

@@ -70,9 +70,19 @@ pub fn handle_events(
                             continue;
                         }
                     };
+                // Saving a failover pair's show under a new name makes it one of this
+                // computer's own showfiles.
+                let leaves_failover_storage = nightfall::show_storage_is_failover()
+                    && showfile_name.as_deref() != current_showfile.name();
+                if leaves_failover_storage {
+                    select_library_show_storage();
+                }
                 let mut showfile_save_state = showfile_state.p0();
                 match save_showfile(&mut showfile_save_state, showfile_name.as_deref()) {
                     Err(error) => {
+                        if leaves_failover_storage {
+                            nightfall::set_show_storage_failover(true);
+                        }
                         tracing::error!("Failed to save showfile: {}", error);
                         fail_showfile_command(&mut responder, event.command_id, error);
                     }
@@ -136,15 +146,16 @@ pub fn handle_events(
             | ShowfileCommand::LoadShowfileRevision(_) => {
                 let selection = match &event.command {
                     ShowfileCommand::LoadShowfile => {
-                        showfile_dir_path(None).map(|path| (None, path))
+                        library_showfile_dir_path(None).map(|path| (None, path))
                     }
                     ShowfileCommand::LoadNamedShowfile(name) => current_showfile_name(Some(name))
                         .and_then(|name| {
-                            showfile_dir_path(name.as_deref()).map(|path| (name, path))
+                            library_showfile_dir_path(name.as_deref()).map(|path| (name, path))
                         }),
                     ShowfileCommand::LoadDraftShowfile(name) => current_showfile_name(Some(name))
                         .and_then(|name| {
-                            showfile_draft_dir_path(name.as_deref()).map(|path| (name, path))
+                            library_showfile_draft_dir_path(name.as_deref())
+                                .map(|path| (name, path))
                         }),
                     ShowfileCommand::LoadShowfileRevision(selection) => {
                         current_showfile_name(Some(&selection.showfile_name)).and_then(|name| {
@@ -239,7 +250,7 @@ pub fn handle_events(
                         ));
                     }
                     trash_showfile_in_root(
-                        &showfile_root_dir_path()?,
+                        &showfile_library_root_path()?,
                         showfile_name.as_deref(),
                         trash::now_ms(),
                     )
@@ -251,7 +262,7 @@ pub fn handle_events(
             }
 
             ShowfileCommand::RestoreDeletedShowfile(entry_id) => {
-                match showfile_root_dir_path()
+                match showfile_library_root_path()
                     .and_then(|root| restore_trashed_showfile_in_root(&root, entry_id))
                 {
                     Ok(_) => succeed_showfile_command(&mut responder, event.command_id),
@@ -260,7 +271,8 @@ pub fn handle_events(
             }
 
             ShowfileCommand::EmptyShowfileTrash => {
-                match showfile_root_dir_path().and_then(|root| empty_showfile_trash_in_root(&root))
+                match showfile_library_root_path()
+                    .and_then(|root| empty_showfile_trash_in_root(&root))
                 {
                     Ok(()) => succeed_showfile_command(&mut responder, event.command_id),
                     Err(error) => fail_showfile_command(&mut responder, event.command_id, error),

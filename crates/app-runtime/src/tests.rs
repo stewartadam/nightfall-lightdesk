@@ -835,6 +835,47 @@ fn world_factory_sample_data_bootstrap_starts_ready() {
     assert_eq!(lifecycle_state(&app), AppState::Ready);
 }
 
+/// Verifies closing a show swaps in an empty, unnamed world that starts up like a fresh process
+/// and waits for a show, so clients prompt for one instead of keeping a show open.
+#[test]
+fn close_showfile_swap_leaves_a_world_waiting_for_a_show() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("create showfile root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+
+    let factory = WorldFactory::new(test_log_config(), false, false, false);
+    let active_app = factory
+        .build(WorldBootstrap::SampleData {
+            showfile_name: None,
+        })
+        .expect("active app build");
+    let mut orchestrator = SwapOrchestrator::new(active_app);
+    let request = PendingWorldSwap::CloseShowfile {
+        correlation_id: uuid::Uuid::new_v4(),
+    };
+
+    let _previous_app = orchestrator
+        .stage_and_swap_with_before_commit(&factory, request.bootstrap(), 0, |_| {})
+        .expect("close swap");
+
+    // The engine's startup check moves it on to Initialized, as for a fresh process.
+    let app = orchestrator.active_app();
+    assert_eq!(lifecycle_state(app), AppState::Initializing);
+    assert_eq!(
+        app.world()
+            .resource::<super::systems::showfile_events::CurrentShowfile>()
+            .name(),
+        None
+    );
+
+    drop(orchestrator);
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
 /// Verify sample faders reference the intended clips and survive the portable snapshot path.
 #[test]
 fn world_factory_sample_data_seeds_fader_assignments() {

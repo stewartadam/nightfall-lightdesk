@@ -9,6 +9,8 @@
 import { atom, computed } from "nanostores";
 import {
   type AudioSettings,
+  BackupLinkStatus,
+  type BackupState,
   CurrentNetworkInterfaceMode,
   type ExternalControlState,
   InputUniverseVisibilityMode,
@@ -72,6 +74,7 @@ export const DEFAULT_SETTINGS: SettingsSections = {
     artnet_sync_enabled: false,
     sacn_sync_enabled: false,
     sacn_sync_universe: 1,
+    sacn_priority: 100,
   },
 };
 
@@ -107,6 +110,20 @@ export const $telemetryState = atom<TelemetryState>({
   consent: { decided: false, share_usage: false, share_errors: false },
   install_id: "",
   error: undefined,
+});
+
+/** Host-owned backup role: which primary this host follows and how its link stands. */
+export const $backupState = atom<BackupState>({
+  available: false,
+  primary_address: undefined,
+  link: BackupLinkStatus.Off,
+  error: undefined,
+  showfile_name: undefined,
+  synced_at_ms: undefined,
+  epoch: 0,
+  auto_take_over: true,
+  backup: undefined,
+  took_over_automatically_at_ms: undefined,
 });
 
 /** Host-owned external control preferences and live listener status. */

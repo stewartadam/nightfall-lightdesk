@@ -49,6 +49,9 @@ pub enum PendingWorldSwap {
         showfile_name: Option<String>,
         source: std::path::PathBuf,
     },
+    /// Closes the open show, leaving an empty world that waits for a show like a freshly started
+    /// one, so clients return to the welcome screen.
+    CloseShowfile { correlation_id: Uuid },
 }
 
 impl PendingWorldSwap {
@@ -57,6 +60,7 @@ impl PendingWorldSwap {
         match self {
             Self::NewShowfile { correlation_id, .. } => *correlation_id,
             Self::LoadShowfile { correlation_id, .. } => *correlation_id,
+            Self::CloseShowfile { correlation_id } => *correlation_id,
         }
     }
 
@@ -94,6 +98,9 @@ impl PendingWorldSwap {
                 name: showfile_name.clone(),
                 source: source.clone(),
             },
+            Self::CloseShowfile { .. } => WorldBootstrap::Empty {
+                showfile_name: None,
+            },
         }
     }
 
@@ -102,6 +109,7 @@ impl PendingWorldSwap {
         match self {
             Self::NewShowfile { .. } => "new showfile",
             Self::LoadShowfile { .. } => "showfile load",
+            Self::CloseShowfile { .. } => "showfile close",
         }
     }
 }
@@ -139,6 +147,12 @@ impl PendingWorldSwapRequest {
             showfile_name: showfile_name.map(str::to_string),
             source,
         });
+    }
+
+    /// Queue a world swap that closes the open show for a command correlation id.
+    pub fn request_close_showfile(&mut self, correlation_id: Uuid) {
+        self.requests
+            .push(PendingWorldSwap::CloseShowfile { correlation_id });
     }
 
     /// Drain queued world swap requests in FIFO order.
@@ -194,7 +208,9 @@ impl SwapOrchestrator {
     ///
     /// The callback runs only after staging succeeds and before the current app is
     /// replaced, which lets callers acknowledge commands through resources that
-    /// belong to the still-active world.
+    /// belong to the still-active world. The factory sets the staged world's lifecycle state: a
+    /// world that opens a show starts ready, and one that closes it starts up like a fresh
+    /// process, so clients prompt for a show.
     pub fn stage_and_swap_with_before_commit<F>(
         &mut self,
         factory: &WorldFactory,
@@ -219,7 +235,6 @@ impl SwapOrchestrator {
         };
 
         ensure_runtime_resources(&mut staged_app);
-        staged_app.insert_state(AppState::Ready);
         before_commit(&mut self.active_app);
         Ok(self.swap(staged_app))
     }
@@ -256,7 +271,6 @@ impl SwapOrchestrator {
         };
 
         ensure_runtime_resources(&mut staged_app);
-        staged_app.insert_state(AppState::Ready);
         before_commit(&mut self.active_app);
         Ok(self.swap(staged_app))
     }
@@ -369,7 +383,11 @@ mod tests {
 
         assert_eq!(marker_value(&previous_app), "active");
         assert_eq!(marker_value(orchestrator.active_app()), "staged");
-        assert_eq!(lifecycle_state(orchestrator.active_app()), AppState::Ready);
+        // The staged world keeps the lifecycle state its factory gave it.
+        assert_eq!(
+            lifecycle_state(orchestrator.active_app()),
+            AppState::Initializing
+        );
         assert_eq!(
             command_state(orchestrator.active_app()),
             CommandProcessingState::Running
