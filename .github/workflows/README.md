@@ -185,13 +185,17 @@ for review, or gets new commits while ready, and is not part of a stack:
    (which the required checks run from the PR itself), dependencies and toolchain, licensing,
    agent instructions (any `CLAUDE.md`, since the review would load it) and Git attributes. Those get a "needs a human"
    comment without spending a Claude review.
-2. Otherwise Claude reviews the PR against the rubric in `.github/claude-review.md`: no likely
-   bugs, low risk, tests for behavior changes, a description that matches the diff with release
-   notes, browser tests for UI behavior fixes, and the written conventions in `CLAUDE.md`. It can only
-   read files: the default branch at the workspace root and the PR head in `pr-head/`.
-3. The verdict is posted as one comment that later runs update. On "ready to auto-merge", the PR
-   gets the `low-risk` label and GitHub auto-merge, so it merges only once the required checks
-   pass. Any reported bug overrides an auto-merge verdict.
+2. Otherwise Claude reviews the PR against the rubric in `.github/claude-review.md`. It judges
+   risk by blast radius, reversibility, user impact and test coverage rather than by which code
+   changed, and checks for likely bugs, tests for behavior changes (browser tests for UI behavior
+   fixes), a showfile migration when saved data changes shape, docs that still match the app, a
+   description that matches the diff, release notes that follow the guide, and the written
+   conventions in `CLAUDE.md`. It can only read files: the default branch at the workspace root
+   and the PR head in `pr-head/`.
+3. The verdict is posted as one comment that later runs update, listing each check as passed or
+   failed with a note. On "ready to auto-merge", the PR gets the `low-risk` label and GitHub
+   auto-merge, so it merges only once the required checks pass. A reported bug or a failed check
+   overrides an auto-merge verdict.
 
 Pushing to a cleared PR, reopening it or converting it to draft disables its auto-merge, removes
 the label and marks the comment as withdrawn before any new review starts. This keys off the label:

@@ -165,10 +165,14 @@ jobs:
             --allowedTools 'Read(./**)'
             --disallowedTools 'Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Task,Read(//proc/**),Read(//sys/**)'
             --json-schema '{"type":"object","additionalProperties":false,
-            "required":["verdict","summary","reasons","findings"],"properties":{
+            "required":["verdict","summary","checks","findings"],"properties":{
             "verdict":{"type":"string","enum":["auto-merge","needs-human"]},
             "summary":{"type":"string"},
-            "reasons":{"type":"array","items":{"type":"string"}},
+            "checks":{"type":"array","items":{"type":"object","additionalProperties":false,
+            "required":["check","passed","note"],"properties":{
+            "check":{"type":"string","enum":["bugs","risk","tests","showfile","docs",
+            "description","release-notes","conventions"]},
+            "passed":{"type":"boolean"},"note":{"type":"string"}}}},
             "findings":{"type":"array","items":{"type":"object","additionalProperties":false,
             "required":["path","line","severity","description"],"properties":{
             "path":{"type":"string"},"line":{"type":"integer"},
@@ -231,7 +235,14 @@ jobs:
             <<< "$VERDICT" > /dev/null; then
             # A reported bug always blocks, even if the verdict says otherwise.
             verdict="$(jq '.verdict = "needs-human"
-              | .reasons += ["The review reported a likely bug."]' <<< "$VERDICT")"
+              | .checks = [.checks[] | select(.check != "bugs")]
+              | .checks = [{check: "bugs", passed: false,
+                  note: "The review reported a likely bug; see the findings."}] + .checks' \
+              <<< "$VERDICT")"
+          elif jq -e '.verdict == "auto-merge" and any(.checks[]; .passed | not)' \
+            <<< "$VERDICT" > /dev/null; then
+            # Every check must pass for auto-merge, whatever the verdict says.
+            verdict="$(jq '.verdict = "needs-human"' <<< "$VERDICT")"
           else
             verdict="$VERDICT"
           fi
@@ -257,12 +268,20 @@ jobs:
             fi
           fi
 
+          # Workflow-made verdicts carry plain reasons. Claude verdicts carry one entry per check,
+          # listed with failed checks first.
           body="$(jq -r --arg marker "$marker" --arg sha "${HEAD_SHA:0:7}" --arg status "$status" '
             (if .verdict == "auto-merge" then "### Claude review: ready to auto-merge"
              else "### Claude review: needs a human" end) as $title
-            | ([.reasons[] | "- \(.)"] | join("\n")) as $reasons
+            | {bugs: "Bugs", risk: "Risk", tests: "Tests", showfile: "Showfile compatibility",
+               docs: "Docs", description: "Description", "release-notes": "Release notes",
+               conventions: "Conventions"} as $names
+            | (if has("checks") then
+                 [.checks | sort_by(.passed)[]
+                  | "- \(if .passed then "✅" else "❌" end) **\($names[.check] // .check)**: \(.note)"]
+               else [.reasons[] | "- \(.)"] end | join("\n")) as $reasons
             | ([.findings[] | "- `\(.path):\(.line)` (\(.severity)): \(.description)"] | join("\n")) as $findings
-            | [$marker, $title, "", .summary, "", "**Why**", "", $reasons]
+            | [$marker, $title, "", .summary, "", (if has("checks") then "**Checks**" else "**Why**" end), "", $reasons]
               + (if $findings == "" then [] else ["", "**Findings**", "", $findings] end)
               + (if $status == "" then [] else ["", $status] end)
               + ["", "<sub>Reviewed \($sha) against `.github/claude-review.md`.</sub>"]
