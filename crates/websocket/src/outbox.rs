@@ -49,16 +49,21 @@ pub(crate) struct Publication {
 }
 
 impl Publication {
-    /// Wraps one encoded publication, reading the message type of droppable snapshots and deltas
-    /// so they can be coalesced in a lagging client's queue.
-    pub(crate) fn from_encoded(encoded: Vec<u8>) -> Self {
-        let (snapshot_type, delta) = match encoded.split_first() {
-            Some((&DISCRIMINATOR_DROPPABLE, cbor)) => (peek_message_type(cbor), false),
-            Some((&DISCRIMINATOR_DELTA, cbor)) => (peek_message_type(cbor), true),
+    /// Wraps one encoded publication and reads its message type once: clients that asked for
+    /// some types only are filtered by it, and droppable snapshots and deltas are coalesced by
+    /// it in a lagging client's queue. Returns the publication with that type.
+    pub(crate) fn from_encoded(encoded: Vec<u8>) -> (Self, Option<Arc<str>>) {
+        let message_type: Option<Arc<str>> = encoded
+            .split_first()
+            .and_then(|(_, cbor)| peek_message_type(cbor))
+            .map(Arc::from);
+        let (snapshot_type, delta) = match encoded.first() {
+            Some(&DISCRIMINATOR_DROPPABLE) => (message_type.clone(), false),
+            Some(&DISCRIMINATOR_DELTA) => (message_type.clone(), true),
             _ => (None, false),
         };
-        let snapshot_type = snapshot_type.map(Arc::from);
-        Self::new(Message::Binary(encoded.into()), snapshot_type, delta)
+        let publication = Self::new(Message::Binary(encoded.into()), snapshot_type, delta);
+        (publication, message_type)
     }
 
     /// Wraps a message that must be delivered in order and never replaced.
@@ -351,7 +356,7 @@ mod tests {
         let bytes = EncodedClientMessage::new(discriminator, message)
             .expect("test message encodes")
             .to_bytes();
-        Publication::from_encoded(bytes)
+        Publication::from_encoded(bytes).0
     }
 
     /// Decodes the payload of a queued message back to its type and data for assertions.
