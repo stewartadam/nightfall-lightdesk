@@ -13,12 +13,11 @@
 //! sending commands and receiving results.
 
 use std::collections::HashMap;
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Read};
 use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
-use itertools::Itertools;
-use nightfall_cmd_parse::split_command_statements;
+use nightfall_cmd_parse::split_command_script;
 use nightfall_config::{RuntimeConfig, RuntimeConfigLoader};
 use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
 use serde_json::json;
@@ -137,7 +136,7 @@ impl CliApp {
 
     /// Splits one input into independent commands and awaits each terminal result in order.
     async fn send_command_string(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
-        for statement in split_command_statements(input) {
+        for statement in split_command_script(input) {
             let command_id = Uuid::new_v4();
             let command_json = create_eval_command_json(command_id, command_id, statement)?;
             let (result_sender, result_receiver) = oneshot::channel();
@@ -187,8 +186,10 @@ impl CliApp {
     /// Runs stdin or interactive terminal command processing until exit or disconnection.
     async fn run_interactive(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if !std::io::stdin().is_terminal() {
-            let input = std::io::stdin().lines().map_while(Result::ok).join("");
-            self.send_command_string(&input).await?;
+            let mut input = Vec::new();
+            std::io::stdin().read_to_end(&mut input)?;
+            self.send_command_string(&String::from_utf8_lossy(&input))
+                .await?;
             tracing::warn!("read commands from stdin; no further commands will be parsed");
             return Ok(());
         }
@@ -362,12 +363,13 @@ mod tests {
         assert!(envelope.get("correlation_id").is_none());
     }
 
-    /// Verifies CLI sequencing preserves semicolons embedded in quoted arguments.
+    /// Verifies CLI sequencing preserves semicolons embedded in quoted arguments and
+    /// treats each piped line as its own statement.
     #[test]
-    fn command_sequence_splits_only_unquoted_semicolons() {
+    fn command_sequence_splits_lines_and_unquoted_semicolons() {
         assert_eq!(
-            split_command_statements("fix 1 \"custom;attr\" @ 10; store cue 1.1"),
-            vec!["fix 1 \"custom;attr\" @ 10", "store cue 1.1"]
+            split_command_script("fix 1 \"custom;attr\" @ 10; store cue 1.1\nclear"),
+            vec!["fix 1 \"custom;attr\" @ 10", "store cue 1.1", "clear"]
         );
     }
 

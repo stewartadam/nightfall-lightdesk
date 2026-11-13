@@ -11,7 +11,6 @@ path = "src/main.rs"
 
 [dependencies]
 futures-util.workspace = true
-itertools = "0.15"
 minicbor-serde.workspace = true
 reedline = "0.52"
 nightfall-cmd-parse = { path = "../cmd-parse" }
