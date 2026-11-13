@@ -178,7 +178,6 @@ test("actionDragPositionFromPointer aligns action start to the pointer", () => {
   const position = actionDragPositionFromPointer({
     clientX: 275,
     laneLeft: 100,
-    initialPositionPx: 40,
     timelineStartMs: 5000,
     zoom: 50,
     snapConfig: snapConfig(false),
@@ -186,7 +185,6 @@ test("actionDragPositionFromPointer aligns action start to the pointer", () => {
 
   assert.deepEqual(position, {
     positionPx: 175,
-    offsetPx: 135,
     positionMs: 8500,
   });
 });
@@ -826,11 +824,11 @@ test("resolveActionVisualDurationMs omits unknown action lengths", () => {
   );
 });
 
+/** Verifies a dragged action start snaps to the nearest grid second. */
 test("actionDragPositionFromPointer snaps the aligned action start", () => {
   const position = actionDragPositionFromPointer({
     clientX: 148,
     laneLeft: 100,
-    initialPositionPx: 10,
     timelineStartMs: 0,
     zoom: 50,
     snapConfig: snapConfig(true),
@@ -838,7 +836,6 @@ test("actionDragPositionFromPointer snaps the aligned action start", () => {
 
   assert.deepEqual(position, {
     positionPx: 50,
-    offsetPx: 40,
     positionMs: 1000,
   });
 });
@@ -848,8 +845,7 @@ test("actionDragPositionFromPointer prefers original start snap positions", () =
   const position = actionDragPositionFromPointer({
     clientX: 148,
     laneLeft: 100,
-    initialPositionPx: 40,
-    originalSnapPositionsPx: [40],
+    originalSnapPositionsMs: [800],
     timelineStartMs: 0,
     zoom: 50,
     snapConfig: snapConfig(true),
@@ -857,7 +853,6 @@ test("actionDragPositionFromPointer prefers original start snap positions", () =
 
   assert.deepEqual(position, {
     positionPx: 40,
-    offsetPx: 0,
     positionMs: 800,
   });
 });
@@ -867,8 +862,7 @@ test("actionDragPositionFromPointer keeps original start snap independent", () =
   const position = actionDragPositionFromPointer({
     clientX: 148,
     laneLeft: 100,
-    initialPositionPx: 40,
-    originalSnapPositionsPx: [40],
+    originalSnapPositionsMs: [800],
     timelineStartMs: 0,
     zoom: 50,
     snapConfig: snapConfig(false),
@@ -876,7 +870,43 @@ test("actionDragPositionFromPointer keeps original start snap independent", () =
 
   assert.deepEqual(position, {
     positionPx: 40,
-    offsetPx: 0,
     positionMs: 800,
   });
+});
+
+/**
+ * Verifies a beat snap stores the exact beat time, not the time of the pixel the beat falls
+ * in: 128 BPM beat 2 is 468.75 ms, which used to round up to 47 px and back to 470 ms.
+ */
+test("actionDragPositionFromPointer stores the exact beat when snapping", () => {
+  const position = actionDragPositionFromPointer({
+    clientX: 145,
+    laneLeft: 100,
+    timelineStartMs: 0,
+    zoom: 100,
+    snapConfig: {
+      enabled: true,
+      interval: 60000 / 128,
+      threshold: 15,
+      isBeat: true,
+      beatsPerBar: 4,
+    },
+  });
+
+  assert.equal(position.positionMs, 468.75);
+  assert.equal(position.positionPx, 46.875);
+});
+
+/** Verifies snapping back to an original start keeps its fractional millisecond time. */
+test("actionDragPositionFromPointer keeps a fractional original start", () => {
+  const position = actionDragPositionFromPointer({
+    clientX: 147,
+    laneLeft: 100,
+    originalSnapPositionsMs: [468.75],
+    timelineStartMs: 0,
+    zoom: 100,
+    snapConfig: snapConfig(false),
+  });
+
+  assert.equal(position.positionMs, 468.75);
 });
