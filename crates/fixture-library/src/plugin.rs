@@ -38,6 +38,7 @@ impl Plugin for FixtureLibraryPlugin {
 
         // Register fixture library commands with the engine
         register_fixture_library_commands(app);
+        crate::editor::register_fixture_editor(app);
 
         // Register HTTP routes for mesh and wheel image serving, restricted to
         // archives the library indexes.
