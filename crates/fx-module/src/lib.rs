@@ -165,6 +165,15 @@ pub enum FxModuleRuntimeNotification {
         /// User-facing runtime error summary.
         error: String,
     },
+    /// A running fx module trapped or hit a sandbox limit and was stopped.
+    Stopped {
+        /// Numeric stored fx module ID that was stopped.
+        fx_module_id: u32,
+        /// Module name resolved from the stored fx module definition.
+        module_name: String,
+        /// User-facing reason the module stopped.
+        error: String,
+    },
 }
 
 /// Active fx module IDs that have been started.

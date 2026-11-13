@@ -33,6 +33,19 @@ pub fn forward_fx_module_runtime_notifications(
                     ),
                 ));
             }
+            FxModuleRuntimeNotification::Stopped {
+                fx_module_id,
+                module_name,
+                error,
+            } => {
+                ui_notifications.write(UiNotification::toast(
+                    ToastLevel::Error,
+                    format!(
+                        "FX module {} ({}) stopped: {}",
+                        fx_module_id, module_name, error
+                    ),
+                ));
+            }
         }
     }
 }

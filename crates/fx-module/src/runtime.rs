@@ -8,6 +8,8 @@
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use nightfall::prelude::{FadeCurve, Identifiers};
 use nightfall_dmx::prelude::{
@@ -20,7 +22,7 @@ use nightfall_fixtures::prelude::{
 use thiserror::Error;
 use uuid::Uuid;
 use wasmtime::component::{Component, HasSelf, Linker};
-use wasmtime::{Engine, Store};
+use wasmtime::{Config, Engine, ResourceLimiter, Store, Trap};
 
 use crate::{
     FxModuleError, FxModuleErrorCode, FxModuleHost, FxModuleInitInput, FxModuleLayer,
@@ -35,6 +37,21 @@ mod bindings {
     });
 }
 
+/// How often the shared engine's epoch advances; the granularity of guest time limits.
+const EPOCH_TICK: Duration = Duration::from_millis(10);
+
+/// Wall-clock budget for a single `render` call before the guest is interrupted.
+const RENDER_TIME_LIMIT: Duration = Duration::from_millis(100);
+
+/// Wall-clock budget for instantiation, `init` and `teardown`, which may do one-off setup work.
+const LIFECYCLE_TIME_LIMIT: Duration = Duration::from_secs(1);
+
+/// Largest linear memory a guest instance may grow to.
+const MEMORY_LIMIT_BYTES: usize = 64 << 20;
+
+/// Largest table a guest instance may grow to.
+const TABLE_ELEMENT_LIMIT: usize = 100_000;
+
 /// Errors raised by the fx module runtime host.
 #[derive(Debug, Error)]
 pub enum FxModuleRuntimeError {
@@ -47,9 +64,13 @@ pub enum FxModuleRuntimeError {
         #[source]
         source: std::io::Error,
     },
-    /// Wasmtime failed to compile, link, or invoke the component.
-    #[error("failed to execute fx module component")]
+    /// Wasmtime failed to compile, link, or instantiate the component.
+    #[error("failed to execute fx module component: {0:#}")]
     Wasmtime(#[from] wasmtime::Error),
+    /// A guest call trapped, ran past its time limit, or exceeded its memory limit. The instance
+    /// cannot be called again and must be dropped.
+    #[error("{0}")]
+    Stopped(String),
     /// The guest returned a structured FX module error.
     #[error("{0}")]
     Guest(FxModuleError),
@@ -58,19 +79,57 @@ pub enum FxModuleRuntimeError {
     Validation(String),
 }
 
+impl FxModuleRuntimeError {
+    /// Whether the instance that produced this error is unusable and must be dropped.
+    ///
+    /// Wasmtime instances are poisoned after a trap, so retrying would only fail again (or, for a
+    /// guest stuck in a loop, burn another full time budget on the engine thread).
+    pub fn is_fatal(&self) -> bool {
+        matches!(self, Self::Stopped(_))
+    }
+}
+
+/// Returns the engine shared by every fx module component.
+///
+/// Epoch interruption is enabled so each guest call can be given a wall-clock deadline; a
+/// background thread advances the epoch every [`EPOCH_TICK`]. Sharing one engine keeps that to a
+/// single ticker thread and lets compiled components share the same configuration.
+fn shared_engine() -> &'static Engine {
+    static ENGINE: OnceLock<Engine> = OnceLock::new();
+    ENGINE.get_or_init(|| {
+        let mut config = Config::new();
+        config.epoch_interruption(true);
+        let engine = Engine::new(&config).expect("fx module engine configuration should be valid");
+        let ticker = engine.clone();
+        std::thread::Builder::new()
+            .name("fx-module-epoch".to_string())
+            .spawn(move || {
+                loop {
+                    std::thread::sleep(EPOCH_TICK);
+                    ticker.increment_epoch();
+                }
+            })
+            .expect("failed to spawn the fx module epoch thread");
+        engine
+    })
+}
+
+/// Converts a wall-clock limit into the number of epoch ticks Wasmtime counts down from.
+fn epoch_ticks(limit: Duration) -> u64 {
+    (limit.as_millis() / EPOCH_TICK.as_millis()).max(1) as u64
+}
+
 /// Compiled fx module component bytes ready for instantiation.
 pub struct FxModuleComponent {
-    engine: Engine,
     component: Component,
 }
 
 impl FxModuleComponent {
     /// Load and compile a fx module component from raw bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, FxModuleRuntimeError> {
-        let engine = Engine::default();
-        let component = Component::new(&engine, bytes)
+        let component = Component::new(shared_engine(), bytes)
             .map_err(|error| FxModuleRuntimeError::Validation(error.to_string()))?;
-        Ok(Self { engine, component })
+        Ok(Self { component })
     }
 
     /// Load and compile a fx module component from a file path.
@@ -81,24 +140,42 @@ impl FxModuleComponent {
             source,
         })?;
 
-        let engine = Engine::default();
-        let component = Component::new(&engine, &bytes).map_err(|error| {
+        let component = Component::new(shared_engine(), &bytes).map_err(|error| {
             FxModuleRuntimeError::Validation(format_component_validation_error(path, &error))
         })?;
 
-        Ok(Self { engine, component })
+        Ok(Self { component })
     }
 
     /// Instantiate this component with the provided host capabilities.
+    ///
+    /// The instance's store is capped at [`MEMORY_LIMIT_BYTES`] of linear memory, and every guest
+    /// call runs under a wall-clock deadline so a runaway module cannot stall the engine thread.
     pub fn instantiate<H: FxModuleHost + 'static>(
         &self,
         host: H,
     ) -> Result<FxModuleInstance<H>, FxModuleRuntimeError> {
-        let mut linker = Linker::new(&self.engine);
+        let engine = shared_engine();
+        let mut linker = Linker::new(engine);
         bindings::FxModule::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)?;
 
-        let mut store = Store::new(&self.engine, RuntimeStore { host });
-        let bindings = bindings::FxModule::instantiate(&mut store, &self.component, &linker)?;
+        let mut store = Store::new(
+            engine,
+            RuntimeStore {
+                host,
+                limits: GuestLimits,
+            },
+        );
+        store.limiter(|state| &mut state.limits);
+        store.set_epoch_deadline(epoch_ticks(LIFECYCLE_TIME_LIMIT));
+        let bindings = bindings::FxModule::instantiate(&mut store, &self.component, &linker)
+            .map_err(|error| {
+                if error.is::<Trap>() || error.is::<GuestLimitExceeded>() {
+                    stopped_error("instantiate", LIFECYCLE_TIME_LIMIT, error)
+                } else {
+                    FxModuleRuntimeError::Wasmtime(error)
+                }
+            })?;
 
         Ok(FxModuleInstance { store, bindings })
     }
@@ -113,39 +190,109 @@ pub struct FxModuleInstance<H: 'static> {
 impl<H: FxModuleHost + 'static> FxModuleInstance<H> {
     /// Initialize the active component instance.
     pub fn init(&mut self, input: &FxModuleInitInput) -> Result<(), FxModuleRuntimeError> {
+        self.store
+            .set_epoch_deadline(epoch_ticks(LIFECYCLE_TIME_LIMIT));
         let result = self
             .bindings
             .nightfall_fx_module_guest()
-            .call_init(&mut self.store, &to_wit_init_input(input))?;
+            .call_init(&mut self.store, &to_wit_init_input(input))
+            .map_err(|error| stopped_error("init", LIFECYCLE_TIME_LIMIT, error))?;
         result.map_err(from_wit_error)
     }
 
     /// Render the next Layer payload for the current tick.
+    ///
+    /// The guest is interrupted once it runs past [`RENDER_TIME_LIMIT`]; that and any other trap
+    /// return [`FxModuleRuntimeError::Stopped`], after which the instance must be dropped.
     pub fn render(
         &mut self,
         input: &FxModuleRenderInput,
     ) -> Result<FxModuleLayer, FxModuleRuntimeError> {
+        self.store
+            .set_epoch_deadline(epoch_ticks(RENDER_TIME_LIMIT));
         let result = self
             .bindings
             .nightfall_fx_module_guest()
-            .call_render(&mut self.store, &to_wit_render_input(input))?;
+            .call_render(&mut self.store, &to_wit_render_input(input))
+            .map_err(|error| stopped_error("render", RENDER_TIME_LIMIT, error))?;
         let layer = result.map_err(from_wit_error)?;
         from_wit_fx_module_layer(layer)
     }
 
     /// Tear down the active component instance.
     pub fn teardown(&mut self) -> Result<(), FxModuleRuntimeError> {
+        self.store
+            .set_epoch_deadline(epoch_ticks(LIFECYCLE_TIME_LIMIT));
         let result = self
             .bindings
             .nightfall_fx_module_guest()
-            .call_teardown(&mut self.store)?;
+            .call_teardown(&mut self.store)
+            .map_err(|error| stopped_error("teardown", LIFECYCLE_TIME_LIMIT, error))?;
         result.map_err(from_wit_error)
     }
+}
+
+/// Describes why a guest call stopped, naming the exceeded limit when one was hit.
+fn stopped_error(call: &str, time_limit: Duration, error: wasmtime::Error) -> FxModuleRuntimeError {
+    let reason = if let Some(limit) = error.downcast_ref::<GuestLimitExceeded>() {
+        limit.to_string()
+    } else if matches!(error.downcast_ref::<Trap>(), Some(Trap::Interrupt)) {
+        format!("exceeded its {} ms time limit", time_limit.as_millis())
+    } else {
+        format!("trapped: {error:#}")
+    };
+    FxModuleRuntimeError::Stopped(format!("{call} {reason}"))
 }
 
 /// Registry of loaded FX module definitions and active runtime instances.
 struct RuntimeStore<H> {
     host: H,
+    limits: GuestLimits,
+}
+
+/// Resource limit a guest tried to exceed, raised as a trap from [`GuestLimits`].
+#[derive(Debug, Error)]
+enum GuestLimitExceeded {
+    /// Linear memory growth past [`MEMORY_LIMIT_BYTES`].
+    #[error("exceeded its {} MiB memory limit", MEMORY_LIMIT_BYTES >> 20)]
+    Memory,
+    /// Table growth past [`TABLE_ELEMENT_LIMIT`].
+    #[error("exceeded its {TABLE_ELEMENT_LIMIT} table element limit")]
+    Table,
+}
+
+/// Store resource limiter that traps a guest growing memory or tables past the host's caps.
+///
+/// Trapping, rather than failing the grow, gives the operator a clear reason instead of whatever
+/// the guest's allocator does when it runs out of memory.
+struct GuestLimits;
+
+impl ResourceLimiter for GuestLimits {
+    /// Allows memory growth up to [`MEMORY_LIMIT_BYTES`] and the module's own declared maximum.
+    fn memory_growing(
+        &mut self,
+        _current: usize,
+        desired: usize,
+        maximum: Option<usize>,
+    ) -> wasmtime::Result<bool> {
+        if desired > MEMORY_LIMIT_BYTES {
+            return Err(GuestLimitExceeded::Memory.into());
+        }
+        Ok(maximum.is_none_or(|maximum| desired <= maximum))
+    }
+
+    /// Allows table growth up to [`TABLE_ELEMENT_LIMIT`] and the table's own declared maximum.
+    fn table_growing(
+        &mut self,
+        _current: usize,
+        desired: usize,
+        maximum: Option<usize>,
+    ) -> wasmtime::Result<bool> {
+        if desired > TABLE_ELEMENT_LIMIT {
+            return Err(GuestLimitExceeded::Table.into());
+        }
+        Ok(maximum.is_none_or(|maximum| desired <= maximum))
+    }
 }
 
 impl<H: FxModuleHost> bindings::nightfall::fx_module::shared::Host for RuntimeStore<H> {}
@@ -708,6 +855,64 @@ mod tests {
         assert!(message.contains(&guest_wasm.display().to_string()));
         assert!(message.contains("failed to parse WebAssembly module"));
         assert!(message.contains("expected a WebAssembly component"));
+    }
+
+    /// Instantiates the test guest in `mode` and returns the error from its first render.
+    fn first_render_error(mode: &str) -> FxModuleRuntimeError {
+        let component = FxModuleComponent::from_bytes(test_component_bytes()).unwrap();
+        let mut instance = component.instantiate(NoopHost).unwrap();
+        instance
+            .init(&crate::FxModuleInitInput {
+                fx_instance_id: Uuid::new_v4(),
+                label: mode.to_string(),
+                config_json: format!("{{\"mode\":\"{mode}\"}}"),
+                random_seed: None,
+            })
+            .unwrap();
+        instance
+            .render(&crate::FxModuleRenderInput {
+                now_micros: 10,
+                delta_micros: 10,
+                elapsed_since_start_micros: 10,
+                selection: vec![],
+                selection_grid: crate::SelectedGrid::default(),
+            })
+            .expect_err("runaway guest render should be stopped")
+    }
+
+    /// A guest spinning forever in `render` is interrupted at the time limit with a fatal error,
+    /// instead of blocking the calling thread.
+    #[test]
+    fn render_interrupts_guest_that_exceeds_time_limit() {
+        let started = std::time::Instant::now();
+        let error = first_render_error("infinite-loop");
+
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "render should return shortly after its time limit"
+        );
+        assert!(error.is_fatal(), "time limit errors should be fatal");
+        assert_eq!(error.to_string(), "render exceeded its 100 ms time limit");
+    }
+
+    /// A guest allocating without bound traps at the memory limit with a fatal error naming it.
+    #[test]
+    fn render_traps_guest_that_exceeds_memory_limit() {
+        let error = first_render_error("grow-memory");
+
+        assert!(error.is_fatal(), "memory limit errors should be fatal");
+        assert_eq!(error.to_string(), "render exceeded its 64 MiB memory limit");
+    }
+
+    /// Structured guest errors leave the instance usable, so they are not fatal.
+    #[test]
+    fn guest_errors_are_not_fatal() {
+        let error = FxModuleRuntimeError::Guest(FxModuleError {
+            code: FxModuleErrorCode::InvalidInput,
+            message: "selection is required".to_string(),
+        });
+
+        assert!(!error.is_fatal());
     }
 
     #[test]
