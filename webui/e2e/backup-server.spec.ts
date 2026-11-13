@@ -708,6 +708,8 @@ test("a backup leaves the pair for the welcome screen, or opens a show instead",
       .getByLabel("Show name")
       .fill(`after-leaving-${testInfo.workerIndex}-${Date.now()}`);
     await created.getByRole("button", { name: "Create Show" }).click();
+    // The startup prompt must be gone first, or the app helper tries to answer it.
+    await expect(welcome).toBeHidden({ timeout: 30_000 });
     await waitForDockviewApp(page);
     await enterPriority(page, 130);
     await expect.poll(() => storedPriority(page)).toBe(130);

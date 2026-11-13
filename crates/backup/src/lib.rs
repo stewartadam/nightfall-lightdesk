@@ -270,10 +270,10 @@ pub struct MirroredShowfileReady {
 pub struct CopiedShowClosing;
 
 /// Whether this world holds a copied show that a backup left the pair with and that waits to be
-/// closed. Its output stays in standby until then, so the copied show never sends as this
-/// host's own output.
+/// closed, or replaced by a show a client opened. Its output stays in standby until then, so the
+/// copied show never sends as this host's own output, even when that close or load fails.
 #[derive(Debug, Default, Resource)]
-struct ClosingCopiedShow(bool);
+pub struct ClosingCopiedShow(bool);
 
 /// Messages the backup sends to clients.
 #[derive(Serialize)]
@@ -681,9 +681,13 @@ fn leave_pair_closing_copied_show(
 }
 
 /// Stops following when a client opens or creates a show, which replaces the copied show, and
-/// returns why the change could not be stored, if it could not. Does nothing on a host that
-/// follows no primary, apart from cancelling a follow still waiting for its primary to be checked.
-pub fn leave_backup_role_for_show_load(state: &mut BackupState) -> Option<String> {
+/// returns why the change could not be stored, if it could not. The copied show stays in standby
+/// until the opened show replaces it. Does nothing on a host that follows no primary, apart from
+/// cancelling a follow still waiting for its primary to be checked.
+pub fn leave_backup_role_for_show_load(
+    state: &mut BackupState,
+    closing: &mut ClosingCopiedShow,
+) -> Option<String> {
     if state.checking_address.is_some() {
         link::process_backup_link()
             .cancel_probe("A show was opened before the primary was checked.");
@@ -692,6 +696,7 @@ pub fn leave_backup_role_for_show_load(state: &mut BackupState) -> Option<String
         return None;
     }
     tell_primary_of_leave(state);
+    closing.0 = true;
     let (stored, save_error) = leave_pair(LeftShow::Kept);
     state.apply_preferences(&stored);
     save_error

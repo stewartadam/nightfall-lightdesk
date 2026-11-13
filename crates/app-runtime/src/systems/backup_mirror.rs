@@ -64,9 +64,10 @@ fn opens_a_show(command: &ShowfileCommand) -> bool {
 pub(crate) fn leave_backup_role_for_show_loads(
     mut commands: MessageReader<CommandEnvelope<ShowfileCommand>>,
     state: Option<ResMut<BackupState>>,
+    closing: Option<ResMut<nightfall_backup::ClosingCopiedShow>>,
     mut notifications: MessageWriter<UiNotification>,
 ) {
-    let Some(mut state) = state else {
+    let (Some(mut state), Some(mut closing)) = (state, closing) else {
         return;
     };
     if !commands
@@ -77,7 +78,7 @@ pub(crate) fn leave_backup_role_for_show_loads(
     }
     let was_backup = state.is_backup();
     let primary = state.primary_address.clone().unwrap_or_default();
-    let save_error = nightfall_backup::leave_backup_role_for_show_load(&mut state);
+    let save_error = nightfall_backup::leave_backup_role_for_show_load(&mut state, &mut closing);
     if !was_backup {
         return;
     }
