@@ -340,6 +340,14 @@ impl MaterializedTimeline {
         timecode_time - self.timeline.timecode_start
     }
 
+    /// Whether the timeline's transport has its audio playing: the timeline is active, its
+    /// timecode is running, and the timecode has reached the timeline's `timecode_start`.
+    /// During pre-roll the audio stays paused at its start; reaching the start flips
+    /// `audio_start_reached`, whose resync begins playback in step with the timecode.
+    pub fn audio_transport_playing(&self, timecode_time: Duration, timecode_running: bool) -> bool {
+        self.is_active && timecode_running && timecode_time >= self.timeline.timecode_start
+    }
+
     /// Process track actions based on the current timeline position
     /// Returns a list of `(track, action)` pairs that should be triggered
     pub fn process_actions(
@@ -523,6 +531,29 @@ mod tests {
             position_jumps,
             position: Duration::ZERO,
         }
+    }
+
+    /// Audio stays paused during pre-roll before `timecode_start` and plays once the running
+    /// timecode reaches it, and reaching the start requests the resync that begins playback.
+    #[test]
+    fn audio_waits_for_the_timeline_start() {
+        let mut timeline = MaterializedTimeline::new(Timeline {
+            timecode_start: Duration::from_secs(10),
+            ..Default::default()
+        });
+        timeline.activate();
+        timeline.update_with_timecode(Duration::from_secs(8));
+        timeline.audio_needs_sync = false;
+
+        assert!(!timeline.audio_transport_playing(Duration::from_secs(8), true));
+
+        timeline.update_with_timecode(Duration::from_secs(10));
+        assert!(timeline.audio_needs_sync);
+        assert!(timeline.audio_transport_playing(Duration::from_secs(10), true));
+        assert!(!timeline.audio_transport_playing(Duration::from_secs(10), false));
+
+        timeline.deactivate();
+        assert!(!timeline.audio_transport_playing(Duration::from_secs(12), true));
     }
 
     /// An active timeline resyncs audio when its external timecode starts, stops, or jumps,

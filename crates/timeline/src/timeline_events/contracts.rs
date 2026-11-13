@@ -15,7 +15,8 @@ use super::*;
 pub(crate) struct TimelinePlayheadJumped {
     /// Timeline whose playhead jumped.
     pub timeline: Entity,
-    /// Timecode position the playhead jumped to.
+    /// Timecode position playback is rebuilt at. A loop wrap names the loop start, while the
+    /// timecode itself carries on past it by the overshoot, which the next live scan covers.
     pub timecode_position: Duration,
 }
 

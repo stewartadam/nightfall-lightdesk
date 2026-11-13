@@ -255,6 +255,112 @@ pub struct TimelineLoopRange {
     pub enabled: bool,
 }
 
+/// Longest overshoot past a loop end that a loop wrap carries into the next pass. Anything
+/// further is a jump rather than a late frame; the same bound tells an external timecode's
+/// jumps from its jitter.
+pub const LOOP_OVERSHOOT_LIMIT: Duration = nightfall_timecode::external::POSITION_JUMP_THRESHOLD;
+
+impl TimelineLoopRange {
+    /// Where playback at timeline `position` continues after wrapping this loop, or `None`
+    /// while `position` is still before the loop end (or the range is empty).
+    ///
+    /// The time played past the end carries over into the next pass, so a loop keeps its
+    /// length however late the frame that notices the wrap runs. Playback overshoots by at most
+    /// a frame, so a position [`LOOP_OVERSHOOT_LIMIT`] or more past the end (or a whole loop
+    /// past it) came from a seek or a newly enabled loop, and restarts at the loop start.
+    pub fn wrap(&self, position: Duration) -> Option<Duration> {
+        let length = self
+            .end
+            .checked_sub(self.start)
+            .filter(|length| !length.is_zero())?;
+        let overshoot = position.checked_sub(self.end)?;
+        Some(if overshoot < length.min(LOOP_OVERSHOOT_LIMIT) {
+            self.start + overshoot
+        } else {
+            self.start
+        })
+    }
+}
+
+#[cfg(test)]
+mod loop_range_tests {
+    use super::*;
+
+    /// Builds an enabled loop range between two millisecond positions.
+    fn loop_range(start_ms: u64, end_ms: u64) -> TimelineLoopRange {
+        TimelineLoopRange {
+            start: Duration::from_millis(start_ms),
+            end: Duration::from_millis(end_ms),
+            enabled: true,
+        }
+    }
+
+    /// Verifies positions before the loop end do not wrap, and empty or inverted ranges
+    /// never wrap.
+    #[test]
+    fn wrap_waits_for_the_loop_end() {
+        assert_eq!(
+            loop_range(2000, 4000).wrap(Duration::from_millis(3999)),
+            None
+        );
+        assert_eq!(
+            loop_range(2000, 2000).wrap(Duration::from_millis(5000)),
+            None
+        );
+        assert_eq!(
+            loop_range(4000, 2000).wrap(Duration::from_millis(5000)),
+            None
+        );
+    }
+
+    /// Verifies a wrap carries the time played past the loop end into the next pass, so a
+    /// late frame does not shorten the loop.
+    #[test]
+    fn wrap_carries_overshoot_into_the_next_pass() {
+        let range = loop_range(2000, 4000);
+        assert_eq!(
+            range.wrap(Duration::from_millis(4000)),
+            Some(Duration::from_millis(2000))
+        );
+        assert_eq!(
+            range.wrap(Duration::from_millis(4016)),
+            Some(Duration::from_millis(2016))
+        );
+        assert_eq!(
+            range.wrap(Duration::from_millis(4249)),
+            Some(Duration::from_millis(2249))
+        );
+        assert_eq!(
+            loop_range(2000, 2100).wrap(Duration::from_millis(2150)),
+            Some(Duration::from_millis(2050))
+        );
+    }
+
+    /// Verifies a position further past the end than a frame could overshoot (or a whole
+    /// short loop past it), which only a seek or a newly enabled loop produces, restarts the
+    /// loop at its start instead of landing mid-loop.
+    #[test]
+    fn wrap_restarts_after_a_jump_past_the_end() {
+        let range = loop_range(2000, 4000);
+        assert_eq!(
+            range.wrap(Duration::from_millis(4250)),
+            Some(Duration::from_millis(2000))
+        );
+        assert_eq!(
+            range.wrap(Duration::from_millis(5500)),
+            Some(Duration::from_millis(2000))
+        );
+        assert_eq!(
+            loop_range(2000, 2100).wrap(Duration::from_millis(2200)),
+            Some(Duration::from_millis(2000))
+        );
+        assert_eq!(
+            range.wrap(Duration::from_secs(90)),
+            Some(Duration::from_millis(2000))
+        );
+    }
+}
+
 /// Runtime state describing whether a timeline action can currently preactivate.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
