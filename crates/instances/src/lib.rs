@@ -14,6 +14,7 @@
 
 use bevy_ecs::prelude::*;
 use nightfall::engine::{EngineIngressMeta, EngineOperation, EnginePayload, IngressCommand};
+use nightfall::playback_speed::{normalized_playback_speed, saturating_scale_duration};
 use nightfall::prelude::{IdExpr, Priority};
 use nightfall_playback_planner::{PlaybackPositionSource, PlaybackReconstructionTiming};
 use serde::{Deserialize, Serialize};
@@ -208,12 +209,13 @@ impl InstanceControls {
         self.speed_master_scale = normalized_playback_speed(value);
     }
 
-    /// Returns the sanitized speed multiplier used by playback clocks.
+    /// Returns the sanitized speed multiplier used by playback clocks: the operator speed times
+    /// the master scale, clamped to `MAX_PLAYBACK_SPEED`.
     pub fn effective_speed(&self) -> f64 {
-        f64::from(
+        f64::from(normalized_playback_speed(
             normalized_playback_speed(self.speed)
                 * normalized_playback_speed(self.speed_master_scale),
-        )
+        ))
     }
 }
 
@@ -279,15 +281,6 @@ pub enum ClipInstanceRequest {
     Stop(IdExpr),
     /// Advance clip playback for the addressed clip IDs.
     Go(IdExpr),
-}
-
-/// Normalizes playback speeds before they reach timing math.
-fn normalized_playback_speed(value: f32) -> f32 {
-    if value.is_finite() {
-        value.max(0.0)
-    } else {
-        0.0
-    }
 }
 
 /// Unit an object's authored times are written in.
@@ -436,13 +429,17 @@ impl InstanceClock {
         let scaled_delta = if self.speed == 1.0 {
             source_delta
         } else {
-            source_delta.mul_f64(self.speed)
+            saturating_scale_duration(source_delta, self.speed)
         };
         self.position = self.position.saturating_add(scaled_delta);
         self.delta = self.position.saturating_sub(self.previous_position);
     }
 
     /// Sets the clock speed and updates freeze state for zero-speed playback.
+    ///
+    /// Callers pass an operator speed already clamped by `InstanceControls`, possibly multiplied
+    /// by a tempo scale for beat-timed playback, so only non-finite and negative values are
+    /// corrected here. Clock arithmetic saturates, so a large speed cannot panic.
     pub fn set_speed(&mut self, speed: f64) {
         self.speed = if speed.is_finite() {
             speed.max(0.0)
@@ -722,6 +719,40 @@ mod tests {
         assert_eq!(clock.position, Duration::from_millis(500));
         assert_eq!(clock.delta, Duration::from_millis(500));
         assert_eq!(clock.discontinuity, InstanceClockDiscontinuity::Continuous);
+    }
+
+    /// Verifies an extreme operator-typed speed and master scale clamp to `MAX_PLAYBACK_SPEED`,
+    /// so the clock advances at that speed instead of overflowing `Duration` and panicking.
+    #[test]
+    fn extreme_speed_clamps_to_max_playback_speed() {
+        let max = f64::from(nightfall::playback_speed::MAX_PLAYBACK_SPEED);
+        let mut controls = InstanceControls::default();
+        controls.set_speed(f32::MAX);
+        controls.set_speed_master_scale(f32::MAX);
+        assert_eq!(f64::from(controls.speed), max);
+        assert_eq!(controls.effective_speed(), max);
+
+        controls.speed = 900.0;
+        controls.speed_master_scale = 2.0;
+        assert_eq!(controls.effective_speed(), max);
+
+        let mut clock = InstanceClock::default();
+        clock.set_speed(controls.effective_speed());
+        clock.advance_by_realtime_delta(Duration::from_millis(16));
+        assert_eq!(clock.position, Duration::from_secs(16));
+    }
+
+    /// Verifies a clock with a speed far past any operator limit, as a large tempo scale could
+    /// produce, saturates at `Duration::MAX` rather than panicking in `Duration` arithmetic.
+    #[test]
+    fn instance_clock_saturates_at_extreme_speed() {
+        let mut clock = InstanceClock::default();
+        clock.set_speed(f64::MAX);
+        clock.advance_by_realtime_delta(Duration::from_millis(16));
+        assert_eq!(clock.position, Duration::MAX);
+        clock.advance_by_realtime_delta(Duration::from_millis(16));
+        assert_eq!(clock.position, Duration::MAX);
+        assert_eq!(clock.delta, Duration::ZERO);
     }
 
     /// Verifies frozen clocks preserve position and report no frame advancement.

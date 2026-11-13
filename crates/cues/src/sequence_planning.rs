@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use nightfall::playback_speed::saturating_scale_duration;
 use nightfall::prelude::{
     AttributeTransitions, Blueprint, CueTriggerType, FixtureRef, MaterializedTransition,
     PartialTransition, SequenceStepTiming, Transition, sequence_activation_interval,
@@ -161,7 +162,7 @@ impl SequenceTimelineSeekPlayback {
 
     /// Converts a planned source-local playback position into this sequence's own time.
     pub fn source_position(&self, playback_position: Duration) -> Duration {
-        playback_position.mul_f64(self.source_scale)
+        saturating_scale_duration(playback_position, self.source_scale)
     }
 
     /// Converts planned reconstruction timing into this sequence's own time, keeping its source.

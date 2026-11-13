@@ -388,7 +388,10 @@ fn phase_offsets_detect_reposition(
 /// Returns the effective elapsed time used to sample a step FX playback.
 fn step_fx_elapsed(active_fx: &ActiveStepFx, clock: Option<&InstanceClock>) -> Duration {
     let base_elapsed = clock.map(|clock| clock.position).unwrap_or_default();
-    Duration::from_secs_f64(base_elapsed.as_secs_f64() * f64::from(active_fx.speed.max(0.0)))
+    nightfall::playback_speed::saturating_scale_duration(
+        base_elapsed,
+        f64::from(active_fx.speed.max(0.0)),
+    )
 }
 
 /// Appends the assertions a span's samples make on one fixture element, inverting values where
@@ -525,6 +528,24 @@ mod tests {
         let elapsed = step_fx_elapsed(&active_fx, Some(&clock));
 
         assert_eq!(elapsed, Duration::from_millis(1500));
+    }
+
+    /// Verifies an extreme Step FX speed saturates the elapsed time instead of overflowing
+    /// `Duration` and panicking the render pass.
+    #[test]
+    fn step_fx_elapsed_saturates_at_extreme_speed() {
+        let active_fx = ActiveStepFx {
+            fx_entity: Entity::from_bits(42),
+            priority: Priority::default(),
+            speed: f32::MAX,
+            is_playing: true,
+        };
+        let clock = InstanceClock {
+            position: Duration::from_secs(3600),
+            ..Default::default()
+        };
+
+        assert_eq!(step_fx_elapsed(&active_fx, Some(&clock)), Duration::MAX);
     }
 
     /// Verifies unclocked Step FX elapsed time does not advance from host time.

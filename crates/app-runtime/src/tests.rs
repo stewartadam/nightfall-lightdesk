@@ -99,10 +99,11 @@ fn normalize_command_input_trims_values() {
     );
 }
 
-/// Verifies semicolon-separated startup input saves every named showfile, as the
-/// Playwright sample-data bootstrap relies on `save sample; save default`.
+/// Verifies semicolon- and line-separated startup input saves every named showfile, as the
+/// Playwright sample-data bootstrap relies on `save sample; save default` and piped stdin
+/// keeps one command per line.
 #[tokio::test]
-async fn startup_commands_run_each_semicolon_separated_statement() {
+async fn startup_commands_run_each_semicolon_and_line_separated_statement() {
     let _guard = crate::process_config_lock()
         .lock()
         .expect("process config lock");
@@ -115,12 +116,16 @@ async fn startup_commands_run_each_semicolon_separated_statement() {
         })
         .expect("sample world");
 
-    queue_startup_command(&mut app, "test", "save sample; save default".to_owned());
+    queue_startup_command(
+        &mut app,
+        "test",
+        "save sample; save default\nsave piped".to_owned(),
+    );
     for _ in 0..10 {
         app.update();
     }
 
-    for name in ["sample", "default"] {
+    for name in ["sample", "default", "piped"] {
         assert!(
             root.path()
                 .join(format!("{name}.nightfall-show/showfile.json.gz"))

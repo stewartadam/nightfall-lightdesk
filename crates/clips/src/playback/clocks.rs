@@ -11,6 +11,7 @@
 use std::time::Duration;
 
 use bevy_ecs::prelude::*;
+use nightfall::playback_speed::{saturating_duration_from_secs_f64, saturating_scale_duration};
 use nightfall_engine::prelude::*;
 use nightfall_instances::{
     InstanceClock, InstanceClockSource, InstanceControls, InstanceId, PlaybackOperation,
@@ -93,11 +94,12 @@ pub fn advance_realtime_instance_clocks(
                 clock.source = InstanceClockSource::Tempo;
                 if clock.position.is_zero() {
                     let beat_phase = beat_position.unwrap_or_default().fract();
-                    let start = Duration::from_secs_f64(beat_phase * clock.speed);
+                    let start = saturating_duration_from_secs_f64(beat_phase * clock.speed);
                     clock.seek_to(start);
                 } else {
                     if started_beat_timed {
-                        let elapsed_beats = clock.position.mul_f64(beats_per_second);
+                        let elapsed_beats =
+                            saturating_scale_duration(clock.position, beats_per_second);
                         clock.seek_to(elapsed_beats);
                     }
                     clock.advance_by_source_delta(beat_delta);

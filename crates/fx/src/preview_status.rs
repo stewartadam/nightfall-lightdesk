@@ -90,7 +90,8 @@ pub fn step_fx_preview_status(
     sampled_at_epoch_ms: f64,
 ) -> StepFxPreviewPlaybackStatus {
     let active_speed = f64::from(active_step_fx.speed.max(0.0));
-    let elapsed = Duration::from_secs_f64(clock.position.as_secs_f64() * active_speed);
+    let elapsed =
+        nightfall::playback_speed::saturating_scale_duration(clock.position, active_speed);
     let elapsed_speed = if active_step_fx.is_playing && !clock.frozen {
         controls.effective_speed() * active_speed
     } else {
