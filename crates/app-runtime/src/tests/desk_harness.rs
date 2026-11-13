@@ -15,7 +15,7 @@ use nightfall_engine::prelude::{
     CommandId, CommandOrigin, CommandOutcome, CommandResult, CommandTracker, EngineCommand,
     IngressCommand, PayloadEnvelope, PendingCommandBuffer, ReplyTarget, UndoId,
 };
-use nightfall_undo::prelude::UndoManager;
+use nightfall_undo::prelude::{UndoCommand, UndoManager};
 
 use super::sample_app;
 
@@ -64,6 +64,12 @@ impl DeskHarness {
     /// Submits command-line text as one `EngineCommand::Eval` command.
     pub(super) fn eval(&mut self, text: &str) -> CommandId {
         self.submit(EngineCommand::Eval(text.to_string()))
+    }
+
+    /// Submits an undo or redo and returns how it finished.
+    pub(super) fn history(&mut self, command: UndoCommand) -> CommandOutcome {
+        let command = self.submit(command);
+        self.wait(command)
     }
 
     /// Runs one frame and records the command results it produced.

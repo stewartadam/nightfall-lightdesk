@@ -26,12 +26,6 @@ impl DeskHarness {
         );
     }
 
-    /// Submits an undo or redo and returns how it finished.
-    fn history(&mut self, command: UndoCommand) -> CommandOutcome {
-        let command = self.submit(command);
-        self.wait(command)
-    }
-
     /// Lists the cue IDs of a sequence's steps in order, skipping steps without a definition.
     fn cue_ids(&self, sequence_id: u32) -> Vec<u32> {
         let world = self.app.world();

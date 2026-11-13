@@ -118,11 +118,26 @@ impl EngineOperation for RestoreColorPathDefaultsSnapshot {}
 impl EngineOperation for RestoreFixtureSnapshot {}
 
 impl Undoable for RestoreFixtureSnapshot {
-    fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
-        // Inverse of restore is delete
-        Some(Box::new(FixtureCommand::DeleteFixture(
-            self.0.fixture.identifiers.id,
-        )))
+    /// Builds the step that reverses this restore, looked up by the snapshot's UID in the
+    /// state the restore is about to replace.
+    ///
+    /// A restore that undoes a fixture update replaces a fixture that still exists, so its
+    /// inverse snapshots that fixture and re-applies the update. A restore that undoes a
+    /// delete brings the fixture back from nothing, so its inverse deletes it again.
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
+        let fixtures = ctx.world.resource::<FixtureDataProviderExt>();
+        match fixtures.inner.get(self.0.fixture.identifiers.uid) {
+            Ok(current) => {
+                let snapshot = FixtureSnapshot {
+                    routes: self.0.routes.as_ref().map(|_| snapshot_dmx_routes(ctx)),
+                    ..snapshot_fixture(ctx, &current)
+                };
+                Some(Box::new(RestoreFixtureSnapshot(snapshot)))
+            }
+            Err(_) => Some(Box::new(FixtureCommand::DeleteFixture(
+                self.0.fixture.identifiers.id,
+            ))),
+        }
     }
 
     fn description(&self) -> String {
@@ -1095,5 +1110,77 @@ mod tests {
         assert_eq!(restore_cmd.0.input_routes.len(), 1);
         assert_eq!(restore_cmd.0.output_routes.len(), 1);
         assert_eq!(restore_cmd.0.disabled_routes.len(), 1);
+    }
+
+    /// Builds a world holding `fixtures` and no routes, as undo inverses see it.
+    fn world_with_fixtures(fixtures: impl IntoIterator<Item = Fixture>) -> World {
+        let mut world = World::new();
+        let mut data_provider = FixtureDataProviderExt::default();
+        for fixture in fixtures {
+            data_provider.inner.add(fixture).unwrap();
+        }
+        world.insert_resource(data_provider);
+        world.insert_resource(InputRoutes::default());
+        world.insert_resource(OutputRoutes::default());
+        world.insert_resource(DisabledRoutes::default());
+        world
+    }
+
+    /// Verifies that undoing a fixture update builds a redo step that restores the updated
+    /// fixture, rather than one that deletes it.
+    #[test]
+    fn restore_over_existing_fixture_inverts_to_restore_of_current_state() {
+        let original = create_test_fixture(5, 1);
+        let mut updated = original.clone();
+        updated.identifiers.label = "Updated".to_string();
+        let world = world_with_fixtures([updated]);
+        let ctx = UndoContext { world: &world };
+
+        let undo_update = RestoreFixtureSnapshot(FixtureSnapshot {
+            fixture: original,
+            parameters: Vec::new(),
+            color_path_defaults: Vec::new(),
+            routes: None,
+        });
+        let inverse = undo_update
+            .inverse(&ctx)
+            .expect("restoring over an existing fixture should be undoable");
+        let redo = inverse
+            .as_any()
+            .downcast_ref::<RestoreFixtureSnapshot>()
+            .expect("redo of an update should restore the updated fixture");
+
+        assert_eq!(redo.0.fixture.identifiers.label, "Updated");
+        assert_eq!(redo.0.parameters.len(), 1);
+        assert!(
+            redo.0.routes.is_none(),
+            "an update snapshot leaves routes alone"
+        );
+    }
+
+    /// Verifies that undoing a delete still builds a redo step that deletes the fixture again.
+    #[test]
+    fn restore_of_missing_fixture_inverts_to_delete() {
+        let world = world_with_fixtures([]);
+        let ctx = UndoContext { world: &world };
+
+        let undo_delete = RestoreFixtureSnapshot(FixtureSnapshot {
+            fixture: create_test_fixture(5, 1),
+            parameters: Vec::new(),
+            color_path_defaults: Vec::new(),
+            routes: Some(DmxRoutesSnapshot {
+                input_routes: Vec::new(),
+                output_routes: Vec::new(),
+                disabled_routes: Vec::new(),
+            }),
+        });
+        let inverse = undo_delete
+            .inverse(&ctx)
+            .expect("restoring a deleted fixture should be undoable");
+
+        assert!(matches!(
+            inverse.as_any().downcast_ref::<FixtureCommand>(),
+            Some(FixtureCommand::DeleteFixture(5))
+        ));
     }
 }
