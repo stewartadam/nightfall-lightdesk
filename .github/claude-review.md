@@ -59,7 +59,8 @@ indirectly, treat it as risky.
    to it. The description has a `## Release notes` section with a `Notes:` declaration.
 6. **Release notes follow the guide.** Read `docs/contributing/writing-release-notes.md` in the
    working directory and judge the `Notes:` declaration against its rules, using the diff to tell
-   what users actually notice. Notes that describe internal behavior, the work rather than the
+   what users actually notice. Check that each entry's `type(area):` tag matches the guide's
+   tables. Notes that describe internal behavior, the work rather than the
    result, how-to steps or implementation detail, or that pad the headline with minor changes, mean
    `needs-human`. So does `Notes: none` for a change users would notice, or notes for one they
    would not. In the reason, name the rule that failed and suggest replacement notes.

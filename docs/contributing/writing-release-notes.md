@@ -28,6 +28,37 @@ few seconds by someone who never saw the code or the discussion.
    output rate).
 7. **Plain words.** Use the names users see in the app. Write in the present
    tense, without "we", and without hedging or praise.
+8. **Tag every entry** with its type and feature area as `type(area):`, so releases
+   can group notes. A PR that touches two areas gets one entry per area.
+
+### Types
+
+| Type          | Use for                                                        |
+| ------------- | -------------------------------------------------------------- |
+| `feature`     | Something users could not do before.                           |
+| `improvement` | Something that already worked now works better or is easier.   |
+| `fix`         | Something that was broken now works as intended.               |
+| `change`      | Different behavior or names users must know about, such as a rename or removal. |
+
+### Areas
+
+| Area          | Covers                                                                    |
+| ------------- | ------------------------------------------------------------------------- |
+| `playback`    | Cues, sequences, clips, faders, masters, effects, timelines and tempo.    |
+| `programming` | The programmer, selection, groups, park, macros and the command line.     |
+| `fixtures`    | The fixture library and editor, imports, patching and DMX routes.         |
+| `io`          | Art-Net, sACN and USB DMX output and DMX input.                            |
+| `control`     | MIDI and OSC controllers, mappings, LED feedback and timecode.             |
+| `visualizer`  | The 3D visualizer and stage objects.                                       |
+| `shows`       | Showfiles: creating, saving, drafts, importing and exporting.             |
+| `devices`     | Phones, tablets and other connected devices, the network and failover.    |
+| `interface`   | Panels, layouts, boards, dialogs, notifications and settings.             |
+| `app`         | The desktop app, installers, updates, privacy and diagnostics.            |
+| `docs`        | The user guide and the Welcome Guide.                                      |
+
+Pick the area where a user would look for the change. Areas are a fixed list,
+checked by CI; add a new one to `NOTE_AREAS` in `scripts/release-notes.mjs` and to
+this table together.
 
 ### Internal-only changes get no notes
 
@@ -50,22 +81,22 @@ Keep the reason specific: `Notes: none (test-only change)`, not `Notes: none (n/
 
 ```markdown
 Notes:
-- A backup server now takes over on its own when its primary stops answering.
-- A backup and its primary stay paired across restarts and takeovers, until either one selects Leave the pair.
+- feature(devices): A backup server now takes over on its own when its primary stops answering.
+- improvement(devices): A backup and its primary stay paired across restarts and takeovers, until either one selects Leave the pair.
 ```
 
 ```markdown
 Notes:
-- USB DMX output now supports FTDI-based Open DMX dongles.
-- Several clones sharing a serial number keep driving their own targets as long as each stays on its USB port.
+- feature(io): USB DMX output now supports FTDI-based Open DMX dongles.
+- fix(io): Several clones sharing a serial number keep driving their own targets as long as each stays on its USB port.
 ```
 
 ```markdown
-Notes: Notifications now show on top of Settings, About and other dialogs instead of hiding behind them.
+Notes: fix(interface): Notifications now show on top of Settings, About and other dialogs instead of hiding behind them.
 ```
 
 ```markdown
-Notes: A command typed while the app is reconnecting now fails with an error instead of freezing the command line.
+Notes: fix(programming): A command typed while the app is reconnecting now fails with an error instead of freezing the command line.
 ```
 
 ```markdown
@@ -92,11 +123,12 @@ A how-to with command syntax instead of the change:
 Notes: Park holds fixture parameters over cues, FX, the programmer and masters until you unpark them. Use `park fixture 5` to hold the current value, `park fixture 5 intensity @ 80` to hold a set value, `unpark fixture 5`, or the Parked section in Properties.
 ```
 
-Better: `Notes: Park holds fixture parameters at a fixed value over all playback until you unpark them.`
+Better: `Notes: feature(programming): Park holds fixture parameters at a fixed value over all playback until you unpark them.`
 
 ## How this is checked
 
-The required **Release notes** check fails an entry longer than 160 characters or
+The required **Release notes** check fails an entry without a known
+`type(area):` tag, an entry longer than 160 characters (not counting the tag), or
 a declaration with more than five entries. The Claude mergeability review reads
 this guide and sends PRs whose notes break the other rules to a human, with the
 reason in its comment.

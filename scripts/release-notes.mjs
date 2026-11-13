@@ -64,7 +64,54 @@ export function parseReleaseNote(body = "") {
     throw new Error(
       "Replace the empty or placeholder Notes: entry with user-facing prose.",
     );
-  return { kind: "notes", entries };
+  return { kind: "notes", entries: entries.map(parseNoteEntry) };
+}
+
+/** Kinds of change an entry can declare, with the release section each one is listed under. */
+export const NOTE_TYPES = {
+  feature: "New features",
+  improvement: "Improvements",
+  fix: "Fixes",
+  change: "Changes",
+};
+
+/** Feature areas an entry can declare, with the name used when grouping notes by area. */
+export const NOTE_AREAS = {
+  playback: "Playback, cues and effects",
+  programming: "Programming and command line",
+  fixtures: "Fixtures and patching",
+  io: "DMX output and input",
+  control: "MIDI, OSC and timecode",
+  visualizer: "Visualizer",
+  shows: "Showfiles",
+  devices: "Devices, network and failover",
+  interface: "Panels, layouts and settings",
+  app: "Desktop app, updates and privacy",
+  docs: "User guide and Welcome Guide",
+};
+
+/**
+ * Splits an entry's `type(area):` tag from its prose. Entries without a tag keep null type and
+ * area so release preparation can still read PRs merged before tags existed; an unknown type or
+ * area is an error because it would silently fall out of every group.
+ */
+export function parseNoteEntry(entry) {
+  const tag = entry.match(/^([a-z]+)\(([a-z]+)\):\s*(.*)$/);
+  if (!tag) return { type: null, area: null, text: entry };
+  const [, type, area, text] = tag;
+  if (!Object.hasOwn(NOTE_TYPES, type))
+    throw new Error(
+      `Unknown release note type "${type}"; use one of ${Object.keys(NOTE_TYPES).join(", ")}.`,
+    );
+  if (!Object.hasOwn(NOTE_AREAS, area))
+    throw new Error(
+      `Unknown release note area "${area}"; use one of ${Object.keys(NOTE_AREAS).join(", ")}.`,
+    );
+  if (isPlaceholder(text))
+    throw new Error(
+      "Replace the empty or placeholder Notes: entry with user-facing prose.",
+    );
+  return { type, area, text };
 }
 
 /** Longest entry, in characters, that the PR check accepts; see docs/contributing/writing-release-notes.md. */
@@ -73,21 +120,27 @@ export const MAX_ENTRY_LENGTH = 160;
 export const MAX_ENTRIES = 5;
 
 /**
- * Lists the ways a parsed declaration exceeds the release notes guide's length limits.
- * Only the PR check enforces these; release preparation keeps merged notes as written.
+ * Lists the ways a parsed declaration breaks the release notes guide's mechanical rules: a missing
+ * `type(area):` tag, too many entries, or an entry that is too long. Only the PR check enforces
+ * these; release preparation keeps merged notes as written.
  */
-export function releaseNoteLengthProblems(note) {
+export function releaseNoteProblems(note) {
   if (note.kind !== "notes") return [];
   const problems = [];
   if (note.entries.length > MAX_ENTRIES)
     problems.push(
       `Keep to the ${MAX_ENTRIES} most important entries (found ${note.entries.length}).`,
     );
-  for (const entry of note.entries)
-    if ([...entry].length > MAX_ENTRY_LENGTH)
+  for (const { type, text } of note.entries) {
+    if (!type)
       problems.push(
-        `Shorten this entry to ${MAX_ENTRY_LENGTH} characters or fewer (it has ${[...entry].length}): ${entry}`,
+        `Start this entry with a type(area): tag, such as fix(io): ${text}`,
       );
+    if ([...text].length > MAX_ENTRY_LENGTH)
+      problems.push(
+        `Shorten this entry to ${MAX_ENTRY_LENGTH} characters or fewer (it has ${[...text].length}): ${text}`,
+      );
+  }
   return problems;
 }
 
@@ -255,31 +308,36 @@ export function collectReleaseNotes(repository, from, to, list = githubList) {
     else
       notes.push({
         number: pr.number,
-        category: /^fix(?:\(|!|:)/i.test(pr.title)
-          ? "Fixes"
-          : /^feat(?:\(|!|:)/i.test(pr.title)
-            ? "Improvements"
-            : "Changes",
-        entries: note.entries,
+        entries: note.entries.map((entry) => ({
+          ...entry,
+          type: entry.type ?? titleType(pr.title),
+        })),
       });
   }
   return { repository, from, to, base, target, notes, omitted, unmatched };
 }
 
+/** Infers the type of an untagged entry from its PR's conventional commit title. */
+function titleType(title) {
+  if (/^fix(?:\(|!|:)/i.test(title)) return "fix";
+  if (/^feat(?:\(|!|:)/i.test(title)) return "improvement";
+  return "change";
+}
+
 /** Renders reviewed prose and exposes unmatched commits so direct pushes cannot silently disappear. */
 export function renderReleaseNotes(report, installationNotes) {
   const sections = ["## What's changed"];
-  for (const category of ["Improvements", "Fixes", "Changes"]) {
-    const entries = report.notes
-      .filter((note) => note.category === category)
-      .flatMap((note) =>
-        note.entries.map(
+  for (const [type, heading] of Object.entries(NOTE_TYPES)) {
+    const entries = report.notes.flatMap((note) =>
+      note.entries
+        .filter((entry) => entry.type === type)
+        .map(
           (entry) =>
-            `- ${entry} ([#${note.number}](https://github.com/${report.repository}/pull/${note.number}))`,
+            `- ${entry.text} ([#${note.number}](https://github.com/${report.repository}/pull/${note.number}))`,
         ),
-      );
+    );
     if (entries.length)
-      sections.push(`### ${category}\n\n${entries.join("\n")}`);
+      sections.push(`### ${heading}\n\n${entries.join("\n")}`);
   }
   if (!report.notes.length)
     sections.push(
@@ -330,7 +388,7 @@ function main() {
     if (pr.number !== number)
       throw new Error("PR metadata does not match the event.");
     const note = parseReleaseNote(pr.body);
-    const problems = releaseNoteLengthProblems(note);
+    const problems = releaseNoteProblems(note);
     if (problems.length)
       throw new Error(
         `${problems.join("\n")}\nSee docs/contributing/writing-release-notes.md.`,
@@ -338,7 +396,12 @@ function main() {
     const summary =
       note.kind === "none"
         ? `Omitted: ${note.reason}`
-        : note.entries.map((entry) => `- ${entry}`).join("\n");
+        : note.entries
+            .map(
+              ({ type, area, text }) =>
+                `- ${NOTE_TYPES[type]} · ${NOTE_AREAS[area]}: ${text}`,
+            )
+            .join("\n");
     process.stdout.write(`${summary}\n`);
     if (process.env.GITHUB_STEP_SUMMARY)
       appendFileSync(
