@@ -17,6 +17,11 @@ import { getLogger } from "../../../lib/logger";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { fixtures } from "../../../state/appStores";
 import type { ConsolePatchProblem } from "../model/console-patch-allocation";
+import {
+  type PatchWizardFieldValidity,
+  type PatchWizardNumberFields,
+  validatePatchWizardFields,
+} from "../model/patch-wizard-fields";
 
 const log = getLogger(import.meta.url);
 
@@ -40,18 +45,15 @@ const STEP_LABELS: Record<WizardStep, string> = {
   review: "Review",
 };
 
-export interface PatchWizardState {
+/**
+ * Wizard selections. The numeric fields hold whatever number the user typed (null when blank),
+ * so invalid entries stay visible and block Next until corrected; see
+ * {@link validatePatchWizardFields}.
+ */
+export interface PatchWizardState extends PatchWizardNumberFields {
   fixtureDefinitionId: string | null;
   fixtureMode: string | null;
   assignConsoleDmx: boolean;
-  universeId: number | null;
-  startAddress: number | null;
-  quantity: number;
-  /**
-   * ID of the first new fixture, the rest numbered after it; null uses the next free ID. Holds
-   * whatever number the user typed, so invalid entries stay visible until corrected.
-   */
-  firstFixtureId: number | null;
   label: string;
   morphFixtureIds: number[];
 }
@@ -93,8 +95,10 @@ interface PatchWizardContextValue {
   nextFixtureId: () => number;
   /** ID the first new fixture receives: the user's choice, or the suggested next ID. */
   baseFixtureId: () => number;
-  /** Whether the typed first fixture ID is empty or a whole number from 1. */
-  firstFixtureIdValid: () => boolean;
+  /** Whether each typed number on the configure step is usable. */
+  fieldValidity: () => PatchWizardFieldValidity;
+  /** Number of fixtures to create, or null while the typed quantity is invalid. */
+  fixtureQuantity: () => number | null;
   /** First new fixture ID that an existing fixture already uses, if any. */
   fixtureIdConflict: () => number | undefined;
   updateState: (updates: Partial<PatchWizardState>) => void;
@@ -128,30 +132,34 @@ export const PatchWizardProvider: ParentComponent = (props) => {
       : 1,
   );
 
-  /** Whether the typed first fixture ID is usable: empty, or a whole number from 1. */
-  const firstFixtureIdValid = createMemo(() => {
-    const id = state().firstFixtureId;
-    return id === null || (Number.isInteger(id) && id >= 1);
-  });
+  /** Checks every typed number on the configure step against its allowed range. */
+  const fieldValidity = createMemo(() => validatePatchWizardFields(state()));
+
+  /** The typed fixture count when it is a whole number from 1. */
+  const fixtureQuantity = createMemo(() =>
+    fieldValidity().quantity ? state().quantity : null,
+  );
 
   /** Resolves the first new fixture's ID from the user's choice, falling back to the suggestion. */
   const baseFixtureId = createMemo(() =>
-    firstFixtureIdValid()
+    fieldValidity().firstFixtureId
       ? (state().firstFixtureId ?? nextFixtureId())
       : nextFixtureId(),
   );
 
   /** Finds the first new fixture ID already used in the show, which Finish would overwrite. */
   const fixtureIdConflict = createMemo(() => {
-    if (!isOpen() || state().morphFixtureIds.length > 0) return undefined;
+    const quantity = fixtureQuantity();
+    if (!isOpen() || state().morphFixtureIds.length > 0 || quantity === null) {
+      return undefined;
+    }
     const existing = new Set(
       Object.values($fixtures()).map((fixture) => fixture.identifiers.id),
     );
     const first = baseFixtureId();
-    return Array.from(
-      { length: state().quantity },
-      (_, index) => first + index,
-    ).find((id) => existing.has(id));
+    return Array.from({ length: quantity }, (_, index) => first + index).find(
+      (id) => existing.has(id),
+    );
   });
 
   /** Returns the step sequence for either patching new fixtures or morphing existing ones. */
@@ -185,19 +193,18 @@ export const PatchWizardProvider: ParentComponent = (props) => {
         return s.fixtureDefinitionId !== null;
       case "mode-selection":
         return s.fixtureMode !== null;
-      case "configure":
-        if (!firstFixtureIdValid() || fixtureIdConflict() !== undefined) {
+      case "configure": {
+        const valid = fieldValidity();
+        if (
+          !valid.quantity ||
+          !valid.firstFixtureId ||
+          fixtureIdConflict() !== undefined
+        ) {
           return false;
         }
-        if (!s.assignConsoleDmx) {
-          return s.quantity > 0;
-        }
-        return (
-          s.universeId !== null &&
-          s.startAddress !== null &&
-          s.quantity > 0 &&
-          patchProblem() === null
-        );
+        if (!s.assignConsoleDmx) return true;
+        return valid.universe && valid.startAddress && patchProblem() === null;
+      }
       case "review":
         return true;
       default:
@@ -282,7 +289,8 @@ export const PatchWizardProvider: ParentComponent = (props) => {
     state,
     nextFixtureId,
     baseFixtureId,
-    firstFixtureIdValid,
+    fieldValidity,
+    fixtureQuantity,
     fixtureIdConflict,
     updateState,
     resetState,

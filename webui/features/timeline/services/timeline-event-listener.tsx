@@ -13,6 +13,7 @@ import { getLogger } from "../../../lib/logger";
 import { timelines } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { useTimelineContext } from "../context/timeline-context";
+import { createTimelineEventEffect } from "./timeline-event-effect";
 
 const log = getLogger(import.meta.url);
 
@@ -24,6 +25,8 @@ export const TimelineEventListener = () => {
   const ctx = useTimelineContext();
 
   const $timelines = useStore(timelines);
+  /** Returns this panel's timeline from the store, or undefined before it arrives. */
+  const currentTimeline = () => $timelines()[ctx.timelineUid];
 
   /** Persists lane creation and deletion through the timeline snapshot command. */
   createEffect(() => {
@@ -110,153 +113,147 @@ export const TimelineEventListener = () => {
   });
 
   // Send marker store commands individually so batched marker pastes share a batch ID.
-  createEffect(() => {
-    const event = ctx.markersActions.onStoreMarker();
-    if (!event) return;
-    const timeline = $timelines()[ctx.timelineUid];
-    if (!timeline) return;
-
-    for (const marker of event.markers) {
-      const command: types.TimelineCommand = {
-        type: "StoreTimelineMarker",
-        data: {
-          timeline_id: timeline.identifiers.id,
-          marker,
-        },
-      };
-      commandClient.emit("TimelineCommand", command, { undoId: event.batchId });
-    }
-  });
+  createTimelineEventEffect(
+    ctx.markersActions.onStoreMarker,
+    currentTimeline,
+    (event, timeline) => {
+      for (const marker of event.markers) {
+        const command: types.TimelineCommand = {
+          type: "StoreTimelineMarker",
+          data: {
+            timeline_id: timeline.identifiers.id,
+            marker,
+          },
+        };
+        commandClient.emit("TimelineCommand", command, {
+          undoId: event.batchId,
+        });
+      }
+    },
+  );
 
   // Send marker deletion commands for markers removed from the timeline.
-  createEffect(() => {
-    const event = ctx.markersActions.onDeleteMarker();
-    if (!event) return;
-    const timeline = $timelines()[ctx.timelineUid];
-    if (!timeline) return;
+  createTimelineEventEffect(
+    ctx.markersActions.onDeleteMarker,
+    currentTimeline,
+    (event, timeline) => {
+      for (const markerUid of event.markerUids) {
+        const command: types.TimelineCommand = {
+          type: "DeleteTimelineMarker",
+          data: {
+            timeline_id: timeline.identifiers.id,
+            marker_uid: markerUid,
+          },
+        };
+        commandClient.emit("TimelineCommand", command);
+      }
+    },
+  );
 
-    for (const markerUid of event.markerUids) {
+  // Send region store commands when timeline regions are created or edited.
+  createTimelineEventEffect(
+    ctx.regionsActions.onStoreRegion,
+    currentTimeline,
+    (event, timeline) => {
       const command: types.TimelineCommand = {
-        type: "DeleteTimelineMarker",
+        type: "StoreTimelineRegion",
         data: {
           timeline_id: timeline.identifiers.id,
-          marker_uid: markerUid,
+          region: event.region,
         },
       };
       commandClient.emit("TimelineCommand", command);
-    }
-  });
-
-  // Send region store commands when timeline regions are created or edited.
-  createEffect(() => {
-    const event = ctx.regionsActions.onStoreRegion();
-    if (!event) return;
-    const timeline = $timelines()[ctx.timelineUid];
-    if (!timeline) return;
-
-    const command: types.TimelineCommand = {
-      type: "StoreTimelineRegion",
-      data: {
-        timeline_id: timeline.identifiers.id,
-        region: event.region,
-      },
-    };
-    commandClient.emit("TimelineCommand", command);
-  });
+    },
+  );
 
   // Send region deletion commands for regions removed from the timeline.
-  createEffect(() => {
-    const event = ctx.regionsActions.onDeleteRegion();
-    if (!event) return;
-    const timeline = $timelines()[ctx.timelineUid];
-    if (!timeline) return;
-
-    const command: types.TimelineCommand = {
-      type: "DeleteTimelineRegion",
-      data: {
-        timeline_id: timeline.identifiers.id,
-        region_uid: event.regionUid,
-      },
-    };
-    commandClient.emit("TimelineCommand", command);
-  });
+  createTimelineEventEffect(
+    ctx.regionsActions.onDeleteRegion,
+    currentTimeline,
+    (event, timeline) => {
+      const command: types.TimelineCommand = {
+        type: "DeleteTimelineRegion",
+        data: {
+          timeline_id: timeline.identifiers.id,
+          region_uid: event.regionUid,
+        },
+      };
+      commandClient.emit("TimelineCommand", command);
+    },
+  );
 
   // Send loop-range commands separately from full timeline snapshot persistence.
-  createEffect(() => {
-    const event = ctx.loopActions.onSetLoopRange();
-    if (!event) return;
-    const timeline = $timelines()[ctx.timelineUid];
-    if (!timeline) return;
-
-    const command: types.TimelineCommand = {
-      type: "SetTimelineLoopRange",
-      data: {
-        timeline_id: timeline.identifiers.id,
-        loop_range: event.loopRange,
-      },
-    };
-    commandClient.emit("TimelineCommand", command);
-  });
+  createTimelineEventEffect(
+    ctx.loopActions.onSetLoopRange,
+    currentTimeline,
+    (event, timeline) => {
+      const command: types.TimelineCommand = {
+        type: "SetTimelineLoopRange",
+        data: {
+          timeline_id: timeline.identifiers.id,
+          loop_range: event.loopRange,
+        },
+      };
+      commandClient.emit("TimelineCommand", command);
+    },
+  );
 
   // Send nudge-selection commands so undo groups retain the selection delta.
-  createEffect(() => {
-    const event = ctx.onNudgeSelection();
-    if (!event) return;
-    const timeline = $timelines()[ctx.timelineUid];
-    if (!timeline) return;
-
-    const command: types.TimelineCommand = {
-      type: "NudgeTimelineSelection",
-      data: {
-        timeline_id: timeline.identifiers.id,
-        selection: event.selection,
-        delta_ms: event.deltaMs,
-      },
-    };
-    commandClient.emit("TimelineCommand", command);
-  });
+  createTimelineEventEffect(
+    ctx.onNudgeSelection,
+    currentTimeline,
+    (event, timeline) => {
+      const command: types.TimelineCommand = {
+        type: "NudgeTimelineSelection",
+        data: {
+          timeline_id: timeline.identifiers.id,
+          selection: event.selection,
+          delta_ms: event.deltaMs,
+        },
+      };
+      commandClient.emit("TimelineCommand", command);
+    },
+  );
 
   // Persist explicit beat-grid setting changes initiated by timeline controls.
-  createEffect(() => {
-    const event = ctx.onBeatgridSettingsChange();
-    if (!event) return;
-    const timeline = $timelines()[ctx.timelineUid];
-    if (!timeline) return;
+  createTimelineEventEffect(
+    ctx.onBeatgridSettingsChange,
+    currentTimeline,
+    (event, timeline) => {
+      if (
+        timeline.use_beat_grid === event.useBeatgrid &&
+        timeline.bpm === event.bpm &&
+        timeline.beats_per_bar === event.beatsPerBar
+      ) {
+        return;
+      }
 
-    if (
-      timeline.use_beat_grid === event.useBeatgrid &&
-      timeline.bpm === event.bpm &&
-      timeline.beats_per_bar === event.beatsPerBar
-    ) {
-      return;
-    }
-
-    log.debug("Beatgrid settings changed", {
-      useBeatgrid: event.useBeatgrid,
-      bpm: event.bpm,
-      beatsPerBar: event.beatsPerBar,
-    });
-    untrack(() => sendTimelineUpdate());
-  });
+      log.debug("Beatgrid settings changed", {
+        useBeatgrid: event.useBeatgrid,
+        bpm: event.bpm,
+        beatsPerBar: event.beatsPerBar,
+      });
+      untrack(() => sendTimelineUpdate());
+    },
+  );
 
   // Persist explicit scroll-mode changes initiated by timeline controls.
-  createEffect(() => {
-    const event = ctx.onScrollModeChange();
-    if (!event) return;
-    const timeline = $timelines()[ctx.timelineUid];
-    if (!timeline) return;
+  createTimelineEventEffect(
+    ctx.onScrollModeChange,
+    currentTimeline,
+    (event, timeline) => {
+      const currentScrollMode = (timeline.scroll_mode ??
+        "free") as types.TimelineScrollMode;
+      if (currentScrollMode === event.scrollMode) {
+        return;
+      }
 
-    const currentScrollMode = (timeline.scroll_mode ??
-      "free") as types.TimelineScrollMode;
-    if (currentScrollMode === event.scrollMode) {
-      return;
-    }
-
-    log.debug("Timeline scroll mode changed", {
-      scrollMode: event.scrollMode,
-    });
-    untrack(() => sendTimelineUpdate());
-  });
+      log.debug("Timeline scroll mode changed", {
+        scrollMode: event.scrollMode,
+      });
+      untrack(() => sendTimelineUpdate());
+    },
+  );
   /** Persists the current timeline snapshot after local edits settle. */
   const sendTimelineUpdate = (batchId?: string) => {
     try {

@@ -252,6 +252,47 @@ test("a single click on an automation point does not start a drag", async ({
   });
 });
 
+/**
+ * Verifies the lane's line follows the first point while it is dragged, starting at the
+ * pointer instead of drawing an extra leg from where the point was.
+ */
+test("dragging the first automation point moves the start of its line", async ({
+  page,
+}, testInfo) => {
+  await openFirstTimeline(page);
+  const lane = page.locator('[data-timeline-automation-lane="true"]').first();
+  const points = lane.locator(".automation-point");
+  // Points are editable only on the record target track; the first click makes it the target.
+  await points.first().click();
+  const first = (await points.first().boundingBox())!;
+  const laneBox = (await lane.boundingBox())!;
+  const path = lane.locator("svg path").first();
+  const pathBefore = await path.getAttribute("d");
+
+  await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
+  await page.mouse.down();
+  // Wait out the click-versus-drag delay before moving.
+  await page.waitForTimeout(400);
+  const target = { x: first.x + 10, y: laneBox.y + laneBox.height / 2 };
+  await page.mouse.move(target.x, target.y, { steps: 5 });
+  await expect(path).not.toHaveAttribute("d", pathBefore ?? "");
+  const [startX, startY] = ((await path.getAttribute("d")) ?? "")
+    .split(" ")
+    .slice(1, 3)
+    .map(Number);
+  expect(Math.abs(startX - (target.x - laneBox.x))).toBeLessThan(2);
+  expect(Math.abs(startY - (target.y - laneBox.y))).toBeLessThan(2);
+  // One "M" and one "L" per remaining point: no extra leg back to the old position.
+  const vertexCount = ((await path.getAttribute("d")) ?? "").split(
+    /[ML]/,
+  ).length;
+  expect(vertexCount - 1).toBe(await points.count());
+  await page.screenshot({
+    path: testInfo.outputPath("automation-first-point-drag.png"),
+  });
+  await page.mouse.up();
+});
+
 /** Verifies a clip speed lane changes rendered Step FX output through the shared speed property. */
 test("clip speed automation controls Step FX playback and output", async ({
   page,
