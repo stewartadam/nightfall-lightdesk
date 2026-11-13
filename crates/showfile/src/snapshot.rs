@@ -53,7 +53,7 @@ pub struct ShowfileSnapshot {
     /// Patched fixture definitions including embedded parameter profiles.
     pub fixtures: Vec<Fixture>,
     /// Showfile-scoped global variables.
-    pub variables: HashMap<String, VariableValue>,
+    pub variables: BTreeMap<String, VariableValue>,
     /// Settings sections saved with the show, keyed by section.
     #[serde(default)]
     pub settings: BTreeMap<String, serde_json::Value>,

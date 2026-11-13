@@ -27,8 +27,8 @@ impl GlobalVariables {
             .ok_or_else(|| format!("Variable {} not found", key))
     }
 
-    /// Returns a snapshot of every variable, keyed by name.
-    pub fn get_all(&self) -> collections::HashMap<String, VariableValue> {
+    /// Returns a snapshot of every variable, sorted by name so serialized output is stable.
+    pub fn get_all(&self) -> collections::BTreeMap<String, VariableValue> {
         self.0
             .iter()
             .map(|item| (item.key().to_string(), item.value().clone()))

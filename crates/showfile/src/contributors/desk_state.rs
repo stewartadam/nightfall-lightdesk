@@ -6,10 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, HashMap},
-};
+use std::{borrow::Cow, collections::BTreeMap};
 
 use bevy_ecs::prelude::{Commands, World};
 use nightfall::prelude::*;
@@ -23,7 +20,7 @@ use crate::{ShowfileLoadDomain, ShowfileLoadPhase};
 
 /// Desk-level state used as owned save output or borrowed load input.
 pub(crate) struct DeskStateSnapshot<'a> {
-    pub(super) variables: Cow<'a, HashMap<String, VariableValue>>,
+    pub(super) variables: Cow<'a, BTreeMap<String, VariableValue>>,
     pub(super) faders: Cow<'a, [FaderConfig]>,
     pub(super) settings: Cow<'a, BTreeMap<String, Value>>,
     pub(super) tempo: Cow<'a, TempoSettings>,
