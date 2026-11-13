@@ -187,3 +187,16 @@ export function getWebSocketUrl(): string {
     viteProxyEnabled: env.NIGHTFALL_VITE_PROXY === "1" || isE2eBuild,
   });
 }
+
+/**
+ * Adds the message types a scoped client handles to its websocket URL, so the engine sends
+ * that client no other messages.
+ */
+export function scopedWebsocketUrl(
+  websocketUrl: string,
+  messageTypes: readonly string[],
+): string {
+  const url = new URL(websocketUrl);
+  url.searchParams.set("types", messageTypes.join(","));
+  return url.toString();
+}
