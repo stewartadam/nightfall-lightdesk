@@ -176,12 +176,10 @@ fn referenced_color_instruction(fixtures: Vec<FixtureRef>) -> BoundAssertionSet 
     BoundAssertionSet {
         selection: SelectionExpr::Resolved(fixtures).into(),
         assertions: AssertionSet {
-            blueprint_application: Some(BlueprintApplication {
-                blueprint_uid: Uuid::from_u128(5000),
-                selector: BlueprintSelector::Category(
-                    nightfall_dmx::prelude::AttributeCategory::Color,
-                ),
-            }),
+            blueprint_application: Some(BlueprintApplication::new(
+                Uuid::from_u128(5000),
+                BlueprintSelector::Category(nightfall_dmx::prelude::AttributeCategory::Color),
+            )),
             values: HashMap::new(),
             ..Default::default()
         },
@@ -228,6 +226,7 @@ fn release_matching_attribute_splits_blueprint_reference_selection() {
             .add(test_fixture(703))
             .expect("second fixture should be added");
     }
+    store_blueprint(&mut app, Uuid::from_u128(5000), &[Attribute::Red]);
     app.world_mut()
         .resource_mut::<Programmer>()
         .add_instruction(referenced_color_instruction(vec![
@@ -251,6 +250,119 @@ fn release_matching_attribute_splits_blueprint_reference_selection() {
         SelectionExpr::Resolved(vec![second])
     );
     assert!(instructions[0].1.assertions.blueprint_application.is_some());
+}
+
+/// Stores a Blueprint holding Pan, Tilt and Intensity, the attributes the release tests apply.
+fn store_position_blueprint(app: &mut App, uid: Uuid) {
+    store_blueprint(
+        app,
+        uid,
+        &[Attribute::Pan, Attribute::Tilt, Attribute::Intensity],
+    );
+}
+
+/// Stores a Blueprint holding `attributes`, replacing every Blueprint stored before.
+fn store_blueprint(app: &mut App, uid: Uuid, attributes: &[Attribute]) {
+    let mut values = HashMap::new();
+    for attribute in attributes {
+        values.insert(
+            attribute.clone(),
+            ValueSource::Inline(ParameterValue::Absolute { value: 100.0 }),
+        );
+    }
+    let mut blueprints = DataProvider::<Blueprint>::default();
+    blueprints
+        .add(Blueprint {
+            identifiers: Identifiers {
+                id: 1,
+                uid,
+                label: "Position".to_string(),
+            },
+            values,
+            ..Default::default()
+        })
+        .expect("blueprint should be added");
+    app.insert_resource(blueprints);
+}
+
+/// Adds a programmer row applying `selector` of the Blueprint `blueprint_uid` to one fixture.
+fn add_blueprint_row(app: &mut App, blueprint_uid: Uuid, selector: BlueprintSelector) {
+    let fixture = test_fixture_ref(710);
+    app.world_mut()
+        .resource_mut::<FixtureDataProviderExt>()
+        .inner
+        .add(test_fixture(710))
+        .expect("fixture should be added");
+    app.world_mut()
+        .resource_mut::<Programmer>()
+        .add_instruction(BoundAssertionSet {
+            selection: SelectionExpr::Resolved(vec![fixture]).into(),
+            assertions: AssertionSet {
+                blueprint_application: Some(BlueprintApplication::new(blueprint_uid, selector)),
+                ..Default::default()
+            },
+        });
+}
+
+/// Returns the single programmer row's Blueprint application.
+fn only_blueprint_application(app: &App) -> Option<BlueprintApplication> {
+    let programmer = app.world().resource::<Programmer>();
+    let instructions = programmer.active_instructions().iter().collect::<Vec<_>>();
+    assert!(
+        instructions.len() <= 1,
+        "expected at most one programmer row"
+    );
+    instructions
+        .first()
+        .and_then(|(_, instruction)| instruction.assertions.blueprint_application.clone())
+}
+
+/// Verifies releasing one attribute of a category Blueprint row keeps the rest of the category
+/// live, and releasing the last one drops the row.
+#[test]
+fn release_one_attribute_keeps_rest_of_blueprint_category() {
+    let mut app = setup_app();
+    let blueprint_uid = Uuid::from_u128(5100);
+    store_position_blueprint(&mut app, blueprint_uid);
+    add_blueprint_row(
+        &mut app,
+        blueprint_uid,
+        BlueprintSelector::Category(Attribute::Pan.category()),
+    );
+
+    emit_release_action(&mut app, Uuid::new_v4(), None, vec![Attribute::Pan]);
+    app.update();
+
+    let application = only_blueprint_application(&app).expect("Tilt should stay applied");
+    assert!(!application.selects(&Attribute::Pan));
+    assert!(application.selects(&Attribute::Tilt));
+
+    emit_release_action(&mut app, Uuid::new_v4(), None, vec![Attribute::Tilt]);
+    app.update();
+
+    assert!(
+        app.world()
+            .resource::<Programmer>()
+            .active_instructions()
+            .is_empty()
+    );
+}
+
+/// Verifies releasing Intensity from an all-attribute Blueprint row keeps position applied.
+#[test]
+fn release_intensity_keeps_rest_of_all_attribute_blueprint() {
+    let mut app = setup_app();
+    let blueprint_uid = Uuid::from_u128(5101);
+    store_position_blueprint(&mut app, blueprint_uid);
+    add_blueprint_row(&mut app, blueprint_uid, BlueprintSelector::All);
+
+    emit_release_action(&mut app, Uuid::new_v4(), None, vec![Attribute::Intensity]);
+    app.update();
+
+    let application = only_blueprint_application(&app).expect("position should stay applied");
+    assert_eq!(application.excluded_attributes, vec![Attribute::Intensity]);
+    assert!(application.selects(&Attribute::Pan));
+    assert!(application.selects(&Attribute::Tilt));
 }
 
 /// Verifies a tracked clear-selection command succeeds only after applying its mutation.

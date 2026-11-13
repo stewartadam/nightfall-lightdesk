@@ -197,10 +197,10 @@ fn duration_profile_includes_blueprint_applied_values() {
         instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
             assertions: AssertionSet {
-                blueprint_application: Some(BlueprintApplication {
+                blueprint_application: Some(BlueprintApplication::new(
                     blueprint_uid,
-                    selector: BlueprintSelector::Category(AttributeCategory::Color),
-                }),
+                    BlueprintSelector::Category(AttributeCategory::Color),
+                )),
                 ..Default::default()
             },
         }],
@@ -267,10 +267,10 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
         instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_ref.clone()]).into(),
             assertions: AssertionSet {
-                blueprint_application: Some(BlueprintApplication {
+                blueprint_application: Some(BlueprintApplication::new(
                     blueprint_uid,
-                    selector: BlueprintSelector::Category(AttributeCategory::Color),
-                }),
+                    BlueprintSelector::Category(AttributeCategory::Color),
+                )),
                 ..Default::default()
             },
         }],
@@ -410,10 +410,10 @@ fn blueprint_definition_change_rematerializes_active_cue() {
         instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
             assertions: AssertionSet {
-                blueprint_application: Some(BlueprintApplication {
+                blueprint_application: Some(BlueprintApplication::new(
                     blueprint_uid,
-                    selector: BlueprintSelector::Attribute(Attribute::Red),
-                }),
+                    BlueprintSelector::Attribute(Attribute::Red),
+                )),
                 ..Default::default()
             },
         }],
@@ -474,10 +474,10 @@ fn blueprint_application_obeys_instruction_order() {
     let reference = BoundAssertionSet {
         selection: SelectionExpr::Resolved(vec![fixture_ref.clone()]).into(),
         assertions: AssertionSet {
-            blueprint_application: Some(BlueprintApplication {
+            blueprint_application: Some(BlueprintApplication::new(
                 blueprint_uid,
-                selector: BlueprintSelector::Attribute(Attribute::Red),
-            }),
+                BlueprintSelector::Attribute(Attribute::Red),
+            )),
             ..Default::default()
         },
     };
@@ -505,10 +505,10 @@ fn missing_blueprint_application_materializes_no_values() {
         instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
             assertions: AssertionSet {
-                blueprint_application: Some(BlueprintApplication {
-                    blueprint_uid: Uuid::new_v4(),
-                    selector: BlueprintSelector::All,
-                }),
+                blueprint_application: Some(BlueprintApplication::new(
+                    Uuid::new_v4(),
+                    BlueprintSelector::All,
+                )),
                 ..Default::default()
             },
         }],
@@ -570,10 +570,10 @@ fn blueprint_fan_matches_direct_spatial_materialization() {
         instructions: vec![BoundAssertionSet {
             selection: selection.clone(),
             assertions: AssertionSet {
-                blueprint_application: Some(BlueprintApplication {
+                blueprint_application: Some(BlueprintApplication::new(
                     blueprint_uid,
-                    selector: BlueprintSelector::Attribute(Attribute::Intensity),
-                }),
+                    BlueprintSelector::Attribute(Attribute::Intensity),
+                )),
                 ..Default::default()
             },
         }],

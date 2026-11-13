@@ -1447,10 +1447,10 @@ fn merge_showfile_snapshots_skip_blueprints_retargets_cue_references_by_id() {
     incoming.cues[0].instructions = vec![BoundAssertionSet {
         selection: SpatialSelection::default(),
         assertions: AssertionSet {
-            blueprint_application: Some(BlueprintApplication {
-                blueprint_uid: incoming_blueprint_uid,
-                selector: BlueprintSelector::Category(Attribute::Red.category()),
-            }),
+            blueprint_application: Some(BlueprintApplication::new(
+                incoming_blueprint_uid,
+                BlueprintSelector::Category(Attribute::Red.category()),
+            )),
             ..Default::default()
         },
     }];
@@ -2794,10 +2794,10 @@ fn roundtrip_preserves_blueprint_applications() {
     source_snapshot.cues[0].instructions = vec![BoundAssertionSet {
         selection: SpatialSelection::default(),
         assertions: AssertionSet {
-            blueprint_application: Some(BlueprintApplication {
+            blueprint_application: Some(BlueprintApplication::new(
                 blueprint_uid,
-                selector: BlueprintSelector::Category(Attribute::Red.category()),
-            }),
+                BlueprintSelector::Category(Attribute::Red.category()),
+            )),
             ..Default::default()
         },
     }];

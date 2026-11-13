@@ -334,6 +334,23 @@ fn store_mode_rows_match(existing: &BoundAssertionSet, incoming: &BoundAssertion
 }
 
 /// Returns whether an element store row overlaps an existing whole-fixture row.
+/// Returns whether two rows apply the same Blueprint through the same selector, whatever
+/// attributes either one has released since, so a narrowed programmer row still updates or
+/// removes the cue row it came from.
+fn same_blueprint_reference(
+    existing: Option<&BlueprintApplication>,
+    incoming: Option<&BlueprintApplication>,
+) -> bool {
+    match (existing, incoming) {
+        (Some(existing), Some(incoming)) => {
+            existing.blueprint_uid == incoming.blueprint_uid
+                && existing.selector == incoming.selector
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
 fn store_mode_element_store_targets_existing_whole_fixture_row(
     existing: &[BoundAssertionSet],
     incoming: &BoundAssertionSet,
@@ -574,8 +591,13 @@ pub(super) fn apply_store_mode(
                 {
                     for existing_instruction in existing.iter_mut().filter(|candidate| {
                         store_mode_rows_match(candidate, &incoming_instruction)
-                            && candidate.assertions.blueprint_application
-                                == incoming_instruction.assertions.blueprint_application
+                            && same_blueprint_reference(
+                                candidate.assertions.blueprint_application.as_ref(),
+                                incoming_instruction
+                                    .assertions
+                                    .blueprint_application
+                                    .as_ref(),
+                            )
                     }) {
                         existing_instruction.assertions = incoming_instruction.assertions.clone();
                     }
@@ -607,8 +629,13 @@ pub(super) fn apply_store_mode(
                 {
                     existing.retain(|candidate| {
                         !store_mode_rows_match(candidate, &incoming_instruction)
-                            || candidate.assertions.blueprint_application
-                                != incoming_instruction.assertions.blueprint_application
+                            || !same_blueprint_reference(
+                                candidate.assertions.blueprint_application.as_ref(),
+                                incoming_instruction
+                                    .assertions
+                                    .blueprint_application
+                                    .as_ref(),
+                            )
                     });
                     continue;
                 }
@@ -1236,5 +1263,35 @@ mod programmer_override_tests {
                 *expected
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nightfall_dmx::prelude::{Attribute, AttributeCategory};
+
+    use super::*;
+
+    /// Verifies a programmer row narrowed by a partial release still matches the cue row that
+    /// applies the same Blueprint through the same selector, and never one with another selector.
+    #[test]
+    fn narrowed_blueprint_row_matches_its_cue_row() {
+        let blueprint_uid = uuid::Uuid::from_u128(42);
+        let stored = BlueprintApplication::new(
+            blueprint_uid,
+            BlueprintSelector::Category(AttributeCategory::Position),
+        );
+        let mut narrowed = stored.clone();
+        narrowed.excluded_attributes.push(Attribute::Pan);
+
+        assert!(same_blueprint_reference(Some(&stored), Some(&narrowed)));
+        assert!(!same_blueprint_reference(
+            Some(&BlueprintApplication::new(
+                blueprint_uid,
+                BlueprintSelector::All
+            )),
+            Some(&narrowed),
+        ));
+        assert!(!same_blueprint_reference(None, Some(&narrowed)));
     }
 }

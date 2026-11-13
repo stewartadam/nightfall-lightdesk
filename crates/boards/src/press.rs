@@ -437,10 +437,10 @@ mod tests {
             .add_instruction(BoundAssertionSet {
                 selection: SpatialSelection::identity(fixture_13()),
                 assertions: AssertionSet {
-                    blueprint_application: Some(BlueprintApplication {
+                    blueprint_application: Some(BlueprintApplication::new(
                         blueprint_uid,
-                        selector: BlueprintSelector::All,
-                    }),
+                        BlueprintSelector::All,
+                    )),
                     ..Default::default()
                 },
             });
