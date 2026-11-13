@@ -12,13 +12,13 @@ use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 use nightfall_compositor::prelude::*;
 use nightfall_cues::prelude::*;
-use nightfall_engine::prelude::DataProvider;
+use nightfall_engine::prelude::{DataProvider, DataRevision};
 use nightfall_fixtures::prelude::*;
 use nightfall_instances::{
     InstanceClock, InstanceControls, InstanceId, InstanceKind, InstanceMetadata, Owner,
     activation_epoch_ms,
 };
-use nightfall_selection_runtime::SpatialSelectionResolver;
+use nightfall_selection_runtime::{SelectionInputsRevision, SpatialSelectionResolver};
 
 use crate::resources::Programmer;
 
@@ -30,7 +30,22 @@ type ProgrammerCueData = (
     Option<&'static Layer>,
     Option<&'static ReleaseMarker>,
     Option<&'static InstanceClock>,
+    Option<&'static LayerCompositingContext>,
 );
+
+/// Fixture, parameter, group and Blueprint revisions the programmer's layers were last materialized at.
+///
+/// These, with the programmer's own instructions, are the only inputs materialization reads, so
+/// while none of them change the existing layers are still current.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct ProgrammerPaintInputs {
+    /// Revisions of the patched fixtures and groups that selections resolve against.
+    selection: SelectionInputsRevision,
+    /// Revision of the index that maps fixture attributes to parameter entities.
+    parameter_index: u64,
+    /// Revision of the Blueprints that instructions may reference.
+    blueprints: Option<DataRevision>,
+}
 
 /// Builds the source-local compositing context for a programmer-owned layer.
 fn programmer_layer_compositing_context(
@@ -63,6 +78,11 @@ fn zero_programmer_release_timing(mcue: &mut MaterializedCue) {
 }
 
 /// The programmer is rendered into a layer (that is always composited last)
+///
+/// Existing instruction layers are materialized and re-inserted only when the programmer, the
+/// patch, its parameters, the groups or the Blueprints changed since the last pass, so an
+/// unchanged programmer leaves its layers unchanged for the compositor's caches. Their
+/// compositing contexts still follow their clocks, and are written only when they move.
 /// TODO: find a better home for this
 pub fn materialize_and_paint_programmer(
     programmer: Res<Programmer>,
@@ -71,8 +91,19 @@ pub fn materialize_and_paint_programmer(
     blueprint_data_provider: Option<Res<DataProvider<Blueprint>>>,
     selection_resolver: SpatialSelectionResolver,
     mut mcues_query: Query<ProgrammerCueData>,
+    mut painted_inputs: Local<Option<ProgrammerPaintInputs>>,
     mut commands: Commands,
 ) {
+    let inputs = ProgrammerPaintInputs {
+        selection: selection_resolver.inputs_revision(),
+        parameter_index: data_provider.parameter_index().revision(),
+        blueprints: blueprint_data_provider
+            .as_ref()
+            .map(|blueprints| blueprints.revision()),
+    };
+    let rematerialize = programmer.is_changed() || *painted_inputs != Some(inputs);
+    *painted_inputs = Some(inputs);
+
     tracing::trace!(
         uid = %programmer.identifiers().uid,
         "Painting layers for programmer '{}'",
@@ -85,7 +116,9 @@ pub fn materialize_and_paint_programmer(
         .map(|(uuid, _)| *uuid)
         .collect::<std::collections::HashSet<_>>();
 
-    for (entity, mut mcue, owner, existing_layer, release_marker, clock) in mcues_query.iter_mut() {
+    for (entity, mut mcue, owner, existing_layer, release_marker, clock, _) in
+        mcues_query.iter_mut()
+    {
         if owner.0 != programmer.identifiers().uid
             || active_instruction_ids.contains(&mcue.cue.identifiers().uid)
         {
@@ -118,14 +151,22 @@ pub fn materialize_and_paint_programmer(
         // Check if the UUID already exists in the ECS
         let existing_count = mcues_query
             .iter_mut()
-            .filter(|(_, mcue, _, _, release_marker, _)| {
+            .filter(|(_, mcue, _, _, release_marker, _, _)| {
                 release_marker.is_none() && mcue.cue.identifiers().uid == *uuid
             })
-            .fold(0, |count, (entity, mut mcue, _, _, _, clock)| {
+            .fold(0, |count, (entity, mut mcue, _, _, _, clock, context)| {
                 tracing::trace!(
                     "Materialized cue for programmer instruction '{}' already exists",
                     uuid
                 );
+
+                let compositing_context = programmer_layer_compositing_context(clock, false, None);
+                if !rematerialize {
+                    if context != Some(&compositing_context) {
+                        commands.entity(entity).insert(compositing_context);
+                    }
+                    return count + 1;
+                }
 
                 let original_activation_time = mcue.activation_time;
                 let original_start_position = mcue.start_position;
@@ -143,7 +184,6 @@ pub fn materialize_and_paint_programmer(
                 updated_mcue.set_start_position(original_start_position);
                 updated_mcue.priority = mcue.priority;
                 let layer = updated_mcue.to_layer(None);
-                let compositing_context = programmer_layer_compositing_context(clock, false, None);
                 commands.entity(entity).insert((
                     updated_mcue,
                     layer,
@@ -188,10 +228,10 @@ pub fn materialize_and_paint_programmer(
         if let Some(source_uid) = programmer.transition_anchor_source(uuid) {
             if let Some((activation_time, start_position)) = mcues_query
                 .iter_mut()
-                .find(|(_, source_mcue, _, _, release_marker, _)| {
+                .find(|(_, source_mcue, _, _, release_marker, _, _)| {
                     release_marker.is_none() && source_mcue.cue.identifiers().uid == source_uid
                 })
-                .map(|(_, source_mcue, _, _, _, _)| {
+                .map(|(_, source_mcue, _, _, _, _, _)| {
                     (source_mcue.activation_time, source_mcue.start_position)
                 })
             {

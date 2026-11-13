@@ -262,6 +262,73 @@ fn programmer_group_range_fade_outputs_interpolated_red_values() {
     );
 }
 
+/// Returns the change tick of the layer painted for a programmer instruction and the parameters
+/// it asserts.
+fn painted_layer(app: &mut App, uuid: Uuid) -> (bevy_ecs::change_detection::Tick, Vec<Entity>) {
+    let mut query = app.world_mut().query::<(&MaterializedCue, Ref<Layer>)>();
+    let (_, layer) = query
+        .iter(app.world())
+        .find(|(mcue, _)| mcue.cue.identifiers().uid == uuid)
+        .expect("instruction should have a painted layer");
+    (
+        layer.last_changed(),
+        layer
+            .absolute
+            .keys()
+            .map(|parameter| parameter.entity())
+            .collect(),
+    )
+}
+
+/// Verifies an unchanged programmer leaves its instruction layers untouched across frames, so the
+/// compositor can skip them, and that a group edit still re-materializes the layer.
+#[test]
+fn programmer_layer_is_repainted_only_when_its_inputs_change() {
+    let mut app = create_test_app();
+    let red_1 = insert_red_fixture(&mut app, 1);
+    let red_2 = insert_red_fixture(&mut app, 2);
+    insert_group_for_fixture(&mut app, 1, 1);
+
+    let mut values = HashMap::new();
+    values.insert(
+        Attribute::Red,
+        ValueSource::Inline(ParameterValue::Absolute { value: 255.0 }),
+    );
+    let uuid = app
+        .world_mut()
+        .resource_mut::<Programmer>()
+        .add_instruction(BoundAssertionSet {
+            selection: SelectionExpr::Group(GroupRefExpr::ById(1)).into(),
+            assertions: AssertionSet {
+                blueprint_application: None,
+                values,
+                transitions: Default::default(),
+                transitions_by_attribute: Default::default(),
+                transitions_by_fixture_attribute: Default::default(),
+                color_path_id: None,
+            },
+        });
+
+    app.update();
+    app.update();
+    let (painted_tick, parameters) = painted_layer(&mut app, uuid);
+    assert_eq!(parameters, vec![red_1.entity()]);
+
+    app.update();
+    app.update();
+    assert_eq!(painted_layer(&mut app, uuid).0, painted_tick);
+
+    {
+        let mut groups = app.world_mut().resource_mut::<DataProvider<Group>>();
+        let _ = groups.remove(&Uuid::from_u128(10_001));
+    }
+    insert_group_for_fixture(&mut app, 1, 2);
+    app.update();
+    let (repainted_tick, parameters) = painted_layer(&mut app, uuid);
+    assert_ne!(repainted_tick, painted_tick);
+    assert_eq!(parameters, vec![red_2.entity()]);
+}
+
 /// Verifies authored fade-out timing does not delay programmer release after clear.
 #[test]
 fn programmer_clear_after_fade_out_releases_without_timing() {
