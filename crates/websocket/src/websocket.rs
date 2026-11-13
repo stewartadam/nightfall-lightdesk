@@ -80,6 +80,62 @@ pub struct ConnectedClient {
     pub cancellation: tokio::sync::watch::Sender<bool>,
     /// Whether the session is local and survives external permission changes.
     pub local: bool,
+    /// Message types the session asked for, or `None` for every type.
+    pub message_types: Option<Arc<MessageTypeFilter>>,
+}
+
+impl ConnectedClient {
+    /// Returns whether a frame for this session's audience should be queued for it, given the
+    /// frame's message type.
+    fn wants(&self, message_type: Option<&str>) -> bool {
+        self.message_types
+            .as_ref()
+            .is_none_or(|filter| filter.accepts(message_type))
+    }
+}
+
+/// Query parameters a client may add to the websocket URL.
+#[derive(Debug, Default, Deserialize)]
+struct WebsocketParams {
+    /// Comma-separated message types the client handles; every type when absent.
+    types: Option<String>,
+}
+
+/// Message types a client handles, such as a window that only edits fixtures and has no use for
+/// the show state every other client receives.
+///
+/// Frames of other types are never queued for the client. Frames without a readable type are
+/// not typed client messages and always go through.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MessageTypeFilter(std::collections::HashSet<String>);
+
+impl MessageTypeFilter {
+    /// Builds a filter from a comma-separated list, or returns `None` (every type) when the list
+    /// names no type.
+    fn parse(list: &str) -> Option<Self> {
+        let types: std::collections::HashSet<String> = list
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+            .collect();
+        (!types.is_empty()).then_some(Self(types))
+    }
+
+    /// Reads the filter a websocket URL asks for in its `types` query parameter.
+    fn from_uri(uri: &Uri) -> Option<Self> {
+        let params = axum::extract::Query::<WebsocketParams>::try_from_uri(uri)
+            .inspect_err(|error| {
+                tracing::warn!(%error, "Ignoring unreadable websocket query; sending every message type");
+            })
+            .ok()?;
+        Self::parse(params.0.types.as_deref()?)
+    }
+
+    /// Returns whether a frame of `message_type` should reach the client.
+    fn accepts(&self, message_type: Option<&str>) -> bool {
+        message_type.is_none_or(|name| self.0.contains(name))
+    }
 }
 
 #[derive(Clone)]
@@ -112,7 +168,8 @@ async fn handle_socket(
 ) -> impl IntoResponse {
     let local = crate::origin::is_local_client(Some(peer), &headers, &uri);
     let token = state.pairing.token_from(&headers);
-    ws.on_upgrade(move |socket| client_ws(socket, state, local, generation, token))
+    let message_types = MessageTypeFilter::from_uri(&uri).map(Arc::new);
+    ws.on_upgrade(move |socket| client_ws(socket, state, local, generation, token, message_types))
 }
 
 /// Encodes a non-droppable CBOR payload using the websocket binary wire format.
@@ -144,6 +201,7 @@ async fn client_ws(
     local: bool,
     generation: u64,
     pairing_token: Option<String>,
+    message_types: Option<Arc<MessageTypeFilter>>,
 ) {
     tracing::debug!("WebSocket client connected");
 
@@ -182,6 +240,7 @@ async fn client_ws(
             outbox: outbox.clone(),
             cancellation: cancellation.clone(),
             local,
+            message_types,
         });
     }
 
@@ -396,10 +455,10 @@ fn deliver_frame(clients: &Mutex<Vec<ConnectedClient>>, frame: OutboundFrame) {
         frame.bytes.len() as f32 / 1024.0
     );
     let audience = frame.audience;
-    let publication = Publication::from_encoded(frame.bytes);
+    let (publication, message_type) = Publication::from_encoded(frame.bytes);
     let mut guard = clients.lock().unwrap();
     guard.retain(|client| {
-        if !audience.includes(client.id) {
+        if !audience.includes(client.id) || !client.wants(message_type.as_deref()) {
             return true;
         }
         let outcome = client.outbox.publish(&publication);
@@ -895,12 +954,14 @@ mod tests {
                 outbox: local_outbox.clone(),
                 cancellation: local_cancel,
                 local: true,
+                message_types: None,
             },
             ConnectedClient {
                 id: ClientId(1),
                 outbox: remote_outbox.clone(),
                 cancellation: remote_cancel,
                 local: false,
+                message_types: None,
             },
         ]));
         close_remote_clients(&clients, &AtomicU64::new(0));
@@ -940,6 +1001,7 @@ mod tests {
             outbox: Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT)),
             cancellation,
             local: false,
+            message_types: None,
         }]));
         let supervisor = tokio::spawn(supervise_client_tasks(
             send_task,
@@ -971,12 +1033,14 @@ mod tests {
                 outbox: first.clone(),
                 cancellation: tokio::sync::watch::channel(false).0,
                 local: true,
+                message_types: None,
             },
             ConnectedClient {
                 id: ClientId(2),
                 outbox: second.clone(),
                 cancellation: tokio::sync::watch::channel(false).0,
                 local: false,
+                message_types: None,
             },
         ]);
         let frame = |audience, byte| OutboundFrame {
@@ -1002,6 +1066,109 @@ mod tests {
         assert_eq!(clients.lock().unwrap().len(), 2);
     }
 
+    /// Verifies a client that names its message types receives only those, plus frames without a
+    /// readable type, while a client without a filter receives everything.
+    #[test]
+    fn deliver_frame_honours_message_type_filter() {
+        let filtered = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
+        let unfiltered = Arc::new(ClientOutbox::new(OUTBOX_BYTE_LIMIT));
+        let clients = Mutex::new(vec![
+            ConnectedClient {
+                id: ClientId(1),
+                outbox: filtered.clone(),
+                cancellation: tokio::sync::watch::channel(false).0,
+                local: true,
+                message_types: MessageTypeFilter::parse(" CommandResult, ,FixtureDraftUpdated")
+                    .map(Arc::new),
+            },
+            ConnectedClient {
+                id: ClientId(2),
+                outbox: unfiltered.clone(),
+                cancellation: tokio::sync::watch::channel(false).0,
+                local: true,
+                message_types: None,
+            },
+        ]);
+        /// Encodes a tagged client message the way domain plugins publish it.
+        fn typed(discriminator: u8, message_type: &str) -> OutboundFrame {
+            let payload = serde_json::json!({ "type": message_type, "data": null });
+            OutboundFrame {
+                audience: Audience::All,
+                bytes: EncodedClientMessage::new(discriminator, &payload)
+                    .expect("message encodes")
+                    .to_bytes(),
+            }
+        }
+
+        deliver_frame(&clients, typed(DISCRIMINATOR_DROPPABLE, "ParameterState"));
+        deliver_frame(
+            &clients,
+            typed(DISCRIMINATOR_NON_DROPPABLE, "CommandResult"),
+        );
+        deliver_frame(
+            &clients,
+            typed(DISCRIMINATOR_NON_DROPPABLE, "CueDefinitions"),
+        );
+        deliver_frame(
+            &clients,
+            typed(DISCRIMINATOR_NON_DROPPABLE, "FixtureDraftUpdated"),
+        );
+        deliver_frame(
+            &clients,
+            OutboundFrame {
+                audience: Audience::All,
+                bytes: vec![DISCRIMINATOR_NON_DROPPABLE],
+            },
+        );
+
+        let types = |outbox: &ClientOutbox| {
+            std::iter::from_fn(|| outbox.try_next().ok())
+                .map(|message| match message {
+                    Message::Binary(bytes) => Publication::from_encoded(bytes.to_vec())
+                        .1
+                        .map(|name| name.to_string()),
+                    other => panic!("unexpected message {other:?}"),
+                })
+                .collect::<Vec<_>>()
+        };
+        let named = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| (!name.is_empty()).then(|| (*name).to_owned()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            types(&filtered),
+            named(&["CommandResult", "FixtureDraftUpdated", ""])
+        );
+        assert_eq!(
+            types(&unfiltered),
+            named(&[
+                "ParameterState",
+                "CommandResult",
+                "CueDefinitions",
+                "FixtureDraftUpdated",
+                ""
+            ])
+        );
+    }
+
+    /// Verifies the `types` query parameter becomes a filter and an empty or missing list means
+    /// every type.
+    #[test]
+    fn message_type_filter_reads_the_websocket_url() {
+        let filter = |uri: &'static str| MessageTypeFilter::from_uri(&Uri::from_static(uri));
+        assert_eq!(filter("/ws"), None);
+        assert_eq!(filter("/ws?types="), None);
+        assert_eq!(filter("/ws?other=1"), None);
+        let parsed = filter("/ws?types=CommandResult%2CFixtureDraftUpdated&other=1")
+            .expect("types are listed");
+        assert!(parsed.accepts(Some("CommandResult")));
+        assert!(parsed.accepts(Some("FixtureDraftUpdated")));
+        assert!(!parsed.accepts(Some("ParameterState")));
+        assert!(parsed.accepts(None));
+    }
+
     /// Verifies shutdown fanout sends a close frame and removes all registered clients.
     #[test]
     fn close_connected_clients_sends_close_and_clears_registry() {
@@ -1012,6 +1179,7 @@ mod tests {
             outbox: outbox.clone(),
             cancellation,
             local: true,
+            message_types: None,
         }]));
 
         close_connected_clients(&clients);
