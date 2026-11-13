@@ -21,8 +21,11 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   collectReleaseNotes,
+  MAX_ENTRIES,
+  MAX_ENTRY_LENGTH,
   parseReleaseNote,
   previousRelease,
+  releaseNoteLengthProblems,
   renderReleaseNotes,
   snapshotList,
 } from "./release-notes.mjs";
@@ -151,6 +154,40 @@ test("rejects missing, duplicate, empty and malformed declarations", () => {
   ]) {
     assert.throws(() => parseReleaseNote(body), /Notes:|Multiline|omission/);
   }
+});
+
+/** The PR check flags long entries and too many entries, while omissions and short notes pass. */
+test("reports entries and declarations that exceed the length limits", () => {
+  const short = "Fixed playback.";
+  assert.deepEqual(
+    releaseNoteLengthProblems(parseReleaseNote(`Notes: ${short}`)),
+    [],
+  );
+  assert.deepEqual(
+    releaseNoteLengthProblems(
+      parseReleaseNote("Notes: none (test-only change)"),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    releaseNoteLengthProblems({
+      kind: "notes",
+      entries: ["é".repeat(MAX_ENTRY_LENGTH)],
+    }),
+    [],
+  );
+  const long = "a".repeat(MAX_ENTRY_LENGTH + 1);
+  assert.match(
+    releaseNoteLengthProblems(parseReleaseNote(`Notes: ${long}`)).join(),
+    /Shorten this entry to 160 characters or fewer \(it has 161\)/,
+  );
+  const many = Array.from({ length: MAX_ENTRIES + 1 }, () => `- ${short}`);
+  assert.match(
+    releaseNoteLengthProblems(
+      parseReleaseNote(`Notes:\n${many.join("\n")}`),
+    ).join(),
+    /Keep to the 5 most important entries \(found 6\)/,
+  );
 });
 
 /** Provides isolated real Git ancestry without inheriting the user's signing settings or hooks. */

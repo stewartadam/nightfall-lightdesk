@@ -67,6 +67,30 @@ export function parseReleaseNote(body = "") {
   return { kind: "notes", entries };
 }
 
+/** Longest entry, in characters, that the PR check accepts; see docs/contributing/writing-release-notes.md. */
+export const MAX_ENTRY_LENGTH = 160;
+/** Most entries one PR may declare, so notes stay on the headline changes. */
+export const MAX_ENTRIES = 5;
+
+/**
+ * Lists the ways a parsed declaration exceeds the release notes guide's length limits.
+ * Only the PR check enforces these; release preparation keeps merged notes as written.
+ */
+export function releaseNoteLengthProblems(note) {
+  if (note.kind !== "notes") return [];
+  const problems = [];
+  if (note.entries.length > MAX_ENTRIES)
+    problems.push(
+      `Keep to the ${MAX_ENTRIES} most important entries (found ${note.entries.length}).`,
+    );
+  for (const entry of note.entries)
+    if ([...entry].length > MAX_ENTRY_LENGTH)
+      problems.push(
+        `Shorten this entry to ${MAX_ENTRY_LENGTH} characters or fewer (it has ${[...entry].length}): ${entry}`,
+      );
+  return problems;
+}
+
 /** Rejects unfilled template values without trying to judge the quality of human prose. */
 function isPlaceholder(text) {
   return (
@@ -306,6 +330,11 @@ function main() {
     if (pr.number !== number)
       throw new Error("PR metadata does not match the event.");
     const note = parseReleaseNote(pr.body);
+    const problems = releaseNoteLengthProblems(note);
+    if (problems.length)
+      throw new Error(
+        `${problems.join("\n")}\nSee docs/contributing/writing-release-notes.md.`,
+      );
     const summary =
       note.kind === "none"
         ? `Omitted: ${note.reason}`

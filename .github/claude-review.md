@@ -57,6 +57,12 @@ indirectly, treat it as risky.
    skipping or weakening an existing test means `needs-human`.
 4. **Does what it says.** The description matches the diff, and the diff contains nothing unrelated
    to it. The description has a `## Release notes` section with a `Notes:` declaration.
+6. **Release notes follow the guide.** Read `docs/contributing/writing-release-notes.md` in the
+   working directory and judge the `Notes:` declaration against its rules, using the diff to tell
+   what users actually notice. Notes that describe internal behavior, the work rather than the
+   result, how-to steps or implementation detail, or that pad the headline with minor changes, mean
+   `needs-human`. So does `Notes: none` for a change users would notice, or notes for one they
+   would not. In the reason, name the rule that failed and suggest replacement notes.
 5. **Follows the written conventions.** No clear violation of a rule in `CLAUDE.md`, such as
    `console.log` instead of the logger, a function or test without a docstring, or a leftover debug
    print. Style preferences that `CLAUDE.md` does not state are not reasons to block.

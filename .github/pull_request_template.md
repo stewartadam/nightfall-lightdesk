@@ -4,7 +4,8 @@
 
 ## Release notes
 
-<!-- Write one user-facing sentence after Notes:, or an empty Notes: line followed
-by a bullet per entry. For intentional omission use Notes: none (specific reason).
-Do not leave the declaration empty. See docs/contributing/release-notes.md. -->
+<!-- Follow docs/contributing/writing-release-notes.md: only changes a user notices, as the
+result rather than the work, one short sentence per entry (160 characters max, 5 entries max).
+Use one sentence after Notes:, or an empty Notes: line followed by a bullet per entry.
+For internal-only changes use Notes: none (specific reason). -->
 Notes:
