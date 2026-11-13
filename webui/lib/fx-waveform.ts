@@ -22,10 +22,13 @@ const clamp = (value: number, min: number, max: number) =>
 /**
  * Returns a waveform's lowest and highest output as fractions (0-1) of the driven
  * parameter's range, which is how the backend stores FX waveform bounds.
+ *
+ * The bounds are rounded to 32-bit floats, the precision the backend stores, so the saved FX
+ * the backend echoes back equals the one the editor sent and the editor resumes syncing.
  */
 const waveformMinMax = (waveform: FlowWaveform) => ({
-  min: clamp(waveform.base, 0, 1),
-  max: clamp(waveform.base + waveform.amplitude, 0, 1),
+  min: Math.fround(clamp(waveform.base, 0, 1)),
+  max: Math.fround(clamp(waveform.base + waveform.amplitude, 0, 1)),
 });
 
 /**

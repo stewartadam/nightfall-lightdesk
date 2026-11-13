@@ -46,11 +46,20 @@ fn is_fx_waveform(object: &Map<String, Value>) -> bool {
         && object.contains_key("cycle_length")
 }
 
-/// Divides one waveform's `params.min` and `params.max` by 255, clamped to 0-1.
+/// Converts one waveform's `params.min` and `params.max` from 0-255 to a 0-1 fraction.
+///
+/// An absolute bound divides by 255. A relative bound was an offset added to the value, and
+/// relative FX are now centred on 0.5 (no change), so it becomes `0.5 + offset / 255`: an
+/// 8-bit parameter keeps the same offset, up to half its range. Results clamp to 0-1.
 fn rescale_waveform_params(waveform: &mut Map<String, Value>) -> Result<(), String> {
+    let is_relative = waveform
+        .get("is_relative")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let Some(Value::Object(params)) = waveform.get_mut("params") else {
         return Ok(());
     };
+    let centre = if is_relative { 0.5 } else { 0.0 };
     for key in ["min", "max"] {
         let Some(bound) = params.get_mut(key) else {
             continue;
@@ -58,7 +67,7 @@ fn rescale_waveform_params(waveform: &mut Map<String, Value>) -> Result<(), Stri
         let legacy = bound
             .as_f64()
             .ok_or_else(|| format!("FX waveform {key} must be a number"))?;
-        *bound = Value::from((legacy / LEGACY_WAVEFORM_SCALE).clamp(0.0, 1.0));
+        *bound = Value::from((centre + legacy / LEGACY_WAVEFORM_SCALE).clamp(0.0, 1.0));
     }
     Ok(())
 }
@@ -110,6 +119,20 @@ mod tests {
             showfile["fixtures"][0]["elements"][0]["parameters"][0],
             json!({ "min": 0.0, "max": 255.0 })
         );
+    }
+
+    /// Checks that a relative waveform keeps its upward offset around the new 0.5 centre, so
+    /// a show's relative FX still add to the value rather than now pulling it down.
+    #[test]
+    fn relative_waveform_bounds_keep_their_offsets() {
+        let mut waveform = v26_waveform(0.0, 51.0);
+        waveform["is_relative"] = json!(true);
+        let mut showfile = json!({ "fx": [{ "attributes": { "Dimmer": waveform } }] });
+        migrate_v26_to_v27(&mut showfile).unwrap();
+
+        let params = &showfile["fx"][0]["attributes"]["Dimmer"]["params"];
+        assert_eq!(params["min"].as_f64(), Some(0.5));
+        assert!((params["max"].as_f64().unwrap() - 0.7).abs() < 1e-12);
     }
 
     /// Checks that a waveform bound that is not a number fails the migration.

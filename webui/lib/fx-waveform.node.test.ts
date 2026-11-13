@@ -15,8 +15,9 @@ import {
 } from "./fx-waveform";
 
 /**
- * Verifies the editor's waveform bounds reach the backend as unrounded fractions of the
- * parameter range and come back unchanged, so editing an FX never shifts its range.
+ * Verifies the editor's waveform bounds reach the backend as fractions of the parameter range
+ * at the 32-bit precision the backend stores and echoes, so a saved FX compares equal to
+ * the one the editor sent and editing an FX never shifts its range.
  */
 test("FX waveform bounds round-trip as fractions of the parameter range", () => {
   const flow = {
@@ -30,10 +31,10 @@ test("FX waveform bounds round-trip as fractions of the parameter range", () => 
 
   const fx = flowWaveformToFxWaveform(flow, true);
   assert.equal(fx.params.min, 0.125);
-  assert.equal(fx.params.max, 0.425);
+  assert.equal(fx.params.max, Math.fround(0.425));
   assert.equal(fx.is_relative, true);
 
   const back = fxWaveformToFlowWaveform(fx);
   assert.equal(back.base, 0.125);
-  assert.ok(Math.abs(back.amplitude - 0.3) < 1e-12);
+  assert.ok(Math.abs(back.amplitude - 0.3) < 1e-7);
 });
