@@ -198,18 +198,6 @@ pub(crate) fn share_pair_key(key: Option<String>) {
     nightfall_websocket::set_backup_pair_key(key);
 }
 
-/// Forgets the stored pair key after a new PIN signed every device out, including the other
-/// host of the pair, which then needs the PIN again.
-pub(crate) fn forget_stored_pair_key() {
-    tracing::info!("A new PIN signed out the backup pair");
-    let (_, error) = preferences::update(preferences::preferences_path().as_deref(), |stored| {
-        stored.pair_key = None;
-    });
-    if let Some(error) = error {
-        tracing::warn!(%error, "Could not forget the backup pair key");
-    }
-}
-
 /// Returns the key this host shares with its primary or backup, if any.
 pub(crate) fn pair_key() -> Option<String> {
     nightfall_websocket::backup_pair_key()
@@ -389,8 +377,8 @@ pub(crate) fn note_joined_pair() {
 pub enum BackupRefusal {
     /// This host left the pair; the backup should stop following it.
     LeftPair,
-    /// The request does not carry the key this host shares with its backup, as after New PIN or
-    /// after another backup paired; the backup must pair again.
+    /// The request does not carry the key this host shares with its backup, as after another
+    /// backup paired; the backup must pair again.
     NotPaired,
 }
 

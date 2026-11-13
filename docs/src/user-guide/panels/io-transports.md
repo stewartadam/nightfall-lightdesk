@@ -35,7 +35,7 @@ When developing Nightfall, the link points at the Vite dev server, which only ac
 
 ### Pairing PIN
 
-A phone, tablet or other computer must enter the **Pairing PIN** shown under External control before it can control the show. The computer running Nightfall never needs it. Each device enters the PIN once: it stays paired, and reconnects on its own after a network drop, until Nightfall restarts. The PIN stays the same until Nightfall restarts or you select **New PIN**, which also signs out every paired device. A backup server and its primary stay paired with each other across restarts, see [Failover](#failover), but **New PIN** on either computer signs that pair out too. After five wrong PINs, a device must wait before trying again, and the wait grows with each further miss.
+A phone, tablet or other computer must enter the **Pairing PIN** shown under External control before it can control the show. The computer running Nightfall never needs it. Each device enters the PIN once: it stays paired, and reconnects on its own after a network drop, until Nightfall restarts. The PIN stays the same until Nightfall restarts or you select **New PIN**, which also signs out every paired device. A backup server and its primary stay paired with each other across restarts and **New PIN**, see [Failover](#failover). After five wrong PINs, a device must wait before trying again, and the wait grows with each further miss.
 
 The PIN keeps casual visitors on your network out; it does not protect against an attacker on it. Nightfall serves other devices over plain HTTP, so anyone who can watch network traffic can capture the PIN or a paired device's session and take control. Use External control only on networks you trust.
 
@@ -49,7 +49,7 @@ To set one up:
 1. On the backup, open the **Showfiles** dialog, which also appears when Nightfall starts, and enter the primary's address, such as `192.168.1.20:3030`, under **Follow a primary**. Use the port the primary's backend listens on.
 1. Enter the primary's PIN and select **Follow primary**. A primary on the same computer does not need a PIN.
 
-The backup first checks that the primary answers and accepts the PIN. If it does not, the backup stays as it was and says why, such as a wrong PIN or an address it cannot reach. Once it accepts, the two computers share a key that keeps them paired with each other, so neither needs a PIN again, even after a restart or a takeover. Only **New PIN** on either computer ends that.
+The backup first checks that the primary answers and accepts the PIN. If it does not, the backup stays as it was and says why, such as a wrong PIN or an address it cannot reach. Once it accepts, the two computers share a key that keeps them paired with each other, so neither needs a PIN again, even after a restart, a takeover or **New PIN**. Only **Leave the pair** on either computer ends that.
 
 While it follows the primary, the backup:
 
@@ -67,7 +67,7 @@ To take over, select **Take over** in the banner or under **Failover**. The back
 
 To stop being a backup without taking over, select **Leave the pair** in the banner or under **Failover**, or open or create a show from the **Showfiles** dialog. **Leave the pair** closes the copied show without ever sending it and returns to the welcome screen. Opening a show replaces the copied show.
 
-The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart. The two computers stay paired with each other across restarts. If the banner says the primary needs its pairing PIN again, for example after **New PIN**, or because the primary paired a different backup, enter its PIN under **Failover** and select **Pair again**.
+The backup role is a setting for this computer, separate from the showfile, and stays in place after a restart. The two computers stay paired with each other across restarts. If the banner says the primary needs its pairing PIN again, for example because the primary paired a different backup, enter its PIN under **Failover** and select **Pair again**.
 
 When a computer that belongs to a pair starts, it shows a **Failover** dialog instead of asking which show to open. Like the **Failover** section, it lists both computers, the primary and the backup, with **this machine** in place of this computer's address:
 

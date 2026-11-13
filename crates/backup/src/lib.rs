@@ -1087,7 +1087,6 @@ impl Plugin for BackupPlugin {
     /// link progress into standby, the ingress gate and show loads.
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering BackupPlugin");
-        nightfall_websocket::on_backup_pair_key_forgotten(failover::forget_stored_pair_key);
         app.init_resource::<BackupState>();
         app.init_resource::<RoleError>();
         app.init_resource::<PendingFollow>();

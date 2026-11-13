@@ -37,7 +37,7 @@ pub use external_control::{ExternalControlSettings, ExternalControlState};
 pub use origin::is_local_client;
 pub use pairing::{
     PUBLIC_API_PREFIX, RemotePairingAttempt, RemotePairingPin, RemotePairingStatus,
-    backup_pair_key, on_backup_pair_key_forgotten, set_backup_pair_key,
+    backup_pair_key, set_backup_pair_key,
 };
 pub use web_ui::{SharedWebUiAssets, WebUiAssets};
 

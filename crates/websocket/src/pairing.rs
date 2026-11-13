@@ -16,8 +16,8 @@
 //!
 //! The one exception is the key a primary and its backup share, set with
 //! [`set_backup_pair_key`]. The backup crate stores it with the backup role, so the two
-//! computers stay paired with each other across restarts and role swaps. A new PIN forgets it
-//! too, through the hook set with [`on_backup_pair_key_forgotten`].
+//! computers stay paired with each other across restarts, role swaps and new PINs, until either
+//! leaves the pair.
 //!
 //! Browsers on the operator's own computer never need the PIN; devices relayed by a local
 //! dev proxy still do (see [`crate::origin::is_local_client`]). Static web UI
@@ -161,7 +161,6 @@ impl RemotePairing {
             state.tokens.clear();
             state.pin.clone()
         };
-        forget_backup_pair_key();
         pin
     }
 
@@ -232,12 +231,8 @@ fn random_pin() -> String {
 /// [`RemotePairing`] since the backup role, not the app session, owns it.
 static BACKUP_PAIR_KEY: Mutex<Option<String>> = Mutex::new(None);
 
-/// Called after a new PIN forgot the backup pair key, so its owner can forget the stored copy.
-static BACKUP_PAIR_KEY_FORGOTTEN: std::sync::OnceLock<fn()> = std::sync::OnceLock::new();
-
 /// Replaces the key a primary and its backup share, or forgets it with `None`. Requests that
-/// carry it in this backend's pairing cookie pass as paired, even after a restart, until a new
-/// PIN signs every device out.
+/// carry it in this backend's pairing cookie pass as paired, even after a restart or a new PIN.
 pub fn set_backup_pair_key(key: Option<String>) {
     *BACKUP_PAIR_KEY
         .lock()
@@ -250,24 +245,6 @@ pub fn backup_pair_key() -> Option<String> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
-}
-
-/// Sets the hook that runs after a new PIN forgot the backup pair key. Only the first hook set in
-/// the process is kept.
-pub fn on_backup_pair_key_forgotten(hook: fn()) {
-    let _ = BACKUP_PAIR_KEY_FORGOTTEN.set(hook);
-}
-
-/// Forgets the backup pair key, as a new PIN signs every device out, and tells its owner.
-fn forget_backup_pair_key() {
-    let had_key = BACKUP_PAIR_KEY
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .take()
-        .is_some();
-    if had_key && let Some(hook) = BACKUP_PAIR_KEY_FORGOTTEN.get() {
-        hook();
-    }
 }
 
 /// Returns whether `token` is the key this host shares with its backup or primary.
@@ -522,8 +499,8 @@ mod tests {
         assert_eq!(lockout(FREE_ATTEMPTS + 40), Some(MAX_LOCKOUT));
     }
 
-    /// The key shared with a backup passes as paired, until it is forgotten or a new PIN signs
-    /// every device out.
+    /// The key shared with a backup passes as paired until it is forgotten, and a new PIN, which
+    /// signs every device out, keeps it.
     #[test]
     fn backup_pair_key_passes_until_forgotten() {
         let pairing = RemotePairing::new(3030);
@@ -534,7 +511,8 @@ mod tests {
         assert!(!pairing.token_valid(Some("pair-key")));
         set_backup_pair_key(Some("pair-key".into()));
         pairing.regenerate();
-        assert!(!pairing.token_valid(Some("pair-key")));
+        assert!(pairing.token_valid(Some("pair-key")));
+        set_backup_pair_key(None);
     }
 
     /// Regenerating the PIN signs out every paired device.
