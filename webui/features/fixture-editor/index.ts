@@ -21,3 +21,4 @@ export { isFixtureEditorWindow } from "./services/editor-window";
 export const FixtureEditorWindow = lazy(
   () => import("./components/fixture-editor-window"),
 );
+export { FIXTURE_EDITOR_SESSION } from "./services/editor-session";

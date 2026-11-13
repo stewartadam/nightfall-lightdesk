@@ -16,6 +16,7 @@ import {
   resolveBackendUrl,
   resolveShareablePort,
   resolveWebSocketUrl,
+  scopedWebsocketUrl,
 } from "./api";
 
 /** Built frontend HTTP and worker websocket settings share the desktop-injected port. */
@@ -155,4 +156,17 @@ test("resolveWebSocketUrl bypasses same-origin proxy in Tauri dev", () => {
     }),
     "ws://localhost:3030/ws",
   );
+});
+
+/** A scoped client's websocket URL lists the message types it handles and keeps its other parameters. */
+test("scopedWebsocketUrl adds the message type allow-list", () => {
+  const url = new URL(
+    scopedWebsocketUrl("ws://localhost:3891/ws?token=abc", [
+      "CommandResult",
+      "WorldReplaced",
+    ]),
+  );
+  assert.equal(url.searchParams.get("token"), "abc");
+  assert.equal(url.searchParams.get("types"), "CommandResult,WorldReplaced");
+  assert.equal(url.pathname, "/ws");
 });
