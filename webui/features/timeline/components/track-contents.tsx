@@ -38,7 +38,7 @@ import type * as types from "../../../types";
 import { TimelinePlacementPreference } from "../../../types";
 import { useTimelineContext } from "../context/timeline-context";
 import { buildActionTargetIndex } from "../model/action-targets";
-import { msPerBeat, type SnapConfig, snapToGrid } from "../model/grid-utils";
+import { snapPositionMs, timelineSnapConfig } from "../model/grid-utils";
 import {
   type ActionTargets,
   buildActionKind,
@@ -232,30 +232,17 @@ const TrackContents = (props: TrackListProps) => {
       fxModules: $fxModules(),
     }),
   );
+  /** Snap settings for insertion, rebuilt only when the grid changes rather than per pointer move. */
+  const snapConfig = createMemo(() => timelineSnapConfig(ctx));
   /** Flattens timeline actions so clip stop actions can live on any track. */
   const allActions = createMemo(() =>
     props.tracks.flatMap((track) => track.actions),
   );
 
-  const getSnapConfig = (): SnapConfig => {
-    if (ctx.useBeatgrid()) {
-      return {
-        enabled: ctx.snapEnabled(),
-        interval: msPerBeat(ctx.bpm()),
-        threshold: 15,
-        isBeat: true,
-        beatsPerBar: ctx.beatsPerBar(),
-      };
-    }
-    return {
-      enabled: ctx.snapEnabled(),
-      interval: 1000,
-      threshold: 10,
-      isBeat: false,
-      beatsPerBar: 4,
-    };
-  };
-
+  /**
+   * Builds an insertion intent for a pointer position in a track lane, snapped with the same
+   * rules as action drags so a new action lands exactly on the grid point it snapped to.
+   */
   const buildInsertionIntent = (
     trackId: string,
     rawPositionPx: number,
@@ -263,20 +250,18 @@ const TrackContents = (props: TrackListProps) => {
     y: number,
     source: InsertionIntent["source"],
   ): InsertionIntent => {
-    const snappedPx = snapToGrid(
-      rawPositionPx,
-      ctx.zoom(),
-      ctx.start(),
-      getSnapConfig(),
-    );
     const positionMs = Math.max(
-      0,
-      Math.floor(ctx.start() + pixelsToMs(snappedPx, ctx.zoom())),
+      ctx.start(),
+      snapPositionMs(
+        ctx.start() + pixelsToMs(rawPositionPx, ctx.zoom()),
+        ctx.zoom(),
+        snapConfig(),
+      ),
     );
     return {
       trackId,
       positionMs,
-      positionPx: snappedPx,
+      positionPx: ((positionMs - ctx.start()) * ctx.zoom()) / 1000,
       x,
       y,
       source,

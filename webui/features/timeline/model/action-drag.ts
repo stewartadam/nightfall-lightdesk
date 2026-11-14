@@ -8,63 +8,64 @@
 
 import { pixelsToMs } from "../../../lib/utils";
 import type { SnapConfig } from "./grid-utils";
-import { snapToGrid } from "./grid-utils";
+import { snapPositionMs } from "./grid-utils";
 
 export type ActionDragPosition = {
+  /** Lane pixel offset of the action start, derived from `positionMs` for drawing. */
   positionPx: number;
-  offsetPx: number;
+  /** Timeline position of the action start, exact when it snapped to a grid point. */
   positionMs: number;
 };
 
-/** Converts a pointer location into an action start aligned with the timeline lane. */
+/**
+ * Converts a pointer location into an action start aligned with the timeline lane.
+ *
+ * The start is chosen in milliseconds: the pointer snaps back to one of the
+ * `originalSnapPositionsMs` when it is within the snap threshold, otherwise to the grid when
+ * snapping is on. Snapped starts are the exact original or grid times, so a drop never moves
+ * an action off its beat by pixel rounding.
+ */
 export function actionDragPositionFromPointer(options: {
   clientX: number;
   laneLeft: number;
-  initialPositionPx: number;
-  originalSnapPositionsPx?: number[];
+  originalSnapPositionsMs?: number[];
   timelineStartMs: number;
   zoom: number;
   snapConfig: SnapConfig;
 }): ActionDragPosition {
   const rawPositionPx = Math.max(0, options.clientX - options.laneLeft);
-  const originalPositionPx = options.originalSnapPositionsPx
+  const rawPositionMs =
+    options.timelineStartMs + pixelsToMs(rawPositionPx, options.zoom);
+  const originalPositionMs = options.originalSnapPositionsMs
     ? snapToOriginalPosition(
-        rawPositionPx,
-        options.originalSnapPositionsPx,
-        options.snapConfig.threshold,
+        rawPositionMs,
+        options.originalSnapPositionsMs,
+        (options.snapConfig.threshold * 1000) / options.zoom,
       )
     : undefined;
-  const positionPx =
-    originalPositionPx ??
-    (options.snapConfig.enabled
-      ? snapToGrid(
-          rawPositionPx,
-          options.zoom,
-          options.timelineStartMs,
-          options.snapConfig,
-        )
-      : rawPositionPx);
+  const positionMs =
+    originalPositionMs ??
+    snapPositionMs(rawPositionMs, options.zoom, options.snapConfig);
 
   return {
-    positionPx,
-    offsetPx: positionPx - options.initialPositionPx,
-    positionMs: options.timelineStartMs + pixelsToMs(positionPx, options.zoom),
+    positionPx: ((positionMs - options.timelineStartMs) * options.zoom) / 1000,
+    positionMs,
   };
 }
 
 /** Returns the nearest original drag position when it is within snap range. */
 function snapToOriginalPosition(
-  positionPx: number,
-  originalPositionsPx: number[],
-  thresholdPx: number,
+  positionMs: number,
+  originalPositionsMs: number[],
+  thresholdMs: number,
 ): number | undefined {
-  let nearestPositionPx: number | undefined;
-  let nearestDistancePx = Number.POSITIVE_INFINITY;
-  for (const originalPositionPx of originalPositionsPx) {
-    const distancePx = Math.abs(positionPx - originalPositionPx);
-    if (distancePx >= nearestDistancePx) continue;
-    nearestPositionPx = originalPositionPx;
-    nearestDistancePx = distancePx;
+  let nearestPositionMs: number | undefined;
+  let nearestDistanceMs = Number.POSITIVE_INFINITY;
+  for (const originalPositionMs of originalPositionsMs) {
+    const distanceMs = Math.abs(positionMs - originalPositionMs);
+    if (distanceMs >= nearestDistanceMs) continue;
+    nearestPositionMs = originalPositionMs;
+    nearestDistanceMs = distanceMs;
   }
-  return nearestDistancePx <= thresholdPx ? nearestPositionPx : undefined;
+  return nearestDistanceMs <= thresholdMs ? nearestPositionMs : undefined;
 }
