@@ -57,6 +57,7 @@ impl Plugin for UndoPlugin {
 
         // Initialize resources
         app.init_resource::<UndoManager>();
+        app.init_resource::<systems::HistoryReplays>();
         app.init_resource::<PendingCommandBuffer>();
         app.init_resource::<PendingEngineOperationBuffer>();
 

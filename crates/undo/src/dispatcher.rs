@@ -160,6 +160,13 @@ impl UndoRegistry {
         generator(envelope.operation.as_ref(), envelope.command_id, ctx)
     }
 
+    /// Returns whether a stored inverse's type has a registered replay route, so a whole group
+    /// can be checked before any of it replays.
+    pub(crate) fn has_replay_route(&self, operation: &dyn Undoable) -> bool {
+        self.replay_factories
+            .contains_key(&operation.as_any().type_id())
+    }
+
     /// Rebuilds a stored inverse using the command or action route registered for its type.
     pub(crate) fn prepare_replay(
         &self,
