@@ -1,0 +1,5 @@
+# Ignore crate versions published less than three days ago when resolving
+# dependencies, matching pnpm's minimumReleaseAge. Versions already in
+# Cargo.lock stay usable.
+[registry]
+global-min-publish-age = "3 days"

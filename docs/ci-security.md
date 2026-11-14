@@ -150,7 +150,10 @@ already resolves from the caller's commit. zizmor runs with the other
 pre-commit hooks; justify any `# zizmor: ignore[...]` on the line it covers.
 Dependabot proposes Actions updates weekly, after a seven-day cooldown, and
 updates the lockfile with them; review those changes, especially checkout and
-artifact handling at the privileged boundaries. Review changes to inline release scripts as
+artifact handling at the privileged boundaries. Cargo and pnpm skip package
+versions published less than three days ago (`registry.global-min-publish-age`
+in `.cargo/config.toml`, `minimumReleaseAge` in `pnpm-workspace.yaml`) unless
+the lockfile already holds them. Review changes to inline release scripts as
 security-sensitive code. Do not replace them with scripts supplied by a build
 artifact or an npm/Cargo installation.
 

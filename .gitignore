@@ -1,5 +1,6 @@
 # Cargo
-.cargo/
+.cargo/*
+!.cargo/config.toml
 debug/
 target/
 
