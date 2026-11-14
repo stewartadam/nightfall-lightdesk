@@ -28,7 +28,7 @@ pub use apply::{
     apply_showfile_snapshot_to_world, initialize_showfile_resources, ordered_showfile_load_domains,
 };
 /// Current schema version written into newly saved showfile metadata.
-pub const CURRENT_SHOWFILE_VERSION: u32 = 26;
+pub const CURRENT_SHOWFILE_VERSION: u32 = 27;
 pub use ast_conv::ShowfileAstConverter;
 pub use command::{
     NewShowfileOptions, ShowfileCommand, ShowfileImportOptions, ShowfileImportPolicy,

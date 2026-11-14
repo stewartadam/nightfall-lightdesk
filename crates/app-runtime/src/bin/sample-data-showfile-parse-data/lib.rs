@@ -572,8 +572,8 @@ fn add_fx(world: &mut World, fixture_ref: FixtureRef) -> Result<(), String> {
                 FxWaveform {
                     params: FxWaveformParams {
                         kind: WaveformKind::Sin,
-                        min: 10.0,
-                        max: 100.0,
+                        min: Percentage::from(0.04),
+                        max: Percentage::from(0.4),
                         duty_cycle: 1.0,
                     },
                     phase_range: (0.0, std::f32::consts::PI),

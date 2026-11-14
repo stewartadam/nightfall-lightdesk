@@ -13,6 +13,7 @@
 
 mod action_references;
 mod assertion_sets;
+mod fx_waveform_fractions;
 mod retired_builtin_models;
 mod settings_sections;
 mod speed_names;
@@ -42,6 +43,7 @@ pub(crate) fn migrate_showfile_json(showfile: &mut Value, version: u32) -> Resul
             23 => assertion_sets::migrate_v23_to_v24(showfile)?,
             24 => settings_sections::migrate_v24_to_v25(showfile)?,
             25 => retired_builtin_models::migrate_v25_to_v26(showfile)?,
+            26 => fx_waveform_fractions::migrate_v26_to_v27(showfile)?,
             _ => return Err(format!("no migration from showfile version {version}")),
         }
         version += 1;
