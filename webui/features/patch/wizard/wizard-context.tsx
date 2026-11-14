@@ -20,6 +20,7 @@ import type { ConsolePatchProblem } from "../model/console-patch-allocation";
 import {
   type PatchWizardFieldValidity,
   type PatchWizardNumberFields,
+  patchFixtureCount,
   validatePatchWizardFields,
 } from "../model/patch-wizard-fields";
 
@@ -135,10 +136,8 @@ export const PatchWizardProvider: ParentComponent = (props) => {
   /** Checks every typed number on the configure step against its allowed range. */
   const fieldValidity = createMemo(() => validatePatchWizardFields(state()));
 
-  /** The typed fixture count when it is a whole number from 1. */
-  const fixtureQuantity = createMemo(() =>
-    fieldValidity().quantity ? state().quantity : null,
-  );
+  /** The number of fixtures this run affects: the morph selection, or the typed quantity when valid. */
+  const fixtureQuantity = createMemo(() => patchFixtureCount(state()));
 
   /** Resolves the first new fixture's ID from the user's choice, falling back to the suggestion. */
   const baseFixtureId = createMemo(() =>
