@@ -51,6 +51,16 @@ impl SelectionDataSource for FixtureSelectionDataSource<'_> {
         self.fixtures.fixture_by_ref(fixture_ref)
     }
 
+    /// Lists the patched fixture IDs inside `range` from live fixture storage.
+    fn fixture_ids_in(&self, range: std::ops::RangeInclusive<u32>) -> Vec<u32> {
+        self.fixtures.fixture_ids_in(range)
+    }
+
+    /// Lists the stored group IDs inside `range` from live group storage.
+    fn group_ids_in(&self, range: std::ops::RangeInclusive<u32>) -> Vec<u32> {
+        self.groups.ids_in(range)
+    }
+
     fn groups_available(&self) -> bool {
         true
     }

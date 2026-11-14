@@ -8,7 +8,8 @@
 
 //! Stable group-reference normalization for complete showfile snapshots.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::ops::RangeInclusive;
 
 use nightfall::prelude::*;
 use nightfall_selection::{
@@ -21,7 +22,7 @@ use crate::ShowfileSnapshot;
 /// Owned group lookup data used while normalizing a mutable showfile snapshot.
 struct SnapshotGroupDataSource {
     groups_by_uid: HashMap<Uuid, SelectionGroup>,
-    group_uid_by_id: HashMap<u32, Uuid>,
+    group_uid_by_id: BTreeMap<u32, Uuid>,
     group_uid_by_label: HashMap<String, Uuid>,
 }
 
@@ -70,9 +71,22 @@ impl SelectionDataSource for SnapshotGroupDataSource {
         None
     }
 
+    /// Snapshot normalization does not look up fixtures, so no range holds any.
+    fn fixture_ids_in(&self, _range: RangeInclusive<u32>) -> Vec<u32> {
+        Vec::new()
+    }
+
     /// Reports that the snapshot-backed group indexes are available.
     fn groups_available(&self) -> bool {
         true
+    }
+
+    /// Lists the snapshot group IDs inside `range` from the ordered ID index.
+    fn group_ids_in(&self, range: RangeInclusive<u32>) -> Vec<u32> {
+        self.group_uid_by_id
+            .range(range)
+            .map(|(id, _)| *id)
+            .collect()
     }
 
     /// Looks up one snapshot group by stable UID.

@@ -14,8 +14,9 @@ use uuid::Uuid;
 use crate::contracts::SelectionDataSource;
 use crate::subtraction::RemovedFixtures;
 use crate::validation::{
-    MISSING_FIXTURE_REFERENCES_WARNING, push_missing_fixture_elements_warning,
-    push_missing_fixture_warning,
+    MISSING_FIXTURE_REFERENCES_WARNING, missing_element_runs, missing_id_runs,
+    push_missing_element_warning, push_missing_fixture_elements_warning,
+    push_missing_fixture_warning, push_missing_group_warning,
 };
 
 /// Resolves fixture and group selection expressions from a pure data source.
@@ -181,12 +182,16 @@ impl<'a> SelectionResolver<'a> {
             GroupRefExpr::Span(inner) => GroupRefExpr::Span(Box::new(
                 Self::stabilize_group_ref_expr(inner, data_source, warnings),
             )),
-            GroupRefExpr::MissingById(group_id) => GroupRefExpr::MissingById(*group_id),
-            GroupRefExpr::MissingByLabel(label) => GroupRefExpr::MissingByLabel(label.clone()),
+            GroupRefExpr::MissingById(_)
+            | GroupRefExpr::MissingRangeById { .. }
+            | GroupRefExpr::MissingByLabel(_) => expr.clone(),
         }
     }
 
     /// Stabilize a numeric group range into an ordered set of stable group refs.
+    ///
+    /// Each stored group in the range becomes a UID ref, and each run of missing IDs becomes
+    /// one frozen missing marker, so a range far wider than the stored groups stays small.
     fn stabilize_group_range_by_id(
         start: u32,
         end: u32,
@@ -198,16 +203,32 @@ impl<'a> SelectionResolver<'a> {
         } else {
             (end, start)
         };
-        let mut refs = (lower..=upper)
-            .map(|group_id| {
-                data_source
-                    .group_by_id(group_id)
-                    .map(|group| GroupRefExpr::ByUid { uid: group.uid })
-                    .unwrap_or_else(|| {
-                        warnings.push(format!("Could not find group {}", group_id));
-                        GroupRefExpr::MissingById(group_id)
-                    })
+        let group_ids = data_source.group_ids_in(lower..=upper);
+        let missing = missing_id_runs(lower..=upper, &group_ids);
+        push_missing_group_warning(&missing, warnings);
+
+        let mut keyed_refs = group_ids
+            .iter()
+            .filter_map(|group_id| {
+                let group = data_source.group_by_id(*group_id)?;
+                Some((*group_id, GroupRefExpr::ByUid { uid: group.uid }))
             })
+            .chain(missing.iter().map(|run| {
+                let marker = if run.start() == run.end() {
+                    GroupRefExpr::MissingById(*run.start())
+                } else {
+                    GroupRefExpr::MissingRangeById {
+                        start: *run.start(),
+                        end: *run.end(),
+                    }
+                };
+                (*run.start(), marker)
+            }))
+            .collect::<Vec<_>>();
+        keyed_refs.sort_by_key(|(group_id, _)| *group_id);
+        let mut refs = keyed_refs
+            .into_iter()
+            .map(|(_, group_ref)| group_ref)
             .collect::<Vec<_>>();
         if start > end {
             refs.reverse();
@@ -447,7 +468,6 @@ impl<'a> SelectionResolver<'a> {
         warnings: &mut Vec<String>,
     ) -> Vec<FixtureRef> {
         let mut fixture_list = Vec::new();
-        let mut missing_fixture_ids = Vec::new();
 
         let (lower, upper) = if start <= end {
             (start, end)
@@ -458,7 +478,8 @@ impl<'a> SelectionResolver<'a> {
         // If both endpoints have no element index, use index: None for whole fixtures
         let use_whole_fixtures = lower.element_index.is_none() && upper.element_index.is_none();
 
-        for fixture_id in lower.fixture_id..=upper.fixture_id {
+        let fixture_ids = data_source.fixture_ids_in(lower.fixture_id..=upper.fixture_id);
+        for &fixture_id in &fixture_ids {
             if let Some(fixture) = data_source.fixture_by_id(fixture_id) {
                 if use_whole_fixtures {
                     // No elements specified - use index: None for all elements
@@ -497,12 +518,13 @@ impl<'a> SelectionResolver<'a> {
 
                     fixture_list.extend(elements);
                 }
-            } else {
-                missing_fixture_ids.push(fixture_id);
             }
         }
 
-        push_missing_fixture_warning(&missing_fixture_ids, warnings);
+        push_missing_fixture_warning(
+            &missing_id_runs(lower.fixture_id..=upper.fixture_id, &fixture_ids),
+            warnings,
+        );
 
         if start > end {
             fixture_list.reverse();
@@ -512,6 +534,10 @@ impl<'a> SelectionResolver<'a> {
     }
 
     /// Apply an element selector across a fixture range in the requested traversal order.
+    ///
+    /// Walks only the fixtures that exist inside the range and only the selected elements each
+    /// fixture has, so neither a wide fixture range nor a wide element range is expanded number
+    /// by number. Missing fixtures and elements are reported as ranges.
     pub(super) fn resolve_fixture_map(
         fixtures: &FixtureRangeExpr,
         elements: &ElementSelectorExpr,
@@ -519,7 +545,6 @@ impl<'a> SelectionResolver<'a> {
         warnings: &mut Vec<String>,
     ) -> Vec<FixtureRef> {
         let mut fixture_list = Vec::new();
-        let mut missing_fixture_ids = Vec::new();
 
         let (fixture_start, fixture_end) = if fixtures.start <= fixtures.end {
             (fixtures.start, fixtures.end)
@@ -527,9 +552,11 @@ impl<'a> SelectionResolver<'a> {
             (fixtures.end, fixtures.start)
         };
 
-        let mut fixture_ids: Vec<u32> = (fixture_start..=fixture_end).collect();
+        let fixture_ids = data_source.fixture_ids_in(fixture_start..=fixture_end);
+        let missing_fixtures = missing_id_runs(fixture_start..=fixture_end, &fixture_ids);
+        let mut traversal = fixture_ids;
         if fixtures.start > fixtures.end {
-            fixture_ids.reverse();
+            traversal.reverse();
         }
 
         let (element_start, element_end, reverse_elements) = match elements {
@@ -543,32 +570,31 @@ impl<'a> SelectionResolver<'a> {
             }
         };
 
-        for fixture_id in fixture_ids {
-            if let Some(fixture) = data_source.fixture_by_id(fixture_id) {
-                let mut element_indices: Vec<u32> = (element_start..=element_end).collect();
-                if reverse_elements {
-                    element_indices.reverse();
-                }
+        for fixture_id in traversal {
+            let Some(fixture) = data_source.fixture_by_id(fixture_id) else {
+                continue;
+            };
+            let element_count = fixture.element_count;
+            push_missing_element_warning(
+                fixture_id,
+                element_count,
+                &missing_element_runs(element_start..=element_end, element_count),
+                warnings,
+            );
 
-                for idx in element_indices {
-                    if idx == 0 || idx > fixture.element_count {
-                        warnings.push(format!(
-                            "Fixture {} element {} does not exist (fixture has {} elements)",
-                            fixture_id, idx, fixture.element_count
-                        ));
-                        continue;
-                    }
-                    fixture_list.push(FixtureRef {
-                        fixture_uid: fixture.fixture_ref.fixture_uid,
-                        index: Some(idx),
-                    });
-                }
+            let valid = element_start.max(1)..=element_end.min(element_count);
+            let element_refs = valid.map(|idx| FixtureRef {
+                fixture_uid: fixture.fixture_ref.fixture_uid,
+                index: Some(idx),
+            });
+            if reverse_elements {
+                fixture_list.extend(element_refs.rev());
             } else {
-                missing_fixture_ids.push(fixture_id);
+                fixture_list.extend(element_refs);
             }
         }
 
-        push_missing_fixture_warning(&missing_fixture_ids, warnings);
+        push_missing_fixture_warning(&missing_fixtures, warnings);
 
         fixture_list
     }

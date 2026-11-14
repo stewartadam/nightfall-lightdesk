@@ -6,6 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::ops::RangeInclusive;
+
 use nightfall::prelude::*;
 
 use crate::contracts::{SelectionDataSource, SpatialSelectionResolution};
@@ -116,14 +118,78 @@ fn fixture_ref_exists(fixture_ref: &FixtureRef, data_source: &dyn SelectionDataS
     }
 }
 
-/// Append a compact warning for one or more missing fixture IDs.
-pub(super) fn push_missing_fixture_warning(missing_ids: &[u32], warnings: &mut Vec<String>) {
-    match missing_ids {
+/// Append one compact warning for the fixture IDs in `missing`, such as `Could not find
+/// fixtures 2-4, 9`.
+pub(super) fn push_missing_fixture_warning(
+    missing: &[RangeInclusive<u32>],
+    warnings: &mut Vec<String>,
+) {
+    push_missing_ids_warning("fixture", missing, warnings);
+}
+
+/// Append one compact warning for the group IDs in `missing`, such as `Could not find group 7`.
+pub(super) fn push_missing_group_warning(
+    missing: &[RangeInclusive<u32>],
+    warnings: &mut Vec<String>,
+) {
+    push_missing_ids_warning("group", missing, warnings);
+}
+
+/// Append one warning naming the element indexes in `missing` that a fixture with
+/// `element_count` elements does not have.
+pub(super) fn push_missing_element_warning(
+    fixture_id: u32,
+    element_count: u32,
+    missing: &[RangeInclusive<u32>],
+    warnings: &mut Vec<String>,
+) {
+    match missing {
         [] => {}
-        [fixture_id] => warnings.push(format!("Could not find fixture {}", fixture_id)),
+        [run] if run.start() == run.end() => warnings.push(format!(
+            "Fixture {fixture_id} element {} does not exist (fixture has {element_count} elements)",
+            run.start()
+        )),
         _ => warnings.push(format!(
-            "Could not find fixtures {}",
-            format_fixture_id_ranges(missing_ids)
+            "Fixture {fixture_id} elements {} do not exist (fixture has {element_count} elements)",
+            format_id_runs(missing)
+        )),
+    }
+}
+
+/// Return the indexes of `elements` that fall outside `1..=element_count`, as at most two runs.
+pub(crate) fn missing_element_runs(
+    elements: RangeInclusive<u32>,
+    element_count: u32,
+) -> Vec<RangeInclusive<u32>> {
+    let (start, end) = (*elements.start(), *elements.end());
+    if start > end {
+        return Vec::new();
+    }
+    let mut runs = Vec::new();
+    if start == 0 {
+        runs.push(0..=0);
+    }
+    let first_missing_above = start.max(element_count.saturating_add(1)).max(1);
+    if end >= first_missing_above && end > element_count {
+        runs.push(first_missing_above..=end);
+    }
+    runs
+}
+
+/// Append one warning naming every ID in `missing`, using the singular `noun` for one ID.
+fn push_missing_ids_warning(
+    noun: &str,
+    missing: &[RangeInclusive<u32>],
+    warnings: &mut Vec<String>,
+) {
+    match missing {
+        [] => {}
+        [run] if run.start() == run.end() => {
+            warnings.push(format!("Could not find {noun} {}", run.start()));
+        }
+        _ => warnings.push(format!(
+            "Could not find {noun}s {}",
+            format_id_runs(missing)
         )),
     }
 }
@@ -138,36 +204,47 @@ pub(super) fn push_missing_fixture_elements_warning(warnings: &mut Vec<String>) 
     }
 }
 
-/// Format fixture IDs as ascending singleton and contiguous range segments.
-fn format_fixture_id_ranges(fixture_ids: &[u32]) -> String {
-    let mut sorted_ids = fixture_ids.to_vec();
-    sorted_ids.sort_unstable();
-    sorted_ids.dedup();
-
-    let mut ranges = Vec::new();
-    let mut range_start = sorted_ids[0];
-    let mut previous = sorted_ids[0];
-
-    for fixture_id in sorted_ids.into_iter().skip(1) {
-        if previous.checked_add(1) == Some(fixture_id) {
-            previous = fixture_id;
-            continue;
-        }
-
-        ranges.push(format_fixture_id_range(range_start, previous));
-        range_start = fixture_id;
-        previous = fixture_id;
+/// Return the runs of `range` that `present` does not cover, in ascending order.
+///
+/// `present` must be ascending and inside `range`, as [`SelectionDataSource::fixture_ids_in`]
+/// returns it. The result has at most one more run than `present` has IDs, however wide the
+/// range is.
+pub(crate) fn missing_id_runs(
+    range: RangeInclusive<u32>,
+    present: &[u32],
+) -> Vec<RangeInclusive<u32>> {
+    let (start, end) = (*range.start(), *range.end());
+    if start > end {
+        return Vec::new();
     }
-
-    ranges.push(format_fixture_id_range(range_start, previous));
-    ranges.join(", ")
+    let mut runs = Vec::new();
+    let mut next = Some(start);
+    for &id in present {
+        if let Some(from) = next
+            && from < id
+        {
+            runs.push(from..=id - 1);
+        }
+        next = id.checked_add(1);
+    }
+    if let Some(from) = next
+        && from <= end
+    {
+        runs.push(from..=end);
+    }
+    runs
 }
 
-/// Format one missing fixture ID segment as either a singleton or inclusive range.
-fn format_fixture_id_range(start: u32, end: u32) -> String {
-    if start == end {
-        start.to_string()
-    } else {
-        format!("{}-{}", start, end)
-    }
+/// Format ID runs as comma-separated singletons and inclusive `start-end` ranges.
+pub(crate) fn format_id_runs(runs: &[RangeInclusive<u32>]) -> String {
+    runs.iter()
+        .map(|run| {
+            if run.start() == run.end() {
+                run.start().to_string()
+            } else {
+                format!("{}-{}", run.start(), run.end())
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }

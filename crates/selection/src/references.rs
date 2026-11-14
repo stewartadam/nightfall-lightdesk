@@ -15,11 +15,14 @@
 //! only the objects it affects.
 
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::ops::RangeInclusive;
 
 use nightfall::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::validation::{missing_element_runs, missing_id_runs};
 
 mod book;
 #[cfg(test)]
@@ -155,6 +158,22 @@ pub enum ReferenceTarget {
         /// 1-based element index, or none for the whole fixture.
         element_index: Option<u32>,
     },
+    /// A run of fixture IDs inside a fixture range, none of which is patched.
+    FixtureRange {
+        /// Lowest fixture ID of the run.
+        start: u32,
+        /// Highest fixture ID of the run.
+        end: u32,
+    },
+    /// A run of element indexes that a patched fixture does not have.
+    FixtureElements {
+        /// Fixture ID.
+        fixture_id: u32,
+        /// Lowest 1-based element index of the run.
+        start: u32,
+        /// Highest 1-based element index of the run.
+        end: u32,
+    },
     /// A fixture UID that matches no patched fixture.
     FixtureUid {
         /// Fixture UID.
@@ -166,6 +185,13 @@ pub enum ReferenceTarget {
     Group {
         /// Group ID.
         group_id: u32,
+    },
+    /// A run of group IDs inside a group range, none of which is stored.
+    GroupRange {
+        /// Lowest group ID of the run.
+        start: u32,
+        /// Highest group ID of the run.
+        end: u32,
     },
     /// A group UID that matches no stored group.
     GroupUid {
@@ -300,6 +326,10 @@ pub enum LookupKey {
     FixtureUid(Uuid),
     /// Fixture by user-facing ID.
     FixtureId(u32),
+    /// The set of fixture IDs in use, which range references read to find their gaps.
+    FixtureIds,
+    /// The set of group IDs in use, which range references read to find their gaps.
+    GroupIds,
     /// Group by UID.
     GroupUid(Uuid),
     /// Group by user-facing ID.
@@ -333,9 +363,9 @@ struct LookupGroup {
 #[derive(Clone, Debug, Default)]
 pub struct ReferenceLookup {
     fixtures_by_uid: HashMap<Uuid, LookupFixture>,
-    fixtures_by_id: HashMap<u32, (Uuid, u32)>,
+    fixtures_by_id: BTreeMap<u32, (Uuid, u32)>,
     groups_by_uid: HashMap<Uuid, LookupGroup>,
-    group_uids_by_id: HashMap<u32, Uuid>,
+    group_uids_by_id: BTreeMap<u32, Uuid>,
     /// Groups sharing each label, by ID then UID; the lowest group ID wins.
     group_uids_by_label: HashMap<String, BTreeSet<(u32, Uuid)>>,
     blueprints: HashSet<Uuid>,
@@ -392,6 +422,9 @@ impl ReferenceLookup {
                 changed.push(LookupKey::FixtureId(fixture.id));
             }
         }
+        if previous.map(|previous| previous.id) != fixture.map(|fixture| fixture.id) {
+            changed.push(LookupKey::FixtureIds);
+        }
         changed
     }
 
@@ -403,6 +436,7 @@ impl ReferenceLookup {
         if previous.map(|group| (group.id, group.label.as_str())) == group {
             return Vec::new();
         }
+        let previous_id = previous.map(|group| group.id);
         let mut changed = vec![LookupKey::GroupUid(uid)];
         if let Some(previous) = self.groups_by_uid.remove(&uid) {
             if self.group_uids_by_id.get(&previous.id) == Some(&uid) {
@@ -432,6 +466,9 @@ impl ReferenceLookup {
                 .insert((id, uid));
             changed.push(LookupKey::GroupId(id));
             changed.push(LookupKey::GroupLabel(label.to_owned()));
+        }
+        if previous_id != group.map(|(id, _)| id) {
+            changed.push(LookupKey::GroupIds);
         }
         changed
     }
@@ -652,19 +689,9 @@ impl OwnerAudit<'_> {
             SelectionExpr::Fixture(fixture_ref) => {
                 self.fixture_target(fixture_ref.fixture_id, fixture_ref.element_index, path);
             }
-            SelectionExpr::FixtureRange { start, end } => {
-                for target in self.expand_fixture_range(start, end) {
-                    self.fixture_target(target.fixture_id, target.element_index, path);
-                }
-            }
+            SelectionExpr::FixtureRange { start, end } => self.fixture_range(start, end, path),
             SelectionExpr::FixtureMap { fixtures, elements } => {
-                let element_indexes = match elements {
-                    ElementSelectorExpr::Single(index) => vec![*index],
-                    ElementSelectorExpr::Range { start, end } => inclusive_range(*start, *end),
-                };
-                for fixture_id in inclusive_range(fixtures.start, fixtures.end) {
-                    self.fixture_map_targets(fixture_id, &element_indexes, path);
-                }
+                self.fixture_map(fixtures, elements, path);
             }
             SelectionExpr::Group(group_ref) => self.group(group_ref, path),
             SelectionExpr::Add { lhs, rhs } => {
@@ -738,71 +765,32 @@ impl OwnerAudit<'_> {
         }
     }
 
-    /// Audits the elements a fixture map selects on one fixture.
+    /// Audits a fixture range: each patched fixture in it, and each run of IDs no fixture uses.
     ///
-    /// Every element gets a reference row; a missing fixture gets one issue rather than one per
-    /// element.
-    fn fixture_map_targets(&mut self, fixture_id: u32, element_indexes: &[u32], path: &str) {
-        let element_count = self.fixture_elements(fixture_id);
-        for &element_index in element_indexes {
-            let exists = element_count.is_some_and(|count| element_exists(element_index, count));
-            self.entry(
-                path,
-                ReferenceTarget::Fixture {
-                    fixture_id,
-                    element_index: Some(element_index),
-                },
-                exists,
-            );
-            if !exists && element_count.is_some() {
-                self.issue(
-                    path,
-                    ReferenceTarget::Fixture {
-                        fixture_id,
-                        element_index: Some(element_index),
-                    },
-                    ReferenceIssueReason::MissingFixtureElement,
-                    false,
-                );
-            }
-        }
-        if element_count.is_none() {
-            self.issue(
-                path,
-                ReferenceTarget::Fixture {
-                    fixture_id,
-                    element_index: None,
-                },
-                ReferenceIssueReason::MissingFixtureId,
-                false,
-            );
-        }
-    }
-
-    /// Expands a fixture range into whole-fixture or element targets in traversal order.
-    ///
-    /// Follows the same rules as selection resolution, except that missing fixtures inside the
-    /// range are kept as whole-fixture targets so the audit can report them.
-    fn expand_fixture_range(
+    /// Element endpoints follow the same rules as selection resolution. Only patched fixtures
+    /// and the gaps between them are visited, so a range far wider than the rig stays cheap.
+    fn fixture_range(
         &mut self,
         start: &UnresolvedFixtureRef,
         end: &UnresolvedFixtureRef,
-    ) -> Vec<UnresolvedFixtureRef> {
+        path: &str,
+    ) {
         let reverse = start > end;
         let (lower, upper) = if reverse { (end, start) } else { (start, end) };
         let whole_fixtures = lower.element_index.is_none() && upper.element_index.is_none();
-        let mut targets = Vec::new();
-        for fixture_id in lower.fixture_id..=upper.fixture_id {
-            let element_count = match self.fixture_elements(fixture_id) {
-                Some(element_count) if !whole_fixtures => element_count,
-                _ => {
-                    targets.push(UnresolvedFixtureRef {
-                        fixture_id,
-                        element_index: None,
-                    });
+        for item in self.fixture_range_items(lower.fixture_id..=upper.fixture_id, reverse) {
+            let fixture_id = match item {
+                RangeItem::Present(fixture_id) => fixture_id,
+                RangeItem::Missing(run) => {
+                    self.missing_fixtures(run, path);
                     continue;
                 }
             };
+            if whole_fixtures {
+                self.fixture_target(fixture_id, None, path);
+                continue;
+            }
+            let element_count = self.fixture_elements(fixture_id).unwrap_or_default();
             let element_start = if fixture_id == lower.fixture_id {
                 lower.element_index.unwrap_or(1)
             } else {
@@ -814,34 +802,174 @@ impl OwnerAudit<'_> {
                 element_count
             };
             if element_start <= element_end {
-                targets.extend((element_start..=element_end).map(|element_index| {
-                    UnresolvedFixtureRef {
-                        fixture_id,
-                        element_index: Some(element_index),
-                    }
-                }));
+                self.fixture_element_range(
+                    fixture_id,
+                    element_count,
+                    element_start..=element_end,
+                    reverse,
+                    path,
+                );
                 continue;
             }
             if fixture_id == lower.fixture_id && lower.element_index.is_some() {
-                targets.push(UnresolvedFixtureRef {
-                    fixture_id,
-                    element_index: lower.element_index,
-                });
+                self.fixture_target(fixture_id, lower.element_index, path);
             }
             if fixture_id == upper.fixture_id
                 && upper.element_index.is_some()
                 && upper.element_index != lower.element_index
             {
-                targets.push(UnresolvedFixtureRef {
-                    fixture_id,
-                    element_index: upper.element_index,
-                });
+                self.fixture_target(fixture_id, upper.element_index, path);
             }
         }
-        if reverse {
-            targets.reverse();
+    }
+
+    /// Audits a fixture map: the selected elements of each patched fixture in the fixture range,
+    /// and each run of fixture IDs no fixture uses.
+    fn fixture_map(
+        &mut self,
+        fixtures: &FixtureRangeExpr,
+        elements: &ElementSelectorExpr,
+        path: &str,
+    ) {
+        let (element_start, element_end, reverse_elements) = match elements {
+            ElementSelectorExpr::Single(index) => (*index, *index, false),
+            ElementSelectorExpr::Range { start, end } if start <= end => (*start, *end, false),
+            ElementSelectorExpr::Range { start, end } => (*end, *start, true),
+        };
+        let reverse = fixtures.start > fixtures.end;
+        let range = fixtures.start.min(fixtures.end)..=fixtures.start.max(fixtures.end);
+        for item in self.fixture_range_items(range, reverse) {
+            match item {
+                RangeItem::Present(fixture_id) => {
+                    let element_count = self.fixture_elements(fixture_id).unwrap_or_default();
+                    self.fixture_element_range(
+                        fixture_id,
+                        element_count,
+                        element_start..=element_end,
+                        reverse_elements,
+                        path,
+                    );
+                }
+                RangeItem::Missing(run) => self.missing_fixtures(run, path),
+            }
         }
-        targets
+    }
+
+    /// Returns the patched fixtures inside `range` and the runs of IDs between them, in
+    /// traversal order, recording which fixture IDs the audit read (see [`range_lookups`]).
+    fn fixture_range_items(&mut self, range: RangeInclusive<u32>, reverse: bool) -> Vec<RangeItem> {
+        self.report.lookups.extend(range_lookups(
+            range.clone(),
+            LookupKey::FixtureId,
+            LookupKey::FixtureIds,
+        ));
+        let present = self
+            .lookup
+            .fixtures_by_id
+            .range(range.clone())
+            .map(|(fixture_id, _)| *fixture_id)
+            .collect::<Vec<_>>();
+        range_items(range, present, reverse)
+    }
+
+    /// Audits `elements` of one patched fixture: a row for each element it has, and one row
+    /// for each run of indexes it lacks.
+    fn fixture_element_range(
+        &mut self,
+        fixture_id: u32,
+        element_count: u32,
+        elements: RangeInclusive<u32>,
+        reverse: bool,
+        path: &str,
+    ) {
+        let mut missing = missing_element_runs(elements.clone(), element_count)
+            .into_iter()
+            .peekable();
+        let below = missing.next_if(|run| *run.start() == 0);
+        let above = missing.next();
+        let valid = (*elements.start()).max(1)..=(*elements.end()).min(element_count);
+        let mut items = below
+            .into_iter()
+            .map(RangeItem::Missing)
+            .chain(valid.map(RangeItem::Present))
+            .chain(above.map(RangeItem::Missing))
+            .collect::<Vec<_>>();
+        if reverse {
+            items.reverse();
+        }
+        for item in items {
+            match item {
+                RangeItem::Present(element_index) => {
+                    self.fixture_target(fixture_id, Some(element_index), path);
+                }
+                RangeItem::Missing(run) if run.start() == run.end() => {
+                    self.fixture_target(fixture_id, Some(*run.start()), path);
+                }
+                RangeItem::Missing(run) => {
+                    let target = ReferenceTarget::FixtureElements {
+                        fixture_id,
+                        start: *run.start(),
+                        end: *run.end(),
+                    };
+                    self.record(
+                        path,
+                        target,
+                        false,
+                        ReferenceIssueReason::MissingFixtureElement,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Audits a run of fixture IDs that no patched fixture uses, as one row.
+    fn missing_fixtures(&mut self, run: RangeInclusive<u32>, path: &str) {
+        if run.start() == run.end() {
+            self.fixture_target(*run.start(), None, path);
+            return;
+        }
+        let target = ReferenceTarget::FixtureRange {
+            start: *run.start(),
+            end: *run.end(),
+        };
+        self.record(path, target, false, ReferenceIssueReason::MissingFixtureId);
+    }
+
+    /// Audits a group range: each stored group in it, and each run of IDs no group uses.
+    fn group_range(&mut self, start: u32, end: u32, path: &str) {
+        let range = start.min(end)..=start.max(end);
+        self.report.lookups.extend(range_lookups(
+            range.clone(),
+            LookupKey::GroupId,
+            LookupKey::GroupIds,
+        ));
+        let present = self
+            .lookup
+            .group_uids_by_id
+            .range(range.clone())
+            .map(|(group_id, _)| *group_id)
+            .collect::<Vec<_>>();
+        for item in range_items(range, present, start > end) {
+            match item {
+                RangeItem::Present(group_id) => self.group_by_id(group_id, path),
+                RangeItem::Missing(run) => self.missing_groups(run, path),
+            }
+        }
+    }
+
+    /// Audits a run of group IDs that no stored group uses, as one row.
+    fn missing_groups(&mut self, run: RangeInclusive<u32>, path: &str) {
+        let target = if run.start() == run.end() {
+            ReferenceTarget::Group {
+                group_id: *run.start(),
+            }
+        } else {
+            ReferenceTarget::GroupRange {
+                start: *run.start(),
+                end: *run.end(),
+            }
+        };
+        self.record(path, target, false, ReferenceIssueReason::MissingGroupId);
     }
 
     /// Audits one group reference expression and every expression nested in it.
@@ -855,10 +983,9 @@ impl OwnerAudit<'_> {
                 }
             },
             GroupRefExpr::ById(group_id) => self.group_by_id(*group_id, path),
-            GroupRefExpr::RangeById { start, end } => {
-                for group_id in inclusive_range(*start, *end) {
-                    self.group_by_id(group_id, path);
-                }
+            GroupRefExpr::RangeById { start, end } => self.group_range(*start, *end, path),
+            GroupRefExpr::MissingRangeById { start, end } => {
+                self.missing_groups(*start..=*end, path);
             }
             GroupRefExpr::ByLabel(label) => match self.group_uid_by_label(label) {
                 Some(uid) => {
@@ -922,13 +1049,46 @@ impl OwnerAudit<'_> {
     }
 }
 
-/// Returns every integer from `start` to `end` inclusive, counting down when `start > end`.
-fn inclusive_range(start: u32, end: u32) -> Vec<u32> {
-    if start <= end {
-        (start..=end).collect()
+/// Widest range whose audit records one lookup per ID. Wider ranges record the coarse
+/// "IDs in use" key instead, which re-audits them whenever any ID is added or removed.
+const PER_ID_RANGE_LOOKUP_LIMIT: u32 = 4096;
+
+/// Returns the lookup keys an audit of `range` reads: one `per_id` key per ID for ranges up to
+/// [`PER_ID_RANGE_LOOKUP_LIMIT`] wide, so narrow ranges re-audit only when an ID inside them
+/// changes, or the single `all_ids` key for wider ranges, so the key count stays bounded.
+fn range_lookups(
+    range: RangeInclusive<u32>,
+    per_id: impl Fn(u32) -> LookupKey,
+    all_ids: LookupKey,
+) -> Vec<LookupKey> {
+    if range.end() - range.start() < PER_ID_RANGE_LOOKUP_LIMIT {
+        range.map(per_id).collect()
     } else {
-        (end..=start).rev().collect()
+        vec![all_ids]
     }
+}
+
+/// One step of a range walk: an ID that exists, or a run of IDs that do not.
+enum RangeItem {
+    /// An ID with a live target.
+    Present(u32),
+    /// A run of consecutive IDs without one.
+    Missing(RangeInclusive<u32>),
+}
+
+/// Merges the ascending `present` IDs of `range` with the runs between them, in traversal
+/// order (descending when `reverse`).
+fn range_items(range: RangeInclusive<u32>, present: Vec<u32>, reverse: bool) -> Vec<RangeItem> {
+    let mut items = missing_id_runs(range, &present)
+        .into_iter()
+        .map(|run| (*run.start(), RangeItem::Missing(run)))
+        .chain(present.into_iter().map(|id| (id, RangeItem::Present(id))))
+        .collect::<Vec<_>>();
+    items.sort_by_key(|(id, _)| *id);
+    if reverse {
+        items.reverse();
+    }
+    items.into_iter().map(|(_, item)| item).collect()
 }
 
 /// Orders issues by owner domain, owner ID, path and target.

@@ -82,8 +82,18 @@ impl SelectionDataSource for TestSelectionDataSource {
             .cloned()
     }
 
+    /// Lists the test fixture IDs inside `range` from the ordered fixture map.
+    fn fixture_ids_in(&self, range: std::ops::RangeInclusive<u32>) -> Vec<u32> {
+        self.fixtures.range(range).map(|(id, _)| *id).collect()
+    }
+
     fn groups_available(&self) -> bool {
         self.groups_available
+    }
+
+    /// Lists the test group IDs inside `range` from the ordered group map.
+    fn group_ids_in(&self, range: std::ops::RangeInclusive<u32>) -> Vec<u32> {
+        self.groups.0.range(range).map(|(id, _)| *id).collect()
     }
 
     fn group_by_uid(&self, uid: Uuid) -> Option<SelectionGroup> {
@@ -2551,4 +2561,176 @@ fn filter_existing_selection_removes_missing_fixtures_and_compacts_indexes() {
         filtered.projection_bounds(),
         Some(ProjectionBounds::new(0, 1, 0, 1, 0, 0))
     );
+}
+
+/// A fixture range far wider than the rig resolves to the patched fixtures and reports the
+/// gap above them as one range, without walking every number in the range.
+#[test]
+fn huge_fixture_range_resolves_only_patched_fixtures() {
+    let provider = make_data_source(1..=4);
+
+    let mut warnings = Vec::new();
+    let resolved = SelectionResolver::resolve(
+        &fixture_range_expr(u32::MAX, 1),
+        &provider,
+        &mut HashSet::new(),
+        &mut warnings,
+    );
+
+    assert_eq!(resolved, vec![fref(4), fref(3), fref(2), fref(1)]);
+    assert_eq!(warnings, vec!["Could not find fixtures 5-4294967295"]);
+}
+
+/// A fixture map with a huge element range selects only the elements each fixture has and
+/// reports the rest as one range per fixture.
+#[test]
+fn huge_fixture_map_element_range_selects_existing_elements() {
+    let provider = make_data_source_with_elements(1..=2, 3);
+    let expr = SelectionExpr::FixtureMap {
+        fixtures: FixtureRangeExpr { start: 1, end: 2 },
+        elements: ElementSelectorExpr::Range {
+            start: 4_000_000_000,
+            end: 0,
+        },
+    };
+
+    let mut warnings = Vec::new();
+    let resolved = SelectionResolver::resolve(&expr, &provider, &mut HashSet::new(), &mut warnings);
+
+    let element = |fixture: u32, index: u32| FixtureRef {
+        fixture_uid: Uuid::from_u128(fixture as u128),
+        index: Some(index),
+    };
+    assert_eq!(
+        resolved,
+        vec![
+            element(1, 3),
+            element(1, 2),
+            element(1, 1),
+            element(2, 3),
+            element(2, 2),
+            element(2, 1),
+        ]
+    );
+    assert_eq!(
+        warnings,
+        vec![
+            "Fixture 1 elements 0, 4-4000000000 do not exist (fixture has 3 elements)",
+            "Fixture 2 elements 0, 4-4000000000 do not exist (fixture has 3 elements)",
+        ]
+    );
+}
+
+/// A fixture map over a huge fixture range visits only patched fixtures, and a single element
+/// past the end keeps the singular warning.
+#[test]
+fn huge_fixture_map_fixture_range_visits_patched_fixtures() {
+    let provider = make_data_source_with_elements(1..=2, 1);
+    let expr = SelectionExpr::FixtureMap {
+        fixtures: FixtureRangeExpr {
+            start: 1,
+            end: u32::MAX,
+        },
+        elements: ElementSelectorExpr::Single(2),
+    };
+
+    let mut warnings = Vec::new();
+    let resolved = SelectionResolver::resolve(&expr, &provider, &mut HashSet::new(), &mut warnings);
+
+    assert!(resolved.is_empty());
+    assert_eq!(
+        warnings,
+        vec![
+            "Fixture 1 element 2 does not exist (fixture has 1 elements)",
+            "Fixture 2 element 2 does not exist (fixture has 1 elements)",
+            "Could not find fixtures 3-4294967295",
+        ]
+    );
+}
+
+/// A group range far wider than the stored groups resolves the stored ones and reports the
+/// missing IDs as one range; stabilizing it keeps that run as a single frozen marker.
+#[test]
+fn huge_group_range_resolves_and_stabilizes_stored_groups() {
+    let mut groups = TestGroupProvider::default();
+    groups.add(make_group(1, 1, 1)).expect("group should add");
+    groups.add(make_group(3, 2, 2)).expect("group should add");
+    let provider = make_data_source(1..=2).with_groups(&groups);
+    let range = SelectionExpr::Group(GroupRefExpr::RangeById {
+        start: 1,
+        end: u32::MAX,
+    });
+
+    let resolved = SelectionResolver::new(&provider).resolve_expr(&range);
+    assert_eq!(resolved.value, vec![fref(1), fref(2)]);
+    assert_eq!(
+        resolved.issues,
+        vec!["Could not find groups 2, 4-4294967295"]
+    );
+
+    let stabilized = SelectionResolver::new(&provider).stabilize_group_refs_expr(&range);
+    let uid_ref = |id: u32| {
+        Box::new(GroupRefExpr::ByUid {
+            uid: Uuid::from_u128(10_000 + id as u128),
+        })
+    };
+    assert_eq!(
+        stabilized.value,
+        SelectionExpr::Group(GroupRefExpr::Add {
+            lhs: Box::new(GroupRefExpr::Add {
+                lhs: Box::new(GroupRefExpr::Add {
+                    lhs: uid_ref(1),
+                    rhs: Box::new(GroupRefExpr::MissingById(2)),
+                }),
+                rhs: uid_ref(3),
+            }),
+            rhs: Box::new(GroupRefExpr::MissingRangeById {
+                start: 4,
+                end: u32::MAX,
+            }),
+        })
+    );
+    assert_eq!(
+        stabilized.issues,
+        vec!["Could not find groups 2, 4-4294967295"]
+    );
+
+    let reresolved = SelectionResolver::new(&provider).resolve_expr(&stabilized.value);
+    assert_eq!(reresolved.value, vec![fref(1), fref(2)]);
+    assert_eq!(
+        reresolved.issues,
+        vec![
+            "Could not find group 2",
+            "Could not find groups 4-4294967295"
+        ]
+    );
+}
+
+/// Missing ID runs cover the gaps between present IDs, including at both ends of the `u32`
+/// range, without overflowing.
+#[test]
+fn missing_id_runs_cover_gaps_at_the_u32_bounds() {
+    use crate::validation::missing_id_runs;
+
+    assert_eq!(
+        missing_id_runs(0..=u32::MAX, &[0, u32::MAX]),
+        vec![1..=u32::MAX - 1]
+    );
+    assert_eq!(missing_id_runs(5..=9, &[]), vec![5..=9]);
+    assert_eq!(missing_id_runs(5..=9, &[5, 6, 7, 8, 9]), Vec::new());
+    assert_eq!(
+        missing_id_runs(1..=9, &[3, 4, 8]),
+        vec![1..=2, 5..=7, 9..=9]
+    );
+}
+
+/// `ids_in_range` gives the same IDs whether it probes the range or filters the listed IDs.
+#[test]
+fn ids_in_range_matches_for_narrow_and_wide_ranges() {
+    let ids = [2_u32, 7, 9, 4_000_000_000];
+    let lookup = |range| crate::ids_in_range(range, ids.len(), |id| ids.contains(&id), || ids);
+
+    assert_eq!(lookup(1..=3), vec![2]);
+    assert_eq!(lookup(1..=u32::MAX), vec![2, 7, 9, 4_000_000_000]);
+    assert_eq!(lookup(8..=8), Vec::<u32>::new());
 }
