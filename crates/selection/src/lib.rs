@@ -20,7 +20,7 @@ mod validation;
 mod tests;
 
 pub use contracts::{
-    SelectionDataSource, SelectionFixture, SelectionGroup, SpatialSelectionResolution,
+    SelectionDataSource, SelectionFixture, SelectionGroup, SpatialSelectionResolution, ids_in_range,
 };
 pub use linear::SelectionResolver;
 pub use references::{

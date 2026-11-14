@@ -36,4 +36,14 @@ impl SelectionDataSource for FixtureDataProviderExt {
             selection_fixture_from_parts(fixture.identifiers.uid, fixture.elements.len())
         })
     }
+
+    /// Lists the patched fixture IDs inside `range` from the fixture store's ID index.
+    fn fixture_ids_in(&self, range: std::ops::RangeInclusive<u32>) -> Vec<u32> {
+        self.inner.ids_in(range)
+    }
+
+    /// The fixture store holds no groups, so no group range has members here.
+    fn group_ids_in(&self, _range: std::ops::RangeInclusive<u32>) -> Vec<u32> {
+        Vec::new()
+    }
 }

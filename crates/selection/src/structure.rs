@@ -15,7 +15,8 @@ use crate::contracts::{SelectionDataSource, SelectionGroup};
 use crate::linear::SelectionResolver;
 use crate::subtraction::RemovedFixtures;
 use crate::validation::{
-    MISSING_FIXTURE_REFERENCES_WARNING, push_missing_fixture_elements_warning,
+    MISSING_FIXTURE_REFERENCES_WARNING, missing_id_runs, push_missing_fixture_elements_warning,
+    push_missing_group_warning,
 };
 
 /// A selection item before user-facing containers are lowered to fixture refs.
@@ -203,14 +204,11 @@ impl SelectionResolver<'_> {
                 } else {
                     (*end, *start)
                 };
-                let mut groups = (lower..=upper)
-                    .filter_map(|group_id| match data_source.group_by_id(group_id) {
-                        Some(group) => Some(group),
-                        None => {
-                            warnings.push(format!("Could not find group {}", group_id));
-                            None
-                        }
-                    })
+                let group_ids = data_source.group_ids_in(lower..=upper);
+                push_missing_group_warning(&missing_id_runs(lower..=upper, &group_ids), warnings);
+                let mut groups = group_ids
+                    .into_iter()
+                    .filter_map(|group_id| data_source.group_by_id(group_id))
                     .collect::<Vec<_>>();
                 if start > end {
                     groups.reverse();
@@ -219,6 +217,10 @@ impl SelectionResolver<'_> {
             }
             GroupRefExpr::MissingById(group_id) => {
                 warnings.push(format!("Could not find group {}", group_id));
+                Vec::new()
+            }
+            GroupRefExpr::MissingRangeById { start, end } => {
+                push_missing_group_warning(std::slice::from_ref(&(*start..=*end)), warnings);
                 Vec::new()
             }
             GroupRefExpr::MissingByLabel(label) => {
@@ -523,6 +525,10 @@ impl SelectionResolver<'_> {
                 warnings.push(format!("Could not find group {}", group_id));
                 Vec::new()
             }
+            GroupRefExpr::MissingRangeById { start, end } => {
+                push_missing_group_warning(std::slice::from_ref(&(*start..=*end)), warnings);
+                Vec::new()
+            }
             GroupRefExpr::MissingByLabel(label) => {
                 warnings.push(format!("Could not find group \"{}\"", label));
                 Vec::new()
@@ -672,15 +678,13 @@ impl SelectionResolver<'_> {
             (end, start)
         };
 
-        let mut spans: Vec<Vec<FixtureRef>> = (lower..=upper)
-            .flat_map(|group_id| match data_source.group_by_id(group_id) {
-                Some(group) => {
-                    Self::resolve_group_spans(&group, data_source, visited_groups, warnings)
-                }
-                None => {
-                    warnings.push(format!("Could not find group {}", group_id));
-                    Vec::new()
-                }
+        let group_ids = data_source.group_ids_in(lower..=upper);
+        push_missing_group_warning(&missing_id_runs(lower..=upper, &group_ids), warnings);
+        let mut spans: Vec<Vec<FixtureRef>> = group_ids
+            .into_iter()
+            .filter_map(|group_id| data_source.group_by_id(group_id))
+            .flat_map(|group| {
+                Self::resolve_group_spans(&group, data_source, visited_groups, warnings)
             })
             .collect();
 

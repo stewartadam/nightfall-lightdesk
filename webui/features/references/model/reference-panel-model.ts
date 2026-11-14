@@ -113,10 +113,16 @@ export function referenceTargetLabel(target: ReferenceTarget): string {
       return target.data.element_index == null
         ? `Fixture ${target.data.fixture_id}`
         : `Fixture ${target.data.fixture_id}.${target.data.element_index}`;
+    case "FixtureRange":
+      return `Fixtures ${target.data.start} thru ${target.data.end}`;
+    case "FixtureElements":
+      return `Fixture ${target.data.fixture_id}.${target.data.start} thru ${target.data.fixture_id}.${target.data.end}`;
     case "FixtureUid":
       return `Fixture UID ${target.data.fixture_uid}`;
     case "Group":
       return `Group ${target.data.group_id}`;
+    case "GroupRange":
+      return `Groups ${target.data.start} thru ${target.data.end}`;
     case "GroupUid":
       return `Group UID ${target.data.group_uid}`;
     case "GroupLabel":

@@ -64,6 +64,21 @@ test("reference targets format as fixture, group, Blueprint and output labels", 
     "Fixture 3",
   );
   assert.equal(
+    referenceTargetLabel({ type: "FixtureRange", data: { start: 4, end: 9 } }),
+    "Fixtures 4 thru 9",
+  );
+  assert.equal(
+    referenceTargetLabel({
+      type: "FixtureElements",
+      data: { fixture_id: 2, start: 5, end: 8 },
+    }),
+    "Fixture 2.5 thru 2.8",
+  );
+  assert.equal(
+    referenceTargetLabel({ type: "GroupRange", data: { start: 2, end: 6 } }),
+    "Groups 2 thru 6",
+  );
+  assert.equal(
     referenceTargetLabel({ type: "GroupLabel", data: { label: "Wash" } }),
     'Group "Wash"',
   );
