@@ -8,6 +8,7 @@
 
 //! Integration tests, linked into one binary to avoid per-file link overhead.
 
+mod add_patched_fixtures;
 mod ast_conv;
 mod compositor_pipeline_tests;
 mod compositor_system_tests;

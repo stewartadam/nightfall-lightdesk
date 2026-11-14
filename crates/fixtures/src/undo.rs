@@ -75,6 +75,23 @@ pub struct DmxRoutesSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 pub struct RestoreDmxRoutesSnapshot(pub DmxRoutesSnapshot);
 
+/// State to return to after a batch of fixtures was added and patched, or to bring the
+/// batch back after it was undone.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatchedFixturesSnapshot {
+    /// Fixtures to remove, by UID.
+    pub remove: Vec<uuid::Uuid>,
+    /// Fixtures to bring back with their parameter state.
+    pub restore: Vec<FixtureSnapshot>,
+    /// Every DMX route as it should be afterwards.
+    pub routes: DmxRoutesSnapshot,
+}
+
+/// Command that removes and restores a batch of fixtures and puts back the DMX routes;
+/// undoes and redoes [`FixtureCommand::AddPatchedFixtures`].
+#[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
+pub struct RestorePatchedFixtures(pub PatchedFixturesSnapshot);
+
 /// Snapshot of parameter offset configuration for a fixture.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OffsetSnapshot {
@@ -110,6 +127,8 @@ pub struct RestoreFixtureSnapshot(pub FixtureSnapshot);
 impl EngineOperation for RestoreFixtureRoutesSnapshot {}
 
 impl EngineOperation for RestoreDmxRoutesSnapshot {}
+
+impl EngineOperation for RestorePatchedFixtures {}
 
 impl EngineOperation for RestoreOffsetSnapshot {}
 
@@ -157,6 +176,39 @@ impl Undoable for RestoreDmxRoutesSnapshot {
 
     fn description(&self) -> String {
         "Restore DMX Routes".to_string()
+    }
+}
+
+impl Undoable for RestorePatchedFixtures {
+    /// Swaps the roles: fixtures this restore removes come back, and fixtures it brings
+    /// back are removed again, with the routes as they are now.
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
+        let fixtures = ctx.world.resource::<FixtureDataProviderExt>();
+        let restore = self
+            .0
+            .remove
+            .iter()
+            .filter_map(|uid| fixtures.inner.get(*uid).ok())
+            .map(|fixture| snapshot_fixture(ctx, &fixture))
+            .collect();
+        let remove = self
+            .0
+            .restore
+            .iter()
+            .map(|snapshot| snapshot.fixture.identifiers.uid)
+            .collect();
+        Some(Box::new(RestorePatchedFixtures(PatchedFixturesSnapshot {
+            remove,
+            restore,
+            routes: snapshot_dmx_routes(ctx),
+        })))
+    }
+
+    fn description(&self) -> String {
+        format!(
+            "Restore Patch of {} Fixtures",
+            self.0.remove.len().max(self.0.restore.len())
+        )
     }
 }
 
@@ -378,6 +430,16 @@ impl Undoable for FixtureCommand {
             FixtureCommand::AddDmxRoute { .. } => {
                 Some(Box::new(RestoreDmxRoutesSnapshot(snapshot_dmx_routes(ctx))))
             }
+            FixtureCommand::AddPatchedFixtures { fixtures, .. } => {
+                Some(Box::new(RestorePatchedFixtures(PatchedFixturesSnapshot {
+                    remove: fixtures
+                        .iter()
+                        .map(|fixture| fixture.identifiers.uid)
+                        .collect(),
+                    restore: Vec::new(),
+                    routes: snapshot_dmx_routes(ctx),
+                })))
+            }
             FixtureCommand::RemoveDmxRoutes { .. } => {
                 Some(Box::new(RestoreDmxRoutesSnapshot(snapshot_dmx_routes(ctx))))
             }
@@ -438,6 +500,9 @@ impl Undoable for FixtureCommand {
                 format!("Update Fixture {} Routes", id)
             }
             FixtureCommand::AddDmxRoute { .. } => "Add DMX Route".to_string(),
+            FixtureCommand::AddPatchedFixtures { fixtures, .. } => {
+                format!("Add {} Patched Fixtures", fixtures.len())
+            }
             FixtureCommand::RemoveDmxRoutes { .. } => "Remove DMX Routes".to_string(),
             FixtureCommand::UpdateFixtureParameterOffset { id, .. } => {
                 format!("Update Fixture {} Parameter Offset", id)

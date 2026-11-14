@@ -272,6 +272,7 @@ impl Plugin for FixturePlugin {
             registry.register_operation::<undo::RestoreFixtureSnapshot>();
             registry.register_operation::<undo::RestoreFixtureRoutesSnapshot>();
             registry.register_operation::<undo::RestoreDmxRoutesSnapshot>();
+            registry.register_operation::<undo::RestorePatchedFixtures>();
             registry.register_operation::<undo::RestoreOffsetSnapshot>();
             registry.register_operation::<undo::RestoreColorPathDefaultsSnapshot>();
             registry.register_operation::<DmxOperation>();
@@ -281,6 +282,7 @@ impl Plugin for FixturePlugin {
         register_engine_operation::<undo::RestoreFixtureSnapshot>(app);
         register_engine_operation::<undo::RestoreFixtureRoutesSnapshot>(app);
         register_engine_operation::<undo::RestoreDmxRoutesSnapshot>(app);
+        register_engine_operation::<undo::RestorePatchedFixtures>(app);
         register_engine_operation::<undo::RestoreOffsetSnapshot>(app);
         register_engine_operation::<undo::RestoreColorPathDefaultsSnapshot>(app);
 
@@ -293,6 +295,7 @@ impl Plugin for FixturePlugin {
                     .after(nightfall_undo::systems::handle_undo_commands),
                 events::handle_restore_fixture_routes_snapshot,
                 events::handle_restore_dmx_routes_snapshot,
+                events::handle_restore_patched_fixtures,
                 events::handle_restore_offset_snapshot,
                 events::handle_restore_color_path_defaults_snapshot,
             )
@@ -487,6 +490,17 @@ pub enum RouteEndpoint {
     Disabled,
 }
 
+/// One route added by [`FixtureCommand::AddPatchedFixtures`], with default priority and
+/// fixtures packed one after another.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct PatchRoute {
+    /// Route source endpoint.
+    pub source: RouteEndpoint,
+    /// Route target endpoint.
+    pub target: RouteEndpoint,
+}
+
 /// Commands for fixture-related operations
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 #[typeshare::typeshare]
@@ -506,6 +520,17 @@ pub enum FixtureCommand {
 
     /// Delete a fixture
     DeleteFixture(u32),
+
+    /// Add several fixtures and patch them as one change.
+    ///
+    /// Every fixture and route is checked before the change is kept, so one conflicting ID,
+    /// UID or address leaves the show unchanged. Used to bring in a whole rig at once.
+    AddPatchedFixtures {
+        /// Fixtures to add, each with an ID and UID no other fixture uses.
+        fixtures: Vec<fixture::Fixture>,
+        /// Routes patching the new fixtures, applied in order.
+        routes: Vec<PatchRoute>,
+    },
 
     /// Set raw DMX channel values
     SetDmxChannels {
