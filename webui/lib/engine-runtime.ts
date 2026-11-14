@@ -42,6 +42,7 @@ import {
   clearSelectionFlattenConfirmation,
   cueDefinitionsLoaded,
   dmxUniverseWatch,
+  markPendingConsoleCommandsUnknown,
   referenceList,
   referenceListWatch,
   runtimeCapabilities,
@@ -61,6 +62,7 @@ import {
   registerCommandResultWaiter,
   registerPendingCurrentShowfileName,
   rejectPendingCommandWaiters,
+  releasePendingCommandWaiters,
   selectionFlattenRetryFromResult,
   settleCommandCorrelation,
 } from "./command-correlation";
@@ -533,6 +535,24 @@ export class EngineRuntimeCommandDisconnectedError extends Error {
   }
 }
 
+/** Warning shown on console entries whose result was discarded by a websocket resync. */
+const RESULT_LOST_DURING_RESYNC_MESSAGE =
+  "Result lost during resync; check that the command took effect";
+
+/**
+ * Identifies a command whose result was discarded when the websocket worker fell behind and
+ * resynced. The command may still have run. It extends the disconnected error so callers that
+ * already move on from an interrupted result treat a lost one the same way.
+ */
+export class EngineRuntimeCommandResultLostError extends EngineRuntimeCommandDisconnectedError {
+  /** Creates the error that rejects every result waiter pending when a resync starts. */
+  constructor() {
+    super();
+    this.message = "Command result was lost during a websocket resync";
+    this.name = "EngineRuntimeCommandResultLostError";
+  }
+}
+
 /**
  * Returns the console statement carried by an `EngineCommand::Eval` envelope, so typed
  * statements sent from panels echo in console scrollback like ones typed at the command line.
@@ -682,6 +702,16 @@ export const engineRuntime = {
             msg.reason ?? "unspecified reason",
           );
           markResyncPending();
+          // The worker discarded queued messages, which may include command results, so no
+          // pending command can count on its result anymore. A command parked behind the
+          // selection-flatten dialog already has its result and keeps its pending row.
+          releasePendingCommandWaiters(
+            new EngineRuntimeCommandResultLostError(),
+          );
+          markPendingConsoleCommandsUnknown(
+            RESULT_LOST_DURING_RESYNC_MESSAGE,
+            selectionFlattenConfirmation.get()?.correlationId,
+          );
           this.sendCommand({
             module: "EngineCommand",
             command: {

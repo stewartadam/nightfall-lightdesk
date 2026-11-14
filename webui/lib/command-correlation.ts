@@ -93,6 +93,19 @@ export function rejectPendingCommandWaiters(error: Error): void {
   }
 }
 
+/**
+ * Rejects every terminal-result waiter while the session continues, so callers stop waiting on a
+ * result that may have been lost. Retry aliases and showfile-name metadata are kept, so a result
+ * that still arrives later updates the right console entry and the current showfile name.
+ */
+export function releasePendingCommandWaiters(error: Error): void {
+  const waiters = [...commandWaiters.values()];
+  commandWaiters.clear();
+  for (const waiter of waiters) {
+    waiter.reject(error);
+  }
+}
+
 /** Extracts the current showfile name implied by a successful showfile command. */
 function currentShowfileNameFromCommand(
   data: object,

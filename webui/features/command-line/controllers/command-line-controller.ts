@@ -14,7 +14,10 @@ import {
 } from "../../../lib/command-sequence";
 import { hasDiskStorage } from "../../../lib/disk-storage";
 import { commandClient } from "../../../lib/engine-commands";
-import { EngineRuntimeCommandDisconnectedError } from "../../../lib/engine-runtime";
+import {
+  EngineRuntimeCommandDisconnectedError,
+  EngineRuntimeCommandResultLostError,
+} from "../../../lib/engine-runtime";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import { openOrFocusPanelDefinition } from "../../../lib/panel-open-command";
@@ -23,6 +26,7 @@ import {
   promptForNewShowfile,
 } from "../../../lib/showfile-actions";
 import {
+  addConsoleSendError,
   dockApi,
   pushToast,
   runtimeCapabilities,
@@ -44,6 +48,10 @@ import { createCommandAnalysisController } from "./command-analysis-controller";
 import { createCommandHistoryController } from "./command-history-controller";
 
 const log = getLogger(import.meta.url);
+
+/** Console note for statements of a sequence skipped after an earlier statement's result was lost. */
+const RESULT_LOST_STATEMENT_NOT_SENT =
+  "Not sent: the result of an earlier statement was lost during resync";
 
 /** Clears the programmer from anywhere, including while a text input has focus. */
 export const CLEAR_PROGRAMMER_SHORTCUT = "Shift+Escape";
@@ -127,9 +135,23 @@ function queueCommandSubmission(
       })),
   };
   commandSubmissionTail = commandSubmissionTail.then(async () => {
+    let split: readonly string[] = [];
     try {
-      await submit(await statements, progress);
+      split = await statements;
+      await submit(split, progress);
     } catch (error) {
+      // A resync lost the result of a statement that was sent, so whether it ran is unknown;
+      // the rest of the sequence is not sent, and the Console says so.
+      if (error instanceof EngineRuntimeCommandResultLostError) {
+        log.warn("Command result lost during resync", input);
+        const started =
+          pendingSubmissions().find((submission) => submission.id === id)
+            ?.started ?? 0;
+        for (const statement of split.slice(started)) {
+          addConsoleSendError(statement, RESULT_LOST_STATEMENT_NOT_SENT);
+        }
+        return;
+      }
       // Loads and new shows replace the backend world, which ends the session
       // before a result can arrive; the command was delivered, so keep going.
       if (error instanceof EngineRuntimeCommandDisconnectedError) {

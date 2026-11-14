@@ -18,6 +18,7 @@ import {
   createImmediateErrorConsoleScrollbackEntry,
   createPendingConsoleScrollbackEntry,
   DEFAULT_CONSOLE_SCROLLBACK_LIMIT,
+  markPendingConsoleScrollbackEntriesUnknown,
   resolveConsoleScrollbackEntryByCorrelation,
   upsertPendingConsoleScrollbackEntry,
 } from "../lib/console-scrollback";
@@ -849,6 +850,26 @@ export function applyConsoleCommandResult(
       consoleScrollback.get(),
       correlationId,
       outcome,
+    ),
+  );
+}
+
+/**
+ * Flags every scrollback entry still waiting on a result with a warning, for when the client
+ * dropped incoming messages and those results may never arrive. A result that does arrive later
+ * still settles its entry. The entry for `keepPendingCorrelationId` stays pending.
+ */
+export function markPendingConsoleCommandsUnknown(
+  warningMessage: string,
+  keepPendingCorrelationId?: string,
+): void {
+  setStoreAction(
+    consoleScrollback,
+    "Mark Pending Console Commands Unknown",
+    markPendingConsoleScrollbackEntriesUnknown(
+      consoleScrollback.get(),
+      warningMessage,
+      keepPendingCorrelationId,
     ),
   );
 }
