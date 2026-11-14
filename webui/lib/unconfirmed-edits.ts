@@ -116,3 +116,63 @@ export function createUnconfirmedEdits<K, V>(): UnconfirmedEdits<K, V> {
     },
   };
 }
+
+/** Changes a copy of an engine-owned value the way one unconfirmed edit will. */
+export type UnconfirmedPatch<T> = (value: T) => T;
+
+/**
+ * Edits the user made to parts of one engine-owned value that the engine has not confirmed yet.
+ * Unlike {@link UnconfirmedEdits}, which shows a whole new value per key, each edit is a patch
+ * laid over the engine's current value, so edits to different parts of the value never hide
+ * changes the engine made elsewhere, such as another client's edit.
+ */
+export interface UnconfirmedPatches<T> {
+  /** Returns `base` with every unconfirmed patch applied, oldest first. Reactive. */
+  apply(base: T): T;
+  /**
+   * Records a patch and sends its command at once. The patch stays applied until the command
+   * settles: on success the engine's value already includes the edit, and on failure dropping
+   * the patch is the rollback.
+   */
+  add(patch: UnconfirmedPatch<T>, send: () => Promise<unknown>): void;
+}
+
+/**
+ * Tracks unconfirmed patches to one engine-owned value.
+ *
+ * The engine publishes the state a command produced no later than that command's
+ * `CommandResult`, so for a moment a patch can be applied over a value that already includes
+ * it. Patches must therefore be idempotent: set a field, add an item only when it is missing,
+ * remove an item only when it is present. Commands from one client are applied by the engine
+ * in the order they were sent, so patches are sent at once rather than queued.
+ */
+export function createUnconfirmedPatches<T>(): UnconfirmedPatches<T> {
+  const [patches, setPatches] = createSignal<
+    ReadonlyArray<{ patch: UnconfirmedPatch<T> }>
+  >([]);
+
+  return {
+    apply(base) {
+      return patches().reduce((value, entry) => entry.patch(value), base);
+    },
+    add(patch, send) {
+      const entry = { patch };
+      setPatches((current) => [...current, entry]);
+      let sent: Promise<unknown>;
+      try {
+        sent = send();
+      } catch (error) {
+        sent = Promise.reject(error);
+      }
+      sent
+        .catch((error) => {
+          log.warn("Unconfirmed patch command did not complete", error);
+        })
+        .then(() =>
+          setPatches((current) =>
+            current.filter((candidate) => candidate !== entry),
+          ),
+        );
+    },
+  };
+}

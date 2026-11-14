@@ -8,7 +8,10 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createUnconfirmedEdits } from "./unconfirmed-edits";
+import {
+  createUnconfirmedEdits,
+  createUnconfirmedPatches,
+} from "./unconfirmed-edits";
 
 /** A send whose completion the test controls, recording every value it was asked to send. */
 function controlledSend<V>() {
@@ -125,4 +128,58 @@ test("tracks keys independently", async () => {
 
   assert.equal(edits.value("a"), undefined);
   assert.equal(edits.value("b"), 2);
+});
+
+/** Returns a send whose completion the test controls, for commands that carry no value. */
+function controlledCommand() {
+  const channel = controlledSend<null>();
+  return { ...channel, send: () => channel.send(null) };
+}
+
+/**
+ * Patches stay laid over whatever the engine value is now, so a change the engine made
+ * elsewhere shows together with the unconfirmed edit, and each patch drops when it settles.
+ */
+test("lays unconfirmed patches over the current engine value", async () => {
+  const patches = createUnconfirmedPatches<Record<string, number>>();
+  const channel = controlledCommand();
+
+  patches.add((value) => ({ ...value, a: 1 }), channel.send);
+  patches.add((value) => ({ ...value, b: 2 }), channel.send);
+
+  assert.deepEqual(patches.apply({}), { a: 1, b: 2 });
+  assert.deepEqual(patches.apply({ c: 3 }), { a: 1, b: 2, c: 3 });
+
+  await channel.settleNext();
+  assert.deepEqual(patches.apply({ a: 1, c: 3 }), { a: 1, b: 2, c: 3 });
+
+  await channel.settleNext(false);
+  assert.deepEqual(patches.apply({ a: 1, c: 3 }), { a: 1, c: 3 });
+});
+
+/** Every patch's command is sent at once, in order, without waiting for earlier results. */
+test("sends patch commands without queueing", () => {
+  const patches = createUnconfirmedPatches<number>();
+  const channel = controlledCommand();
+
+  patches.add((value) => value + 1, channel.send);
+  patches.add((value) => value * 2, channel.send);
+
+  assert.equal(channel.sent.length, 2);
+  assert.equal(patches.apply(1), 4);
+});
+
+/** A patch whose send throws synchronously is dropped rather than left applied. */
+test("drops a patch when sending throws", async () => {
+  const patches = createUnconfirmedPatches<number>();
+
+  patches.add(
+    (value) => value + 1,
+    () => {
+      throw new Error("disconnected");
+    },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(patches.apply(1), 1);
 });

@@ -94,7 +94,9 @@ test("parameter lane controls persist additions and deletions", async ({
   await expect(remove).toBeVisible();
   await remove.click();
   await expect(remove).not.toBeVisible();
-  await page.getByRole("button", { name: /Undo: Store Timeline/ }).click();
+  await page
+    .getByRole("button", { name: /Undo: Delete Automation Lane/ })
+    .click();
   await expect(remove).toBeVisible();
   await remove.click();
   await expect(remove).not.toBeVisible();
@@ -2986,6 +2988,11 @@ test("timeline actions can be dragged between tracks", async ({
             automation_lanes: [],
           },
         ],
+      });
+      // Send the seeded tracks to the engine too, since timeline edits name tracks it stores.
+      void stores.sendAndAwait({
+        module: "TimelineCommand",
+        command: { type: "StoreTimeline", data: stores.timelines.get()[uid] },
       });
 
       return { sourceTrackId, targetTrackId, actionId };

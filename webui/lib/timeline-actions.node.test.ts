@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type * as types from "../types";
-import { moveTimelineAction, moveTimelineActions } from "./timeline-actions";
+import { moveTimelineActions } from "./timeline-actions";
 
 /** Builds a compact test track for timeline action movement tests. */
 function track(id: string, actions: types.Action[]): types.Track {
@@ -36,13 +36,11 @@ function action(id: string, positionMs: number): types.Action {
 }
 
 /** Verifies same-track drags only update the moved action's position. */
-test("moveTimelineAction repositions an action on the same track", () => {
+test("moveTimelineActions repositions an action on the same track", () => {
   const tracks = [track("a", [action("one", 1000), action("two", 2000)])];
 
-  const moved = moveTimelineAction(tracks, {
-    trackId: "a",
-    actionId: "one",
-    newPosition: 3500,
+  const moved = moveTimelineActions(tracks, {
+    moves: [{ trackId: "a", actionId: "one", newPosition: 3500 }],
   });
 
   assert.equal(moved[0]?.actions.length, 2);
@@ -54,17 +52,16 @@ test("moveTimelineAction repositions an action on the same track", () => {
 });
 
 /** Verifies cross-track drags remove from the source and append to the target. */
-test("moveTimelineAction moves an action between tracks", () => {
+test("moveTimelineActions moves an action between tracks", () => {
   const tracks = [
     track("a", [action("one", 1000)]),
     track("b", [action("two", 2000)]),
   ];
 
-  const moved = moveTimelineAction(tracks, {
-    trackId: "a",
-    actionId: "one",
-    newPosition: 4500,
-    newTrackId: "b",
+  const moved = moveTimelineActions(tracks, {
+    moves: [
+      { trackId: "a", actionId: "one", newPosition: 4500, newTrackId: "b" },
+    ],
   });
 
   assert.deepEqual(

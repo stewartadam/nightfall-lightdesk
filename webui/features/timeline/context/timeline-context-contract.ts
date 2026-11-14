@@ -11,67 +11,8 @@ import type { MoveTimelineActionOptions } from "../../../lib/timeline-actions";
 import type * as types from "../../../types";
 import type { ScrollMode } from "../model/types";
 
-export interface MuteEvent {
-  type: "mute";
-  trackId: string;
-  muted: boolean;
-}
-
-export interface SoloEvent {
-  type: "solo";
-  trackId: string;
-  solo: boolean;
-}
-
 export type TrackReorderPlacement = "before" | "after";
 export type TimelineNudgeUnit = "bar" | "beat" | "half" | "quarter" | "eighth";
-
-export interface AddTrackEvent {
-  type: "add-track";
-  trackId: string;
-}
-
-export interface RemoveTrackEvent {
-  type: "remove-track";
-  trackId: string;
-}
-
-export interface ReorderTrackEvent {
-  type: "reorder-track";
-  trackId: string;
-  targetTrackId: string;
-  placement: TrackReorderPlacement;
-}
-
-export interface RenameTrackEvent {
-  type: "rename-track";
-  trackId: string;
-  label: string;
-}
-
-export interface AddPointEvent {
-  type: "add-point";
-  trackId: string;
-  automationLaneId: string;
-  position: number;
-  value: number;
-}
-
-export interface UpdatePointEvent {
-  type: "update-point";
-  trackId: string;
-  automationLaneId: string;
-  pointIndex: number;
-  position: number;
-  value: number;
-}
-
-export interface RemovePointEvent {
-  type: "remove-point";
-  trackId: string;
-  automationLaneId: string;
-  pointIndex: number;
-}
 
 export interface SelectActionEvent {
   type: "select-action";
@@ -103,38 +44,6 @@ export interface OpenActionEvent {
   actionId: string;
 }
 
-export interface RepositionActionEvent {
-  type: "reposition-action";
-  trackId: string;
-  actionId: string;
-  newPosition: number;
-  newTrackId?: string;
-}
-
-export interface RepositionActionsEvent {
-  type: "reposition-actions";
-  actions: MoveTimelineActionOptions[];
-}
-
-export interface InsertActionEvent {
-  type: "insert-action";
-  trackId: string;
-  actionId: string;
-  batchId?: string;
-}
-
-export interface UpdateActionEvent {
-  type: "update-action";
-  trackId: string;
-  actionId: string;
-}
-
-export interface DeleteActionEvent {
-  type: "delete-action";
-  trackId: string;
-  actionId: string;
-}
-
 export interface StoreMarkerEvent {
   type: "store-marker";
   markers: types.TimelineMarker[];
@@ -159,18 +68,6 @@ export interface DeleteRegionEvent {
 export interface SetLoopRangeEvent {
   type: "set-loop-range";
   loopRange?: types.TimelineLoopRange;
-}
-
-export interface ScrollModeEvent {
-  type: "set-scroll-mode";
-  scrollMode: ScrollMode;
-}
-
-export interface BeatgridSettingsEvent {
-  type: "set-beatgrid-settings";
-  useBeatgrid: boolean;
-  bpm: number;
-  beatsPerBar: number;
 }
 
 export interface NudgeSelectionEvent {
@@ -222,12 +119,6 @@ export interface ActionOperations {
   selectedActions: Accessor<SelectedAction[]>;
   onSelect: Accessor<SelectActionEvent | undefined>;
   onOpen: Accessor<OpenActionEvent | undefined>;
-  onInsert: Accessor<InsertActionEvent | undefined>;
-  onUpdate: Accessor<UpdateActionEvent | undefined>;
-  onDelete: Accessor<DeleteActionEvent | undefined>;
-  onReposition: Accessor<
-    RepositionActionEvent | RepositionActionsEvent | undefined
-  >;
 }
 
 /** Public reactive state and action contract exposed by the timeline provider. */
@@ -254,7 +145,6 @@ export interface TimelineContextType {
   setZoom: (zoom: number) => void;
   scrollMode: Accessor<ScrollMode>;
   setScrollMode: (mode: ScrollMode) => void;
-  onScrollModeChange: Accessor<ScrollModeEvent | undefined>;
   showDurationTrails: Accessor<boolean>;
   setShowDurationTrails: (show: boolean) => void;
   useBeatgrid: Accessor<boolean>;
@@ -263,7 +153,6 @@ export interface TimelineContextType {
   setBpm: (bpm: number) => void;
   beatsPerBar: Accessor<number>;
   setBeatsPerBar: (beats: number) => void;
-  onBeatgridSettingsChange: Accessor<BeatgridSettingsEvent | undefined>;
   snapEnabled: Accessor<boolean>;
   setSnapEnabled: (enabled: boolean) => void;
   nudgeUnit: Accessor<TimelineNudgeUnit>;
@@ -322,7 +211,6 @@ export interface TimelineContextType {
       parameterType: types.ParameterType,
     ) => void;
     removeLane: (trackId: string, laneId: string) => void;
-    onLanesChanged: Accessor<{ trackId: string } | undefined>;
     addTrack: (label?: string) => string | undefined;
     removeTrack: (trackId: string) => void;
     renameTrack: (trackId: string, label: string) => void;
@@ -352,15 +240,6 @@ export interface TimelineContextType {
     toggleMute: (trackId: string) => void;
     toggleSolo: (trackId: string) => void;
     toggleTrackExpanded: (trackId: string) => void;
-    onAddTrack: Accessor<AddTrackEvent | undefined>;
-    onRemoveTrack: Accessor<RemoveTrackEvent | undefined>;
-    onRenameTrack: Accessor<RenameTrackEvent | undefined>;
-    onReorderTrack: Accessor<ReorderTrackEvent | undefined>;
-    onAddPoint: Accessor<AddPointEvent | undefined>;
-    onUpdatePoint: Accessor<UpdatePointEvent | undefined>;
-    onRemovePoint: Accessor<RemovePointEvent | undefined>;
-    onMute: Accessor<MuteEvent | undefined>;
-    onSolo: Accessor<SoloEvent | undefined>;
   };
   actions: ActionOperations;
 }

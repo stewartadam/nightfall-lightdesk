@@ -20,14 +20,6 @@ export type MoveTimelineActionsOptions = {
   moves: MoveTimelineActionOptions[];
 };
 
-/** Moves a timeline action to a new position and optional target track. */
-export function moveTimelineAction(
-  tracks: types.Track[],
-  options: MoveTimelineActionOptions,
-): types.Track[] {
-  return moveTimelineActions(tracks, { moves: [options] });
-}
-
 /** Moves multiple timeline actions while preserving their same-track order. */
 export function moveTimelineActions(
   tracks: types.Track[],
