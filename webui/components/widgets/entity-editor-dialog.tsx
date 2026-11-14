@@ -14,6 +14,7 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
+import { isWholeNumberInRange } from "../../lib/number-draft";
 import {
   Dialog,
   DialogBody,
@@ -23,6 +24,7 @@ import {
 import { Input } from "../ui/form-controls";
 import Tooltip from "../ui/tooltip";
 import { Button } from "../ui/visual-language/button";
+import { NumberField } from "./number-field";
 
 interface EntityEditorModalProps {
   isOpen: boolean;
@@ -45,14 +47,23 @@ interface EntityEditorModalProps {
 
 /** Renders a two-field editor dialog for creating or renaming numbered entities. */
 export default function EntityEditorModal(props: EntityEditorModalProps) {
-  const [idValue, setIdValue] = createSignal(1);
+  const [idDraft, setIdDraft] = createSignal<number | null>(1);
   const [labelValue, setLabelValue] = createSignal("");
   let labelInputRef: HTMLInputElement | undefined;
   const [armedKey, setArmedKey] = createSignal<string>();
-  /** Resolves the current owner of the sanitized numeric ID. */
-  const conflict = createMemo(() =>
-    props.overwriteConflict?.(Math.max(1, Math.round(idValue()))),
-  );
+  /**
+   * The typed ID when it is a whole number from 1, else undefined. The field keeps what was
+   * typed, so clearing it to type a new ID doesn't snap it back to a default.
+   */
+  const idValue = createMemo(() => {
+    const id = idDraft();
+    return isWholeNumberInRange(id, 1) ? id : undefined;
+  });
+  /** Resolves the current owner of the typed ID, once it is a valid ID. */
+  const conflict = createMemo(() => {
+    const id = idValue();
+    return id === undefined ? undefined : props.overwriteConflict?.(id);
+  });
   /** Keeps unrelated clip updates from resetting authorization for the same owner. */
   const conflictKey = createMemo(() => conflict()?.key);
   /** Requires a fresh Alt press whenever the dialog or conflicting owner changes. */
@@ -85,20 +96,25 @@ export default function EntityEditorModal(props: EntityEditorModalProps) {
     if (!props.isOpen) {
       return;
     }
-    setIdValue(props.initialId);
+    setIdDraft(props.initialId);
     setLabelValue(props.initialLabel);
     requestAnimationFrame(() => labelInputRef?.focus());
   });
 
-  /** Submits sanitized id and label values, falling back to an item label when blank. */
+  /**
+   * Submits the typed ID and label, falling back to an item label when the label is blank. Does
+   * nothing while the ID is invalid or an unarmed overwrite is pending.
+   */
   const handleSubmit = (event: Event) => {
     event.preventDefault();
+    const id = idValue();
+    if (id === undefined) return;
     const owner = conflict();
     if (owner && armedKey() !== owner.key) return;
     const trimmedLabel = labelValue().trim();
     props.onSubmit({
-      id: Math.max(1, Math.round(idValue())),
-      label: trimmedLabel.length > 0 ? trimmedLabel : `Item ${idValue()}`,
+      id,
+      label: trimmedLabel.length > 0 ? trimmedLabel : `Item ${id}`,
       overwriteKey: owner?.key,
     });
   };
@@ -116,18 +132,19 @@ export default function EntityEditorModal(props: EntityEditorModalProps) {
             <span class="text-sm text-neutral-300">
               {props.idLabel ?? "ID"}
             </span>
-            <Input
-              type="number"
+            <NumberField
               min={1}
               step={1}
               data-entity-field="id"
-              data-value={idValue()}
-              value={idValue()}
-              onInput={(event) =>
-                setIdValue(Number.parseInt(event.currentTarget.value, 10) || 1)
-              }
+              data-value={idValue() ?? ""}
+              value={idDraft()}
+              onValueChange={setIdDraft}
+              aria-invalid={idValue() === undefined}
             />
           </label>
+          <Show when={idValue() === undefined}>
+            <p class="text-sm text-red-400">IDs are whole numbers from 1.</p>
+          </Show>
           <Show when={conflict()}>
             {(owner) => (
               <Tooltip
@@ -168,7 +185,10 @@ export default function EntityEditorModal(props: EntityEditorModalProps) {
           <Button
             type="submit"
             variant="primary"
-            disabled={!!conflict() && armedKey() !== conflict()?.key}
+            disabled={
+              idValue() === undefined ||
+              (!!conflict() && armedKey() !== conflict()?.key)
+            }
           >
             {conflict() ? "Overwrite" : props.submitLabel}
           </Button>

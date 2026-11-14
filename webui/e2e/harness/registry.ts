@@ -22,6 +22,7 @@ const harnessLoaders = {
   "emitter-volume-uniforms": () =>
     import("../fixtures/emitter-volume-uniforms"),
   "timeline-playback": () => import("../fixtures/timeline-playback"),
+  "timeline-event-effect": () => import("../fixtures/timeline-event-effect"),
   "data-grid-column-autosize": () =>
     import("../fixtures/data-grid-column-autosize"),
   "data-grid-editor-alignment": () =>

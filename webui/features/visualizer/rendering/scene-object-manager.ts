@@ -17,6 +17,7 @@ import {
   BoxGeometry,
   CylinderGeometry,
   Group,
+  type Material,
   MathUtils,
   Mesh,
   MeshStandardMaterial,
@@ -25,6 +26,7 @@ import {
 } from "three/webgpu";
 import { getBackendUrl } from "../../../lib/api";
 import { createLogger } from "../../../lib/logger";
+import { disposeObjectResources } from "../../../lib/three-dispose";
 import type {
   AudienceProperties,
   CustomProperties,
@@ -62,6 +64,14 @@ const CUSTOM_MATERIAL = new MeshStandardMaterial({
   metalness: 0.3,
   roughness: 0.6,
 });
+
+/** Materials shared across scene objects, which must outlive any one object's disposal. */
+const SHARED_MATERIALS: ReadonlySet<Material> = new Set([
+  TRUSS_MATERIAL,
+  AUDIENCE_MATERIAL,
+  STAGE_ELEMENT_MATERIAL,
+  CUSTOM_MATERIAL,
+]);
 
 // Shared GLTF loader instance
 const gltfLoader = new GLTFLoader();
@@ -506,9 +516,9 @@ export class SceneObjectManager {
         const placeholder = group.getObjectByName("placeholder");
         if (placeholder) {
           group.remove(placeholder);
-          if (placeholder instanceof Mesh) {
-            placeholder.geometry?.dispose();
-          }
+          disposeObjectResources(placeholder, {
+            keepMaterials: SHARED_MATERIALS,
+          });
         }
 
         // Add loaded model
@@ -540,29 +550,11 @@ export class SceneObjectManager {
   }
 
   /**
-   * Dispose of a group and all its children's geometry and materials.
+   * Dispose of a group's geometry, materials and textures, keeping the materials shared by
+   * every scene object of a kind.
    */
   private disposeGroup(group: Group): void {
-    group.traverse((object) => {
-      if (object instanceof Mesh) {
-        object.geometry?.dispose();
-        // Don't dispose shared materials
-        if (
-          object.material !== TRUSS_MATERIAL &&
-          object.material !== AUDIENCE_MATERIAL &&
-          object.material !== STAGE_ELEMENT_MATERIAL &&
-          object.material !== CUSTOM_MATERIAL
-        ) {
-          if (Array.isArray(object.material)) {
-            for (const m of object.material) {
-              m.dispose();
-            }
-          } else {
-            object.material?.dispose();
-          }
-        }
-      }
-    });
+    disposeObjectResources(group, { keepMaterials: SHARED_MATERIALS });
   }
 
   /**

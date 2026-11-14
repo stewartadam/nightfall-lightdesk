@@ -122,13 +122,17 @@ export function sendRemoveDmxRoutes(
   log.info("Requested DMX route removal");
 }
 
-export function sendAddDmxRoute(
+/**
+ * Adds a DMX route and resolves with the backend's result, so callers creating several routes
+ * can tell which ones were rejected. Rejects when the command could not be sent.
+ */
+export function addDmxRoute(
   source: types.RouteEndpoint,
   target: types.RouteEndpoint,
   priority: number,
   clone: boolean,
   batchId?: string,
-) {
+): Promise<types.CommandResult> {
   const command: types.FixtureCommand = {
     type: "AddDmxRoute",
     data: {
@@ -139,9 +143,8 @@ export function sendAddDmxRoute(
     },
   };
 
-  commandClient.emit("FixtureCommand", command, { undoId: batchId });
-
   log.info("Requested DMX route add");
+  return commandClient.invoke("FixtureCommand", command, { undoId: batchId });
 }
 
 /**

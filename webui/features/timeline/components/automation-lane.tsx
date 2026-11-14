@@ -8,15 +8,17 @@
 
 import {
   type Component,
-  createEffect,
+  createMemo,
   createSignal,
   For,
   onCleanup,
 } from "solid-js";
 import { getLogger } from "../../../lib/logger";
 import { durationToMs, msToPixels, pixelsToMs } from "../../../lib/utils";
+import { createWindowMouseDrag } from "../../../lib/window-drag";
 import type * as types from "../../../types";
 import { useTimelineContext } from "../context/timeline-context";
+import { automationLinePath } from "../model/automation-path";
 
 const log = getLogger(import.meta.url);
 
@@ -96,9 +98,7 @@ const DraggablePoint: Component<{
       // Notify parent about drag start
       props.onDragStart(props.index, { x: props.point.x, y: props.point.y });
 
-      // Add global event listeners
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp, { once: true });
+      pointDrag.start();
     }, CLICK_DELAY);
 
     // Prevent text selection during drag
@@ -146,9 +146,6 @@ const DraggablePoint: Component<{
       pointRef.style.transform = "";
     }
 
-    // Remove event listeners
-    document.removeEventListener("mousemove", handleMouseMove);
-
     // Clear any pending click timeout
     if (clickTimeout) {
       clearTimeout(clickTimeout);
@@ -165,10 +162,13 @@ const DraggablePoint: Component<{
     props.onRemove(props.index);
   };
 
+  const pointDrag = createWindowMouseDrag(
+    { move: handleMouseMove, end: handleMouseUp },
+    document,
+  );
+
   // Cleanup on unmount
   onCleanup(() => {
-    document.removeEventListener("mousemove", handleMouseMove);
-    document.removeEventListener("mouseup", handleMouseUp);
     document.removeEventListener("mouseup", handleEarlyMouseUp);
     if (clickTimeout) {
       clearTimeout(clickTimeout);
@@ -204,99 +204,25 @@ export const AutomationLane: Component<AutomationLaneProps> = (props) => {
   } | null>(null);
   const TRACK_HEIGHT = 60; // Height of the track in pixels
   const ctx = useTimelineContext();
-  const [svgPath, setSvgPath] = createSignal("");
-  const [pointPositions, setPointPositions] = createSignal<
-    Array<{ x: number; y: number }>
-  >([]);
-
   const isDragging = () => !!draggedPoint();
 
   const isTrackHighlighted = () => ctx.recordTargetTrackId() === props.trackId;
-  // Track the currently dragged point index for visual feedback
 
-  /** Function to calculate point positions from data points */
-  const calculatePointPositions = () => {
-    if (
-      !props.automationLane.points ||
-      props.automationLane.points.length === 0
-    ) {
-      setPointPositions([]);
-      setSvgPath("");
-      return;
-    }
+  /** Pixel positions of the lane's points, sorted by time, for the current zoom and scroll. */
+  const pointPositions = createMemo(() =>
+    [...(props.automationLane.points ?? [])]
+      .sort((a, b) => durationToMs(a.position) - durationToMs(b.position))
+      .map((point) => ({
+        x: msToPixels(durationToMs(point.position) - ctx.start(), ctx.zoom()),
+        // SVG Y runs top to bottom, while automation values run bottom to top.
+        y: TRACK_HEIGHT - point.value * TRACK_HEIGHT,
+      })),
+  );
 
-    // Sort points by position
-    const sortedPoints = [...props.automationLane.points].sort(
-      (a, b) => durationToMs(a.position) - durationToMs(b.position),
-    );
-
-    // Calculate pixel positions for each point
-    const positions = sortedPoints.map((point) => {
-      const x = msToPixels(
-        durationToMs(point.position) - ctx.start(),
-        ctx.zoom(),
-      );
-      // Invert Y coordinate (SVG Y is top to bottom, but we want bottom to top for automationLane value)
-      const y = TRACK_HEIGHT - point.value * TRACK_HEIGHT;
-      return { x, y };
-    });
-
-    setPointPositions(positions);
-
-    /** Generate SVG path from points, accounting for dragged point */
-    const updateSvgPath = () => {
-      const points = pointPositions();
-      const dragged = draggedPoint();
-
-      if (points.length === 0) {
-        setSvgPath("");
-        return;
-      }
-
-      let path = `M ${points[0].x} ${points[0].y}`;
-
-      for (let i = 1; i < points.length; i++) {
-        if (dragged?.index === i) {
-          // Use dragged position for the point being dragged
-          path += ` L ${dragged.x} ${dragged.y}`;
-        } else if (dragged?.index === i - 1) {
-          // If previous point is being dragged, connect to it
-          path += ` L ${dragged.x} ${dragged.y}`;
-          // Add the next point if it's not the dragged point
-          if (i < points.length - 1 || dragged.index !== i) {
-            path += ` L ${points[i].x} ${points[i].y}`;
-          }
-        } else if (i - 1 !== dragged?.index) {
-          // Normal point connection
-          path += ` L ${points[i].x} ${points[i].y}`;
-        }
-      }
-
-      setSvgPath(path);
-    };
-
-    // Update SVG path when points or dragged point changes
-    createEffect(updateSvgPath);
-  };
-
-  // Update path when points change
-  createEffect(() => {
-    // Track dependency for reactive updates
-    void props.automationLane.points;
-    calculatePointPositions();
-  });
-
-  // Separate effect to update positions when zoom or start position changes
-  createEffect(() => {
-    // Track dependencies for reactive updates
-    void ctx.zoom();
-    void ctx.start();
-
-    // Only recalculate if we have points
-    if (props.automationLane.points.length > 0) {
-      calculatePointPositions();
-    }
-  });
+  /** SVG polyline through the points, following a point while it is dragged. */
+  const svgPath = createMemo(() =>
+    automationLinePath(pointPositions(), draggedPoint()),
+  );
 
   /** Handle track click */
   const handleTrackClick = (e: MouseEvent) => {

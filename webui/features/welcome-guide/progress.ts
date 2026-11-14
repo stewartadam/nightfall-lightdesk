@@ -115,7 +115,8 @@ export interface GuideSnapshot {
     step: PatchWizardStep;
     model?: string;
     mode?: string;
-    quantity: number;
+    /** Number of fixtures to patch, or null while the typed count is invalid. */
+    quantity: number | null;
     firstFixtureId: number;
     /** Console universe the fixtures will be patched to, or null without Assign Console DMX. */
     universeId: number | null;

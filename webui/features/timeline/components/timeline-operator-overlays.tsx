@@ -7,7 +7,7 @@
  */
 
 import { createDraggable } from "@neodrag/solid";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { InlineRenameField } from "../../../components/ui/inline-rename-field";
 import {
@@ -16,6 +16,7 @@ import {
   msToPixels,
   pixelsToMs,
 } from "../../../lib/utils";
+import { createWindowMouseDrag } from "../../../lib/window-drag";
 import type * as types from "../../../types";
 import { useTimelineContext } from "../context/timeline-context";
 import {
@@ -251,7 +252,6 @@ export const LoopRangeBackdrop = () => {
   };
 
   const handleLoopMouseUp = (event: MouseEvent) => {
-    window.removeEventListener("mousemove", handleLoopMouseMove);
     const drag = loopDrag();
     setLoopDrag(undefined);
     setLoopPreview(undefined);
@@ -278,13 +278,12 @@ export const LoopRangeBackdrop = () => {
     };
     setLoopDrag(drag);
     setLoopPreview({ startMs: drag.loopStartMs, endMs: drag.loopEndMs });
-    window.addEventListener("mousemove", handleLoopMouseMove);
-    window.addEventListener("mouseup", handleLoopMouseUp, { once: true });
+    loopWindowDrag.start();
   };
 
-  onCleanup(() => {
-    window.removeEventListener("mousemove", handleLoopMouseMove);
-    window.removeEventListener("mouseup", handleLoopMouseUp);
+  const loopWindowDrag = createWindowMouseDrag({
+    move: handleLoopMouseMove,
+    end: handleLoopMouseUp,
   });
 
   return (
@@ -394,8 +393,7 @@ export const TimelineOperatorLane = () => {
             : "RegionBody",
       data: { region_uid: region.uid },
     });
-    window.addEventListener("mousemove", handleRegionMouseMove);
-    window.addEventListener("mouseup", handleRegionMouseUp, { once: true });
+    regionWindowDrag.start();
   };
 
   const nextRegionBounds = (drag: RegionDragState, clientX: number) => {
@@ -436,7 +434,6 @@ export const TimelineOperatorLane = () => {
   };
 
   const handleRegionMouseUp = (event: MouseEvent) => {
-    window.removeEventListener("mousemove", handleRegionMouseMove);
     const drag = regionDrag();
     setRegionDrag(undefined);
     setRegionPreview(undefined);
@@ -448,6 +445,11 @@ export const TimelineOperatorLane = () => {
       end: msToDuration(next.endMs),
     });
   };
+
+  const regionWindowDrag = createWindowMouseDrag({
+    move: handleRegionMouseMove,
+    end: handleRegionMouseUp,
+  });
 
   const handleContextMenu = (event: MouseEvent) => {
     event.preventDefault();
