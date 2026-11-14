@@ -333,7 +333,6 @@ fn store_mode_rows_match(existing: &BoundAssertionSet, incoming: &BoundAssertion
             && existing_fixture.fixture_uid == incoming_fixture.fixture_uid)
 }
 
-/// Returns whether an element store row overlaps an existing whole-fixture row.
 /// Returns whether two rows apply the same Blueprint through the same selector, whatever
 /// attributes either one has released since, so a narrowed programmer row still updates or
 /// removes the cue row it came from.
@@ -351,6 +350,7 @@ fn same_blueprint_reference(
     }
 }
 
+/// Returns whether an element store row overlaps an existing whole-fixture row.
 fn store_mode_element_store_targets_existing_whole_fixture_row(
     existing: &[BoundAssertionSet],
     incoming: &BoundAssertionSet,
