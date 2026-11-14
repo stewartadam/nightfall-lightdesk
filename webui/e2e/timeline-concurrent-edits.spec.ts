@@ -17,6 +17,7 @@ type ConcurrentEditFixture = {
   timelineUid: string;
   timelineId: number;
   trackId: string;
+  panelId: string;
 };
 
 /** Opens the app against a fresh backend showfile and waits for awaited commands to work. */
@@ -108,18 +109,45 @@ async function openTimelineFixture(page: Page): Promise<ConcurrentEditFixture> {
       await new Promise((resolve) => window.setTimeout(resolve, 50));
     }
 
+    const panelId = `e2e-concurrent-edits-${timelineUid}`;
     stores.dockApi.get().addPanel({
-      id: `e2e-concurrent-edits-${timelineUid}`,
+      id: panelId,
       component: "Timeline",
       title: "Concurrent Edits",
-      params: { initialTimelineUid: timelineUid },
+      params: { initialPanelId: panelId, initialTimelineUid: timelineUid },
       position: { referencePanel: "panel-FixtureGrid", direction: "within" },
     });
-    return { timelineUid, timelineId, trackId };
+    return { timelineUid, timelineId, trackId, panelId };
   });
 }
 
-/** Reads what the engine stores for the fixture timeline's first track, markers and loop. */
+/** Opens the Properties inspector beside the fixture timeline panel and focuses the timeline. */
+async function openTimelineProperties(page: Page, panelId: string) {
+  await page.evaluate(async (timelinePanelId) => {
+    const api = (window as any).appStores.dockApi.get();
+    if (!api.getPanel("panel-PropertiesInspector")) {
+      api.addPanel({
+        id: "panel-PropertiesInspector",
+        component: "PropertiesInspector",
+        title: "Properties",
+        params: {},
+      });
+    }
+    api.getPanel("panel-PropertiesInspector")?.api.setActive();
+    api.setEdgeGroupVisible("right", true);
+    api.getEdgeGroup("right")?.expand();
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        const timelinePanel = api.getPanel(timelinePanelId);
+        timelinePanel?.api.setActive();
+        timelinePanel?.focus();
+        resolve();
+      });
+    });
+  }, panelId);
+}
+
+/** Reads what the engine stores for the fixture timeline's first track, markers, loop and tempo. */
 async function storedState(page: Page, timelineUid: string) {
   return page.evaluate((uid) => {
     const timeline = (window as any).appStores.timelines.get()[uid];
@@ -127,6 +155,7 @@ async function storedState(page: Page, timelineUid: string) {
       muted: timeline?.tracks?.[0]?.muted,
       markers: (timeline?.markers ?? []).map((marker: any) => marker.label),
       loopEnabled: timeline?.loop_range?.enabled ?? false,
+      bpm: timeline?.bpm,
     };
   }, timelineUid);
 }
@@ -193,7 +222,7 @@ test("a track edit keeps a marker and loop range set elsewhere", async ({
 
   await expect
     .poll(() => storedState(page, fixture.timelineUid))
-    .toEqual({ muted: true, markers: ["Drop"], loopEnabled: true });
+    .toEqual({ muted: true, markers: ["Drop"], loopEnabled: true, bpm: 120 });
   await expect(
     header.getByRole("button", { name: "Unmute", exact: true }),
   ).toBeVisible();
@@ -202,11 +231,82 @@ test("a track edit keeps a marker and loop range set elsewhere", async ({
   ).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("2-after-mute.png") });
 
-  // Undoing the mute restores only the mute; the marker and loop range stay.
+  // Unmuting and undoing it is one "Edit Track" undo step that restores only the mute.
+  await header.getByRole("button", { name: "Unmute", exact: true }).click();
+  await expect
+    .poll(() => storedState(page, fixture.timelineUid))
+    .toEqual({ muted: false, markers: ["Drop"], loopEnabled: true, bpm: 120 });
   await page.getByRole("button", { name: /Undo: Edit Track/ }).click();
   await expect
     .poll(() => storedState(page, fixture.timelineUid))
-    .toEqual({ muted: false, markers: ["Drop"], loopEnabled: true });
-  await expect(mute).toBeVisible();
+    .toEqual({ muted: true, markers: ["Drop"], loopEnabled: true, bpm: 120 });
+  await expect(
+    header.getByRole("button", { name: "Unmute", exact: true }),
+  ).toBeVisible();
+  await expect(mute).toBeHidden();
+  await page.screenshot({ path: testInfo.outputPath("3-after-undo.png") });
+});
+
+/**
+ * Changing the tempo in the Properties panel right after another client's marker reaches the
+ * engine keeps the marker. The panel used to send the whole timeline from its local copy, so
+ * the tempo change erased the marker.
+ */
+test("a timeline settings edit keeps a marker set elsewhere", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  await openApp(page, backendSlot.backendPort);
+  const fixture = await openTimelineFixture(page);
+  await openTimelineProperties(page, fixture.panelId);
+  const bpmInput = page.getByLabel("Timeline BPM");
+  await expect(bpmInput).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("1-before.png") });
+
+  // Send the marker as another client would, then change the tempo in the same task.
+  await page.evaluate(({ timelineId }) => {
+    const stores = (window as any).appStores;
+    void stores.sendAndAwait({
+      module: "TimelineCommand",
+      command: {
+        type: "StoreTimelineMarker",
+        data: {
+          timeline_id: timelineId,
+          marker: {
+            uid: crypto.randomUUID().replace(/-/g, ""),
+            label: "Drop",
+            time: { secs: 2, nanos: 0 },
+          },
+        },
+      },
+    });
+    const input = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Timeline BPM"]',
+    );
+    if (!input) throw new Error("BPM input not found");
+    input.value = "128";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, fixture);
+
+  await expect
+    .poll(() => storedState(page, fixture.timelineUid))
+    .toEqual({ muted: false, markers: ["Drop"], loopEnabled: false, bpm: 128 });
+  await expect(bpmInput).toHaveValue("128");
+  await page.screenshot({ path: testInfo.outputPath("2-after-bpm.png") });
+
+  // A second tempo change is one "Edit Timeline Settings" undo step that restores only the tempo.
+  await bpmInput.fill("130");
+  await bpmInput.dispatchEvent("change");
+  await expect
+    .poll(() => storedState(page, fixture.timelineUid))
+    .toEqual({ muted: false, markers: ["Drop"], loopEnabled: false, bpm: 130 });
+  await page
+    .getByRole("button", { name: /Undo: Edit Timeline Settings/ })
+    .click();
+  await expect
+    .poll(() => storedState(page, fixture.timelineUid))
+    .toEqual({ muted: false, markers: ["Drop"], loopEnabled: false, bpm: 128 });
+  await expect(bpmInput).toHaveValue("128");
   await page.screenshot({ path: testInfo.outputPath("3-after-undo.png") });
 });

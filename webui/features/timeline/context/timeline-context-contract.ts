@@ -9,6 +9,7 @@
 import type { Accessor } from "solid-js";
 import type { MoveTimelineActionOptions } from "../../../lib/timeline-actions";
 import type * as types from "../../../types";
+import type { TimelineEdits } from "../controllers/timeline-edits";
 import type { ScrollMode } from "../model/types";
 
 export type TrackReorderPlacement = "before" | "after";
@@ -125,6 +126,8 @@ export interface ActionOperations {
 export interface TimelineContextType {
   timelineUid: string;
   componentId: string;
+  /** Granular edits of this timeline, with the edits not yet confirmed laid over it. */
+  edits: TimelineEdits;
   timelineHydrated: Accessor<boolean>;
   /** Playhead in timeline time: milliseconds since the timeline's `timecode_start`. */
   position: Accessor<number>;

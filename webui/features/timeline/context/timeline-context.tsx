@@ -73,6 +73,7 @@ export function TimelineContextProvider(props: TimelineContextProviderProps) {
 
   const value: TimelineContextType = {
     timelineUid: props.initialTimelineUid,
+    edits,
     componentId: props.initialPanelId,
     timelineHydrated: state.timelineHydrated,
     position: hydration.playback.position,
