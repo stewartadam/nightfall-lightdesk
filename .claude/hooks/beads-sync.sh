@@ -7,8 +7,8 @@
 
 # Pulls issues other machines pushed since this checkout last synced, and
 # pushes any local writes that never went out, so a session starts from the
-# shared beads state. bd's dolt.auto-push setting covers pushes during the
-# session; bd has no automatic pull, hence this hook.
+# shared beads state. beads-push.sh pushes writes during the session; bd has
+# no automatic pull, hence this hook.
 #
 # Cloud sessions are skipped: cloud-session-start.sh clones or syncs the
 # database itself, and running both hooks at once would race that clone.
