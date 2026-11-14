@@ -65,8 +65,8 @@ pub mod prelude {
         TimelineActionCursor,
     };
     pub use crate::edit::{
-        TimelineActionMove, TimelineActionRef, TimelineEdit, TimelineSetting, TrackAction,
-        TrackSetting,
+        ActionTime, MarkerTime, RegionSpan, TimelineActionMove, TimelineActionRef, TimelineEdit,
+        TimelineSetting, TrackAction, TrackSetting,
     };
     pub use crate::recording::{
         TimelineRecordingPreview, TimelineRecordingState, TimelineRecordingStates,

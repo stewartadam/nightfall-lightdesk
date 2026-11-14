@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use nightfall_engine::prelude::DataProvider;
 use nightfall_timeline::prelude::{
-    Timeline, TimelineCommand, TimelineEdit, TimelineMarker, TrackSetting,
+    Timeline, TimelineCommand, TimelineEdit, TimelineMarker, TimelineSelection, TrackSetting,
 };
 use nightfall_undo::prelude::UndoCommand;
 use uuid::Uuid;
@@ -182,4 +182,52 @@ async fn edit_of_missing_track_fails_without_undo_step() {
         nightfall_engine::prelude::CommandOutcome::Failed(_)
     ));
     assert_eq!(harness.undo_ids().len(), depth);
+}
+
+/// Undoing a nudge or a beatgrid shift puts back only what that command changed: a track
+/// expanded afterwards (a view change with no undo step of its own) stays expanded.
+#[tokio::test]
+async fn nudge_and_beatgrid_undo_keep_later_view_changes() {
+    let mut harness = DeskHarness::new();
+    let track_id = harness.timeline().tracks[0].id.clone();
+    let marker_uid = Uuid::new_v4();
+    harness.succeed(TimelineCommand::StoreTimelineMarker {
+        timeline_id: TIMELINE_ID,
+        marker: TimelineMarker {
+            uid: marker_uid,
+            label: "Drop".to_string(),
+            time: Duration::from_secs(4),
+            color: None,
+        },
+    });
+    let original_beatgrid_start = harness.beatgrid_start();
+
+    harness.shift_beatgrid(150);
+    harness.succeed(TimelineCommand::NudgeTimelineSelection {
+        timeline_id: TIMELINE_ID,
+        selection: vec![TimelineSelection::Marker { marker_uid }],
+        delta_ms: 500,
+    });
+    let expanded = !harness.timeline().tracks[0].expanded;
+    harness.succeed(TimelineCommand::EditTimeline {
+        timeline_id: TIMELINE_ID,
+        edit: TimelineEdit::UpdateTrack {
+            track_id,
+            settings: vec![TrackSetting::Expanded(expanded)],
+        },
+    });
+
+    harness.succeed(UndoCommand::Undo {});
+    let timeline = harness.timeline();
+    let marker = timeline
+        .markers
+        .iter()
+        .find(|marker| marker.uid == marker_uid)
+        .expect("nudged marker should still exist");
+    assert_eq!(marker.time, Duration::from_secs(4));
+    assert_eq!(timeline.tracks[0].expanded, expanded);
+
+    harness.succeed(UndoCommand::Undo {});
+    assert_eq!(harness.beatgrid_start(), original_beatgrid_start);
+    assert_eq!(harness.timeline().tracks[0].expanded, expanded);
 }

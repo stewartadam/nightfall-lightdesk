@@ -201,11 +201,16 @@ impl Undoable for TimelineCommand {
                     }) as Box<dyn Undoable>
                 })
             }
-            TimelineCommand::InsertRecordedActions { timeline_id, .. } => {
-                timelines.from_id(*timeline_id).ok().map(|timeline_ref| {
-                    let timeline: Timeline = (*timeline_ref).clone();
-                    Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn Undoable>
-                })
+            TimelineCommand::InsertRecordedActions {
+                timeline_id,
+                track_id,
+                actions,
+            } => {
+                let timeline = timelines.from_id(*timeline_id).ok()?;
+                edit_inverse(
+                    *timeline_id,
+                    recorded_insert_inverse(&timeline, track_id, actions),
+                )
             }
             TimelineCommand::EditTimeline { timeline_id, edit } => {
                 // Applying the edit to a copy of the stored timeline yields exactly the edit
@@ -214,19 +219,24 @@ impl Undoable for TimelineCommand {
                     return None;
                 }
                 let mut timeline: Timeline = (*timelines.from_id(*timeline_id).ok()?).clone();
-                let inverse = edit.apply(&mut timeline).ok()?;
+                let inverse = edit.apply_in_place(&mut timeline).ok()?;
                 Some(Box::new(TimelineCommand::EditTimeline {
                     timeline_id: *timeline_id,
                     edit: inverse,
                 }))
             }
-            TimelineCommand::NudgeTimelineSelection { timeline_id, .. }
-            | TimelineCommand::ApplyBeatgridProposal { timeline_id, .. }
+            TimelineCommand::NudgeTimelineSelection {
+                timeline_id,
+                selection,
+                ..
+            } => {
+                let timeline = timelines.from_id(*timeline_id).ok()?;
+                edit_inverse(*timeline_id, nudge_inverse(&timeline, selection))
+            }
+            TimelineCommand::ApplyBeatgridProposal { timeline_id, .. }
             | TimelineCommand::SetBeatgridStart { timeline_id, .. } => {
-                timelines.from_id(*timeline_id).ok().map(|timeline_ref| {
-                    let timeline: Timeline = (*timeline_ref).clone();
-                    Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn Undoable>
-                })
+                let timeline = timelines.from_id(*timeline_id).ok()?;
+                edit_inverse(*timeline_id, Some(beatgrid_inverse(&timeline)))
             }
             TimelineCommand::DeleteTimeline(id) => {
                 // Capture full timeline before deletion
@@ -256,8 +266,8 @@ impl Undoable for TimelineCommand {
         }
     }
 
-    /// Joins repeated beatgrid shifts of one timeline into one undo step; its inverse is a
-    /// whole-timeline snapshot, so the first shift's inverse undoes the whole run.
+    /// Joins repeated beatgrid shifts of one timeline into one undo step; the first shift's
+    /// inverse restores the beat grid from before the run, so it undoes the whole run.
     fn coalesce_key(&self) -> Option<UndoCoalesceKey> {
         match self {
             TimelineCommand::SetBeatgridStart { timeline_id, .. } => {
@@ -378,16 +388,142 @@ impl Undoable for TimelineCommand {
     }
 }
 
+/// Wraps a granular edit of one timeline as an undo step, or records none for `None`.
+fn edit_inverse(timeline_id: u32, edit: Option<TimelineEdit>) -> Option<Box<dyn Undoable>> {
+    edit.map(|edit| Box::new(TimelineCommand::EditTimeline { timeline_id, edit }) as _)
+}
+
+/// Returns the edit that removes recorded actions again: the whole track when recording will
+/// create it, otherwise just the recorded actions. `None` when nothing will be recorded.
+fn recorded_insert_inverse(
+    timeline: &Timeline,
+    track_id: &str,
+    actions: &[Action],
+) -> Option<TimelineEdit> {
+    if actions.is_empty() {
+        return None;
+    }
+    if !timeline.tracks.iter().any(|track| track.id == track_id) {
+        return Some(TimelineEdit::DeleteTrack {
+            track_id: track_id.to_owned(),
+        });
+    }
+    Some(TimelineEdit::ChangeActions {
+        store: Vec::new(),
+        delete: actions
+            .iter()
+            .map(|action| TimelineActionRef {
+                track_id: track_id.to_owned(),
+                action_id: action.id.clone(),
+            })
+            .collect(),
+    })
+}
+
+/// Returns the edit that puts the nudged actions, markers and regions back at their current
+/// times, leaving the rest of the timeline as it is when the nudge is undone. Targets that
+/// aren't in the timeline are skipped; `None` when none are.
+fn nudge_inverse(timeline: &Timeline, selection: &[TimelineSelection]) -> Option<TimelineEdit> {
+    let mut actions: Vec<ActionTime> = Vec::new();
+    let mut markers: Vec<MarkerTime> = Vec::new();
+    let mut regions: Vec<RegionSpan> = Vec::new();
+    for target in selection {
+        match target {
+            TimelineSelection::Action {
+                track_id,
+                action_id,
+            } => {
+                if actions.iter().any(|placed| placed.action_id == *action_id) {
+                    continue;
+                }
+                let Some(action) = timeline
+                    .tracks
+                    .iter()
+                    .find(|track| track.id == *track_id)
+                    .and_then(|track| track.actions.iter().find(|action| action.id == *action_id))
+                else {
+                    continue;
+                };
+                actions.push(ActionTime {
+                    track_id: track_id.clone(),
+                    action_id: action_id.clone(),
+                    position: action.position,
+                });
+            }
+            TimelineSelection::Marker { marker_uid } => {
+                if markers
+                    .iter()
+                    .any(|placed| placed.marker_uid == *marker_uid)
+                {
+                    continue;
+                }
+                if let Some(marker) = timeline.markers.iter().find(|m| m.uid == *marker_uid) {
+                    markers.push(MarkerTime {
+                        marker_uid: *marker_uid,
+                        time: marker.time,
+                    });
+                }
+            }
+            TimelineSelection::RegionBody { region_uid }
+            | TimelineSelection::RegionStart { region_uid }
+            | TimelineSelection::RegionEnd { region_uid } => {
+                if regions
+                    .iter()
+                    .any(|placed| placed.region_uid == *region_uid)
+                {
+                    continue;
+                }
+                if let Some(region) = timeline.regions.iter().find(|r| r.uid == *region_uid) {
+                    regions.push(RegionSpan {
+                        region_uid: *region_uid,
+                        start: region.start,
+                        end: region.end,
+                    });
+                }
+            }
+        }
+    }
+    if actions.is_empty() && markers.is_empty() && regions.is_empty() {
+        return None;
+    }
+    Some(TimelineEdit::Retime {
+        actions,
+        markers,
+        regions,
+    })
+}
+
+/// Returns the edit that puts back the tempo, bar length, grid flag and beatgrid that a
+/// beatgrid command overwrites, leaving tracks, markers and other settings as they are then.
+fn beatgrid_inverse(timeline: &Timeline) -> TimelineEdit {
+    TimelineEdit::UpdateSettings {
+        settings: vec![
+            TimelineSetting::Bpm(timeline.bpm),
+            TimelineSetting::BeatsPerBar(timeline.beats_per_bar),
+            TimelineSetting::UseBeatGrid(timeline.use_beat_grid),
+            TimelineSetting::Beatgrid(timeline.beatgrid.clone()),
+        ],
+    }
+}
+
 impl Undoable for TimelineOperation {
-    /// Captures persisted timeline state before an undoable internal mutation.
+    /// Undoes recorded actions by removing just them, or the track the recording created with
+    /// everything on it, so undo keeps edits made elsewhere in the timeline after the recording.
     fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
-        let TimelineOperation::InsertRecordedActions { timeline_id, .. } = self else {
+        let TimelineOperation::InsertRecordedActions {
+            timeline_id,
+            track_id,
+            actions,
+        } = self
+        else {
             return None;
         };
         let timelines = ctx.world.resource::<DataProvider<Timeline>>();
-        timelines.from_id(*timeline_id).ok().map(|timeline_ref| {
-            Box::new(TimelineCommand::StoreTimeline((*timeline_ref).clone())) as Box<dyn Undoable>
-        })
+        let timeline = timelines.from_id(*timeline_id).ok()?;
+        edit_inverse(
+            *timeline_id,
+            recorded_insert_inverse(&timeline, track_id, actions),
+        )
     }
 
     /// Describes the internal mutation in the operator-visible undo stack.
@@ -504,8 +640,9 @@ mod tests {
         assert!(inverse.is_none());
     }
 
+    /// Verifies a nudge records an undo step that puts back only the nudged marker's time.
     #[test]
-    fn nudge_inverse_captures_original_timeline_state() {
+    fn nudge_inverse_restores_only_nudged_times() {
         let marker_uid = Uuid::new_v4();
         let mut timeline = Timeline::default();
         timeline.identifiers.id = 7;
@@ -538,18 +675,72 @@ mod tests {
             .expect("nudge inverse should be a timeline command");
 
         match inverse_command {
-            TimelineCommand::StoreTimeline(restored) => {
-                assert_eq!(restored.identifiers.id, 7);
-                assert_eq!(restored.markers[0].time, Duration::from_millis(100));
+            TimelineCommand::EditTimeline {
+                timeline_id: 7,
+                edit:
+                    TimelineEdit::Retime {
+                        actions,
+                        markers,
+                        regions,
+                    },
+            } => {
+                assert!(actions.is_empty() && regions.is_empty());
+                assert_eq!(
+                    markers,
+                    &vec![MarkerTime {
+                        marker_uid,
+                        time: Duration::from_millis(100),
+                    }]
+                );
             }
-            other => panic!("expected StoreTimeline inverse, got {other:?}"),
+            other => panic!("expected a retime inverse, got {other:?}"),
         }
     }
 
-    /// Verifies both beatgrid edits snapshot the timeline, so undo restores the tempo, grid
-    /// flag and beatgrid they overwrite, and only beatgrid shifts coalesce.
+    /// Verifies a nudge undo puts back only the nudged times: a marker added and a label
+    /// changed after the nudge survive undoing it.
     #[test]
-    fn beatgrid_edits_snapshot_the_timeline() {
+    fn nudge_undo_keeps_later_edits() {
+        let marker_uid = Uuid::new_v4();
+        let mut timeline = Timeline::default();
+        timeline.identifiers.id = 7;
+        timeline.markers.push(TimelineMarker {
+            uid: marker_uid,
+            label: "Marker".to_string(),
+            time: Duration::from_millis(100),
+            color: None,
+        });
+        let selection = vec![TimelineSelection::Marker { marker_uid }];
+        let inverse = nudge_inverse(&timeline, &selection).expect("marker is in the timeline");
+
+        timeline.markers[0].time = Duration::from_millis(350);
+        timeline.markers[0].label = "Renamed".to_string();
+        timeline.markers.push(TimelineMarker {
+            uid: Uuid::new_v4(),
+            label: "Later".to_string(),
+            time: Duration::from_millis(900),
+            color: None,
+        });
+        inverse.apply(&mut timeline).expect("undo applies");
+
+        assert_eq!(timeline.markers.len(), 2);
+        assert_eq!(timeline.markers[0].time, Duration::from_millis(100));
+        assert_eq!(timeline.markers[0].label, "Renamed");
+        assert!(
+            nudge_inverse(
+                &timeline,
+                &[TimelineSelection::Marker {
+                    marker_uid: Uuid::new_v4()
+                }]
+            )
+            .is_none()
+        );
+    }
+
+    /// Verifies both beatgrid edits undo by restoring the tempo, bar length, grid flag and
+    /// beatgrid they overwrite (and nothing else), and only beatgrid shifts coalesce.
+    #[test]
+    fn beatgrid_edits_restore_only_beatgrid_settings() {
         let mut timeline = Timeline::default();
         timeline.identifiers.id = 9;
         timeline.bpm = 120.0;
@@ -577,12 +768,21 @@ mod tests {
                 .inverse(&ctx)
                 .expect("beatgrid edit should produce an inverse");
             match inverse.as_any().downcast_ref::<TimelineCommand>() {
-                Some(TimelineCommand::StoreTimeline(restored)) => {
-                    assert_eq!(restored.bpm, 120.0);
-                    assert!(!restored.use_beat_grid);
-                    assert!(restored.beatgrid.is_none());
+                Some(TimelineCommand::EditTimeline {
+                    timeline_id: 9,
+                    edit: TimelineEdit::UpdateSettings { settings },
+                }) => {
+                    assert_eq!(
+                        serde_json::to_value(settings).expect("settings serialize"),
+                        serde_json::json!([
+                            { "type": "Bpm", "data": 120.0 },
+                            { "type": "BeatsPerBar", "data": 4 },
+                            { "type": "UseBeatGrid", "data": false },
+                            { "type": "Beatgrid", "data": null },
+                        ])
+                    );
                 }
-                other => panic!("expected StoreTimeline inverse, got {other:?}"),
+                other => panic!("expected a settings inverse, got {other:?}"),
             }
         }
         assert!(apply.coalesce_key().is_none());
@@ -592,8 +792,9 @@ mod tests {
         );
     }
 
+    /// Verifies recording into a track it creates undoes by removing that track.
     #[test]
-    fn recorded_insert_inverse_restores_original_timeline() {
+    fn recorded_insert_into_new_track_undoes_by_deleting_it() {
         let mut timeline = Timeline::default();
         timeline.identifiers.id = 8;
         timeline.tracks = Vec::new();
@@ -626,14 +827,50 @@ mod tests {
             .expect("recorded insert inverse should be a timeline command");
 
         match inverse_command {
-            TimelineCommand::StoreTimeline(restored) => {
-                assert_eq!(restored.identifiers.id, 8);
-                assert!(
-                    restored.tracks.is_empty(),
-                    "undo should remove an auto-created recording track"
-                );
-            }
-            other => panic!("expected StoreTimeline inverse, got {other:?}"),
+            TimelineCommand::EditTimeline {
+                timeline_id: 8,
+                edit: TimelineEdit::DeleteTrack { track_id },
+            } => assert_eq!(
+                track_id, "recorded-actions",
+                "undo should remove an auto-created recording track"
+            ),
+            other => panic!("expected a delete-track inverse, got {other:?}"),
         }
+    }
+
+    /// Verifies recording into an existing track undoes by deleting only the recorded actions.
+    #[test]
+    fn recorded_insert_into_existing_track_deletes_only_recorded_actions() {
+        let mut timeline = Timeline::default();
+        timeline.tracks.push(Track {
+            id: "track-1".to_string(),
+            label: "Track".to_string(),
+            muted: false,
+            solo: false,
+            expanded: false,
+            actions: Vec::new(),
+            automation_lanes: Vec::new(),
+        });
+        let recorded = Action {
+            id: "recorded-1".to_string(),
+            label: "Recorded".to_string(),
+            position: Duration::from_millis(100),
+            duration: Duration::from_millis(1000),
+            action: ActionKind::StartClip(Uuid::new_v4()).to_reference(),
+        };
+
+        let inverse = recorded_insert_inverse(&timeline, "track-1", &[recorded]);
+        let Some(TimelineEdit::ChangeActions { store, delete }) = inverse else {
+            panic!("expected a change-actions inverse, got {inverse:?}");
+        };
+        assert!(store.is_empty());
+        assert_eq!(
+            delete,
+            vec![TimelineActionRef {
+                track_id: "track-1".to_string(),
+                action_id: "recorded-1".to_string(),
+            }]
+        );
+        assert!(recorded_insert_inverse(&timeline, "track-1", &[]).is_none());
     }
 }

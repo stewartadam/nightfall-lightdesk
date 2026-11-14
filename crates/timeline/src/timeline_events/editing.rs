@@ -278,7 +278,7 @@ pub(super) fn handle_command(
                     continue;
                 };
                 let previous_audio_path = timeline.audio_path.clone();
-                if let Err(error) = edit.apply(&mut timeline) {
+                if let Err(error) = edit.apply_in_place(&mut timeline) {
                     tracing::warn!(timeline_id, %error, "timeline_edit_rejected");
                     fail_timeline_command(
                         responder,

@@ -1139,15 +1139,16 @@ mod tests {
             .as_any()
             .downcast_ref::<TimelineCommand>()
             .expect("inverse should be a timeline command");
-        let TimelineCommand::StoreTimeline(timeline) = inverse else {
-            panic!("expected store timeline inverse");
+        let TimelineCommand::EditTimeline {
+            timeline_id,
+            edit: crate::prelude::TimelineEdit::ChangeActions { store, delete },
+        } = inverse
+        else {
+            panic!("expected an inverse that deletes the recorded actions, got {inverse:?}");
         };
-        assert_eq!(timeline.identifiers.id, 46);
-        let track = timeline
-            .tracks
-            .iter()
-            .find(|track| track.id == "track-1")
-            .expect("original target track should be restored");
-        assert!(track.actions.is_empty());
+        assert_eq!(*timeline_id, 46);
+        assert!(store.is_empty());
+        assert!(!delete.is_empty());
+        assert!(delete.iter().all(|action| action.track_id == "track-1"));
     }
 }

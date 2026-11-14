@@ -77,12 +77,13 @@ pub enum TimelineEdit {
     ChangeActions {
         /// Actions to add, or to replace when their ID is already on the named track.
         store: Vec<TrackAction>,
-        /// Actions to remove.
+        /// Actions to remove. Actions that are already gone are skipped.
         delete: Vec<TimelineActionRef>,
     },
     /// Move actions to new positions, and optionally onto other tracks.
     MoveActions {
-        /// Moves to apply, in order. Each action may appear only once.
+        /// Moves to apply, in order. Each action may appear only once; a move whose action or
+        /// track is gone is skipped.
         moves: Vec<TimelineActionMove>,
     },
     /// Change some of the timeline's own settings, leaving tracks, markers and regions as they
@@ -91,6 +92,54 @@ pub enum TimelineEdit {
         /// Settings to change, applied in order.
         settings: Vec<TimelineSetting>,
     },
+    /// Put actions, markers and regions at new times, leaving everything else about them as
+    /// stored. Undoing a nudge uses it to put back only the times the nudge changed.
+    Retime {
+        /// Actions to place, each at most once.
+        actions: Vec<ActionTime>,
+        /// Markers to place, each at most once.
+        markers: Vec<MarkerTime>,
+        /// Regions to place, each at most once.
+        regions: Vec<RegionSpan>,
+    },
+}
+
+/// The time of one action on its track.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[typeshare::typeshare]
+pub struct ActionTime {
+    /// ID of the track that holds the action.
+    pub track_id: String,
+    /// ID of the action.
+    pub action_id: String,
+    /// Position from the start of the timeline.
+    pub position: Duration,
+}
+
+/// The time of one marker.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[typeshare::typeshare]
+pub struct MarkerTime {
+    /// UID of the marker.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub marker_uid: Uuid,
+    /// Time of the marker from the start of the timeline.
+    pub time: Duration,
+}
+
+/// The start and end of one region.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[typeshare::typeshare]
+pub struct RegionSpan {
+    /// UID of the region.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub region_uid: Uuid,
+    /// Start of the region from the start of the timeline.
+    pub start: Duration,
+    /// End of the region from the start of the timeline.
+    pub end: Duration,
 }
 
 /// One setting of a track, with its new value.
@@ -186,8 +235,11 @@ pub struct TimelineActionMove {
 impl TimelineEdit {
     /// Applies the edit to `timeline` and returns the edit that undoes it.
     ///
-    /// The edit is checked as a whole first: when any target is missing or a value is invalid,
-    /// the timeline is left unchanged and the error describes the problem.
+    /// The edit applies as a whole: when a track or lane it changes is missing, or a value is
+    /// invalid, the timeline is left unchanged and the error describes the problem. Deletes,
+    /// moves and retimes skip actions, markers and regions that are already gone, and a missing
+    /// neighbor puts an inserted or moved track or lane last, so undo keeps working after
+    /// another client removed something.
     pub fn apply(&self, timeline: &mut Timeline) -> Result<TimelineEdit, String> {
         let mut edited = timeline.clone();
         let inverse = self.apply_in_place(&mut edited)?;
@@ -195,8 +247,9 @@ impl TimelineEdit {
         Ok(inverse)
     }
 
-    /// Applies the edit to a timeline the caller discards on error.
-    fn apply_in_place(&self, timeline: &mut Timeline) -> Result<TimelineEdit, String> {
+    /// Applies the edit to a copy of a timeline that the caller discards on error, saving the
+    /// extra clone [`Self::apply`] makes.
+    pub(crate) fn apply_in_place(&self, timeline: &mut Timeline) -> Result<TimelineEdit, String> {
         match self {
             TimelineEdit::InsertTrack {
                 track,
@@ -205,7 +258,7 @@ impl TimelineEdit {
                 if track_index(timeline, &track.id).is_ok() {
                     return Err(format!("Track {} already exists", track.id));
                 }
-                let index = insertion_index(timeline, before_track_id.as_deref())?;
+                let index = insertion_index(timeline, before_track_id.as_deref());
                 timeline.tracks.insert(index, track.clone());
                 Ok(TimelineEdit::DeleteTrack {
                     track_id: track.id.clone(),
@@ -229,7 +282,7 @@ impl TimelineEdit {
                 let index = track_index(timeline, track_id)?;
                 let track = timeline.tracks.remove(index);
                 let previous_next = timeline.tracks.get(index).map(|next| next.id.clone());
-                let target = insertion_index(timeline, before_track_id.as_deref())?;
+                let target = insertion_index(timeline, before_track_id.as_deref());
                 timeline.tracks.insert(target, track);
                 Ok(TimelineEdit::MoveTrack {
                     track_id: track_id.clone(),
@@ -264,15 +317,11 @@ impl TimelineEdit {
                         before_lane_id: None,
                     });
                 }
-                let target = match before_lane_id {
-                    Some(before) => lanes
-                        .iter()
-                        .position(|existing| existing.id == *before)
-                        .ok_or_else(|| {
-                            format!("Automation lane {before} was not found on track {track_id}")
-                        })?,
-                    None => lanes.len(),
-                };
+                // A missing neighbor puts the lane last, as for tracks.
+                let target = before_lane_id
+                    .as_ref()
+                    .and_then(|before| lanes.iter().position(|existing| existing.id == *before))
+                    .unwrap_or(lanes.len());
                 lanes.insert(target, lane.clone());
                 Ok(TimelineEdit::DeleteAutomationLane {
                     track_id: track_id.clone(),
@@ -307,6 +356,11 @@ impl TimelineEdit {
                 previous.reverse();
                 Ok(TimelineEdit::UpdateSettings { settings: previous })
             }
+            TimelineEdit::Retime {
+                actions,
+                markers,
+                regions,
+            } => retime(timeline, actions, markers, regions),
         }
     }
 
@@ -378,8 +432,109 @@ impl TimelineEdit {
                 format!("Move {} Timeline Action(s)", moves.len())
             }
             TimelineEdit::UpdateSettings { .. } => "Edit Timeline Settings".to_owned(),
+            TimelineEdit::Retime {
+                actions,
+                markers,
+                regions,
+            } => format!(
+                "Move {} Timeline Item(s)",
+                actions.len() + markers.len() + regions.len()
+            ),
         }
     }
+}
+
+/// Places actions, markers and regions at the given times and returns the edit that puts them
+/// back. Targets that are no longer in the timeline are skipped, so undoing a nudge still works
+/// after another client deleted one of the nudged items. Fails when a target is named twice or
+/// a region would end before it starts.
+fn retime(
+    timeline: &mut Timeline,
+    actions: &[ActionTime],
+    markers: &[MarkerTime],
+    regions: &[RegionSpan],
+) -> Result<TimelineEdit, String> {
+    let mut seen_actions = HashSet::new();
+    let mut previous_actions = Vec::with_capacity(actions.len());
+    for placement in actions {
+        if !seen_actions.insert(&placement.action_id) {
+            return Err(format!(
+                "Action {} is placed more than once",
+                placement.action_id
+            ));
+        }
+        let Ok(track) = track_index(timeline, &placement.track_id) else {
+            continue;
+        };
+        let Some(action) = timeline.tracks[track]
+            .actions
+            .iter_mut()
+            .find(|action| action.id == placement.action_id)
+        else {
+            continue;
+        };
+        previous_actions.push(ActionTime {
+            position: std::mem::replace(&mut action.position, placement.position),
+            ..placement.clone()
+        });
+    }
+
+    let mut seen_markers = HashSet::new();
+    let mut previous_markers = Vec::with_capacity(markers.len());
+    for placement in markers {
+        if !seen_markers.insert(placement.marker_uid) {
+            return Err(format!(
+                "Marker {} is placed more than once",
+                placement.marker_uid
+            ));
+        }
+        let Some(marker) = timeline
+            .markers
+            .iter_mut()
+            .find(|marker| marker.uid == placement.marker_uid)
+        else {
+            continue;
+        };
+        previous_markers.push(MarkerTime {
+            marker_uid: placement.marker_uid,
+            time: std::mem::replace(&mut marker.time, placement.time),
+        });
+    }
+
+    let mut seen_regions = HashSet::new();
+    let mut previous_regions = Vec::with_capacity(regions.len());
+    for placement in regions {
+        if !seen_regions.insert(placement.region_uid) {
+            return Err(format!(
+                "Region {} is placed more than once",
+                placement.region_uid
+            ));
+        }
+        if placement.end < placement.start {
+            return Err(format!(
+                "Region {} would end before it starts",
+                placement.region_uid
+            ));
+        }
+        let Some(region) = timeline
+            .regions
+            .iter_mut()
+            .find(|region| region.uid == placement.region_uid)
+        else {
+            continue;
+        };
+        previous_regions.push(RegionSpan {
+            region_uid: placement.region_uid,
+            start: std::mem::replace(&mut region.start, placement.start),
+            end: std::mem::replace(&mut region.end, placement.end),
+        });
+    }
+
+    Ok(TimelineEdit::Retime {
+        actions: previous_actions,
+        markers: previous_markers,
+        regions: previous_regions,
+    })
 }
 
 /// Returns the index of a track, or an error naming the missing track.
@@ -392,11 +547,12 @@ fn track_index(timeline: &Timeline, track_id: &str) -> Result<usize, String> {
 }
 
 /// Returns where a track goes when inserted in front of `before`, or last for `None`.
-fn insertion_index(timeline: &Timeline, before: Option<&str>) -> Result<usize, String> {
-    match before {
-        Some(before) => track_index(timeline, before),
-        None => Ok(timeline.tracks.len()),
-    }
+/// Also last when `before` is no longer in the timeline, so undoing a delete or move still
+/// restores the track after another client removed its old neighbor.
+fn insertion_index(timeline: &Timeline, before: Option<&str>) -> usize {
+    before
+        .and_then(|before| track_index(timeline, before).ok())
+        .unwrap_or(timeline.tracks.len())
 }
 
 /// Applies one track setting and returns the setting holding its previous value.
@@ -516,17 +672,17 @@ fn change_actions(
 
     let mut restore = Vec::new();
     for target in delete {
-        let index = track_index(timeline, &target.track_id)?;
+        // An action that is already gone needs no deleting, and nothing to restore on undo.
+        let Ok(index) = track_index(timeline, &target.track_id) else {
+            continue;
+        };
         let actions = &mut timeline.tracks[index].actions;
-        let action_index = actions
+        let Some(action_index) = actions
             .iter()
             .position(|action| action.id == target.action_id)
-            .ok_or_else(|| {
-                format!(
-                    "Action {} was not found on track {}",
-                    target.action_id, target.track_id
-                )
-            })?;
+        else {
+            continue;
+        };
         restore.push(TrackAction {
             track_id: target.track_id.clone(),
             action: actions.remove(action_index),
@@ -583,21 +739,25 @@ fn move_actions(
                 movement.action_id
             ));
         }
-        let source = track_index(timeline, &movement.track_id)?;
+        // A move whose action or track is gone is skipped, so undoing a move still puts the
+        // remaining actions back after another client deleted one of them.
+        let Ok(source) = track_index(timeline, &movement.track_id) else {
+            continue;
+        };
         let target = match &movement.to_track_id {
-            Some(to_track_id) => track_index(timeline, to_track_id)?,
+            Some(to_track_id) => match track_index(timeline, to_track_id) {
+                Ok(target) => target,
+                Err(_) => continue,
+            },
             None => source,
         };
         let source_actions = &mut timeline.tracks[source].actions;
-        let action_index = source_actions
+        let Some(action_index) = source_actions
             .iter()
             .position(|action| action.id == movement.action_id)
-            .ok_or_else(|| {
-                format!(
-                    "Action {} was not found on track {}",
-                    movement.action_id, movement.track_id
-                )
-            })?;
+        else {
+            continue;
+        };
         let previous_position = source_actions[action_index].position;
         if target == source {
             source_actions[action_index].position = movement.position;
@@ -947,7 +1107,7 @@ mod tests {
                 },
                 TimelineActionMove {
                     track_id: "a".to_owned(),
-                    action_id: "missing".to_owned(),
+                    action_id: "x".to_owned(),
                     position: Duration::ZERO,
                     to_track_id: None,
                 },
@@ -955,8 +1115,74 @@ mod tests {
         }
         .apply(&mut edited)
         .unwrap_err();
-        assert!(error.contains("missing"), "{error}");
+        assert!(error.contains("more than once"), "{error}");
         assert_eq!(json(&edited), json(&original));
+    }
+
+    /// Edits skip actions and neighbors that another client already removed, so undoing a
+    /// delete, move or nudge still applies what it can.
+    #[test]
+    fn edits_skip_targets_that_are_gone() {
+        let original = timeline();
+
+        let mut edited = original.clone();
+        let inverse = TimelineEdit::ChangeActions {
+            store: Vec::new(),
+            delete: vec![
+                TimelineActionRef {
+                    track_id: "a".to_owned(),
+                    action_id: "x".to_owned(),
+                },
+                TimelineActionRef {
+                    track_id: "a".to_owned(),
+                    action_id: "gone".to_owned(),
+                },
+            ],
+        }
+        .apply(&mut edited)
+        .expect("a missing action is skipped");
+        assert_eq!(edited.tracks[0].actions.len(), 1);
+        let TimelineEdit::ChangeActions { store, .. } = inverse else {
+            panic!("expected change-actions inverse");
+        };
+        assert_eq!(store.len(), 1, "only the deleted action is restored");
+
+        let mut edited = original.clone();
+        TimelineEdit::MoveActions {
+            moves: vec![
+                TimelineActionMove {
+                    track_id: "a".to_owned(),
+                    action_id: "x".to_owned(),
+                    position: Duration::from_millis(900),
+                    to_track_id: Some("gone".to_owned()),
+                },
+                TimelineActionMove {
+                    track_id: "a".to_owned(),
+                    action_id: "y".to_owned(),
+                    position: Duration::from_millis(50),
+                    to_track_id: None,
+                },
+            ],
+        }
+        .apply(&mut edited)
+        .expect("a move onto a missing track is skipped");
+        assert_eq!(
+            edited.tracks[0].actions[0].position,
+            Duration::from_millis(100)
+        );
+        assert_eq!(
+            edited.tracks[0].actions[1].position,
+            Duration::from_millis(50)
+        );
+
+        let mut edited = original.clone();
+        TimelineEdit::InsertTrack {
+            track: track("d"),
+            before_track_id: Some("gone".to_owned()),
+        }
+        .apply(&mut edited)
+        .expect("a missing neighbor puts the track last");
+        assert_eq!(track_ids(&edited), vec!["a", "b", "c", "d"]);
     }
 
     /// A cleared optional setting arrives from the web UI without a value, or with `null`, and
@@ -967,6 +1193,83 @@ mod tests {
             let setting: TimelineSetting = serde_json::from_str(json).expect(json);
             assert!(matches!(setting, TimelineSetting::EndTime(None)), "{json}");
         }
+    }
+
+    /// Retiming places actions, markers and regions and undo puts them back; a region ending
+    /// before it starts is refused, and a missing target is skipped.
+    #[test]
+    fn retime_round_trip_and_validation() {
+        let mut original = timeline();
+        let marker_uid = Uuid::new_v4();
+        let region_uid = Uuid::new_v4();
+        original.markers.push(TimelineMarker {
+            uid: marker_uid,
+            label: "Drop".to_owned(),
+            time: Duration::from_millis(500),
+            color: None,
+        });
+        original.regions.push(crate::timeline::TimelineRegion {
+            uid: region_uid,
+            label: "Verse".to_owned(),
+            start: Duration::from_millis(1000),
+            end: Duration::from_millis(2000),
+            color: None,
+        });
+        let edit = TimelineEdit::Retime {
+            actions: vec![ActionTime {
+                track_id: "a".to_owned(),
+                action_id: "y".to_owned(),
+                position: Duration::from_millis(250),
+            }],
+            markers: vec![MarkerTime {
+                marker_uid,
+                time: Duration::from_millis(750),
+            }],
+            regions: vec![RegionSpan {
+                region_uid,
+                start: Duration::from_millis(1500),
+                end: Duration::from_millis(2500),
+            }],
+        };
+
+        let (edited, restored) = round_trip(edit, &original);
+        assert_eq!(
+            edited.tracks[0].actions[1].position,
+            Duration::from_millis(250)
+        );
+        assert_eq!(edited.markers[0].time, Duration::from_millis(750));
+        assert_eq!(edited.regions[0].start, Duration::from_millis(1500));
+        assert_eq!(edited.regions[0].end, Duration::from_millis(2500));
+        assert_eq!(json(&restored), json(&original));
+
+        let mut unchanged = original.clone();
+        let backwards = TimelineEdit::Retime {
+            actions: vec![ActionTime {
+                track_id: "a".to_owned(),
+                action_id: "x".to_owned(),
+                position: Duration::from_millis(50),
+            }],
+            markers: Vec::new(),
+            regions: vec![RegionSpan {
+                region_uid,
+                start: Duration::from_millis(3000),
+                end: Duration::from_millis(2000),
+            }],
+        };
+        assert!(backwards.apply(&mut unchanged).is_err());
+        let missing = TimelineEdit::Retime {
+            actions: Vec::new(),
+            markers: vec![MarkerTime {
+                marker_uid: Uuid::new_v4(),
+                time: Duration::ZERO,
+            }],
+            regions: Vec::new(),
+        };
+        let skipped = missing
+            .apply(&mut unchanged)
+            .expect("a missing marker is skipped");
+        assert!(matches!(skipped, TimelineEdit::Retime { markers, .. } if markers.is_empty()));
+        assert_eq!(json(&unchanged), json(&original));
     }
 
     /// Settings change only the named fields, undo restores them, and a zero tempo is refused.
