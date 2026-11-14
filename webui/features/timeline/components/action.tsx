@@ -218,8 +218,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
 
   createEffect(() => {
     const offsetPx =
-      props.leftOverridePx ??
-      (props.position - ctx.start()) * (ctx.zoom() / 1000);
+      props.leftOverridePx ?? props.position * (ctx.zoom() / 1000);
     setLeft(offsetPx);
   });
 
@@ -249,7 +248,6 @@ export const Action = (props: ActionProps & { trackId: string }) => {
       laneLeft: target.lane.getBoundingClientRect().left,
       originalSnapPositionsMs:
         dragSession !== undefined ? [dragSession.anchorPositionMs] : undefined,
-      timelineStartMs: ctx.start(),
       zoom: ctx.zoom(),
       snapConfig: dragSession?.snapConfig ?? timelineSnapConfig(ctx),
     });
@@ -262,7 +260,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
 
   /** Converts milliseconds into the current timeline lane pixel coordinate. */
   const positionMsToPx = (positionMs: number) =>
-    (positionMs - ctx.start()) * (ctx.zoom() / 1000);
+    positionMs * (ctx.zoom() / 1000);
 
   /** Builds the source action set that should move with the active drag. */
   const createDragSession = (): DragSession | undefined => {
@@ -340,7 +338,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
           tracks,
         );
         const positionMs = Math.max(
-          ctx.start(),
+          0,
           action.originalPositionMs + positionOffsetMs,
         );
         return {

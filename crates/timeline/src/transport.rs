@@ -146,7 +146,7 @@ fn transport_commands(
         if let Some(loop_range) = timeline.loop_range.as_ref().filter(|range| range.enabled) {
             commands.push(Box::new(TimecodeCommand::SeekTimecode {
                 id: timecode_id,
-                position: loop_range.start,
+                position: timeline.timecode_start + loop_range.start,
             }));
         }
         if manual {
@@ -332,5 +332,64 @@ mod tests {
         assert!(!timeline_is_playing(false, true, true));
         assert!(timeline_is_playing(true, false, false));
         assert!(!timeline_is_playing(false, false, false));
+    }
+
+    /// Verifies Play on a timeline with an enabled loop seeks its timecode to the loop start
+    /// in timecode time, offset by the timeline's `timecode_start`, so playback begins at the
+    /// loop start rather than before the timeline starts.
+    #[test]
+    fn play_with_loop_seeks_to_loop_start_in_timecode_time() {
+        use std::time::Duration;
+
+        use bevy_ecs::system::SystemState;
+
+        use crate::prelude::TimelineLoopRange;
+
+        let mut timecode = Timecode::default();
+        timecode.identifiers.id = 4;
+        let mut timeline = Timeline {
+            timecode_uid: timecode.identifiers.uid,
+            timecode_start: Duration::from_secs(10),
+            loop_range: Some(TimelineLoopRange {
+                start: Duration::from_secs(2),
+                end: Duration::from_secs(4),
+                enabled: true,
+            }),
+            ..Default::default()
+        };
+        timeline.identifiers.id = 3;
+        let mut timelines = DataProvider::<Timeline>::default();
+        timelines.add(timeline).expect("timeline should be stored");
+        let mut timecodes = DataProvider::<Timecode>::default();
+        timecodes.add(timecode).expect("timecode should be stored");
+
+        let mut world = World::new();
+        let mut state =
+            SystemState::<(Query<&TimecodeGenerator>, Query<&MaterializedTimeline>)>::new(
+                &mut world,
+            );
+        let (generators, materialized) = state
+            .get(&world)
+            .expect("transport queries should be valid");
+        let commands = transport_commands(
+            3,
+            TransportRequest::Play,
+            &timelines,
+            &timecodes,
+            &generators,
+            &materialized,
+        )
+        .expect("play should resolve");
+
+        let seek = commands
+            .iter()
+            .find_map(
+                |command| match command.as_any().downcast_ref::<TimecodeCommand>() {
+                    Some(TimecodeCommand::SeekTimecode { id, position }) => Some((*id, *position)),
+                    _ => None,
+                },
+            )
+            .expect("play with a loop should seek the timecode");
+        assert_eq!(seek, (4, Duration::from_secs(12)));
     }
 }

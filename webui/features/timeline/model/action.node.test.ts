@@ -178,14 +178,13 @@ test("actionDragPositionFromPointer aligns action start to the pointer", () => {
   const position = actionDragPositionFromPointer({
     clientX: 275,
     laneLeft: 100,
-    timelineStartMs: 5000,
     zoom: 50,
     snapConfig: snapConfig(false),
   });
 
   assert.deepEqual(position, {
     positionPx: 175,
-    positionMs: 8500,
+    positionMs: 3500,
   });
 });
 
@@ -829,7 +828,6 @@ test("actionDragPositionFromPointer snaps the aligned action start", () => {
   const position = actionDragPositionFromPointer({
     clientX: 148,
     laneLeft: 100,
-    timelineStartMs: 0,
     zoom: 50,
     snapConfig: snapConfig(true),
   });
@@ -846,7 +844,6 @@ test("actionDragPositionFromPointer prefers original start snap positions", () =
     clientX: 148,
     laneLeft: 100,
     originalSnapPositionsMs: [800],
-    timelineStartMs: 0,
     zoom: 50,
     snapConfig: snapConfig(true),
   });
@@ -863,7 +860,6 @@ test("actionDragPositionFromPointer keeps original start snap independent", () =
     clientX: 148,
     laneLeft: 100,
     originalSnapPositionsMs: [800],
-    timelineStartMs: 0,
     zoom: 50,
     snapConfig: snapConfig(false),
   });
@@ -882,7 +878,6 @@ test("actionDragPositionFromPointer stores the exact beat when snapping", () => 
   const position = actionDragPositionFromPointer({
     clientX: 145,
     laneLeft: 100,
-    timelineStartMs: 0,
     zoom: 100,
     snapConfig: {
       enabled: true,
@@ -903,7 +898,6 @@ test("actionDragPositionFromPointer keeps a fractional original start", () => {
     clientX: 147,
     laneLeft: 100,
     originalSnapPositionsMs: [468.75],
-    timelineStartMs: 0,
     zoom: 100,
     snapConfig: snapConfig(false),
   });

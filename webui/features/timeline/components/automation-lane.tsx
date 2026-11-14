@@ -35,7 +35,6 @@ const DraggablePoint: Component<{
   onDragStart: (index: number, point: { x: number; y: number }) => void;
   onDragEnd: (index: number) => void;
   trackHeight: number;
-  startTime: number;
   zoom: number;
   isDragging: boolean;
   canEdit: () => boolean;
@@ -213,7 +212,7 @@ export const AutomationLane: Component<AutomationLaneProps> = (props) => {
     [...(props.automationLane.points ?? [])]
       .sort((a, b) => durationToMs(a.position) - durationToMs(b.position))
       .map((point) => ({
-        x: msToPixels(durationToMs(point.position) - ctx.start(), ctx.zoom()),
+        x: msToPixels(durationToMs(point.position), ctx.zoom()),
         // SVG Y runs top to bottom, while automation values run bottom to top.
         y: TRACK_HEIGHT - point.value * TRACK_HEIGHT,
       })),
@@ -264,7 +263,7 @@ export const AutomationLane: Component<AutomationLaneProps> = (props) => {
       const y = e.clientY - rect.top;
 
       // Convert to automationLane position and value
-      const position = ctx.start() + pixelsToMs(x, ctx.zoom());
+      const position = pixelsToMs(x, ctx.zoom());
       // Invert Y coordinate (SVG Y is top to bottom, but automationLane value is bottom to top)
       const value = 1 - y / TRACK_HEIGHT;
 
@@ -331,10 +330,7 @@ export const AutomationLane: Component<AutomationLaneProps> = (props) => {
 
     if (actualPointIndex !== -1) {
       // Calculate the new position in the timeline (convert from pixels to timeline time)
-      const timelinePosition = Math.max(
-        0,
-        ctx.start() + pixelsToMs(dragged.x, ctx.zoom()),
-      );
+      const timelinePosition = Math.max(0, pixelsToMs(dragged.x, ctx.zoom()));
       // Calculate the new value (inverted Y coordinate), clamped between 0 and 1
       const newValue = Math.max(0, Math.min(1, 1 - dragged.y / TRACK_HEIGHT));
 
@@ -432,7 +428,6 @@ export const AutomationLane: Component<AutomationLaneProps> = (props) => {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               trackHeight={TRACK_HEIGHT}
-              startTime={ctx.start()}
               zoom={ctx.zoom()}
               isDragging={!!draggedPoint()}
               canEdit={isTrackHighlighted}
