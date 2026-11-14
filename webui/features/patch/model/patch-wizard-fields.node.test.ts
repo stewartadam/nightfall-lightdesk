@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   MAX_PATCH_QUANTITY,
+  patchFixtureCount,
   validatePatchWizardFields,
   validConsolePatchStart,
 } from "./patch-wizard-fields";
@@ -72,4 +73,32 @@ test("validatePatchWizardFields caps the fixture count", () => {
 /** Verifies a valid universe and address become the console start the routes are laid out from. */
 test("validConsolePatchStart returns the typed start when valid", () => {
   assert.deepEqual(validConsolePatchStart(valid), { universe: 1, address: 60 });
+});
+
+/** Verifies a morph counts every selected fixture, even past the cap on new fixtures. */
+test("patchFixtureCount counts a large morph selection", () => {
+  const morphFixtureIds = Array.from(
+    { length: MAX_PATCH_QUANTITY + 1 },
+    (_, index) => index + 1,
+  );
+  assert.equal(
+    patchFixtureCount({ quantity: morphFixtureIds.length, morphFixtureIds }),
+    MAX_PATCH_QUANTITY + 1,
+  );
+});
+
+/** Verifies new fixtures use the typed quantity and report null while it is out of range. */
+test("patchFixtureCount uses the typed quantity for new fixtures", () => {
+  assert.equal(patchFixtureCount({ quantity: 4, morphFixtureIds: [] }), 4);
+  assert.equal(
+    patchFixtureCount({
+      quantity: MAX_PATCH_QUANTITY + 1,
+      morphFixtureIds: [],
+    }),
+    null,
+  );
+  assert.equal(
+    patchFixtureCount({ quantity: null, morphFixtureIds: [] }),
+    null,
+  );
 });

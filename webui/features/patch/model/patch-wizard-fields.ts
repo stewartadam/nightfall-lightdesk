@@ -70,3 +70,21 @@ export function validConsolePatchStart(
     ? { universe: universeId, address: startAddress }
     : null;
 }
+
+/**
+ * Counts the fixtures one run of the wizard affects. A morph changes every selected fixture, so
+ * its count is the selection size and ignores the quantity cap that bounds new fixtures. Otherwise
+ * it is the typed quantity, or null while that quantity is invalid.
+ */
+export function patchFixtureCount(
+  fields: Pick<PatchWizardNumberFields, "quantity"> & {
+    morphFixtureIds: readonly number[];
+  },
+): number | null {
+  if (fields.morphFixtureIds.length > 0) {
+    return fields.morphFixtureIds.length;
+  }
+  return isWholeNumberInRange(fields.quantity, 1, MAX_PATCH_QUANTITY)
+    ? fields.quantity
+    : null;
+}
