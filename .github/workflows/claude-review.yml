@@ -68,6 +68,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    outputs:
+      diff: ${{ steps.snapshot.outputs.diff }}
     steps:
       # Acquire the default branch's policy script as data; it runs only on the next runner.
       - uses: actions/checkout@v5.1.0
@@ -75,7 +77,8 @@ jobs:
           persist-credentials: false
           sparse-checkout: scripts/merge-policy.mjs
           sparse-checkout-cone-mode: false
-      - name: Snapshot the PR as data
+      - id: snapshot
+        name: Snapshot the PR as data
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
@@ -91,9 +94,15 @@ jobs:
           gh api --paginate "repos/$GH_REPO/pulls/$PR_NUMBER/files" \
             --jq '.[] | {filename, previous_filename, status, additions, deletions} | tojson' \
             > "$dir/files.jsonl"
-          # The API refuses diffs far beyond the policy's size limit; the policy rejects those PRs.
-          gh api "repos/$GH_REPO/pulls/$PR_NUMBER" -H 'Accept: application/vnd.github.diff' \
-            > "$dir/pr.diff" || echo 'The diff is too large for the GitHub API.' > "$dir/pr.diff"
+          # The API refuses diffs far beyond the policy's size limit; Claude skips any PR whose diff
+          # it cannot fetch.
+          if gh api "repos/$GH_REPO/pulls/$PR_NUMBER" -H 'Accept: application/vnd.github.diff' \
+            > "$dir/pr.diff"; then
+            echo 'diff=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'The diff is too large for the GitHub API.' > "$dir/pr.diff"
+            echo 'diff=false' >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: claude-review-${{ github.event.pull_request.head.sha }}
@@ -107,7 +116,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      eligible: ${{ steps.assess.outputs.eligible }}
       assessment: ${{ steps.assess.outputs.assessment }}
     steps:
       - uses: actions/download-artifact@v8.0.1
@@ -119,8 +127,10 @@ jobs:
 
   review:
     name: Claude review
-    needs: policy
-    if: needs.policy.outputs.eligible == 'true'
+    # PRs the policy rejects are still reviewed, so the verdict reports every check, not only the
+    # policy's reasons. The policy result alone still forces needs-human.
+    needs: [metadata, policy]
+    if: needs.metadata.outputs.diff == 'true' && fromJSON(needs.policy.outputs.assessment).files > 0
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -146,13 +156,21 @@ jobs:
         with:
           name: claude-review-${{ github.event.pull_request.head.sha }}
           path: .pr-review
+      - name: Share the size and path check with Claude
+        env:
+          ASSESSMENT: ${{ needs.policy.outputs.assessment }}
+        run: printf '%s\n' "$ASSESSMENT" > .pr-review/policy.json
       # Read rules also bound Glob and Grep. Reads stay inside the workspace, and the process
-      # environment, which holds the tokens, is off limits.
+      # environment, which holds the tokens, is off limits. Agent context comes only from the
+      # default branch: Claude Code would otherwise load CLAUDE.md, AGENTS.md and rules files it
+      # finds under pr-head/ as instructions, and skills from any .claude/skills/ there, so
+      # claudeMdExcludes skips them and the Skill tool is denied.
       - id: claude
         uses: anthropics/claude-code-action@v1.0.268
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          settings: '{"claudeMdExcludes": ["**/pr-head/**"]}'
           prompt: |
             Decide whether pull request #${{ github.event.pull_request.number }} in
             ${{ github.repository }} can merge without a human review.
@@ -163,7 +181,7 @@ jobs:
           claude_args: >-
             --max-turns 80
             --allowedTools 'Read(./**)'
-            --disallowedTools 'Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Task,Read(//proc/**),Read(//sys/**)'
+            --disallowedTools 'Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Task,Skill,Read(//proc/**),Read(//sys/**)'
             --json-schema '{"type":"object","additionalProperties":false,
             "required":["verdict","summary","checks","findings"],"properties":{
             "verdict":{"type":"string","enum":["auto-merge","needs-human"]},
@@ -222,15 +240,17 @@ jobs:
             verdict="$(jq -n --arg url "$RUN_URL" '{verdict: "needs-human",
               summary: "The mergeability check could not read this PR.",
               reasons: ["See the [workflow run](\($url)) for the error."], findings: []}')"
-          elif [[ "$(jq -r .eligible <<< "$ASSESSMENT")" != true ]]; then
-            verdict="$(jq '{verdict: "needs-human",
-              summary: "This PR is outside what auto-merge allows, so Claude did not review it.",
-              reasons, findings: []}' <<< "$ASSESSMENT")"
           elif [[ "$REVIEW_RESULT" != success || "$REVIEW_CONCLUSION" != success || -z "$VERDICT" ]] ||
             ! jq -e '.verdict | IN("auto-merge", "needs-human")' <<< "$VERDICT" > /dev/null; then
-            verdict="$(jq -n --arg url "$RUN_URL" '{verdict: "needs-human",
-              summary: "The Claude review did not finish.",
-              reasons: ["See the [workflow run](\($url)) for the error."], findings: []}')"
+            if [[ "$REVIEW_RESULT" == skipped ]]; then
+              summary="Claude did not review this PR."
+              why="The GitHub API did not return its diff; see the [workflow run]($RUN_URL)."
+            else
+              summary="The Claude review did not finish."
+              why="See the [workflow run]($RUN_URL) for the error."
+            fi
+            verdict="$(jq --arg summary "$summary" --arg why "$why" '{verdict: "needs-human",
+              summary: $summary, reasons: (.reasons + [$why]), findings: []}' <<< "$ASSESSMENT")"
           elif jq -e '.verdict == "auto-merge" and any(.findings[]; .severity == "bug")' \
             <<< "$VERDICT" > /dev/null; then
             # A reported bug always blocks, even if the verdict says otherwise.
@@ -245,6 +265,13 @@ jobs:
             verdict="$(jq '.verdict = "needs-human"' <<< "$VERDICT")"
           else
             verdict="$VERDICT"
+          fi
+          # A PR the policy rejects never auto-merges; its reasons lead the checks Claude reported.
+          if jq -e 'has("checks")' <<< "$verdict" > /dev/null &&
+            [[ "$(jq -r .eligible <<< "$ASSESSMENT")" != true ]]; then
+            verdict="$(jq --argjson assessment "$ASSESSMENT" '.verdict = "needs-human"
+              | .checks = [{check: "scope", passed: false, note: ($assessment.reasons | join(" "))}]
+                + .checks' <<< "$verdict")"
           fi
 
           status=""
@@ -273,8 +300,8 @@ jobs:
           body="$(jq -r --arg marker "$marker" --arg sha "${HEAD_SHA:0:7}" --arg status "$status" '
             (if .verdict == "auto-merge" then "### Claude review: ready to auto-merge"
              else "### Claude review: needs a human" end) as $title
-            | {bugs: "Bugs", risk: "Risk", tests: "Tests", showfile: "Showfile compatibility",
-               docs: "Docs", description: "Description", "release-notes": "Release notes",
+            | {scope: "Auto-merge scope", bugs: "Bugs", risk: "Risk", tests: "Tests",
+               showfile: "Showfile compatibility", docs: "Docs", description: "Description", "release-notes": "Release notes",
                conventions: "Conventions"} as $names
             | (if has("checks") then
                  [.checks | sort_by(.passed)[]

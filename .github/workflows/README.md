@@ -182,18 +182,22 @@ neither checks out PR code. The steps are gated by
 same-repository PR into `develop` from someone with write access is opened ready or marked ready
 for review, or gets new commits while ready, and is not part of a stack:
 
-1. A size and path check (`scripts/merge-policy.mjs`) rejects PRs over 20 files or 800 changed
-   lines, PRs changing binary files, and PRs touching risky areas: CI, build and test tooling
-   (which the required checks run from the PR itself), dependencies and toolchain, licensing,
-   agent instructions (any `CLAUDE.md`, since the review would load it) and Git attributes. Those get a "needs a human"
-   comment without spending a Claude review.
-2. Otherwise Claude reviews the PR against the rubric in `.github/claude-review.md`. It judges
+1. A size and path check (`scripts/merge-policy.mjs`) blocks auto-merge for PRs over 20 files or
+   800 changed lines, PRs changing binary files, and PRs touching risky areas: CI, build and test
+   tooling (which the required checks run from the PR itself), dependencies and toolchain,
+   licensing, agent instructions (any `CLAUDE.md`) and Git attributes. A blocked PR always needs a human, and
+   the check's reasons lead the verdict as a failed "Auto-merge scope" check, or as plain reasons
+   when Claude could not review it.
+2. Claude reviews every PR whose diff the GitHub API returns, blocked or not, against the rubric
+   in `.github/claude-review.md`, so a finished review reports every check. It judges
    risk by blast radius, reversibility, user impact and test coverage rather than by which code
    changed, and checks for likely bugs, tests for behavior changes (browser tests for UI behavior
    fixes), a showfile migration when saved data changes shape, docs that still match the app, a
    description that matches the diff, release notes that follow the guide, and the written
    conventions in `CLAUDE.md`. It can only read files: the default branch at the workspace root
-   and the PR head in `pr-head/`.
+   and the PR head in `pr-head/`. Its instructions come only from the default branch:
+   `claudeMdExcludes` keeps it from loading `CLAUDE.md`, `AGENTS.md` or rules files from
+   `pr-head/`, and the Skill tool is denied, so agent files in the PR are only data.
 3. The verdict is posted as one comment that later runs update, listing each check as passed or
    failed with a note. On "ready to auto-merge", the PR gets the `low-risk` label and GitHub
    auto-merge, so it merges only once the required checks pass. A reported bug or a failed check
@@ -207,7 +211,8 @@ removing the label by hand leaves auto-merge on, so disable auto-merge itself to
 The workflow runs on `pull_request_target`, so the workflow, the rubric and the policy script
 always come from `develop`: a PR cannot loosen the rules it is judged by, and changes to them take
 effect only after they merge. PR code is never executed. Reviews use the maintainer's Claude
-subscription and count against its usage limits.
+subscription and count against its usage limits, including reviews of PRs the size and path check
+blocks.
 
 One-time setup:
 
