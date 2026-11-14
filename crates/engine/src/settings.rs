@@ -38,6 +38,7 @@ use serde_json::Value;
 use crate::{
     ClientFeedback, EventHandling, ResyncHandling,
     client::{Undo, register_client_command},
+    command_apply::{ApplyCommands, CommandApplication},
     prelude::{
         ClientEventSink, CommandEnvelope, CommandError, CommandResponder,
         DISCRIMINATOR_NON_DROPPABLE, EngineClientMessage, EngineIngressMeta, EnginePayload,
@@ -258,12 +259,12 @@ pub struct SettingsUpdate {
 
 /// `Update` system set in which [`SettingsValues`] catches up with this frame's settings changes.
 ///
-/// Runs after [`EventHandling`], so settings commands applied this frame are saved and sent in the
-/// same frame. Showfile saves and resyncs order themselves after this set.
+/// Runs after [`CommandApplication`], so settings commands applied this frame are saved and sent
+/// in the same frame. Showfile saves and resyncs order themselves after this set.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SettingsSync;
 
-/// `Update` system set, inside [`EventHandling`], holding the handlers that
+/// [`ApplyCommands`] system set, inside [`EventHandling`], holding the handlers that
 /// [`SettingsAppExt::add_settings_command`] adds.
 ///
 /// Event handlers that react to a settings change in the same frame order themselves after it.
@@ -319,7 +320,7 @@ impl SettingsAppExt for App {
     {
         register_client_command::<C>(self, Undo::Skipped);
         self.add_systems(
-            Update,
+            ApplyCommands,
             (move |mut commands: MessageReader<CommandEnvelope<C>>,
                    mut settings: ResMut<T>,
                    mut responder: CommandResponder| {
@@ -360,13 +361,14 @@ impl Plugin for SettingsPlugin {
     /// Initializes the registry, orders [`SettingsSync`] after event handling and before resyncs,
     /// and adds the sync, resync and change publication systems.
     fn build(&self, app: &mut App) {
+        crate::command_apply::add_apply_commands(app);
         app.init_resource::<SettingsRegistry>();
         app.init_resource::<SettingsValues>();
         app.add_message::<ResyncRequested>();
         app.configure_sets(
             Update,
             (
-                SettingsSync.after(EventHandling),
+                SettingsSync.after(CommandApplication),
                 ResyncHandling.after(SettingsSync),
             ),
         );

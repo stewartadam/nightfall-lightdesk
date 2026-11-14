@@ -138,7 +138,7 @@ impl Plugin for OutputSacnPlugin {
             Update,
             (sync_sacn_priority, sync_sacn_output_binding)
                 .chain()
-                .after(EventHandling),
+                .after(CommandApplication),
         );
         app.add_systems(Last, stop_sacn_output_on_exit);
         app.add_systems(

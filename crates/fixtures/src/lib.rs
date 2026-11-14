@@ -232,7 +232,7 @@ impl Plugin for FixturePlugin {
         app.register_settings_section(parameter_stream_settings::ParameterStreamSettings::SECTION);
         app.add_settings_command(parameter_stream_settings::apply);
         app.add_systems(
-            Update,
+            ApplyCommands,
             parameter_stream_settings::sync_parameter_stream
                 .in_set(EventHandling)
                 .after(SettingsCommandHandling),
@@ -254,10 +254,13 @@ impl Plugin for FixturePlugin {
         );
         app.init_resource::<layer_stack::LayerStackPublication>();
         register_client_command::<trace::FixtureTraceCommand>(app, Undo::Skipped);
-        app.add_systems(Update, trace::handle_trace_fixture.in_set(EventHandling));
+        app.add_systems(
+            ApplyCommands,
+            trace::handle_trace_fixture.in_set(EventHandling),
+        );
         register_client_command::<route_validation::RouteValidationCommand>(app, Undo::Skipped);
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 route_validation::handle_route_validation_commands,
                 input_universe_settings::sync_input_universes_from_io_settings
@@ -288,7 +291,7 @@ impl Plugin for FixturePlugin {
         register_engine_operation::<undo::RestoreColorPathDefaultsSnapshot>(app);
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 events::handle_set_dmx_channels,
                 transport_holds::handle_set_transport_dmx_channels,
@@ -305,12 +308,13 @@ impl Plugin for FixturePlugin {
         );
 
         app.add_systems(
+            ApplyCommands,
+            fixture_events::crud_events.in_set(EventHandling),
+        );
+        // Expiring stale DMX input is time-driven, so it runs once per update, not per rerun.
+        app.add_systems(
             Update,
-            (
-                fixture_events::crud_events,
-                stale_inputs::clear_stale_input_channels,
-            )
-                .in_set(EventHandling),
+            stale_inputs::clear_stale_input_channels.after(CommandApplication),
         );
 
         app.configure_sets(
@@ -334,7 +338,7 @@ impl Plugin for FixturePlugin {
         // Runs after every event handler, like the console manual layer, so releases planned
         // by user commands in this update apply before the next render.
         app.add_systems(
-            Update,
+            ApplyCommands,
             transport_holds::handle_transport_dmx_operations.after(EventHandling),
         );
 
@@ -406,7 +410,7 @@ impl Plugin for FixturePlugin {
         app.add_resource_feed::<prelude::RouteValidationSettings>()
             .resync_after(resync_client_feed::<websocket::ColorPathDefaultsFeed>);
         app.add_systems(
-            Update,
+            ApplyCommands,
             // After update ingress, so a watch sent just before a disconnect cannot outlive it.
             universe_stream::forget_disconnected_watchers.in_set(EventHandling),
         );

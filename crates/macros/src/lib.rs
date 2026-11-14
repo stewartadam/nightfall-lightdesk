@@ -56,13 +56,14 @@ impl Plugin for MacrosPlugin {
 
         app.add_systems(
             Update,
-            (
-                (runner::record_statement_results, runner::advance_macro_runs)
-                    .chain()
-                    .after(EventHandling)
-                    .before(ResyncHandling),
-                command::handle_macro_commands.in_set(EventHandling),
-            ),
+            (runner::record_statement_results, runner::advance_macro_runs)
+                .chain()
+                .after(CommandApplication)
+                .before(ResyncHandling),
+        );
+        app.add_systems(
+            ApplyCommands,
+            command::handle_macro_commands.in_set(EventHandling),
         );
         app.add_client_feed::<websocket::MacrosFeed>()
             .on_change(resource_changed::<DataProvider<Macro>>);

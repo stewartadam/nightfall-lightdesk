@@ -97,7 +97,7 @@ impl Plugin for InputOscPlugin {
                 .in_set(InputHandling),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             (forward_external_command_invocations, handle_osc_crud).in_set(EventHandling),
         );
         app.init_resource::<OscMappingDiagnostics>();

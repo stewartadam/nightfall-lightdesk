@@ -110,7 +110,7 @@ mod tests {
         app.init_resource::<Results>();
         register_ingress_command::<MidiCommand>(&mut app);
         register_binding_undo::<MidiMappings, MidiCommand>(&mut app);
-        app.add_systems(Update, crate::handle_midi_crud.in_set(EventHandling));
+        app.add_systems(ApplyCommands, crate::handle_midi_crud.in_set(EventHandling));
         app.add_systems(Last, collect_results);
         app
     }

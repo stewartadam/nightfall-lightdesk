@@ -112,7 +112,7 @@ impl Plugin for FxPlugin {
             .register::<events::StepFxCommand>();
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 events::handle_events.after(DeskEventSet::ClipRouting),
                 events::crud_events,
@@ -133,7 +133,7 @@ impl Plugin for FxPlugin {
         app.add_systems(
             Update,
             systems::sync_fx_instance_timebase
-                .after(EventHandling)
+                .after(CommandApplication)
                 .run_if(in_state(AppState::Ready)),
         );
         app.add_systems(

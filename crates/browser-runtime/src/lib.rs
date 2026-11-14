@@ -216,7 +216,7 @@ impl BrowserEngine {
                 .with_limiter(Limiter::from_framerate(DEFAULT_TICK_RATE_HZ)),
         );
         app.add_systems(
-            bevy_app::Update,
+            nightfall_engine::prelude::ApplyCommands,
             (nightfall_framepace::handle_events, reject_quit_commands)
                 .in_set(nightfall_engine::prelude::EventHandling),
         );

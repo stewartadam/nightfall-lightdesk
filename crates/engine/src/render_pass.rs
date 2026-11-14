@@ -9,8 +9,9 @@
 //! Input updates and render passes.
 //!
 //! Every engine update runs [`Update`], whose input sets ([`InputHandling`](crate::InputHandling),
-//! [`EventHandling`](crate::EventHandling) and [`ResyncHandling`](crate::ResyncHandling)) apply
-//! commands and input to world state as soon as they arrive, and [`PostUpdate`], whose
+//! [`CommandApplication`](crate::command_apply::CommandApplication), which runs the command
+//! handlers in [`EventHandling`](crate::EventHandling), and [`ResyncHandling`](crate::ResyncHandling))
+//! apply commands and input to world state as soon as they arrive, and [`PostUpdate`], whose
 //! [`ClientFeedback`](crate::ClientFeedback) set acknowledges them. Only updates the frame limiter
 //! marks as render passes in [`RenderPass`] also run the [`Render`] schedule, from
 //! [`ClockUpdate`](crate::ClockUpdate) through [`DmxOutput`](crate::DmxOutput) and

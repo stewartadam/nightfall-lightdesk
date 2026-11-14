@@ -172,7 +172,7 @@ impl Plugin for CuePlugin {
 
         events::register_event_systems(app);
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 (
                     materialized_cue::release_materialized_cues,
@@ -192,7 +192,7 @@ impl Plugin for CuePlugin {
         );
         app.add_systems(
             Update,
-            materialized_sequence::sync_sequence_instance_timebase.after(EventHandling),
+            materialized_sequence::sync_sequence_instance_timebase.after(CommandApplication),
         );
         app.add_systems(
             Render,

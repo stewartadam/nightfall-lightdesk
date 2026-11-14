@@ -105,14 +105,16 @@ impl Plugin for OutputUsbDmxPlugin {
             disconnected: false,
         });
         app.insert_resource(usb_service.client());
+        // Device scans are polled once per update, not on every rerun of the command schedule.
         app.add_systems(
             Update,
-            (
-                refresh_available_usb_dmx_devices.in_set(EventHandling),
-                sync_usb_dmx_output_rate
-                    .after(EventHandling)
-                    .run_if(resource_exists_and_changed::<IoRuntimeSettings>),
-            ),
+            refresh_available_usb_dmx_devices.after(CommandApplication),
+        );
+        app.add_systems(
+            Update,
+            sync_usb_dmx_output_rate
+                .after(CommandApplication)
+                .run_if(resource_exists_and_changed::<IoRuntimeSettings>),
         );
         app.add_resource_feed::<AvailableUsbDmxDevices>();
         app.add_systems(

@@ -98,7 +98,7 @@ impl Plugin for ControlsPlugin {
             .register::<MasterCommand>();
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 faders::expand_fader_button_commands,
                 faders::end_released_flashes,
@@ -108,7 +108,7 @@ impl Plugin for ControlsPlugin {
                 .in_set(PendingCommandExpansion),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 faders::handle_fader_commands,
                 faders::handle_fader_updates,
@@ -121,7 +121,8 @@ impl Plugin for ControlsPlugin {
             )
                 .in_set(EventHandling),
         );
-        app.add_systems(Update, faders::sync_fader_state.after(EventHandling));
+        // Fader assignments follow deletes and restores, which undo inverses read between steps.
+        app.add_systems(ApplyCommands, faders::sync_fader_state.after(EventHandling));
 
         // Speed masters scale playback speed after new instances get their clocks and before
         // clocks advance.

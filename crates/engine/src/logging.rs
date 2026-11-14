@@ -190,7 +190,7 @@ impl Plugin for LoggingPlugin {
     fn build(&self, app: &mut App) {
         register_client_command::<LogCommand>(app, Undo::Skipped);
         app.insert_resource(self.log_config.clone());
-        app.add_systems(Update, handle_log_commands.in_set(EventHandling));
+        app.add_systems(ApplyCommands, handle_log_commands.in_set(EventHandling));
         app.add_systems(
             PostUpdate,
             forward_log_level_commands.in_set(ClientFeedback),

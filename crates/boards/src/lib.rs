@@ -12,7 +12,7 @@
 //! target's default action through the action registry, and button states are derived from
 //! the live show and published to every client.
 
-use bevy_app::{App, Plugin, PostUpdate, Update};
+use bevy_app::{App, Plugin, PostUpdate};
 use bevy_ecs::prelude::resource_changed;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
@@ -47,7 +47,10 @@ impl Plugin for BoardsPlugin {
             .register::<command::BoardCommand>();
         press::register_board_press_action(app);
 
-        app.add_systems(Update, command::handle_board_commands.in_set(EventHandling));
+        app.add_systems(
+            ApplyCommands,
+            command::handle_board_commands.in_set(EventHandling),
+        );
         app.add_client_feed::<websocket::BoardsFeed>()
             .on_change(resource_changed::<DataProvider<Board>>);
         // Button states resolve against the boards sent before them.

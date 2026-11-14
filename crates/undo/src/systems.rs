@@ -94,7 +94,19 @@ struct HistoryReplay {
 pub struct HistoryReplays {
     queued: VecDeque<QueuedReplay>,
     active: Option<HistoryReplay>,
+    /// Runs of [`ApplyCommands`] in a row in which the step in flight neither finished nor
+    /// changed.
+    idle_passes: usize,
 }
+
+/// Runs of [`ApplyCommands`] a step in flight may sit unfinished before the replay stops asking
+/// for reruns and carries on in later updates instead.
+///
+/// A step command reaches its domain handler in the run after it is queued, and its result is
+/// read in that run or the next, so at most one idle run is normal. A step that takes longer
+/// carries on in later updates rather than spending the rerun budget on runs that change
+/// nothing.
+const MAX_IDLE_STEP_PASSES: usize = 2;
 
 /// Which way a queued history command steps.
 #[derive(Clone, Copy)]
@@ -140,6 +152,41 @@ impl HistoryReplays {
                 return;
             };
             self.active = start_history_command(world, queued);
+        }
+    }
+
+    /// Asks for another run of [`ApplyCommands`] in this update while a replay has a step in
+    /// flight.
+    ///
+    /// `previous_step` is the step that was in flight when the run started and `finished_step`
+    /// says whether this run received its result. A run that issued a different step counts as
+    /// progress too, but a history command that only joins the queue does not. After
+    /// [`MAX_IDLE_STEP_PASSES`] runs without progress the replay stops asking, so a slow step
+    /// waits for later updates. Apps without [`CommandRerun`] keep stepping once per update.
+    fn request_rerun_while_stepping(
+        &mut self,
+        world: &mut World,
+        previous_step: Option<CommandId>,
+        finished_step: bool,
+    ) {
+        let current_step = self
+            .active
+            .as_ref()
+            .and_then(|replay| replay.in_flight.as_ref())
+            .map(|step| step.step_id);
+        let Some(current_step) = current_step else {
+            self.idle_passes = 0;
+            return;
+        };
+        if finished_step || previous_step != Some(current_step) {
+            self.idle_passes = 0;
+        } else {
+            self.idle_passes += 1;
+        }
+        if self.idle_passes < MAX_IDLE_STEP_PASSES
+            && let Some(mut rerun) = world.get_resource_mut::<CommandRerun>()
+        {
+            rerun.request();
         }
     }
 }
@@ -466,9 +513,11 @@ fn start_history_command(world: &mut World, queued: QueuedReplay) -> Option<Hist
 /// System that handles undo/redo command events.
 ///
 /// Records the outcome of the replay step in flight, queues undo and redo commands, then
-/// advances the replay. Undo and redo replay their group one entry per step, so a group of
-/// several entries takes several frames, and undo and redo commands that arrive meanwhile wait
-/// their turn.
+/// advances the replay. Undo and redo replay their group one entry per step, and each step
+/// needs a later run of [`ApplyCommands`] for its domain handler to apply it, so while a step
+/// is in flight this system asks for a rerun ([`CommandRerun`]) and the whole group usually
+/// settles within the update it was asked for. Undo and redo commands that arrive meanwhile
+/// wait their turn.
 ///
 /// Clear history runs as soon as it arrives. It stops a replay in flight and fails the undo
 /// and redo commands queued before it, so it always works, even while a replay waits on a step.
@@ -496,6 +545,7 @@ pub fn handle_undo_commands(world: &mut World, state: &mut SystemState<UndoComma
         )
     };
 
+    let got_outcome = step_outcome.is_some();
     world.resource_scope(|world, mut replays: Mut<HistoryReplays>| {
         if let Some(outcome) = step_outcome
             && let Some(step) = replays
@@ -526,6 +576,7 @@ pub fn handle_undo_commands(world: &mut World, state: &mut SystemState<UndoComma
             });
         }
         replays.advance(world);
+        replays.request_rerun_while_stepping(world, step_id, got_outcome);
     });
 }
 
@@ -1004,5 +1055,38 @@ mod tests {
             results[&later],
             CommandOutcome::Failed(CommandError { ref code, .. }) if code == "undo.empty_history"
         ));
+    }
+
+    /// Verifies a replay asks for rerun passes while its step makes progress, keeps asking
+    /// through the normal wait for a step's result, and stops once the step has sat unfinished
+    /// for longer than that, leaving it to later frames.
+    #[test]
+    fn replay_requests_reruns_until_its_step_stalls() {
+        let mut world = replay_world();
+        world.init_resource::<CommandRerun>();
+        commit_group(
+            &mut world,
+            vec![
+                Box::new(ObjectOperation::Store { id: 1, value: 1 }),
+                Box::new(ObjectOperation::Store { id: 2, value: 2 }),
+            ],
+        );
+        let mut state = SystemState::<UndoCommandReaders>::new(&mut world);
+        send(&mut world, UndoCommand::Undo {});
+
+        let mut requested = Vec::new();
+        for _ in 0..MAX_IDLE_STEP_PASSES + 2 {
+            world.insert_resource(CommandRerun::default());
+            handle_undo_commands(&mut world, &mut state);
+            requested.push(world.resource::<CommandRerun>().is_requested());
+        }
+
+        let mut expected = vec![true; MAX_IDLE_STEP_PASSES];
+        expected.extend([false, false]);
+        assert_eq!(
+            requested, expected,
+            "the run that issues the step and the idle runs after it ask for reruns, \
+             later idle runs don't"
+        );
     }
 }

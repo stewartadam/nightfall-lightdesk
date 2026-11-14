@@ -93,7 +93,7 @@ impl Plugin for FramepacePlugin {
         app.register_diagnostic(Diagnostic::new(FRAMEPACE_FRAME_TIME_MS).with_suffix(" ms"))
             .register_diagnostic(Diagnostic::new(FRAMEPACE_OVERSLEEP_MS).with_suffix(" ms"))
             .register_diagnostic(Diagnostic::new(FRAMEPACE_OVERRUN_MS).with_suffix(" ms"));
-        app.add_systems(Update, handle_events.in_set(EventHandling));
+        app.add_systems(ApplyCommands, handle_events.in_set(EventHandling));
         app.add_systems(
             PostUpdate,
             (record_framepace_diagnostics, framerate_limiter)

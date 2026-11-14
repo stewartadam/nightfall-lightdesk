@@ -78,7 +78,7 @@ impl Plugin for ObjectLibraryPlugin {
 
         // Add WebSocket systems
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 crate::websocket::handle_object_library_commands,
                 crate::websocket::finish_object_library_commands,

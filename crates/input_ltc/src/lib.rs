@@ -51,7 +51,7 @@ impl Plugin for InputLtcPlugin {
         app.add_systems(
             Update,
             (
-                sync::sync_ltc_captures.after(EventHandling),
+                sync::sync_ltc_captures.after(CommandApplication),
                 devices::refresh_audio_input_devices,
             ),
         );

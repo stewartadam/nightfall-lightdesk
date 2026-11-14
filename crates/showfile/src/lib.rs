@@ -56,7 +56,7 @@ impl bevy_app::Plugin for ShowfilePlugin {
         register_client_command::<ShowfileCommand>(app, Undo::Skipped);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ShowfileAstConverter>();
         app.add_systems(
-            bevy_app::Update,
+            ApplyCommands,
             reject_disk_storage_commands
                 .run_if(not(disk_storage_available))
                 .in_set(EventHandling),

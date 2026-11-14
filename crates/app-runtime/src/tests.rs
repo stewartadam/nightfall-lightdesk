@@ -39,11 +39,12 @@ use nightfall_cues::prelude::{Cue, MaterializedSequence, Sequence};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::logging::{LogConfig, TracingTarget};
 use nightfall_engine::prelude::{
-    AppState, ClientEventSink, ClientFeedback, ClientOutput, CommandEnvelope, CommandNoticeReply,
-    CommandOrigin, CommandOutcome, CommandReply, CommandResult, CommandTracker,
-    DISCRIMINATOR_NON_DROPPABLE, DataProvider, DmxOutput, EncodedClientMessage,
-    EngineClientMessage, EngineOperationEnvelope, EventHandling, FinishedCommand, Render,
-    RenderPass, ReplyTarget, ToastLevel, UiNotification, UiNotificationState,
+    AppState, ApplyCommands, ClientEventSink, ClientFeedback, ClientOutput, CommandApplication,
+    CommandEnvelope, CommandNoticeReply, CommandOrigin, CommandOutcome, CommandReply,
+    CommandResult, CommandTracker, DISCRIMINATOR_NON_DROPPABLE, DataProvider, DmxOutput,
+    EncodedClientMessage, EngineClientMessage, EngineOperationEnvelope, EventHandling,
+    FinishedCommand, Render, RenderPass, ReplyTarget, ToastLevel, UiNotification,
+    UiNotificationState, add_apply_commands,
 };
 use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 use nightfall_fixture_model::prelude::*;
@@ -1734,31 +1735,28 @@ fn showfile_handling_runs_after_event_handling() {
     app.insert_state(CommandProcessingState::Running);
     app.insert_state(RuntimeOutputState::Running);
     app.insert_resource(HandlingOrderLog::default());
+    add_apply_commands(&mut app);
     app.configure_sets(
         Update,
-        (
-            EventHandling.run_if(bevy_state::condition::in_state(
+        ShowfileHandling
+            .run_if(bevy_state::condition::in_state(
                 super::CommandProcessingState::Running,
-            )),
-            ShowfileHandling
-                .run_if(bevy_state::condition::in_state(
-                    super::CommandProcessingState::Running,
-                ))
-                .after(EventHandling),
-        ),
+            ))
+            .after(CommandApplication),
+    );
+    app.add_systems(
+        ApplyCommands,
+        (|mut log: bevy::prelude::ResMut<HandlingOrderLog>| {
+            log.0.push("event");
+        })
+        .in_set(EventHandling),
     );
     app.add_systems(
         Update,
-        (
-            (|mut log: bevy::prelude::ResMut<HandlingOrderLog>| {
-                log.0.push("event");
-            })
-            .in_set(EventHandling),
-            (|mut log: bevy::prelude::ResMut<HandlingOrderLog>| {
-                log.0.push("showfile");
-            })
-            .in_set(ShowfileHandling),
-        ),
+        (|mut log: bevy::prelude::ResMut<HandlingOrderLog>| {
+            log.0.push("showfile");
+        })
+        .in_set(ShowfileHandling),
     );
 
     app.update();
@@ -2670,5 +2668,6 @@ mod macros;
 #[cfg(all(feature = "artnet", feature = "sacn"))]
 mod packet_timing;
 mod park;
+mod schedule_split;
 mod timeline_undo;
 mod undo_groups;

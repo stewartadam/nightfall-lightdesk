@@ -1221,7 +1221,7 @@ impl Plugin for BackupPlugin {
         allow_command_while_read_only(app, BackupCommand::COMMAND_MODULE, "LeavePair");
         app.add_systems(Startup, restore_backup_role);
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 handle_backup_commands,
                 finish_pending_follow,

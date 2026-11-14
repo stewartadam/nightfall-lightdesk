@@ -16,8 +16,8 @@ use nightfall::prelude::{ObjectRef, ObjectType, Priority};
 use nightfall_compositor::types::{Layer, ObjectRefMarker, ParameterMap, ParameterRef};
 use nightfall_dmx::prelude::ParameterValue;
 use nightfall_engine::prelude::{
-    CommandEnvelope, CommandError, CommandResponder, EngineOperationEnvelope, EventHandling,
-    LayerGeneration, Render,
+    ApplyCommands, CommandEnvelope, CommandError, CommandResponder, EngineOperationEnvelope,
+    EventHandling, LayerGeneration, Render,
 };
 use nightfall_instances::{PlaybackOperation, PlaybackScope};
 
@@ -43,9 +43,13 @@ impl Plugin for FixtureCompositorPlugin {
         tracing::debug!("Registering FixtureCompositorPlugin");
         app.add_plugins(nightfall_compositor::CompositorPlugin::<Parameter>::default());
         app.add_systems(Startup, spawn_assertion_layers);
-        // Runs after every event handler, so playback releases written in this update apply to
-        // the manual layer before the next render.
-        app.add_systems(Update, update_manual_assertion_layer.after(EventHandling));
+        // Runs after every event handler, so playback releases written in this run apply to the
+        // manual layer before the next render. It finishes DMX release and restore operations,
+        // so it runs with the handlers, and undo steps that replay them settle between reruns.
+        app.add_systems(
+            ApplyCommands,
+            update_manual_assertion_layer.after(EventHandling),
+        );
         app.add_systems(
             Render,
             clear_unbound_transport_input_assertions.in_set(LayerGeneration),

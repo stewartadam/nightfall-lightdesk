@@ -8,8 +8,10 @@
 
 //! End-to-end undo and redo of one undo step that changes the same group several times.
 
+use std::time::Duration;
+
 use nightfall::prelude::Group;
-use nightfall_engine::prelude::{CommandOutcome, DataProvider};
+use nightfall_engine::prelude::{CommandOutcome, CommandRerun, DataProvider};
 use nightfall_undo::prelude::{UndoCommand, UndoManager};
 
 use super::desk_harness::DeskHarness;
@@ -104,4 +106,32 @@ async fn create_then_renames_in_one_step_redo_in_order() {
     let after_redo = harness.group_ids();
     assert!(after_redo.contains(&907));
     assert!(!after_redo.contains(&905) && !after_redo.contains(&906));
+}
+
+/// Undo and redo of a multi-entry step settle within the frame they are submitted in, so the
+/// render pass and client feeds never see a half-replayed group.
+#[tokio::test]
+async fn multi_entry_step_undoes_and_redoes_within_one_frame() {
+    let mut harness = DeskHarness::with_macros(&[(
+        1,
+        "fix 601\nstore group 905\nmv group 905 906\nmv group 906 907",
+        "",
+    )]);
+    harness
+        .app
+        .world_mut()
+        .resource_mut::<CommandRerun>()
+        .set_budget(Duration::from_secs(5));
+    let before = harness.group_ids();
+    harness.run_macro(1);
+
+    let undo = harness.submit(UndoCommand::Undo {});
+    harness.step();
+    assert_eq!(harness.result(undo), Some(CommandOutcome::succeeded()));
+    assert_eq!(harness.group_ids(), before);
+
+    let redo = harness.submit(UndoCommand::Redo {});
+    harness.step();
+    assert_eq!(harness.result(redo), Some(CommandOutcome::succeeded()));
+    assert!(harness.group_ids().contains(&907));
 }

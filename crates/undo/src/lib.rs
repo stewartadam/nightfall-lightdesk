@@ -66,7 +66,7 @@ impl Plugin for UndoPlugin {
 
         // Process pending commands (must run before EventHandling to capture inverses)
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 dispatcher::process_pending_commands,
                 dispatcher::process_pending_actions,
@@ -76,7 +76,10 @@ impl Plugin for UndoPlugin {
         );
 
         // Register handler systems
-        app.add_systems(Update, systems::handle_undo_commands.in_set(EventHandling));
+        app.add_systems(
+            ApplyCommands,
+            systems::handle_undo_commands.in_set(EventHandling),
+        );
         app.add_resource_feed::<UndoManager>();
         app.add_systems(
             Last,

@@ -71,7 +71,7 @@ impl Plugin for RigImportPlugin {
         }
         register_client_command::<RigImportCommand>(app, Undo::Captured);
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 commands::release_deferred_group_stores,
                 commands::expand_rig_import_commits,
@@ -79,7 +79,7 @@ impl Plugin for RigImportPlugin {
                 .in_set(PendingCommandExpansion),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             commands::handle_rig_import_commands.in_set(EventHandling),
         );
     }

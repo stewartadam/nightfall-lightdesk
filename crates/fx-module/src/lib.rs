@@ -313,7 +313,7 @@ impl Plugin for FxModulePlugin {
             .register::<FxModuleCommand>();
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 events::forward_generic_fx_management_commands
                     .before(nightfall_fx::events::crud_events),
@@ -343,7 +343,7 @@ impl Plugin for FxModulePlugin {
             instances::evaluate_preview_fx_module.in_set(LayerGeneration),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             instances::cleanup_released_fx_module_layers.in_set(EventHandling),
         );
     }

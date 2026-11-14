@@ -88,7 +88,7 @@ mod tests {
         app.init_resource::<Results>();
         register_ingress_command::<OscCommand>(&mut app);
         register_binding_undo::<OscMappings, OscCommand>(&mut app);
-        app.add_systems(Update, crate::handle_osc_crud.in_set(EventHandling));
+        app.add_systems(ApplyCommands, crate::handle_osc_crud.in_set(EventHandling));
         app.add_systems(Last, collect_results);
         app
     }
