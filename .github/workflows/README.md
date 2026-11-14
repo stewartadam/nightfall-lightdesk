@@ -171,9 +171,10 @@ or 👎 when it finishes.
 | --- | --- |
 | `/recheck-cla` | Asks cla-assistant.io to revalidate the PR, then waits up to two minutes for the `license/cla` status. Use it when the check is stuck on "Waiting for status to be reported". Works on fork PRs. |
 | `/republish` | On a draft PR, reruns the preview job of an earlier preview-only run for the same commit (from opening the draft or an earlier `/republish`), or else starts a manual CI run that builds and deploys only the preview from the PR branch. On a ready PR, reruns the **Browser preview** job of the PR's latest CI run. If that run's demo artifact expired, it reruns the whole run; if a failed job skipped the preview, it reruns the failed jobs. When CI is still running or never selected a preview, it explains why in a comment instead. |
+| `/review` | Reruns the [Claude mergeability review](#claude-mergeability-review) for the PR's current commit. `/review allow-scope` also waives the size and path check for that commit. Runs from `claude-review.yml`. |
 
-Both run from the default branch's copy of the workflow, never the PR's, and
-neither checks out PR code. The steps are gated by
+They run from the default branch's copy of their workflow, never the PR's, and
+none executes PR code. The steps are gated by
 [github/command](https://github.com/github/command), pinned to a commit.
 
 ## Claude mergeability review
@@ -206,7 +207,18 @@ for review, or gets new commits while ready, and is not part of a stack:
 Pushing to a cleared PR, reopening it or converting it to draft disables its auto-merge, removes
 the label and marks the comment as withdrawn before any new review starts. This keys off the label:
 removing the label by hand leaves auto-merge on, so disable auto-merge itself to stop a merge. To keep a PR out of the review entirely, add the
-`no-auto-merge` label before marking it ready. Drafts, stacked PRs and bot PRs are never reviewed.
+`no-auto-merge` label before marking it ready. Drafts, stacked PRs and bot PRs are never reviewed
+on their own.
+
+A maintainer can comment `/review` on a ready PR to review its current commit again, for example
+after the rubric changed or a review failed. The request shows on the PR as a **Claude review**
+check that links to the run and ends with the verdict, while the verdict comment updates as usual.
+`/review allow-scope` waives the size and path check for that commit: the "Auto-merge scope" check
+passes with a note naming who waived it, so a PR Claude clears gets auto-merge. The waiver lasts
+until the next push, whose automatic review applies the check again. Requested reviews work on bot
+PRs too, but never on drafts, fork PRs, stacked PRs, PRs into other branches or PRs labelled
+`no-auto-merge`; the workflow says why in a comment instead. A request on a cleared PR first
+withdraws its auto-merge, and a newer request or push cancels a running one.
 
 The workflow runs on `pull_request_target`, so the workflow, the rubric and the policy script
 always come from `develop`: a PR cannot loosen the rules it is judged by, and changes to them take
