@@ -149,6 +149,10 @@ fn actions_to_store<'a>(
             .iter()
             .map(|action| (track_id.as_str(), action))
             .collect(),
+        TimelineCommand::EditTimeline { timeline_id, edit } => {
+            let stored = timelines.from_id(*timeline_id).ok();
+            edit.actions_to_validate(stored.as_deref())
+        }
         _ => Vec::new(),
     }
 }
@@ -227,12 +231,12 @@ pub fn crud_events(
             | TimelineCommand::DeleteTimelineMarker { .. }
             | TimelineCommand::StoreTimelineRegion { .. }
             | TimelineCommand::DeleteTimelineRegion { .. }
-            | TimelineCommand::SetTimelineLoopRange { .. } => {
+            | TimelineCommand::SetTimelineLoopRange { .. }
+            | TimelineCommand::EditTimeline { .. } => {
                 editing::handle_command(&mut context, event);
             }
             TimelineCommand::SetTimelineRecording { .. }
             | TimelineCommand::InsertRecordedActions { .. }
-            | TimelineCommand::DeleteRecordedActions { .. }
             | TimelineCommand::NudgeTimelineSelection { .. } => {
                 recording_mutations::handle_command(&mut context, event);
             }

@@ -9,7 +9,7 @@
 use super::crud::{persist_timeline_mutation, timeline_by_id};
 use super::*;
 
-/// Handle timeline marker, region, and loop-range editing commands.
+/// Handle timeline marker, region, loop-range and granular timeline editing commands.
 pub(super) fn handle_command(
     context: &mut TimelineMutationContext<'_, '_>,
     event: &CommandEnvelope<TimelineCommand>,
@@ -17,6 +17,8 @@ pub(super) fn handle_command(
     let TimelineMutationContext {
         timelines,
         timeline_data_provider,
+        beatgrid_runtime,
+        broadcaster,
         responder,
         action_events,
         ..
@@ -261,6 +263,58 @@ pub(super) fn handle_command(
                         "timeline loop range",
                     ),
                     format!("Failed to persist loop range for timeline {timeline_id}"),
+                );
+            }
+
+            TimelineCommand::EditTimeline { timeline_id, edit } => {
+                let Some(mut timeline) =
+                    timeline_by_id(timeline_data_provider, *timeline_id, "edit timeline")
+                else {
+                    fail_timeline_command(
+                        responder,
+                        event.command_id,
+                        format!("Timeline {timeline_id} was not found"),
+                    );
+                    continue;
+                };
+                let previous_audio_path = timeline.audio_path.clone();
+                if let Err(error) = edit.apply(&mut timeline) {
+                    tracing::warn!(timeline_id, %error, "timeline_edit_rejected");
+                    fail_timeline_command(
+                        responder,
+                        event.command_id,
+                        format!("Timeline {timeline_id}: {error}"),
+                    );
+                    continue;
+                }
+
+                // A new audio file gets its beat grid detected, as when a whole timeline is
+                // stored with a changed audio path.
+                let detection_timeline = (timeline.audio_path != previous_audio_path
+                    && !timeline.audio_path.trim().is_empty())
+                .then(|| timeline.clone());
+
+                let persisted = persist_timeline_mutation(
+                    timeline,
+                    *timeline_id,
+                    timeline_data_provider,
+                    timelines,
+                    action_events.as_mut(),
+                    "timeline edit",
+                );
+                if persisted && let Some(detection_timeline) = detection_timeline {
+                    crate::beatgrid_detection::request_detection_for_timeline(
+                        beatgrid_runtime,
+                        broadcaster,
+                        &detection_timeline,
+                        crate::beatgrid_detection::BeatgridDetectionTrigger::Automatic,
+                    );
+                }
+                finish_persisted_timeline_command(
+                    responder,
+                    event.command_id,
+                    persisted,
+                    format!("Failed to persist edit for timeline {timeline_id}"),
                 );
             }
 

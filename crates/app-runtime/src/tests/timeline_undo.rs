@@ -6,12 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! End-to-end undo and redo of timeline beatgrid edits in a sample-data world.
+//! End-to-end undo and redo of timeline edits in a sample-data world.
 
 use std::time::Duration;
 
 use nightfall_engine::prelude::DataProvider;
-use nightfall_timeline::prelude::{Timeline, TimelineCommand, TimelineMarker};
+use nightfall_timeline::prelude::{
+    Timeline, TimelineCommand, TimelineEdit, TimelineMarker, TrackSetting,
+};
 use nightfall_undo::prelude::UndoCommand;
 use uuid::Uuid;
 
@@ -106,4 +108,78 @@ async fn beatgrid_shifts_undo_as_one_step_after_earlier_edits() {
     harness.succeed(UndoCommand::Undo {});
     assert_eq!(harness.marker_uids(), original_markers);
     assert_eq!(harness.beatgrid_start(), original_beatgrid_start);
+}
+
+/// Undoing a granular track edit restores only that track's setting: a marker added after the
+/// edit stays, and redo applies the edit again without dropping the marker.
+#[tokio::test]
+async fn track_edit_undo_keeps_later_marker() {
+    let mut harness = DeskHarness::new();
+    let track_id = harness
+        .timeline()
+        .tracks
+        .first()
+        .expect("sample timeline should have a track")
+        .id
+        .clone();
+    let was_muted = harness.timeline().tracks[0].muted;
+
+    harness.succeed(TimelineCommand::EditTimeline {
+        timeline_id: TIMELINE_ID,
+        edit: TimelineEdit::UpdateTrack {
+            track_id: track_id.clone(),
+            settings: vec![TrackSetting::Muted(!was_muted)],
+        },
+    });
+    let marker_uid = Uuid::new_v4();
+    harness.succeed(TimelineCommand::StoreTimelineMarker {
+        timeline_id: TIMELINE_ID,
+        marker: TimelineMarker {
+            uid: marker_uid,
+            label: "Drop".to_string(),
+            time: Duration::from_secs(4),
+            color: None,
+        },
+    });
+
+    // The marker is the newest undo step; undo it, then the mute, and redo both.
+    harness.succeed(UndoCommand::Undo {});
+    harness.succeed(UndoCommand::Undo {});
+    assert_eq!(harness.timeline().tracks[0].muted, was_muted);
+    harness.succeed(UndoCommand::Redo {});
+    assert_eq!(harness.timeline().tracks[0].muted, !was_muted);
+    harness.succeed(UndoCommand::Redo {});
+    assert!(harness.marker_uids().contains(&marker_uid));
+
+    // Solo the track after the marker exists; undoing the solo keeps the marker and the mute.
+    harness.succeed(TimelineCommand::EditTimeline {
+        timeline_id: TIMELINE_ID,
+        edit: TimelineEdit::UpdateTrack {
+            track_id,
+            settings: vec![TrackSetting::Solo(true)],
+        },
+    });
+    harness.succeed(UndoCommand::Undo {});
+    let timeline = harness.timeline();
+    assert!(!timeline.tracks[0].solo);
+    assert_eq!(timeline.tracks[0].muted, !was_muted);
+    assert!(harness.marker_uids().contains(&marker_uid));
+}
+
+/// An edit naming a track that doesn't exist fails and records no undo step.
+#[tokio::test]
+async fn edit_of_missing_track_fails_without_undo_step() {
+    let mut harness = DeskHarness::new();
+    let depth = harness.undo_ids().len();
+    let command_id = harness.submit(TimelineCommand::EditTimeline {
+        timeline_id: TIMELINE_ID,
+        edit: TimelineEdit::DeleteTrack {
+            track_id: "missing".to_string(),
+        },
+    });
+    assert!(matches!(
+        harness.wait(command_id),
+        nightfall_engine::prelude::CommandOutcome::Failed(_)
+    ));
+    assert_eq!(harness.undo_ids().len(), depth);
 }

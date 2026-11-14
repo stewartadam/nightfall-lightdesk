@@ -207,11 +207,18 @@ impl Undoable for TimelineCommand {
                     Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn Undoable>
                 })
             }
-            TimelineCommand::DeleteRecordedActions { timeline_id, .. } => {
-                timelines.from_id(*timeline_id).ok().map(|timeline_ref| {
-                    let timeline: Timeline = (*timeline_ref).clone();
-                    Box::new(TimelineCommand::StoreTimeline(timeline)) as Box<dyn Undoable>
-                })
+            TimelineCommand::EditTimeline { timeline_id, edit } => {
+                // Applying the edit to a copy of the stored timeline yields exactly the edit
+                // that undoes it; an edit that would be rejected records no undo step.
+                if edit.is_view_only() {
+                    return None;
+                }
+                let mut timeline: Timeline = (*timelines.from_id(*timeline_id).ok()?).clone();
+                let inverse = edit.apply(&mut timeline).ok()?;
+                Some(Box::new(TimelineCommand::EditTimeline {
+                    timeline_id: *timeline_id,
+                    edit: inverse,
+                }))
             }
             TimelineCommand::NudgeTimelineSelection { timeline_id, .. }
             | TimelineCommand::ApplyBeatgridProposal { timeline_id, .. }
@@ -330,16 +337,8 @@ impl Undoable for TimelineCommand {
                     timeline_id
                 )
             }
-            TimelineCommand::DeleteRecordedActions {
-                timeline_id,
-                action_ids,
-                ..
-            } => {
-                format!(
-                    "Delete {} Recorded Timeline Action(s) on Timeline {}",
-                    action_ids.len(),
-                    timeline_id
-                )
+            TimelineCommand::EditTimeline { timeline_id, edit } => {
+                format!("{} on Timeline {}", edit.description(), timeline_id)
             }
             TimelineCommand::NudgeTimelineSelection {
                 timeline_id,
