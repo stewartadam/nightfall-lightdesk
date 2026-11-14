@@ -155,7 +155,7 @@ if (
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(
       process.env.GITHUB_OUTPUT,
-      `eligible=${assessment.eligible}\nassessment=${JSON.stringify(assessment)}\n`,
+      `assessment=${JSON.stringify(assessment)}\n`,
     );
   }
 }

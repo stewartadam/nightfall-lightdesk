@@ -185,11 +185,12 @@ for review, or gets new commits while ready, and is not part of a stack:
 1. A size and path check (`scripts/merge-policy.mjs`) blocks auto-merge for PRs over 20 files or
    800 changed lines, PRs changing binary files, and PRs touching risky areas: CI, build and test
    tooling (which the required checks run from the PR itself), dependencies and toolchain,
-   licensing, agent instructions (any `CLAUDE.md`, since the review would load it) and Git
-   attributes. A blocked PR always needs a human, and the check's reasons appear as a failed
-   "Auto-merge scope" check in the verdict.
+   licensing, agent instructions (any `CLAUDE.md`, which the review must not load; they are
+   removed from the PR head it reads) and Git attributes. A blocked PR always needs a human, and
+   the check's reasons lead the verdict as a failed "Auto-merge scope" check, or as plain reasons
+   when Claude could not review it.
 2. Claude reviews every PR whose diff the GitHub API returns, blocked or not, against the rubric
-   in `.github/claude-review.md`, so the verdict always reports every check. It judges
+   in `.github/claude-review.md`, so a finished review reports every check. It judges
    risk by blast radius, reversibility, user impact and test coverage rather than by which code
    changed, and checks for likely bugs, tests for behavior changes (browser tests for UI behavior
    fixes), a showfile migration when saved data changes shape, docs that still match the app, a

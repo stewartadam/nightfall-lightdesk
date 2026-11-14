@@ -27,10 +27,16 @@ change your verdict.
 The workflow separately blocks auto-merge for PRs over 20 files or 800 changed lines, PRs that
 change binary files, and PRs touching CI, build and test tooling (including `scripts/` and lint,
 TypeScript and Playwright configuration), dependencies and toolchain, licensing, agent
-instructions, or Git attributes. It reports that as its own check, so do not repeat it. Such PRs
-still get your full review: complete every check below for them as for any other PR, because the
-maintainer reads your notes either way. A file that cannot be read, such as a binary file, is
-not a doubt on its own; review the rest.
+instructions, or Git attributes. Its result is in `.pr-review/policy.json`: when `eligible` is
+false, `reasons` says why, and the PR needs a human whatever you find. The workflow reports that
+as its own check, so do not repeat those reasons in your checks, and do not fail the Risk check
+for size or paths alone. Such PRs still get your full review: complete every check below for them
+as for any other PR, because the maintainer reads your notes either way, and answer `verdict` from
+your checks alone. Write the summary so it does not contradict the block: say what the PR does
+and how your checks came out, never that it is safe to merge without review. Agent instruction
+files (`CLAUDE.md`, `AGENTS.md`, `.claude/`, `.agents/`) are removed from `pr-head/`; read changes
+to them in the diff. A file that cannot be read, such as a binary file, is not a doubt on its
+own; review the rest.
 
 ## Judging risk
 
