@@ -90,6 +90,14 @@ pub struct UndoManager {
     redo_stack: Vec<RedoGroup>,
     pending_groups: HashMap<UndoId, PendingUndoGroup>,
     next_insertion_order: u64,
+    /// Count of history clears, so work that spans frames can tell the history it started
+    /// from was replaced.
+    generation: u64,
+    /// Whether an undo or redo has taken a group off its stack and is still replaying it.
+    replay_in_flight: bool,
+    /// Groups finished while a replay was in flight, committed once it settles so they land
+    /// after the group it produces.
+    deferred_commits: Vec<(UndoId, PendingUndoGroup)>,
     config: UndoConfig,
 }
 
@@ -112,6 +120,9 @@ impl UndoManager {
             redo_stack: Vec::new(),
             pending_groups: HashMap::new(),
             next_insertion_order: 0,
+            generation: 0,
+            replay_in_flight: false,
+            deferred_commits: Vec::new(),
             config,
         }
     }
@@ -163,6 +174,10 @@ impl UndoManager {
     /// Commits a completed undo group to history using GURQ semantics.
     fn commit_group(&mut self, undo_id: UndoId, group: PendingUndoGroup) {
         if group.entries.is_empty() {
+            return;
+        }
+        if self.replay_in_flight {
+            self.deferred_commits.push((undo_id, group));
             return;
         }
 
@@ -304,6 +319,35 @@ impl UndoManager {
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.pending_groups.clear();
+        self.deferred_commits.clear();
+        self.replay_in_flight = false;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Holds back new history groups while an undo or redo replays a group over several
+    /// frames.
+    ///
+    /// An edit that finishes meanwhile is committed by [`Self::end_replay`], after the replay
+    /// has pushed the group it produced, so the usual rule applies in order: a new edit after
+    /// an undo moves the redo stack back into history.
+    pub fn begin_replay(&mut self) {
+        self.replay_in_flight = true;
+    }
+
+    /// Ends the replay started by [`Self::begin_replay`] and commits the groups that finished
+    /// while it ran, oldest first.
+    pub fn end_replay(&mut self) {
+        self.replay_in_flight = false;
+        for (undo_id, group) in std::mem::take(&mut self.deferred_commits) {
+            self.commit_group(undo_id, group);
+        }
+    }
+
+    /// Returns a value that changes every time the history is cleared, such as on a show
+    /// load, so an undo or redo still replaying can stop instead of writing its groups into
+    /// the new history.
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// Get the current undo stack depth.
