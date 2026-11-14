@@ -42,7 +42,10 @@ regenerate_workspace_hack() {
 # moves every locked crate (including transitive ones that no manifest names)
 # to the newest release those requirements allow. Without the second step the
 # lockfile keeps stale transitive versions, which hakari then copies into the
-# workspace-hack as exact pins.
+# workspace-hack as exact pins. `cargo upgrade` ignores the publish-age
+# cooldown in .cargo/config.toml, so `cargo update` stops when it raised a
+# requirement to a release that is still too new; Cargo's error names the
+# newest allowed version to lower that requirement to.
 update_dependencies() {
   local module="$1"
   echo "*** Updating dependencies for $module"
