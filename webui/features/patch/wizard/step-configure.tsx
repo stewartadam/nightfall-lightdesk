@@ -18,6 +18,7 @@ import {
 } from "solid-js";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
+import { NumberField } from "../../../components/widgets/number-field";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import {
   computeFixtureChannelCount,
@@ -40,6 +41,10 @@ import {
   formatConsolePatchSpan,
   layoutConsolePatch,
 } from "../model/console-patch-allocation";
+import {
+  MAX_PATCH_QUANTITY,
+  validConsolePatchStart,
+} from "../model/patch-wizard-fields";
 import { usePatchWizard } from "./wizard-context";
 
 /**
@@ -67,7 +72,8 @@ export function StepConfigure() {
     patchProblem,
     nextFixtureId,
     baseFixtureId,
-    firstFixtureIdValid,
+    fieldValidity,
+    fixtureQuantity,
     fixtureIdConflict,
   } = usePatchWizard();
   const $fixtures = useSharedStore(fixtures);
@@ -112,16 +118,13 @@ export function StepConfigure() {
    * the routes the wizard creates; empty until the address and fixture size are known.
    */
   const placements = createMemo(() => {
-    const { universeId, startAddress, quantity } = state();
+    const start = validConsolePatchStart(state());
+    const quantity = fixtureQuantity();
     const footprint = channelCount();
-    if (universeId === null || startAddress === null || footprint === null) {
+    if (start === null || quantity === null || footprint === null) {
       return [];
     }
-    return layoutConsolePatch(
-      { universe: universeId, address: startAddress },
-      Math.max(footprint, 1),
-      quantity,
-    );
+    return layoutConsolePatch(start, Math.max(footprint, 1), quantity);
   });
 
   /**
@@ -132,7 +135,7 @@ export function StepConfigure() {
     const start = findFirstFreeConsolePatch(
       occupiedConsoleAddresses(),
       Math.max(channelCount() ?? 1, 1),
-      state().quantity,
+      fixtureQuantity() ?? 1,
       1,
     ) ?? { universe: 1, address: 1 };
     updateState({ universeId: start.universe, startAddress: start.address });
@@ -162,16 +165,24 @@ export function StepConfigure() {
 
   const totalChannelsNeeded = createMemo(() => {
     const count = channelCount();
-    const quantity = state().quantity;
-    return count !== null ? count * quantity : null;
+    const quantity = fixtureQuantity();
+    return count !== null && quantity !== null ? count * quantity : null;
   });
 
-  const addressValid = createMemo(() => {
-    if (!state().assignConsoleDmx) return true;
-    const address = state().startAddress;
-    if (address === null) return true;
-    return address >= 1 && address <= CONSOLE_UNIVERSE_SIZE;
-  });
+  /**
+   * Whether a patch field should show its error: when it holds an invalid entry, or is blank
+   * once the fixture size is known (before that, the step is still filling in a free start).
+   */
+  const patchFieldInvalid = (value: number | null, valid: boolean) =>
+    !valid && (value !== null || channelCount() !== null);
+
+  /** Whether the universe field should show its error. */
+  const universeInvalid = () =>
+    patchFieldInvalid(state().universeId, fieldValidity().universe);
+
+  /** Whether the start address field should show its error. */
+  const addressInvalid = () =>
+    patchFieldInvalid(state().startAddress, fieldValidity().startAddress);
 
   /** Publishes the first overrun or conflicting channel of the configured patch to the wizard. */
   createEffect(() => {
@@ -188,43 +199,6 @@ export function StepConfigure() {
       ),
     );
   });
-
-  /** Applies a typed console universe, keeping the start address. */
-  const handleUniverseChange = (value: string) => {
-    const universeId = Number.parseInt(value, 10);
-    if (!Number.isNaN(universeId) && universeId >= 1) {
-      updateState({ universeId });
-    }
-  };
-
-  /** Applies a typed start address within the console universe. */
-  const handleAddressChange = (value: string) => {
-    const address = Number.parseInt(value, 10);
-    if (
-      !Number.isNaN(address) &&
-      address >= 1 &&
-      address <= CONSOLE_UNIVERSE_SIZE
-    ) {
-      updateState({ startAddress: address });
-    }
-  };
-
-  const handleQuantityChange = (value: string) => {
-    const quantity = Number.parseInt(value, 10);
-    if (!Number.isNaN(quantity) && quantity >= 1) {
-      updateState({ quantity });
-    }
-  };
-
-  /**
-   * Stores the typed first fixture ID as entered, so the wizard can flag one that isn't a whole
-   * number from 1, or returns to the suggested ID when the field is cleared.
-   */
-  const handleFirstFixtureIdChange = (value: string) => {
-    updateState({
-      firstFixtureId: value.trim() === "" ? null : Number(value),
-    });
-  };
 
   const handleLabelChange = (value: string) => {
     updateState({ label: value });
@@ -264,17 +238,21 @@ export function StepConfigure() {
         >
           Quantity
         </label>
-        <Input
+        <NumberField
           density="compact"
-          type="number"
           min="1"
+          max={MAX_PATCH_QUANTITY}
           id={`${formId}-quantity`}
           value={state().quantity}
-          onInput={(e) =>
-            handleQuantityChange((e.target as HTMLInputElement).value)
-          }
+          onValueChange={(quantity) => updateState({ quantity })}
+          aria-invalid={!fieldValidity().quantity}
           class="w-20"
         />
+        <Show when={!fieldValidity().quantity}>
+          <p class="mt-1 text-sm text-red-400">
+            Quantity must be a whole number from 1 to {MAX_PATCH_QUANTITY}.
+          </p>
+        </Show>
       </div>
 
       <div>
@@ -284,23 +262,20 @@ export function StepConfigure() {
         >
           First fixture ID
         </label>
-        <Input
+        <NumberField
           density="compact"
-          type="number"
           min="1"
           id={`${formId}-first-id`}
           placeholder={String(nextFixtureId())}
-          value={state().firstFixtureId ?? ""}
-          onInput={(e) =>
-            handleFirstFixtureIdChange((e.target as HTMLInputElement).value)
-          }
+          value={state().firstFixtureId}
+          onValueChange={(firstFixtureId) => updateState({ firstFixtureId })}
           aria-invalid={
-            !firstFixtureIdValid() || fixtureIdConflict() !== undefined
+            !fieldValidity().firstFixtureId || fixtureIdConflict() !== undefined
           }
           class="w-24"
         />
         <Show
-          when={firstFixtureIdValid()}
+          when={fieldValidity().firstFixtureId}
           fallback={
             <p class="mt-1 text-sm text-red-400">
               Fixture IDs are whole numbers from 1.
@@ -309,11 +284,11 @@ export function StepConfigure() {
         >
           <p class="mt-1 text-sm text-gray-500">
             <Show
-              when={state().quantity > 1}
+              when={(fixtureQuantity() ?? 1) > 1}
               fallback={`The new fixture gets ID ${baseFixtureId()}.`}
             >
               New fixtures get IDs {baseFixtureId()}–
-              {baseFixtureId() + state().quantity - 1}.
+              {baseFixtureId() + (fixtureQuantity() ?? 1) - 1}.
             </Show>{" "}
             You type fixture IDs to select lights; they are separate from DMX
             addresses.
@@ -322,8 +297,8 @@ export function StepConfigure() {
             {(id) => (
               <p class="mt-1 text-sm text-red-400">
                 Fixture {id()} already exists. Choose a first fixture ID that
-                leaves room for {state().quantity} new fixture
-                {state().quantity !== 1 ? "s" : ""}.
+                leaves room for {fixtureQuantity()} new fixture
+                {fixtureQuantity() !== 1 ? "s" : ""}.
               </p>
             )}
           </Show>
@@ -354,31 +329,26 @@ export function StepConfigure() {
             Patch
           </label>
           <div class="flex items-center gap-2">
-            <Input
+            <NumberField
               density="compact"
-              type="number"
               min="1"
-              value={state().universeId ?? ""}
-              onInput={(e) =>
-                handleUniverseChange((e.target as HTMLInputElement).value)
-              }
+              value={state().universeId}
+              onValueChange={(universeId) => updateState({ universeId })}
               aria-label="Universe"
               placeholder="Univ"
+              aria-invalid={universeInvalid()}
               class="w-20"
             />
             <span class="text-gray-400">.</span>
-            <Input
+            <NumberField
               density="compact"
-              type="number"
               min="1"
               max={CONSOLE_UNIVERSE_SIZE}
               aria-label="Start address"
-              value={state().startAddress ?? ""}
-              onInput={(e) =>
-                handleAddressChange((e.target as HTMLInputElement).value)
-              }
+              value={state().startAddress}
+              onValueChange={(startAddress) => updateState({ startAddress })}
               class="w-20"
-              aria-invalid={!addressValid() || patchProblem() !== null}
+              aria-invalid={addressInvalid() || patchProblem() !== null}
             />
             <Button
               size="compact"
@@ -392,15 +362,21 @@ export function StepConfigure() {
 
           <Show when={totalChannelsNeeded() !== null}>
             <p class="mt-1 text-sm text-gray-500">
-              {state().quantity} fixture{state().quantity !== 1 ? "s" : ""} x{" "}
+              {fixtureQuantity()} fixture{fixtureQuantity() !== 1 ? "s" : ""} x{" "}
               {channelCount()} ch = {totalChannelsNeeded()} channels (
               {formatConsolePatchSpan(placements(), channelCount() ?? 0)})
             </p>
           </Show>
 
-          <Show when={!addressValid()}>
+          <Show when={universeInvalid()}>
             <p class="mt-1 text-sm text-red-400">
-              Start address must be between 1 and {CONSOLE_UNIVERSE_SIZE}
+              Universe must be a whole number from 1.
+            </p>
+          </Show>
+          <Show when={addressInvalid()}>
+            <p class="mt-1 text-sm text-red-400">
+              Start address must be a whole number from 1 to{" "}
+              {CONSOLE_UNIVERSE_SIZE}.
             </p>
           </Show>
           <Show when={patchProblem()}>

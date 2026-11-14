@@ -106,7 +106,6 @@ export function useGuideSnapshot(
     const {
       fixtureDefinitionId,
       fixtureMode,
-      quantity,
       assignConsoleDmx,
       universeId,
       startAddress,
@@ -118,7 +117,7 @@ export function useGuideSnapshot(
         .find((entry) => libraryDefinitionId(entry) === fixtureDefinitionId)
         ?.model,
       mode: fixtureMode ?? undefined,
-      quantity,
+      quantity: wizard.fixtureQuantity(),
       firstFixtureId: wizard.baseFixtureId(),
       universeId: assignConsoleDmx ? universeId : null,
       startAddress: assignConsoleDmx ? startAddress : null,

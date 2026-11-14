@@ -18,6 +18,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { getBackendUrl } from "../../../lib/api";
 import { getLogger } from "../../../lib/logger";
+import { disposeObjectResources } from "../../../lib/three-dispose";
 import { type AvailableObjectInfo, SceneObjectType } from "../../../types";
 
 const log = getLogger(import.meta.url);
@@ -41,21 +42,6 @@ type PreviewStatus = {
   message: string;
   tone: "info" | "warn";
 };
-
-function disposeObjectResources(object: THREE.Object3D) {
-  object.traverse((child) => {
-    if (child instanceof THREE.Mesh) {
-      child.geometry?.dispose();
-      if (Array.isArray(child.material)) {
-        for (const material of child.material) {
-          material.dispose();
-        }
-      } else {
-        child.material?.dispose();
-      }
-    }
-  });
-}
 
 function fitCameraToObject(
   object: THREE.Object3D,

@@ -24,6 +24,7 @@ import {
   fixtureLibrary,
   fixtureProfile,
   fixtures,
+  pushToast,
 } from "../../../state/appStores";
 import { revealPatchFixtures } from "../model/patch-view";
 import { executePatchWizardCommands } from "../services/patch-wizard-commands";
@@ -99,9 +100,10 @@ export function PatchWizard() {
     isFirstStep,
     baseFixtureId,
     fixtureIdConflict,
+    fixtureQuantity,
+    state,
+    updateState,
   } = usePatchWizard();
-
-  const { state } = usePatchWizard();
   const $fixtures = useSharedStore(fixtures);
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);
@@ -169,10 +171,12 @@ export function PatchWizard() {
     if (!profileFixture || !libraryFixtureInfo || isCreating()) return;
 
     setIsCreating(true);
-    // Captured before the await, since the suggested first ID moves once the new fixtures arrive.
+    // Pinned before the await: the suggested first ID moves once the new fixtures arrive, and the
+    // review step stays on screen while the DMX routes are confirmed.
     const firstId = baseFixtureId();
+    updateState({ firstFixtureId: firstId });
     const newFixtureIds = Array.from(
-      { length: state().quantity },
+      { length: fixtureQuantity() ?? 0 },
       (_, index) => firstId + index,
     );
     const result = await executePatchWizardCommands({
@@ -195,8 +199,17 @@ export function PatchWizard() {
     setIsCreating(false);
     closeVersionConflictModal();
     closeWizard();
-    if (result.status === "success" && !isMorphMode())
-      revealPatchFixtures(newFixtureIds);
+    if (result.status !== "success" || isMorphMode()) return;
+    revealPatchFixtures(newFixtureIds);
+    const unpatched = result.unpatchedFixtureIds;
+    if (unpatched.length > 0) {
+      pushToast(
+        "warning",
+        `${unpatched.length === 1 ? "Fixture" : "Fixtures"} ${unpatched.join(", ")} ${
+          unpatched.length === 1 ? "was" : "were"
+        } created without a DMX address.`,
+      );
+    }
   };
   const handleFinish = () => {
     void finishWithOptions(false);

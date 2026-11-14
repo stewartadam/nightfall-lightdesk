@@ -45,6 +45,30 @@ export function commandOutputValue(
   return result.outcome.data.output?.value;
 }
 
+/** A command sent without waiting, labelled with the caller's key for what it acted on. */
+export interface PendingCommand<TKey> {
+  key: TKey;
+  result: Promise<types.CommandResult>;
+}
+
+/**
+ * Waits for every pending command and returns the keys of those that failed, whether the
+ * backend rejected them or they could not be sent, in the order they were given.
+ */
+export async function failedCommandKeys<TKey>(
+  commands: readonly PendingCommand<TKey>[],
+): Promise<TKey[]> {
+  const settled = await Promise.allSettled(
+    commands.map(({ result }) => result),
+  );
+  return commands
+    .filter((_, index) => {
+      const outcome = settled[index];
+      return outcome.status === "rejected" || !commandSucceeded(outcome.value);
+    })
+    .map(({ key }) => key);
+}
+
 /** Throws the command's structured failure when the result was not successful. */
 export function requireCommandSuccess(result: types.CommandResult): void {
   const failure = commandFailure(result);
