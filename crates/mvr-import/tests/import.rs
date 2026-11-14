@@ -14,6 +14,7 @@ use std::path::Path;
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use nightfall::prelude::Group;
 use nightfall_engine::prelude::*;
 use nightfall_fixture_library::FixtureLibraryManager;
 use nightfall_fixture_library::testing::{ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec};
@@ -24,9 +25,10 @@ use nightfall_fixtures::websocket::SuppressFixtureChangedSnapshot;
 use nightfall_fixtures::{FixtureCommand, RouteEndpoint};
 use nightfall_io::prelude::*;
 use nightfall_mvr_import::commands::expand_rig_import_commits;
-use nightfall_mvr_import::plan::{ShowFixtures, plan_import};
+use nightfall_mvr_import::plan::{ShowFixture, ShowFixtures, ShowGroup, plan_import};
 use nightfall_mvr_import::prelude::*;
-use nightfall_mvr_import::rig::{RigTypeSource, read_rig};
+use nightfall_mvr_import::rig::{RigPatch, RigTypeSource, read_rig};
+use nightfall_programming::prelude::GroupCommand;
 use uuid::Uuid;
 use zip::write::SimpleFileOptions;
 
@@ -165,7 +167,7 @@ fn preview_numbers_and_flags_fixtures() {
     let rig = read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap();
     let show = ShowFixtures {
         ids: [101].into_iter().collect(),
-        uids: Default::default(),
+        ..Default::default()
     };
     let plan = plan_import(
         Uuid::new_v4(),
@@ -197,6 +199,117 @@ fn preview_numbers_and_flags_fixtures() {
     assert_eq!(preview.fixtures[1].label, "Floor left");
 }
 
+/// Builds the show as it is after importing the test rig, with the spot since moved and
+/// repatched by hand and a group already named "LX 1".
+fn show_after_import(rig: &nightfall_mvr_import::rig::RigFile) -> ShowFixtures {
+    let spot = rig
+        .fixtures
+        .iter()
+        .find(|fixture| fixture.uid == uuid(SPOT_UUID))
+        .unwrap();
+    let floor = rig
+        .fixtures
+        .iter()
+        .find(|fixture| fixture.uid == uuid(FLOOR_UUID))
+        .unwrap();
+    let mut moved = spot.placement.clone();
+    moved.position.y -= 0.5;
+    let show_fixture = |id: u32, fixture: &nightfall_mvr_import::rig::RigFixture| ShowFixture {
+        id,
+        label: String::new(),
+        make: "Test".into(),
+        model: "Spot".into(),
+        mode: "Standard".into(),
+        placement: fixture.placement.clone(),
+        patch: fixture.patch.clone(),
+        shared_patch: false,
+    };
+    let mut show = ShowFixtures::default();
+    show.ids.extend([101, 102]);
+    show.fixtures.insert(
+        spot.uid,
+        ShowFixture {
+            placement: moved,
+            patch: vec![RigPatch {
+                dmx_break: 1,
+                universe: 2,
+                address: 1,
+            }],
+            ..show_fixture(101, spot)
+        },
+    );
+    show.fixtures.insert(
+        floor.uid,
+        ShowFixture {
+            label: "Floor left".into(),
+            ..show_fixture(102, floor)
+        },
+    );
+    show.groups.push(ShowGroup {
+        id: 7,
+        uid: Uuid::new_v4(),
+        label: "LX 1".into(),
+        members: Some(Vec::new()),
+    });
+    show
+}
+
+/// Importing the same file again matches fixtures by UUID: a fixture moved and repatched
+/// since is updated back to the file, an untouched one is unchanged, and the group with the
+/// hanging position's name is refreshed in place.
+#[test]
+fn reimport_updates_changed_fixtures() {
+    let root = tempfile::tempdir().unwrap();
+    let library = empty_library(root.path());
+    let rig = read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap();
+    let show = show_after_import(&rig);
+    let plan = plan_import(
+        Uuid::new_v4(),
+        &rig,
+        &library,
+        &show,
+        &RigImportOptions::default(),
+    );
+    let preview = &plan.preview;
+    let statuses: Vec<_> = preview.fixtures.iter().map(|f| f.status).collect();
+    assert_eq!(
+        statuses,
+        [
+            FixtureImportStatus::Update,
+            FixtureImportStatus::Unchanged,
+            FixtureImportStatus::NeedsFixtureType
+        ]
+    );
+    assert_eq!(preview.fixtures[0].changes, ["moved", "repatched"]);
+    assert_eq!(preview.fixtures[0].fixture_id, Some(101));
+    assert_eq!((preview.new_fixtures, preview.updated_fixtures), (0, 1));
+    assert_eq!(plan.updates.len(), 1);
+    assert!(plan.updates[0].repatch);
+    assert_eq!(preview.group_source, RigGroupSource::HangingPositions);
+    assert_eq!(preview.groups.len(), 1);
+    assert_eq!(preview.groups[0].group_id, 7);
+    assert!(preview.groups[0].existing);
+
+    let options = RigImportOptions {
+        update_existing: false,
+        groups: RigGroupSource::Layers,
+        ..RigImportOptions::default()
+    };
+    let plan = plan_import(Uuid::new_v4(), &rig, &library, &show, &options);
+    assert_eq!(
+        plan.preview.fixtures[0].status,
+        FixtureImportStatus::AlreadyInShow
+    );
+    assert!(plan.updates.is_empty());
+    assert_eq!(plan.groups.len(), 1);
+    assert_eq!(plan.groups[0].name, "Rig");
+    assert_eq!(
+        plan.groups[0].id, 8,
+        "new groups go after the highest group ID"
+    );
+    assert_eq!(plan.groups[0].members.len(), 2);
+}
+
 /// Builds an app that expands rig import commits and runs fixture commands.
 fn import_app(library: FixtureLibraryManager, sessions: RigImportSessions) -> App {
     let mut app = App::new();
@@ -209,6 +322,7 @@ fn import_app(library: FixtureLibraryManager, sessions: RigImportSessions) -> Ap
     app.init_resource::<CommandTracker>();
     app.init_resource::<PendingCommandBuffer>();
     app.init_resource::<FixtureDataProviderExt>();
+    app.init_resource::<DataProvider<Group>>();
     app.init_resource::<InputRoutes>();
     app.init_resource::<OutputRoutes>();
     app.init_resource::<DisabledRoutes>();
@@ -225,8 +339,9 @@ fn import_app(library: FixtureLibraryManager, sessions: RigImportSessions) -> Ap
     app
 }
 
-/// A commit installs the file's GDTF into the show package, turns into one fixture
-/// command, and that command adds the fixtures with their UUIDs, placements and patch.
+/// A commit installs the file's GDTF into the show package and turns into one fixture
+/// command and one group store. The fixture command adds the fixtures with their UUIDs,
+/// placements and patch, and the group holds the fixture hung on LX 1.
 #[test]
 fn commit_adds_fixtures_with_patch_and_placement() {
     let root = tempfile::tempdir().unwrap();
@@ -266,7 +381,20 @@ fn commit_adds_fixtures_with_patch_and_placement() {
         .world_mut()
         .resource_mut::<PendingCommandBuffer>()
         .drain();
-    assert_eq!(queued.len(), 1);
+    assert_eq!(queued.len(), 2);
+    let group = queued
+        .pop()
+        .unwrap()
+        .payload
+        .as_any()
+        .downcast_ref::<GroupCommand>()
+        .cloned()
+        .expect("a group command");
+    let GroupCommand::StoreGroup(group) = group else {
+        panic!("expected a group store, got {group:?}");
+    };
+    assert_eq!(group.identifiers.label, "LX 1");
+    assert_eq!(group.identifiers.id, 1);
     let queued = queued.remove(0);
     assert_eq!(queued.command_id, envelope.command_id);
     assert_eq!(queued.undo_id, envelope.undo_id);
@@ -276,9 +404,15 @@ fn commit_adds_fixtures_with_patch_and_placement() {
         .downcast_ref::<FixtureCommand>()
         .expect("a fixture command")
         .clone();
-    let FixtureCommand::AddPatchedFixtures { fixtures, routes } = &command else {
-        panic!("expected AddPatchedFixtures, got {command:?}");
+    let FixtureCommand::PatchRig {
+        add: fixtures,
+        update,
+        routes,
+    } = &command
+    else {
+        panic!("expected PatchRig, got {command:?}");
     };
+    assert!(update.is_empty());
     assert_eq!(fixtures.len(), 2);
     assert_eq!(fixtures[0].identifiers.uid, uuid(SPOT_UUID));
     assert_eq!(fixtures[0].identifiers.id, 101);
@@ -379,8 +513,9 @@ fn plans_vectorworks_scene_objects() {
 }
 
 /// Submits a commit for `session`, runs its expansion, then dispatches the fixture command
-/// it turned into and runs that too. Returns the fixture command.
-fn commit_session(app: &mut App, session: Uuid) -> FixtureCommand {
+/// it turned into, if any, and runs that too. Returns the fixture command and the number of
+/// group stores.
+fn commit_session(app: &mut App, session: Uuid) -> (Option<FixtureCommand>, usize) {
     let envelope = CommandEnvelope::new(
         RigImportCommand::Commit {
             session,
@@ -405,30 +540,37 @@ fn commit_session(app: &mut App, session: Uuid) -> FixtureCommand {
         .world_mut()
         .resource_mut::<PendingCommandBuffer>()
         .drain();
-    assert_eq!(
-        queued.len(),
-        1,
-        "the commit expands into one fixture command"
-    );
-    let command = queued[0]
-        .payload
-        .as_any()
-        .downcast_ref::<FixtureCommand>()
-        .expect("a fixture command")
-        .clone();
-    let dispatched =
-        CommandEnvelope::new(command.clone(), CommandOrigin::Cli, ReplyTarget::Detached);
-    app.world_mut()
-        .resource_mut::<CommandTracker>()
-        .register(&dispatched)
-        .unwrap();
-    app.world_mut().write_message(dispatched);
-    app.update();
-    command
+    let mut command = None;
+    let mut groups = 0;
+    for envelope in &queued {
+        let payload = envelope.payload.as_any();
+        if let Some(fixture_command) = payload.downcast_ref::<FixtureCommand>() {
+            assert!(
+                command.is_none(),
+                "the commit expands into one fixture command"
+            );
+            command = Some(fixture_command.clone());
+        } else {
+            assert!(payload.is::<GroupCommand>(), "unexpected command");
+            groups += 1;
+        }
+    }
+    if let Some(command) = &command {
+        let dispatched =
+            CommandEnvelope::new(command.clone(), CommandOrigin::Cli, ReplyTarget::Detached);
+        app.world_mut()
+            .resource_mut::<CommandTracker>()
+            .register(&dispatched)
+            .unwrap();
+        app.world_mut().write_message(dispatched);
+        app.update();
+    }
+    (command, groups)
 }
 
-/// The whole Capture demo show imports: its five GDTFs convert, and all 76 fixtures are
-/// stored with every break patched without route conflicts.
+/// The whole Capture demo show imports: its five GDTFs convert, all 76 fixtures are stored
+/// with every break patched without route conflicts, and a group is made per layer.
+/// Importing it again finds every fixture unchanged and only refreshes the groups.
 #[test]
 #[ignore = "requires NIGHTFALL_MVR_SAMPLES_DIR"]
 fn imports_capture_demo_show() {
@@ -439,7 +581,9 @@ fn imports_capture_demo_show() {
     let session = sessions.insert(rig);
     let mut app = import_app(empty_library(root.path()), sessions);
 
-    commit_session(&mut app, session);
+    let (command, groups) = commit_session(&mut app, session);
+    assert!(command.is_some());
+    assert!(groups > 0, "the layers become groups");
 
     assert_eq!(
         app.world()
@@ -450,4 +594,11 @@ fn imports_capture_demo_show() {
         76
     );
     assert_eq!(app.world().resource::<OutputRoutes>().routes.len(), routes);
+
+    let (command, regrouped) = commit_session(&mut app, session);
+    assert!(
+        command.is_none(),
+        "nothing changed, so no fixture is touched"
+    );
+    assert_eq!(regrouped, groups);
 }

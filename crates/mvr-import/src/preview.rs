@@ -51,19 +51,54 @@ pub struct FixtureTypeMapping {
     pub mode: String,
 }
 
+/// What the import groups fixtures by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum RigGroupSource {
+    /// Hanging positions when the file has any, otherwise layers.
+    #[default]
+    Auto,
+    /// Make no groups.
+    None,
+    /// One group per hanging position ("LX 1", "FOH truss").
+    HangingPositions,
+    /// One group per layer.
+    Layers,
+    /// One group per class.
+    Classes,
+}
+
 /// Choices that shape an import.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 #[typeshare::typeshare]
 pub struct RigImportOptions {
     /// How fixture IDs are chosen.
     pub numbering: FixtureNumbering,
+    /// Move, repatch and rename fixtures already in the show to match the file. When off,
+    /// they are left as they are.
+    pub update_existing: bool,
+    /// What the import makes groups from.
+    pub groups: RigGroupSource,
     /// Also copy fixture types from the file into the user's fixture library, not only
     /// into the show.
     pub add_to_user_library: bool,
     /// Library fixtures standing in for types the file leaves out or that should be
     /// replaced.
     pub type_mappings: Vec<FixtureTypeMapping>,
+}
+
+impl Default for RigImportOptions {
+    /// Keeps file IDs, updates fixtures already in the show and groups automatically.
+    fn default() -> Self {
+        Self {
+            numbering: FixtureNumbering::default(),
+            update_existing: true,
+            groups: RigGroupSource::default(),
+            add_to_user_library: false,
+            type_mappings: Vec::new(),
+        }
+    }
 }
 
 /// Where the definition of a fixture type comes from.
@@ -112,7 +147,12 @@ pub struct FixtureTypePreview {
 pub enum FixtureImportStatus {
     /// The fixture is added to the show.
     New,
-    /// A fixture with this UUID is already in the show, so it is left alone.
+    /// A fixture with this UUID is in the show and is changed to match the file.
+    Update,
+    /// A fixture with this UUID is in the show and already matches the file.
+    Unchanged,
+    /// A fixture with this UUID is in the show and differs from the file, but updates are
+    /// turned off, so it is left alone.
     AlreadyInShow,
     /// An earlier fixture in the file has the same UUID, so this one is skipped.
     RepeatedInFile,
@@ -152,7 +192,8 @@ pub struct FixturePreview {
     pub mode: Option<String>,
     /// Fixture ID written in the file.
     pub file_id: Option<u32>,
-    /// Nightfall fixture ID it gets, for fixtures that are imported.
+    /// Nightfall fixture ID: the one it gets for new fixtures, or the one it has for
+    /// fixtures already in the show.
     pub fixture_id: Option<u32>,
     /// Nightfall label; empty when the name only repeats the fixture type.
     pub label: String,
@@ -164,10 +205,29 @@ pub struct FixturePreview {
     pub layer: String,
     /// Hanging position in the file, if any.
     pub hanging_position: Option<String>,
+    /// Class in the file, if any.
+    pub class: Option<String>,
     /// What the import does with it.
     pub status: FixtureImportStatus,
+    /// How a fixture already in the show differs from the file ("moved", "repatched").
+    pub changes: Vec<String>,
     /// Details the import leaves out or adjusts.
     pub warnings: Vec<String>,
+}
+
+/// A group the import makes or refreshes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[typeshare::typeshare]
+pub struct GroupPreview {
+    /// Group name: the hanging position, layer or class.
+    pub name: String,
+    /// Nightfall group ID.
+    pub group_id: u32,
+    /// Whether a group with this name is already in the show; its members are replaced.
+    pub existing: bool,
+    /// Number of fixtures in the group.
+    pub fixture_count: u32,
 }
 
 /// Everything an import would do, shown before it is applied.
@@ -189,6 +249,12 @@ pub struct RigImportPreview {
     pub fixtures: Vec<FixturePreview>,
     /// Number of fixtures the import adds.
     pub new_fixtures: u32,
+    /// Number of fixtures already in the show that the import changes.
+    pub updated_fixtures: u32,
+    /// What the groups are made from, with `Auto` resolved.
+    pub group_source: RigGroupSource,
+    /// Groups the import makes or refreshes.
+    pub groups: Vec<GroupPreview>,
     /// Problems with the file as a whole.
     pub warnings: Vec<String>,
 }

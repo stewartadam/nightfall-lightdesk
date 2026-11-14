@@ -17,7 +17,7 @@
 //!    options: which fixture types come from the library or the file, each fixture's ID,
 //!    label, patch and placement, and what cannot be imported. The show is not touched.
 //! 3. [`RigImportCommand::Commit`] applies the same plan as a single
-//!    `FixtureCommand::AddPatchedFixtures`, so one undo removes the whole import.
+//!    `FixtureCommand::PatchRig` plus group stores, so one undo reverts the whole import.
 
 pub mod commands;
 pub mod http;
