@@ -4,7 +4,7 @@ name: Claude mergeability review
 # auto-merge, which then merges only after the required checks pass. pull_request_target runs this
 # file, the rubric and the policy script from the default branch, so a PR cannot change the rules
 # it is judged by. PR code is only ever read as data: Claude gets read-only file tools and no shell.
-# Maintainers can also rerun the review by commenting `/review` on a PR, or `/review allow-scope`
+# Maintainers can also rerun the review by commenting `/review` on a PR, or `/review skip-policy`
 # to waive the size and path check for the commit it reviews.
 # See "Claude mergeability review" in .github/workflows/README.md.
 on:
@@ -42,7 +42,7 @@ jobs:
     outputs:
       number: ${{ steps.start.outputs.number }}
       sha: ${{ steps.start.outputs.sha }}
-      allow-scope: ${{ steps.start.outputs.allow-scope }}
+      skip-policy: ${{ steps.start.outputs.skip-policy }}
       check-run: ${{ steps.start.outputs.check-run }}
     steps:
       # Refuses commenters without write access, drafts and fork PRs, and reacts on the comment.
@@ -74,9 +74,9 @@ jobs:
           # Only the first line is the command; anything below it is a note for people.
           request="$(head -n 1 <<< "$COMMENT" | tr -d '\r' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
           case "$request" in
-            '/review') allow_scope=false ;;
-            '/review allow-scope') allow_scope=true ;;
-            *) refuse "use \`/review\`, or \`/review allow-scope\` to waive the size and path check." ;;
+            '/review') skip_policy=false ;;
+            '/review skip-policy') skip_policy=true ;;
+            *) refuse "use \`/review\`, or \`/review skip-policy\` to waive the size and path check." ;;
           esac
           pr="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER")"
           why="$(jq -r --arg repo "$GH_REPO" '
@@ -94,7 +94,7 @@ jobs:
           {
             echo "number=$PR_NUMBER"
             echo "sha=$sha"
-            echo "allow-scope=$allow_scope"
+            echo "skip-policy=$skip_policy"
             echo "check-run=$check_run"
           } >> "$GITHUB_OUTPUT"
 
@@ -326,7 +326,7 @@ jobs:
           MERGE_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN }}
           PR_NUMBER: ${{ needs.metadata.outputs.number }}
           HEAD_SHA: ${{ needs.metadata.outputs.sha }}
-          ALLOW_SCOPE: ${{ needs.command.outputs.allow-scope }}
+          SKIP_POLICY: ${{ needs.command.outputs.skip-policy }}
           REVOKE_RESULT: ${{ needs.revoke.result }}
           POLICY_RESULT: ${{ needs.policy.result }}
           ASSESSMENT: ${{ needs.policy.outputs.assessment }}
@@ -381,13 +381,13 @@ jobs:
             verdict="$VERDICT"
           fi
           # A PR the policy rejects never auto-merges; its reasons lead the checks Claude reported.
-          # A maintainer's `/review allow-scope` waives the block for this head and says so.
+          # A maintainer's `/review skip-policy` waives the block for this head and says so.
           if jq -e 'has("checks")' <<< "$verdict" > /dev/null &&
             [[ "$(jq -r .eligible <<< "$ASSESSMENT")" != true ]]; then
-            if [[ "$ALLOW_SCOPE" == true ]]; then
+            if [[ "$SKIP_POLICY" == true ]]; then
               verdict="$(jq --argjson assessment "$ASSESSMENT" --arg actor "$GITHUB_ACTOR" '
                 .checks = [{check: "scope", passed: true,
-                  note: "Waived by @\($actor) with `/review allow-scope`. \($assessment.reasons | join(" "))"}]
+                  note: "Waived by @\($actor) with `/review skip-policy`. \($assessment.reasons | join(" "))"}]
                   + .checks' <<< "$verdict")"
             else
               verdict="$(jq --argjson assessment "$ASSESSMENT" '.verdict = "needs-human"
