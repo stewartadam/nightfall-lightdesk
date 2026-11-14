@@ -16,6 +16,7 @@
 
 #![warn(missing_docs)]
 
+use std::ops::DerefMut;
 use std::time::{Duration, Instant};
 
 use bevy_app::prelude::*;
@@ -144,6 +145,11 @@ impl Plugin for InputMidiPlugin {
 pub struct MidiDevices(Vec<(String, bool)>);
 
 impl MidiDevices {
+    /// Returns whether a device with this name is currently connected.
+    fn contains(&self, name: &str) -> bool {
+        self.0.iter().any(|(connected, _)| connected == name)
+    }
+
     /// Reads the connected devices and their paired outputs from the MIDI service clients.
     fn read(input: &service::MidiInputClient, output: &service::MidiOutputClient) -> Self {
         Self(
@@ -279,10 +285,15 @@ fn midi_event_system(
 
 /// Poll the process-wide MIDI service and record changed devices; the change publishes the
 /// device list to websocket clients, and devices never seen before are queued for announcement.
+///
+/// A device that disappears never sends the note offs for pads held on it, so its mappings'
+/// press state is forgotten, which releases any Hold or Flash those pads were holding.
 fn refresh_midi_devices(
     mut next_refresh_deadline: Local<Option<Instant>>,
     mut devices: ResMut<MidiDevices>,
     mut detected: ResMut<DetectedMidiDevices>,
+    mappings: Res<MidiMappings>,
+    mut edges: ResMut<SourceEdgeStates>,
 ) {
     let now = Instant::now();
     if next_refresh_deadline.is_some_and(|deadline| now < deadline) {
@@ -292,11 +303,36 @@ fn refresh_midi_devices(
 
     let midi_service = service::process_midi_input_service();
     let _ = midi_service.refresh();
-    if devices.set_if_neq(MidiDevices::read(
-        &midi_service.client(),
-        &midi_service.output_client(),
-    )) {
+    let current = MidiDevices::read(&midi_service.client(), &midi_service.output_client());
+    forget_vanished_device_mappings(&devices, &current, &mappings, &mut edges);
+    if devices.set_if_neq(current) {
         detected.observe(devices.devices().map(|(name, _)| name));
+    }
+}
+
+/// Forgets press state for every mapping on a device in `previous` that is missing from
+/// `current`.
+///
+/// `edges` is only borrowed mutably when a device vanished, so a quiet poll leaves the press
+/// state unchanged for change detection.
+fn forget_vanished_device_mappings(
+    previous: &MidiDevices,
+    current: &MidiDevices,
+    mappings: &MidiMappings,
+    edges: &mut impl DerefMut<Target = SourceEdgeStates>,
+) {
+    let vanished: Vec<&str> = previous
+        .devices()
+        .map(|(name, _)| name)
+        .filter(|name| !current.contains(name))
+        .collect();
+    if vanished.is_empty() {
+        return;
+    }
+    for mapping in mappings.mappings() {
+        if vanished.contains(&mapping.device_name.as_str()) {
+            edges.forget(mapping.id);
+        }
     }
 }
 
@@ -306,9 +342,14 @@ fn refresh_midi_devices(
 /// note can fire a trigger and a level-reporting controller button fires once per press.
 /// While controller mapping mode is active, input is suppressed as described by
 /// [`SourceEdgeStates`]: nothing new fires, but releases completing live presses still do.
+///
+/// Messages still queued from a device that is no longer connected are dropped: its mappings
+/// were already released when it vanished, and a late note on would hold them again with no
+/// note off left to come.
 fn handle_midi_events(
     mut events: MessageReader<MidiInput>,
     mappings: Res<MidiMappings>,
+    devices: Res<MidiDevices>,
     registry: Res<ActionRegistry>,
     mapping_mode: Res<ControllerMappingMode>,
     mut edges: ResMut<SourceEdgeStates>,
@@ -316,11 +357,16 @@ fn handle_midi_events(
 ) {
     let suppressed = mapping_mode.is_active();
     for event in events.read() {
+        if !devices.contains(&event.device) {
+            tracing::debug!(?event, "MIDI message from a disconnected device dropped");
+            continue;
+        }
         for mapping in mappings.lookup(&event.device, event.source) {
             tracing::debug!(?event, action = ?mapping.action, "MIDI mapping matched");
             let Some((action, input)) = edges.resolve(
                 &registry,
                 mapping.id,
+                ActionSurface::Midi,
                 &mapping.action,
                 mapping.behavior,
                 event.signal,
@@ -463,6 +509,7 @@ mod tests {
         app.init_resource::<SourceEdgeStates>();
         app.init_resource::<ControllerMappingMode>();
         app.init_resource::<MidiControlTouches>();
+        app.insert_resource(MidiDevices(vec![("Pad".to_string(), false)]));
         app.init_resource::<CommandTracker>();
         app.init_resource::<ActionRegistry>();
         for descriptor in [
@@ -945,6 +992,104 @@ mod tests {
         assert_eq!(
             play_notes(&mut app, &[(0x80, 0)]),
             vec![("test.stop".to_string(), ActionInput::Trigger)]
+        );
+    }
+
+    /// Builds a Hold mapping on note 60 that starts `test.start` and stops it on release.
+    fn hold_mapping(id: u128) -> MidiMapping {
+        MidiMapping {
+            behavior: nightfall_actions::ControlBehavior::Hold,
+            led: Default::default(),
+            action: nightfall_actions::ActionReference::new("test.start", serde_json::json!({})),
+            ..note_mapping(id, 60)
+        }
+    }
+
+    /// Adds the forgotten-release dispatch, runs one frame, and returns the actions invoked
+    /// in it. Call it once per app, since each call adds the dispatch system again.
+    fn dispatched_releases(app: &mut App) -> Vec<(String, ActionInput)> {
+        app.add_systems(Update, nightfall_actions::dispatch_forgotten_releases);
+        app.update();
+        app.world_mut()
+            .resource_mut::<Messages<ActionInvocation>>()
+            .drain()
+            .map(|invocation| (invocation.action.id.as_str().to_string(), invocation.input))
+            .collect()
+    }
+
+    /// Verifies editing a held pad's mapping, such as its LED colour, runs the release
+    /// counterpart at once instead of leaving the hold latched, and the later note off then
+    /// fires nothing.
+    #[test]
+    fn editing_a_held_mapping_releases_it() {
+        let mut app = midi_dispatch_app(vec![hold_mapping(4)]);
+        play_notes(&mut app, &[(0x90, 100)]);
+
+        submit_command(
+            &mut app,
+            MidiCommand::UpsertMapping(MidiMapping {
+                led: crate::command::MidiLedValues {
+                    on: Some(5),
+                    ..Default::default()
+                },
+                ..hold_mapping(4)
+            }),
+        );
+        app.update();
+        take_result(&mut app);
+
+        assert_eq!(
+            dispatched_releases(&mut app),
+            vec![("test.stop".to_string(), ActionInput::Trigger)]
+        );
+        assert!(play_notes(&mut app, &[(0x80, 0)]).is_empty());
+    }
+
+    /// Verifies unplugging a device while a pad on it is held runs the release counterpart,
+    /// since the device can no longer send the note off.
+    #[test]
+    fn unplugging_a_device_releases_its_held_pads() {
+        let mut app = midi_dispatch_app(vec![hold_mapping(4)]);
+        play_notes(&mut app, &[(0x90, 100)]);
+
+        let world = app.world_mut();
+        world.resource_scope(|world, mut edges: Mut<SourceEdgeStates>| {
+            forget_vanished_device_mappings(
+                &MidiDevices(vec![("Pad".to_string(), false), ("Keys".to_string(), true)]),
+                &MidiDevices(vec![("Keys".to_string(), true)]),
+                world.resource::<MidiMappings>(),
+                &mut edges,
+            );
+        });
+
+        assert_eq!(
+            dispatched_releases(&mut app),
+            vec![("test.stop".to_string(), ActionInput::Trigger)]
+        );
+    }
+
+    /// Verifies a note on still queued from a device that has disconnected fires nothing, so
+    /// it cannot start a hold whose note off will never come.
+    #[test]
+    fn messages_from_a_disconnected_device_are_dropped() {
+        let mut app = midi_dispatch_app(vec![hold_mapping(4)]);
+        app.insert_resource(MidiDevices(Vec::new()));
+
+        assert!(play_notes(&mut app, &[(0x90, 100)]).is_empty());
+    }
+
+    /// Verifies a second note on without a note off between them starts a Hold only once, so
+    /// the single note off ends it.
+    #[test]
+    fn repeated_note_on_starts_a_hold_once() {
+        let mut app = midi_dispatch_app(vec![hold_mapping(4)]);
+
+        assert_eq!(
+            play_notes(&mut app, &[(0x90, 100), (0x90, 100), (0x80, 0)]),
+            vec![
+                ("test.start".to_string(), ActionInput::Trigger),
+                ("test.stop".to_string(), ActionInput::Trigger),
+            ]
         );
     }
 

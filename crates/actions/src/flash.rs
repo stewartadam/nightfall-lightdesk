@@ -34,11 +34,17 @@ struct ActiveFlash {
 /// Several controls may flash the same target: the level is captured by the first press and
 /// restored only after the last release.
 #[derive(Debug, Default, Resource)]
-pub(crate) struct FlashStates {
+pub struct FlashStates {
     active: HashMap<String, ActiveFlash>,
 }
 
 impl FlashStates {
+    /// Drops every active flash without restoring its level, for a show load that replaces
+    /// the flashed targets.
+    pub(crate) fn end_for_show_load(&mut self) {
+        self.active.clear();
+    }
+
     /// Records a press on `action`, capturing `current` as the restore level for the first one.
     pub(crate) fn press(&mut self, action: &ActionReference, current: Option<f32>) {
         self.active
