@@ -8,15 +8,20 @@
 
 //! Compositor stage for merging computed layers according to merge strategies.
 
-use crate::types::{ComputedLayer, ParameterLookup};
+use crate::types::{ComputedLayer, ParameterLookup, ParameterRef};
 
 /// Merges another computed layer onto this one, honoring HTP/LTP merge rules for same-priority layers.
+///
+/// Returns the parameters whose absolute value the base kept because a same-priority HTP merge
+/// found it at least as high as the upper layer's, so attribution can leave them owned by the
+/// layer below.
 pub fn merge(
     base: &mut ComputedLayer,
     other: &ComputedLayer,
     same_priority: bool,
     param_query: &impl ParameterLookup,
-) {
+) -> Vec<ParameterRef> {
+    let mut held_by_base = Vec::new();
     // Apply absolute values from the upper layer
     for (param, value) in other.absolute.iter() {
         let should_update = if same_priority {
@@ -39,6 +44,8 @@ pub fn merge(
 
         if should_update {
             base.absolute.insert(param, *value);
+        } else {
+            held_by_base.push(param);
         }
     }
 
@@ -47,6 +54,8 @@ pub fn merge(
         let current_relative = base.relative.get(param).unwrap_or(&0.0);
         base.relative.insert(param, *current_relative + *value);
     }
+
+    held_by_base
 }
 
 #[cfg(test)]
@@ -125,10 +134,11 @@ mod tests {
         let mut param_query_state = world.query::<InstanceMut<TestParameter>>();
         let param_query = param_query_state.query_mut(&mut world);
 
-        merge(&mut base, &other, true, &param_query);
+        let held_by_base = merge(&mut base, &other, true, &param_query);
 
-        // Same priority with HTP: highest value wins (150 > 100)
+        // Same priority with HTP: highest value wins (150 > 100), and the base keeps ownership
         assert_eq!(*base.absolute.get(param).unwrap(), 150.0);
+        assert_eq!(held_by_base, vec![ParameterRef::from(param)]);
     }
 
     #[test]
@@ -145,10 +155,11 @@ mod tests {
         let mut param_query_state = world.query::<InstanceMut<TestParameter>>();
         let param_query = param_query_state.query_mut(&mut world);
 
-        merge(&mut base, &other, true, &param_query);
+        let held_by_base = merge(&mut base, &other, true, &param_query);
 
-        // Same priority with HTP: highest value wins (200 > 100)
+        // Same priority with HTP: highest value wins (200 > 100), and the upper layer takes over
         assert_eq!(*base.absolute.get(param).unwrap(), 200.0);
+        assert!(held_by_base.is_empty());
     }
 
     #[test]

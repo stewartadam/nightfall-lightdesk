@@ -14,12 +14,11 @@ use moonshine_kind::prelude::*;
 use nightfall::command_types::DmxChannelRef;
 use nightfall::prelude::{ObjectRef, ObjectType, Priority};
 use nightfall_compositor::types::{Layer, ObjectRefMarker, ParameterMap, ParameterRef};
-use nightfall_dmx::prelude::{ParameterDmxValue, ParameterValue};
+use nightfall_dmx::prelude::ParameterValue;
 use nightfall_engine::prelude::{
     CommandEnvelope, CommandError, CommandResponder, EngineOperationEnvelope, EventHandling,
     LayerGeneration, Render,
 };
-use nightfall_fixture_model::prelude::*;
 use nightfall_instances::{PlaybackOperation, PlaybackScope};
 
 use crate::prelude::{
@@ -403,7 +402,7 @@ fn set_manual_assertion_from_channel(
         };
 
         let dmx_value = manual_dmx_value(universes, channel.universe, addresses, &parameter);
-        let value = dmx_value_to_parameter_value(dmx_value, &parameter.metadata);
+        let value = parameter.metadata.value_from_dmx(dmx_value);
         layer.absolute.insert(
             parameter.instance(),
             (ParameterValue::Absolute { value }, None),
@@ -481,20 +480,12 @@ fn manual_dmx_value(
     )
 }
 
-/// Maps a DMX integer to the parameter's logical value range.
-fn dmx_value_to_parameter_value(dmx_value: u32, metadata: &ParameterMetadata) -> ParameterDmxValue {
-    let dmx_max = metadata.resolution.dmx_max() as ParameterDmxValue;
-    let normalized = (dmx_value as ParameterDmxValue / dmx_max).clamp(0.0, 1.0);
-    let min = metadata.logical_min();
-    let max = metadata.logical_max();
-    min + normalized * (max - min)
-}
-
 #[cfg(test)]
 mod tests {
     use nightfall_dmx::prelude::{
         Attribute, DmxValueResolution, ParameterUnit, ParameterValuePolarity,
     };
+    use nightfall_fixture_model::prelude::*;
     use nightfall_io::RouteTransport;
 
     use super::*;
@@ -512,9 +503,9 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(dmx_value_to_parameter_value(0, &metadata), -270.0);
-        assert_eq!(dmx_value_to_parameter_value(255, &metadata), 270.0);
-        assert!((dmx_value_to_parameter_value(128, &metadata) - 1.0588).abs() < 0.001);
+        assert_eq!(metadata.value_from_dmx(0), -270.0);
+        assert_eq!(metadata.value_from_dmx(255), 270.0);
+        assert!((metadata.value_from_dmx(128) - 1.0588).abs() < 0.001);
     }
 
     /// Verifies removed input patch targets are cleared from the transport assertion layer.

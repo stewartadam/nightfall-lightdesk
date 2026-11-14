@@ -177,10 +177,10 @@ fn applies_blueprints_by_reference_or_absolute_value() {
     assert_eq!(instructions.len(), 2);
     assert_eq!(
         instructions[0].blueprint_application,
-        Some(BlueprintApplication {
-            blueprint_uid: uid,
-            selector: BlueprintSelector::Category(AttributeCategory::Color),
-        })
+        Some(BlueprintApplication::new(
+            uid,
+            BlueprintSelector::Category(AttributeCategory::Color)
+        ))
     );
     assert!(instructions[0].values.is_empty());
     assert!(instructions[1].blueprint_application.is_none());
@@ -706,10 +706,10 @@ fn blueprint_capture_flattens_referenced_programmer_values() {
             }])
             .into(),
             assertions: AssertionSet {
-                blueprint_application: Some(BlueprintApplication {
-                    blueprint_uid: source_uid,
-                    selector: BlueprintSelector::Category(AttributeCategory::Color),
-                }),
+                blueprint_application: Some(BlueprintApplication::new(
+                    source_uid,
+                    BlueprintSelector::Category(AttributeCategory::Color),
+                )),
                 ..Default::default()
             },
         });

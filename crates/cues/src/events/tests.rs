@@ -715,10 +715,10 @@ fn block_merge_does_not_absorb_direct_values_into_blueprint_rows() {
     let mut existing = vec![BoundAssertionSet {
         selection: selection.clone(),
         assertions: AssertionSet {
-            blueprint_application: Some(BlueprintApplication {
-                blueprint_uid: uuid::Uuid::new_v4(),
-                selector: BlueprintSelector::Attribute(Attribute::Red),
-            }),
+            blueprint_application: Some(BlueprintApplication::new(
+                uuid::Uuid::new_v4(),
+                BlueprintSelector::Attribute(Attribute::Red),
+            )),
             ..Default::default()
         },
     }];
@@ -752,10 +752,10 @@ fn element_block_is_not_suppressed_by_whole_fixture_blueprint_row() {
         }])
         .into(),
         assertions: AssertionSet {
-            blueprint_application: Some(BlueprintApplication {
-                blueprint_uid: uuid::Uuid::new_v4(),
-                selector: BlueprintSelector::Attribute(Attribute::Blue),
-            }),
+            blueprint_application: Some(BlueprintApplication::new(
+                uuid::Uuid::new_v4(),
+                BlueprintSelector::Attribute(Attribute::Blue),
+            )),
             ..Default::default()
         },
     }];

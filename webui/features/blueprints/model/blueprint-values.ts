@@ -46,6 +46,24 @@ export function selectedBlueprintValues(
   );
 }
 
+/**
+ * Resolves the current values a live Blueprint application applies: those its selector picks,
+ * minus the attributes released from it since it was applied.
+ */
+export function appliedBlueprintValues(
+  blueprint: types.Blueprint,
+  application: types.BlueprintApplication,
+): Record<string, types.ValueSource> {
+  const excluded = new Set(
+    (application.excluded_attributes ?? []).map(attributeKey),
+  );
+  return Object.fromEntries(
+    Object.entries(
+      selectedBlueprintValues(blueprint, application.selector),
+    ).filter(([attribute]) => !excluded.has(attribute)),
+  );
+}
+
 /** Returns a compact operator-facing description of a live selector. */
 export function blueprintSelectorLabel(
   selector: types.BlueprintSelector,

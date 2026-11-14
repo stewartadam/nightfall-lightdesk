@@ -52,6 +52,7 @@ function referencedCue(): Cue {
               type: "Category",
               data: AttributeCategory.Color,
             },
+            excluded_attributes: [],
           },
         },
       },

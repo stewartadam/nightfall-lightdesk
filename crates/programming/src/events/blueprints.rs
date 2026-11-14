@@ -230,18 +230,14 @@ fn capture_blueprint_values(
                             ),
                         )
                     })?;
-                blueprint.selected_values(&application.selector)
+                blueprint.applied_values(application)
             } else {
                 instruction.assertions.values.clone()
             };
 
         for (attribute, value) in logical_values {
-            let included = filter.is_empty()
-                || filter.iter().any(|selector| match selector {
-                    BlueprintSelector::All => true,
-                    BlueprintSelector::Attribute(selected) => selected == &attribute,
-                    BlueprintSelector::Category(category) => attribute.category() == *category,
-                });
+            let included =
+                filter.is_empty() || filter.iter().any(|selector| selector.selects(&attribute));
             if !included {
                 continue;
             }
@@ -387,10 +383,10 @@ pub fn handle_blueprint_events(
                             match resolution {
                                 BlueprintResolution::Reference => (
                                     HashMap::new(),
-                                    Some(BlueprintApplication {
-                                        blueprint_uid: blueprint.identifiers.uid,
-                                        selector: operation.target.clone(),
-                                    }),
+                                    Some(BlueprintApplication::new(
+                                        blueprint.identifiers.uid,
+                                        operation.target.clone(),
+                                    )),
                                 ),
                                 BlueprintResolution::Absolute => (selected_values, None),
                             }

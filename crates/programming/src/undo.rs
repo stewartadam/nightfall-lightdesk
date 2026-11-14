@@ -595,10 +595,10 @@ mod tests {
     fn apply_attribute_operations_inverse_preserves_blueprint_references() {
         let blueprint_uid = Uuid::from_u128(500);
         let instruction_uid = Uuid::from_u128(600);
-        let application = BlueprintApplication {
+        let application = BlueprintApplication::new(
             blueprint_uid,
-            selector: BlueprintSelector::Category(AttributeCategory::Color),
-        };
+            BlueprintSelector::Category(AttributeCategory::Color),
+        );
         let mut programmer = Programmer::default();
         programmer.live_instructions.insert(
             instruction_uid,

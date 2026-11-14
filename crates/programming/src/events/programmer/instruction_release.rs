@@ -10,18 +10,48 @@
 
 use super::*;
 
-/// Returns whether an attribute-scoped release targets a live Blueprint row.
-fn release_targets_blueprint_application(
-    application: &BlueprintApplication,
+/// Removes released attributes from a live Blueprint row, returning the application that still
+/// applies something, or `None` when the release leaves it nothing.
+///
+/// A release narrower than the selector excludes just the released attributes the Blueprint
+/// holds, so releasing Pan from a Position Blueprint keeps Tilt live, and releasing an attribute
+/// the Blueprint does not hold leaves the row alone. The row is dropped once the Blueprint holds
+/// no attribute it still applies. While the Blueprint cannot be looked up, the released
+/// attributes are excluded and the row is kept.
+fn release_blueprint_application_attributes(
+    application: BlueprintApplication,
     attributes: &[Attribute],
-) -> bool {
-    attributes
+    blueprints: Option<&DataProvider<Blueprint>>,
+) -> Option<BlueprintApplication> {
+    let blueprint =
+        blueprints.and_then(|blueprints| blueprints.get(application.blueprint_uid).ok());
+    let held = |attribute: &Attribute| {
+        blueprint
+            .as_ref()
+            .is_none_or(|blueprint| blueprint.values.contains_key(attribute))
+    };
+    let released: Vec<&Attribute> = attributes
         .iter()
-        .any(|attribute| match &application.selector {
-            BlueprintSelector::All => true,
-            BlueprintSelector::Attribute(selected) => selected == attribute,
-            BlueprintSelector::Category(category) => attribute.category() == *category,
-        })
+        .filter(|attribute| application.selects(attribute) && held(attribute))
+        .collect();
+    if released.is_empty() {
+        return Some(application);
+    }
+    if matches!(application.selector, BlueprintSelector::Attribute(_)) {
+        return None;
+    }
+
+    let mut narrowed = application;
+    narrowed
+        .excluded_attributes
+        .extend(released.into_iter().cloned());
+    let applies_any = blueprint.as_ref().is_none_or(|blueprint| {
+        blueprint
+            .values
+            .keys()
+            .any(|attribute| narrowed.selects(attribute))
+    });
+    applies_any.then_some(narrowed)
 }
 
 /// Mutates programmer rows and returns lifecycle-managed cue cleanup, when delegated.
@@ -102,15 +132,16 @@ pub(super) fn release_programmer_values(
                 .transitions_by_attribute
                 .remove(attribute);
         }
-        if filtered_instruction
+        filtered_instruction.blueprint_application = filtered_instruction
             .blueprint_application
-            .as_ref()
-            .is_some_and(|application| {
-                release_targets_blueprint_application(application, attributes)
-            })
-        {
-            filtered_instruction.blueprint_application = None;
-        }
+            .take()
+            .and_then(|application| {
+                release_blueprint_application_attributes(
+                    application,
+                    attributes,
+                    state.blueprints.as_deref(),
+                )
+            });
 
         let filtered_instruction_is_empty = filtered_instruction.values.is_empty()
             && filtered_instruction.blueprint_application.is_none();

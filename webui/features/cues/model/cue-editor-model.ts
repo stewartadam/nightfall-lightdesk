@@ -65,7 +65,7 @@ import {
 import type { LayerState } from "../../../lib/ws/types";
 import type * as types from "../../../types";
 import { ObjectType } from "../../../types";
-import { selectedBlueprintValues } from "../../blueprints";
+import { appliedBlueprintValues } from "../../blueprints";
 import type { PlaybackTransitionClock } from "../../cue-sequences";
 import { formatCueEditorTitle } from "../context/cue-editor-context";
 import {
@@ -620,7 +620,7 @@ export function resolvedBlueprintInstructionValues(
   if (!application) return instruction.values;
   const blueprint = blueprintMap[application.blueprint_uid];
   if (!blueprint) return {};
-  return selectedBlueprintValues(blueprint, application.selector);
+  return appliedBlueprintValues(blueprint, application);
 }
 
 /** Applies one stored instruction to the tracked-value lookup. */

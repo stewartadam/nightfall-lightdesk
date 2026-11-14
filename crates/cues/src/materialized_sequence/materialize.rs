@@ -69,7 +69,7 @@ fn instruction_has_position_values(
         let Ok(blueprint) = provider.get(application.blueprint_uid) else {
             return false;
         };
-        blueprint.selected_values(&application.selector)
+        blueprint.applied_values(application)
     } else {
         instruction.assertions.values.clone()
     };
@@ -596,10 +596,7 @@ mod tests {
             instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::default(),
                 assertions: AssertionSet {
-                    blueprint_application: Some(BlueprintApplication {
-                        blueprint_uid,
-                        selector,
-                    }),
+                    blueprint_application: Some(BlueprintApplication::new(blueprint_uid, selector)),
                     ..Default::default()
                 },
             }],

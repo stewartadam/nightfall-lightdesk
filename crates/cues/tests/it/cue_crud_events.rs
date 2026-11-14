@@ -172,10 +172,7 @@ fn referenced_blueprint_instruction(
     BoundAssertionSet {
         selection: SelectionExpr::Resolved(vec![fixture]).into(),
         assertions: AssertionSet {
-            blueprint_application: Some(BlueprintApplication {
-                blueprint_uid,
-                selector,
-            }),
+            blueprint_application: Some(BlueprintApplication::new(blueprint_uid, selector)),
             ..Default::default()
         },
     }

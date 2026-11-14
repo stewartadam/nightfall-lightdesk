@@ -11,6 +11,7 @@ import test from "node:test";
 import { setAttributeMetadata } from "../../../lib/attribute-metadata";
 import { AttributeCategory, type Blueprint, type Cue } from "../../../types";
 import {
+  appliedBlueprintValues,
   blueprintAttributeGroups,
   blueprintAttributeNames,
   blueprintDependentCueCount,
@@ -40,6 +41,7 @@ function referencedCue(): Cue {
           blueprint_application: {
             blueprint_uid: "blueprint-5",
             selector: { type: "All" },
+            excluded_attributes: [],
           },
         },
       },
@@ -76,6 +78,36 @@ test("resolves Blueprint category values", () => {
       selectedBlueprintValues(blueprint(), {
         type: "Category",
         data: AttributeCategory.Color,
+      }),
+    ),
+    ["Red"],
+  );
+});
+
+/** Attributes released from a live application stay out of the values it applies. */
+test("leaves released attributes out of an application's values", () => {
+  setAttributeMetadata([
+    {
+      key: "Red",
+      attribute: { type: "Red" },
+      label: "Red",
+      category: AttributeCategory.Color,
+      sort_order: 1,
+    },
+    {
+      key: "Pan",
+      attribute: { type: "Pan" },
+      label: "Pan",
+      category: AttributeCategory.Position,
+      sort_order: 2,
+    },
+  ]);
+  assert.deepEqual(
+    Object.keys(
+      appliedBlueprintValues(blueprint(), {
+        blueprint_uid: "blueprint-5",
+        selector: { type: "All" },
+        excluded_attributes: [{ type: "Pan" }],
       }),
     ),
     ["Red"],
