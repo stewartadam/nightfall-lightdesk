@@ -9,10 +9,14 @@ the area a file lives in is not a doubt on its own.
 
 ## What you have
 
-- `.pr-review/pr.json`: the PR's title, description, author and branches.
+- `.pr-review/pr.json`: the PR's title, description, author and branches. `stack` is set when the
+  PR builds on other unmerged PRs in a stack: its base is then the branch of the PR below it, and
+  `stack.target` is where the stack lands. Review only this PR's diff; code from the PRs below is
+  reviewed on those PRs.
 - `.pr-review/pr.diff`: the full diff against the base branch.
 - `pr-head/`: the repository at the PR's head commit, for reading surrounding code, callers, tests
-  and docs. The working directory is the base branch.
+  and docs. The working directory is `develop`, so for a stacked PR it lacks the changes of the
+  PRs below; compare against `pr.diff`, not the working directory, to see what this PR changes.
 - `CLAUDE.md` in the working directory: the project's written conventions.
 
 You can only read files. Do not try to build, run or test anything; CI does that separately and
