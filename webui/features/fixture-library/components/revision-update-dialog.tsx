@@ -112,9 +112,9 @@ export function RevisionUpdateDialog(props: RevisionUpdateDialogProps) {
   });
 
   /**
-   * Patched fixtures of this make and model on any revision but the update, grouped by
-   * mode. Other old revisions come along, since a mode can't be left on two revisions.
-   * Held while the update runs, so the review doesn't empty as fixtures move.
+   * Patched fixtures created from the selected file, grouped by mode. Fixtures on other
+   * revisions keep theirs. Held while the update runs, so the review doesn't empty as
+   * fixtures move.
    */
   const groups = createMemo((previous: PatchedModeGroup[] | undefined) =>
     updating() && previous
@@ -123,7 +123,7 @@ export function RevisionUpdateDialog(props: RevisionUpdateDialogProps) {
           Object.values($fixtures()),
           props.from.make,
           props.from.model,
-          target()?.asset_etag ?? props.update.library_copy ?? "",
+          props.from.asset_etag,
         ),
   );
 

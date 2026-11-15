@@ -918,10 +918,10 @@ fn update_library_fixtures_keeps_identity_and_resolves_each_mode_once() {
     assert_eq!(after.library_asset_etag.as_deref(), Some("revision-2"));
 }
 
-/// Verifies an update that would leave another fixture of the same make, model and mode on
-/// its old revision is rejected without changing any fixture.
+/// Verifies an update can move some fixtures of a mode to a new revision while the others
+/// keep their own, since a show may hold several revisions of one mode.
 #[test]
-fn update_library_fixtures_rejects_leaving_a_mode_on_two_revisions() {
+fn update_library_fixtures_can_leave_a_mode_on_two_revisions() {
     let mut world = World::new();
     let mut fixtures = FixtureDataProviderExt::default();
     create_in_world(&mut world, &mut fixtures, &batch_request(&[10, 11]))
@@ -935,9 +935,49 @@ fn update_library_fixtures_rejects_leaving_a_mode_on_two_revisions() {
         "revision-2",
     );
 
+    result.expect("partial update should succeed");
+    let revision = |id| {
+        fixtures
+            .inner
+            .from_id(id)
+            .unwrap()
+            .library_asset_etag
+            .clone()
+    };
+    assert_eq!(revision(10).as_deref(), Some("revision-2"));
     assert_eq!(
-        result.expect_err("partial update should be rejected").code,
-        "fixture_library.mixed_revisions"
+        revision(11).as_deref(),
+        Some("builtin:generic-moving-head-spot-16ch:v1")
+    );
+}
+
+/// Verifies an update refuses to rebuild a fixture from another make or model's revision and
+/// leaves the fixture as it was.
+#[test]
+fn update_library_fixtures_rejects_another_model() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    create_in_world(&mut world, &mut fixtures, &batch_request(&[10]))
+        .0
+        .expect("creation should succeed");
+
+    let mut queue = CommandQueue::default();
+    let result = update_library_fixtures(
+        &mut Commands::new(&mut queue, &world),
+        &mut fixtures,
+        |_| None,
+        &mode_updates(&[(10, "Spot")]),
+        |_| {
+            let mut template = moving_head_template()?;
+            template.fixture.model = "Other Model".to_string();
+            template.asset_etag = "revision-2".to_string();
+            Ok(template)
+        },
+    );
+
+    assert_eq!(
+        result.expect_err("another model should be rejected").code,
+        "fixture_library.different_model"
     );
     assert_eq!(
         fixtures

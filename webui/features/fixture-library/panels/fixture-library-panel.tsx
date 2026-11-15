@@ -60,11 +60,11 @@ import {
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
 import { commandClient } from "../../../lib/engine-commands";
+import { libraryDefinitionId } from "../../../lib/fixture-service";
 import {
-  libraryDefinitionId,
   libraryRevisionDate,
   libraryRevisionLabel,
-} from "../../../lib/fixture-service";
+} from "../../../lib/library-revision";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {

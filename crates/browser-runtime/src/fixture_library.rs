@@ -551,24 +551,6 @@ mod tests {
         }
         let uid = stored_fixture(&engine, 901).identifiers.uid;
 
-        let (partial, messages) = run_fixture_library_command(
-            &mut engine,
-            json!({
-                "type": "UpdateFixturesToRevision",
-                "data": {
-                    "make": "Generic",
-                    "model": "Moving Head Spot 16ch",
-                    "asset_etag": current,
-                    "fixtures": [{ "id": 901, "mode": "Spot" }]
-                }
-            }),
-        );
-        assert_eq!(
-            command_result(&messages, partial).pointer("/data/outcome/data/code"),
-            Some(&json!("fixture_library.mixed_revisions")),
-            "leaving fixture 902 on the older revision must be rejected"
-        );
-
         let (updated, messages) = run_fixture_library_command(
             &mut engine,
             json!({

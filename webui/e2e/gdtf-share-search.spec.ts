@@ -813,3 +813,67 @@ test("installs a GDTF Share update and moves patched fixtures to it", async ({
     "Patched: 0 fixtures",
   );
 });
+
+/** Patches fixtures `ids` in the wash's Standard mode from library revision `assetEtag`. */
+async function patchWashes(
+  page: Page,
+  assetEtag: string,
+  ids: number[],
+): Promise<void> {
+  const created = await page.evaluate(
+    ({ assetEtag, ids }) =>
+      (window as any).appStores.sendAndAwait({
+        module: "FixtureLibraryCommand",
+        command: {
+          type: "CreateFixturesFromLibrary",
+          data: {
+            make: "Nightfall Test",
+            model: "E2E Wash",
+            mode: "Standard",
+            asset_etag: assetEtag,
+            fixtures: ids.map((id) => ({ id })),
+          },
+        },
+      }),
+    { assetEtag, ids },
+  );
+  expect(created.outcome.type).toBe("Succeeded");
+}
+
+/**
+ * Two revisions of the wash can share a show in one mode. The Patch view shows the model
+ * alone while every wash comes from one revision, and names each wash's revision after its
+ * model once a second revision is patched.
+ */
+test("names the revision in the Patch view when a model mixes revisions", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const { installedEtag, updateEtag } = await standInForWashUpdate(
+    page,
+    backendSlot.dataDir,
+  );
+  await writeFile(
+    join(backendSlot.dataDir, "fixtures", installFileName(WASH_UPDATE)),
+    updateArchive(),
+  );
+  await openApp(page);
+  const patch = await addPanel(page, PATCH_PANEL_ID, "PatchEditor", "Patch");
+  await patchWashes(page, installedEtag, [101, 102]);
+  const washes = patch.getByRole("row").filter({ hasText: "E2E Wash" });
+  await expect(washes).toHaveCount(2, { timeout: 20_000 });
+  await expect(washes.filter({ hasText: "(" })).toHaveCount(0);
+
+  await patchWashes(page, updateEtag, [103]);
+  await expect(washes).toHaveCount(3, { timeout: 20_000 });
+  await expect(
+    patch.getByRole("row").filter({ hasText: "E2E Wash (Release 1.0)" }),
+  ).toHaveCount(2, { timeout: 20_000 });
+  await expect(
+    patch.getByRole("row").filter({ hasText: "E2E Wash (Release 2.0)" }),
+  ).toHaveCount(1);
+  await page.screenshot({
+    path: testInfo.outputPath("17-patch-mixed-revisions.png"),
+  });
+});

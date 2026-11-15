@@ -66,11 +66,13 @@ import {
   replaceFixtureUidsInSelection,
 } from "../../../lib/visualizer-selection";
 import {
+  fixtureLibrary,
   fixtures,
   programmerSelection,
   visualizerEditSelection,
 } from "../../../state/appStores";
 import type * as types from "../../../types";
+import { fixtureModelLabels } from "../model/fixture-model-labels";
 import {
   PATCH_FIXTURE_REVEAL_WINDOW_MS,
   patchFixtureRevealRequest,
@@ -364,6 +366,7 @@ function buildPlacementUpdate(
 
 export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
   const $fixtures = useSharedStore(fixtures);
+  const $fixtureLibrary = useStore(fixtureLibrary);
   const [baseColumns, setBaseColumns] =
     createSignal<VisibilityGridColumn[]>(DEFAULT_COLUMNS);
   const [collapsedGroups, setCollapsedGroups] = createSignal<readonly string[]>(
@@ -439,28 +442,54 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     syncEditSelectionFromGridSelection(newSelection);
   };
 
-  const rows = createMemo<FixtureRow[]>(() =>
-    Object.values($fixtures())
-      .sort((a, b) => a.identifiers.id - b.identifiers.id)
-      .map((fixture) => {
-        const placement = getPlacementOrDefault(fixture);
-        return {
-          uid: fixture.identifiers.uid,
-          id: fixture.identifiers.id,
-          label: fixture.identifiers.label,
-          make: fixture.make,
-          model: fixture.model,
-          mode: fixture.mode,
-          channelWidth: computeFixtureChannelCount(fixture),
-          posX: placement.position.x,
-          posY: placement.position.y,
-          posZ: placement.position.z,
-          rotX: placement.rotation.x,
-          rotY: placement.rotation.y,
-          rotZ: placement.rotation.z,
-        };
-      }),
+  /**
+   * Model text by fixture UID, naming the revision where a model mixes revisions. Equal
+   * labels keep the previous map, so a library refresh rebuilds rows only when a label changes.
+   */
+  const modelLabels = createMemo(
+    () => {
+      const patched = Object.values($fixtures());
+      const labels = fixtureModelLabels(patched, $fixtureLibrary());
+      return new Map(
+        patched.map((fixture, index) => [
+          fixture.identifiers.uid,
+          labels[index],
+        ]),
+      );
+    },
+    undefined,
+    {
+      equals: (previous, next) =>
+        previous.size === next.size &&
+        [...next].every(([uid, label]) => previous.get(uid) === label),
+    },
   );
+
+  /** Patched fixtures by ID, each with its model named apart from other revisions of it. */
+  const rows = createMemo<FixtureRow[]>(() => {
+    const models = modelLabels();
+    const sorted = Object.values($fixtures()).sort(
+      (a, b) => a.identifiers.id - b.identifiers.id,
+    );
+    return sorted.map((fixture) => {
+      const placement = getPlacementOrDefault(fixture);
+      return {
+        uid: fixture.identifiers.uid,
+        id: fixture.identifiers.id,
+        label: fixture.identifiers.label,
+        make: fixture.make,
+        model: models.get(fixture.identifiers.uid) ?? fixture.model,
+        mode: fixture.mode,
+        channelWidth: computeFixtureChannelCount(fixture),
+        posX: placement.position.x,
+        posY: placement.position.y,
+        posZ: placement.position.z,
+        rotX: placement.rotation.x,
+        rotY: placement.rotation.y,
+        rotZ: placement.rotation.z,
+      };
+    });
+  });
   /** Removes this patch tab's fixture UIDs from visualizer edit highlights. */
   const clearEditSelection = () => {
     const nextSelection = replaceFixtureUidsInSelection(

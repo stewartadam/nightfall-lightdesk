@@ -104,9 +104,8 @@ pub enum FixtureLibraryCommand {
     /// change.
     ///
     /// Each fixture is rebuilt from the revision's mode named for it and keeps its ID, UID,
-    /// label, placement and DMX patch. Every fixture that would be left on another revision
-    /// of an updated make, model and mode must be included, since a show holds one revision
-    /// of each; otherwise nothing changes.
+    /// label, placement and DMX patch. Fixtures left out keep their own revision, so a show
+    /// can hold several revisions of one make, model and mode.
     UpdateFixturesToRevision {
         /// Manufacturer name of the revision
         make: String,

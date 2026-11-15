@@ -576,3 +576,83 @@ fn ofl_profiles_preserve_identity_across_exports() {
         assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
     }
 }
+
+/// Fixtures patched from two revisions of one make, model and mode each package their own
+/// file, and the exported show resolves every fixture to its own revision without the
+/// original library.
+#[cfg(feature = "fixture-library")]
+#[test]
+fn exports_package_each_revision_of_one_mode() {
+    use nightfall_fixture_library::manager::FixtureLibraryManager;
+    use nightfall_fixture_library::testing::{GdtfBuilder, GeometrySpec, ModeSpec};
+    let original = tempfile::tempdir().unwrap();
+    let source = original.path().join("active");
+    for name in ["active", "fixtures"] {
+        std::fs::create_dir(original.path().join(name)).unwrap();
+    }
+    for revision in ["v1", "v2"] {
+        GdtfBuilder::new("Export Test", "Export Fixture")
+            .revision(revision)
+            .geometry(GeometrySpec::generic("Base"))
+            .mode(ModeSpec::new("Default", "Base"))
+            .write_to(
+                &original
+                    .path()
+                    .join(format!("fixtures/export-{revision}.gdtf")),
+            );
+    }
+    let installed =
+        FixtureLibraryManager::read_from_directories(original.path().join("fixtures"), None)
+            .unwrap();
+    let mut revisions: Vec<String> = installed
+        .list_fixtures()
+        .into_iter()
+        .filter(|profile| profile.model == "Export Fixture")
+        .map(|profile| profile.revision.clone())
+        .collect();
+    revisions.sort();
+    assert_eq!(revisions.len(), 2, "both revisions are installed");
+    let mut snapshot = snapshot();
+    for (id, revision) in revisions.iter().enumerate() {
+        let mut fixture = export_fixture_ref();
+        fixture.identifiers.id = id as u32 + 1;
+        fixture.library_asset_etag = Some(revision.clone());
+        snapshot.fixtures.push(fixture);
+    }
+    let prepared = prepare_showfile_export(
+        snapshot,
+        &source,
+        original.path(),
+        ShowfileExportPolicy::AllReferences,
+    )
+    .unwrap();
+    assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
+    original.close().unwrap();
+    assert_eq!(
+        std::fs::read_dir(prepared.path().join("fixtures"))
+            .unwrap()
+            .count(),
+        2
+    );
+    let loaded = read_export(&prepared);
+    let empty = tempfile::tempdir().unwrap();
+    let library = FixtureLibraryManager::read_from_directories(
+        empty.path().to_owned(),
+        Some(prepared.path()),
+    )
+    .unwrap();
+    let mut packaged: Vec<String> = loaded
+        .fixtures
+        .iter()
+        .map(|fixture| {
+            let profile = library
+                .profile_for_fixture(fixture)
+                .expect("packaged revision");
+            assert!(profile.file_path.starts_with(prepared.path()));
+            assert_eq!(Some(&profile.revision), fixture.library_asset_etag.as_ref());
+            profile.revision.clone()
+        })
+        .collect();
+    packaged.sort();
+    assert_eq!(packaged, revisions);
+}

@@ -27,19 +27,14 @@ import {
 } from "solid-js";
 import { fixtureWireLayout, parameterDmxBreak } from "../../../lib/dmx";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
+import { fetchFixtureProfile } from "../../../lib/fixture-service";
 import {
-  fetchFixtureProfile,
   libraryRevisionDate,
   libraryRevisionLabel,
-} from "../../../lib/fixture-service";
-import {
-  fixtureLibrary,
-  fixtureProfile,
-  fixtures,
-} from "../../../state/appStores";
+} from "../../../lib/library-revision";
+import { fixtureLibrary, fixtureProfile } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { GdtfSharePageLink, GdtfShareUpdateDetails } from "../../gdtf-share";
-import { patchedModeGroups } from "../revision-update";
 import LibraryFixturePreview from "./library-fixture-preview";
 import { RevisionUpdateDialog } from "./revision-update-dialog";
 
@@ -236,7 +231,6 @@ export default function FixtureLibraryProperties(
 ) {
   const $fixtureProfile = useStore(fixtureProfile);
   const $fixtureLibrary = useStore(fixtureLibrary);
-  const $fixtures = useStore(fixtures);
   /** Provides the currently selected fixture library row. */
   const selectedFixture = createMemo(() => props.selectedFixture());
   /** Tracks fixture identity changes that should reset mode-local state. */
@@ -398,19 +392,11 @@ export default function FixtureLibraryProperties(
                 const [open, setOpen] = createSignal(false);
                 /**
                  * The library entry that already is the newest revision, when no patched
-                 * fixture of this make and model, on this file or another old one, still
-                 * needs moving to it, so the section only has to point at it.
+                 * fixture uses this file, so the section only has to point at it.
                  */
                 const readyCopy = createMemo(() => {
                   const etag = props.update()?.library_copy;
-                  if (!etag) return undefined;
-                  const waiting = patchedModeGroups(
-                    Object.values($fixtures()),
-                    fixture().make,
-                    fixture().model,
-                    etag,
-                  );
-                  if (waiting.length > 0) return undefined;
+                  if (!etag || props.patchedCount() > 0) return undefined;
                   return $fixtureLibrary().find(
                     (entry) => entry.asset_etag === etag,
                   );
