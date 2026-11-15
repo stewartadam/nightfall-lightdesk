@@ -218,8 +218,11 @@ impl CliApp {
                         }
                     }
                 }
+                // Ctrl+C abandons a half-typed command; reedline starts the next read empty.
+                Ok(Signal::CtrlC(buffer)) if !buffer.is_empty() => {
+                    continue;
+                }
                 Ok(Signal::CtrlC(_)) | Ok(Signal::CtrlD) => {
-                    // User wants to exit
                     return Ok(());
                 }
                 Ok(_) => {
