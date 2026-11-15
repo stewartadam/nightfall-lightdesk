@@ -287,12 +287,13 @@ test("later snoozes the update notice for that version", async ({
   expect(await updateCalls(page)).toEqual([]);
 });
 
-/** Opens the About dialog from the app menu and returns it. */
-async function openAbout(page: Page) {
+/** Opens the About dialog from the app menu, selects the given tab (Updates unless null), and returns it. */
+async function openAbout(page: Page, tab: "Updates" | null = "Updates") {
   await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: "About", exact: true }).click();
   const about = page.getByRole("dialog", { name: "About nightfall" });
   await expect(about).toBeVisible();
+  if (tab) await about.getByRole("tab", { name: tab }).click();
   return about;
 }
 
@@ -705,7 +706,9 @@ test("update controls stay hidden outside the desktop app", async ({
 }) => {
   await page.goto("/?e2e=1");
   await waitForDockviewApp(page);
-  const about = await openAbout(page);
+  const about = await openAbout(page, null);
+  await expect(about.getByRole("tab", { name: "Info" })).toBeVisible();
+  await expect(about.getByRole("tab", { name: "Updates" })).toHaveCount(0);
   await expect(about.getByRole("region", { name: "Updates" })).toHaveCount(0);
   await expect(
     about.getByRole("button", { name: "Check for Updates" }),

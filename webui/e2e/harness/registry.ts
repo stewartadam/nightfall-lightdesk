@@ -28,6 +28,7 @@ const harnessLoaders = {
   "data-grid-editor-alignment": () =>
     import("../fixtures/data-grid-editor-alignment"),
   "surface-budget-metrics": () => import("../fixtures/surface-budget-metrics"),
+  "stacked-dialogs": () => import("../fixtures/stacked-dialogs"),
   "waveform-editor": () => import("../fixtures/waveform-editor"),
   "uncaught-error-worker": () =>
     import("../fixtures/uncaught-error-worker-host"),

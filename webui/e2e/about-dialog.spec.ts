@@ -50,7 +50,9 @@ test("opens about dialog from the status bar menu", async ({
   await expect(
     dialog.getByText(/\u00A9 .* Stewart Adam, licensed under MPL-2\.0\./),
   ).toBeVisible();
-  await expect(dialog.getByText("Third-Party Notices")).toBeVisible();
+  await expect(
+    dialog.getByRole("tab", { name: "Third-Party Notices" }),
+  ).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Copy Path" })).toBeVisible();
   await dialog.getByRole("button", { name: "Copy Path" }).hover();
   // A browser build shows the data directory its build was configured with.
@@ -69,12 +71,8 @@ test("opens about dialog from the status bar menu", async ({
     shownPath,
   );
 
-  await dialog
-    .getByRole("button", { name: "View Third-Party Licenses" })
-    .click();
-  const licensesDialog = page.getByRole("dialog", {
-    name: "Third-Party Licenses",
-  });
+  await dialog.getByRole("tab", { name: "Third-Party Notices" }).click();
+  const licensesDialog = dialog.getByRole("tabpanel");
   const search = licensesDialog.getByRole("searchbox");
   await search.fill("@squidlab/phosphor-solid");
   await licensesDialog

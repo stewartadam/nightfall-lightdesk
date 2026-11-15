@@ -9,7 +9,7 @@
 import { expect, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
-/** Checks that shared About and license dialogs keep their close actions usable on small screens. */
+/** Checks that the shared About dialog keeps its close action usable on small screens, on every tab. */
 test("shared shell dialogs fit a narrow viewport", async ({
   page,
 }, testInfo) => {
@@ -25,20 +25,23 @@ test("shared shell dialogs fit a narrow viewport", async ({
   await page.screenshot({
     path: testInfo.outputPath("shared-about-narrow.png"),
   });
-  await page.setViewportSize({ width: 390, height: 420 });
+  await page.setViewportSize({ width: 390, height: 320 });
   const body = about.locator(".nf-dialog-body");
-  await expect(body.locator('[data-edge="bottom"]')).toHaveAttribute(
+  /** Finds one of the dialog body's own scroll edges, skipping the tab strip's nested ones. */
+  const bodyEdge = (edge: "top" | "bottom") =>
+    body.locator(`:scope > div > [data-edge="${edge}"]`);
+  await expect(bodyEdge("bottom")).toHaveAttribute(
     "data-visible",
     "true",
   );
-  await body.locator(".nf-scroll-viewport").evaluate((element) => {
+  await body.locator(":scope > .nf-scroll-viewport").evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
-  await expect(body.locator('[data-edge="top"]')).toHaveAttribute(
+  await expect(bodyEdge("top")).toHaveAttribute(
     "data-visible",
     "true",
   );
-  await expect(body.locator('[data-edge="bottom"]')).toHaveAttribute(
+  await expect(bodyEdge("bottom")).toHaveAttribute(
     "data-visible",
     "false",
   );
@@ -49,10 +52,8 @@ test("shared shell dialogs fit a narrow viewport", async ({
     path: testInfo.outputPath("shared-about-scrolled.png"),
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  await about
-    .getByRole("button", { name: "View Third-Party Licenses" })
-    .click();
-  const licenses = page.getByRole("dialog", { name: "Third-Party Licenses" });
+  await about.getByRole("tab", { name: "Third-Party Notices" }).click();
+  const licenses = about.getByRole("tabpanel");
   await licenses.getByRole("searchbox").fill("preline");
   await licenses
     .locator(".nf-collapsible-trigger")
@@ -62,16 +63,11 @@ test("shared shell dialogs fit a narrow viewport", async ({
     licenses.locator('.nf-collapsible[data-open="true"] pre'),
   ).toContainText("Preline UI Fair Use License");
   await expect(
-    licenses.getByRole("button", { name: "Close third-party licenses dialog" }),
+    about.getByRole("button", { name: "Close about dialog" }),
   ).toBeInViewport();
   await page.screenshot({
     path: testInfo.outputPath("shared-licenses-narrow.png"),
   });
-  await licenses
-    .getByRole("button", { name: "Close third-party licenses dialog" })
-    .click();
-  await expect(licenses).toBeHidden();
-  await expect(about).toBeVisible();
   await about.getByRole("button", { name: "Close about dialog" }).click();
   await expect(about).toBeHidden();
 });
@@ -85,8 +81,9 @@ test("third-party notices can retry a failed load", async ({ page }) => {
   await waitForDockviewApp(page);
   await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: "About", exact: true }).click();
-  await page.getByRole("button", { name: "View Third-Party Licenses" }).click();
-  const licenses = page.getByRole("dialog", { name: "Third-Party Licenses" });
+  const about = page.getByRole("dialog", { name: /^About nightfall$/i });
+  await about.getByRole("tab", { name: "Third-Party Notices" }).click();
+  const licenses = about.getByRole("tabpanel");
   await expect(licenses.getByRole("alert")).toContainText(
     "could not be loaded",
   );

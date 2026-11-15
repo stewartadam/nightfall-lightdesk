@@ -6,13 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { harnessPageUrl } from "./app-hooks";
 import {
   expect,
   type Locator,
   type Page,
   frontendOnlyTest as test,
 } from "./playwright-fixtures";
-import { waitForDockviewApp } from "./showfile-startup";
 
 /**
  * Describes where keyboard focus sits: the focused control's label when it is
@@ -132,29 +132,24 @@ test("page behind the dialog is inert", async ({ page }) => {
 test("stacked dialogs keep focus in the frontmost one", async ({
   page,
 }, testInfo) => {
-  await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
-  await waitForDockviewApp(page);
-  await page.getByRole("button", { name: "Menu", exact: true }).click();
-  await page.getByRole("button", { name: "About", exact: true }).click();
-  const about = page.getByRole("dialog", { name: /^About nightfall$/i });
-  await expect(about).toBeVisible();
-  const opener = about.getByRole("button", {
-    name: "View Third-Party Licenses",
-  });
+  await page.goto(harnessPageUrl("stacked-dialogs"));
+  const outer = page.getByRole("dialog", { name: "Outer dialog" });
+  await expect(outer).toBeVisible();
+  const opener = outer.getByRole("button", { name: "Open inner dialog" });
   await opener.click();
-  const licenses = page.getByRole("dialog", { name: "Third-Party Licenses" });
-  await expect(licenses).toBeVisible();
-  await expect(licenses).toBeFocused();
+  const inner = page.getByRole("dialog", { name: "Inner dialog" });
+  await expect(inner).toBeVisible();
+  await expect(inner).toBeFocused();
 
-  await walkFocus(page, licenses, "Tab", 12);
-  await walkFocus(page, licenses, "Shift+Tab", 12);
+  await walkFocus(page, inner, "Tab", 12);
+  await walkFocus(page, inner, "Shift+Tab", 12);
   await page.screenshot({
     animations: "disabled",
-    path: testInfo.outputPath("stacked-licenses-focus.png"),
+    path: testInfo.outputPath("stacked-dialogs-focus.png"),
   });
 
   await page.keyboard.press("Escape");
-  await expect(licenses).toBeHidden();
+  await expect(inner).toBeHidden();
   await expect(opener).toBeFocused();
-  await walkFocus(page, about, "Tab", 8);
+  await walkFocus(page, outer, "Tab", 8);
 });

@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { harnessPageUrl } from "./app-hooks";
 import {
   expect,
   type Page,
@@ -19,45 +20,40 @@ async function openDemoApp(page: Page): Promise<void> {
   await waitForDockviewApp(page);
 }
 
-/** Opens About and its stacked Third-Party Licenses dialog from the status bar menu. */
-async function openStackedLicenses(page: Page) {
-  await page.getByRole("button", { name: "Menu", exact: true }).click();
-  await page.getByRole("button", { name: "About", exact: true }).click();
-  const about = page.getByRole("dialog", { name: /^About nightfall$/i });
-  await expect(about).toBeVisible();
-  await about
-    .getByRole("button", { name: "View Third-Party Licenses" })
-    .click();
-  const licenses = page.getByRole("dialog", { name: "Third-Party Licenses" });
-  await expect(licenses).toBeVisible();
-  return { about, licenses };
+/** Opens the stacked-dialogs fixture and its inner dialog on top of the outer one. */
+async function openStackedDialogs(page: Page) {
+  await page.goto(harnessPageUrl("stacked-dialogs"));
+  const outer = page.getByRole("dialog", { name: "Outer dialog" });
+  await expect(outer).toBeVisible();
+  await outer.getByRole("button", { name: "Open inner dialog" }).click();
+  const inner = page.getByRole("dialog", { name: "Inner dialog" });
+  await expect(inner).toBeVisible();
+  return { outer, inner };
 }
 
 /** Verifies Escape closes only the frontmost of two stacked dialogs. */
 test("escape closes only the frontmost stacked dialog", async ({ page }) => {
-  await openDemoApp(page);
-  const { about, licenses } = await openStackedLicenses(page);
+  const { outer, inner } = await openStackedDialogs(page);
 
   await page.keyboard.press("Escape");
-  await expect(licenses).toBeHidden();
-  await expect(about).toBeVisible();
+  await expect(inner).toBeHidden();
+  await expect(outer).toBeVisible();
 
   await page.keyboard.press("Escape");
-  await expect(about).toBeHidden();
+  await expect(outer).toBeHidden();
 });
 
 /** Verifies Enter in a field of the frontmost dialog stays with that field instead of dismissing dialogs. */
 test("enter in a stacked dialog field keeps both dialogs open", async ({
   page,
 }) => {
-  await openDemoApp(page);
-  const { about, licenses } = await openStackedLicenses(page);
+  const { outer, inner } = await openStackedDialogs(page);
 
-  const search = licenses.getByRole("searchbox");
+  const search = inner.getByRole("searchbox");
   await search.fill("preline");
   await search.press("Enter");
-  await expect(licenses).toBeVisible();
-  await expect(about).toBeVisible();
+  await expect(inner).toBeVisible();
+  await expect(outer).toBeVisible();
   await expect(search).toHaveValue("preline");
 });
 
