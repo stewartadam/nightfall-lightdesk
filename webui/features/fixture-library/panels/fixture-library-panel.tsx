@@ -26,12 +26,14 @@ import {
   createSignal,
   Show,
 } from "solid-js";
+import { usePanelCapability } from "../../../components/providers/panel-capabilities/context-core";
 import {
   ToggleToolbarButton,
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
 import DataGrid, {
   createKeyedDataGridCellProvider,
+  type DataGridScrollRequest,
 } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -66,6 +68,7 @@ import {
   libraryRevisionLabel,
 } from "../../../lib/library-revision";
 import { getLogger } from "../../../lib/logger";
+import { REVEAL_LIBRARY_FIXTURE_CAPABILITY } from "../../../lib/panel-capabilities";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
   fixtureLibrary,
@@ -268,14 +271,20 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     return fixture ? (patched().get(libraryDefinitionId(fixture)) ?? 0) : 0;
   });
 
+  /** Latest request for the grid to scroll a row into view. */
+  const [scrollRequest, setScrollRequest] =
+    createSignal<DataGridScrollRequest>();
+  /** Numbers scroll requests so the grid acts on each one. */
+  let scrollRequestId = 0;
+
   /** Whether the panel shows GDTF Share search in place of the library list. */
   const [searchingOnline, setSearchingOnline] = createSignal(false);
   const [onlineQuery, setOnlineQuery] = createSignal("");
 
   /**
    * Leaves GDTF Share search and shows a library entry in the properties panel, moving the
-   * grid's active cell to its row so the highlight follows, or clearing it when a filter
-   * hides the row.
+   * grid's active cell to its row and scrolling it into view so the highlight follows, or
+   * clearing it when a filter hides the row.
    */
   const showLibraryCopy = (fixture: AvailableFixtureInfo) => {
     setSearchingOnline(false);
@@ -287,6 +296,10 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
         entry.fixture.model === fixture.model &&
         entry.fixture.asset_etag === fixture.asset_etag,
     );
+    if (row >= 0) {
+      scrollRequestId += 1;
+      setScrollRequest({ cell: [0, row], requestId: scrollRequestId });
+    }
     setSelection(
       row < 0
         ? emptyGridSelection()
@@ -526,6 +539,20 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     clearSelection();
   });
 
+  /**
+   * Shows a library revision another panel asked for, when the library lists it. A filter
+   * that hides its row is left alone; Properties still shows the revision.
+   */
+  usePanelCapability(panelId, REVEAL_LIBRARY_FIXTURE_CAPABILITY, (request) => {
+    const target = $fixtureLibrary().find(
+      (fixture) =>
+        fixture.make === request.make &&
+        fixture.model === request.model &&
+        fixture.asset_etag === request.asset_etag,
+    );
+    if (target) showLibraryCopy(target);
+  });
+
   /** Columns the grid draws: the panel's columns minus the ones the user hid. */
   const displayColumns = createMemo(() => {
     return filterVisibleColumns(columns(), panelId);
@@ -634,6 +661,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
             rowMarkers="checkbox"
             gridSelection={selection()}
             onGridSelectionChange={handleGridSelectionChange}
+            scrollRequest={scrollRequest()}
             width="100%"
             height="100%"
             freezeColumns={1}

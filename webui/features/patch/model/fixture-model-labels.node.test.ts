@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fixtureModelLabels } from "./fixture-model-labels";
+import { fixtureFileNames, fixtureModelLabels } from "./fixture-model-labels";
 
 /** Builds the fields of a patched fixture the label reads. */
 function fixture(model: string, etag?: string, make = "Acme") {
@@ -76,5 +76,24 @@ test("fixtureModelLabels uses whole fingerprints when their starts match", () =>
       [],
     ),
     ["Spot (builtin:spot:v1)", "Spot (builtin:spot:v2)"],
+  );
+});
+
+/** Names each fixture's library file, built-ins as such, and nothing for unlisted revisions. */
+test("fixtureFileNames names the library file each fixture came from", () => {
+  assert.deepEqual(
+    fixtureFileNames(
+      [
+        { library_asset_etag: "1111111111" },
+        { library_asset_etag: "builtin:spot:v1" },
+        { library_asset_etag: "2222222222" },
+        { library_asset_etag: undefined },
+      ],
+      [
+        { asset_etag: "1111111111", file_name: "Acme@Wash@Release_1.gdtf" },
+        { asset_etag: "builtin:spot:v1" },
+      ],
+    ),
+    ["Acme@Wash@Release_1.gdtf", "built-in", "", ""],
   );
 });

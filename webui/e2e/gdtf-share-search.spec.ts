@@ -843,7 +843,8 @@ async function patchWashes(
 /**
  * Two revisions of the wash can share a show in one mode. The Patch view shows the model
  * alone while every wash comes from one revision, and names each wash's revision after its
- * model once a second revision is patched.
+ * model once a second revision is patched. Each row names its library file, and Alt+Click
+ * (or Show in Fixture Library on right-click) opens the library on that revision.
  */
 test("names the revision in the Patch view when a model mixes revisions", async ({
   page,
@@ -873,7 +874,45 @@ test("names the revision in the Patch view when a model mixes revisions", async 
   await expect(
     patch.getByRole("row").filter({ hasText: "E2E Wash (Release 2.0)" }),
   ).toHaveCount(1);
+  const updatedRow = patch
+    .getByRole("row")
+    .filter({ hasText: "E2E Wash (Release 2.0)" });
+  await expect(updatedRow).toContainText(installFileName(WASH_UPDATE));
+  await expect(
+    patch.getByRole("row").filter({ hasText: installFileName(WASH) }),
+  ).toHaveCount(2);
   await page.screenshot({
     path: testInfo.outputPath("17-patch-mixed-revisions.png"),
+  });
+
+  await updatedRow.getByText(installFileName(WASH_UPDATE)).click({
+    button: "right",
+  });
+  await expect(
+    page.getByRole("menuitem", { name: /Show in Fixture Library/ }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("18-show-in-library-menu.png"),
+  });
+  await page.keyboard.press("Escape");
+
+  await addPanel(
+    page,
+    PROPERTIES_PANEL_ID,
+    "PropertiesInspector",
+    "Properties",
+    "right",
+  );
+  await updatedRow
+    .getByText(installFileName(WASH_UPDATE))
+    .click({ modifiers: ["Alt"] });
+  const library = page.locator('[data-component="FixtureLibrary"]');
+  await expect(library).toBeVisible();
+  await expect(page.getByTestId("fixture-library-revision")).toHaveText(
+    "Revision: Release 2.0 · 2024-01-03",
+    { timeout: 20_000 },
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("19-followed-to-library.png"),
   });
 });

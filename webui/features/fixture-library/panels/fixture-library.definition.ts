@@ -7,7 +7,10 @@
  */
 
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
-import { RENDER_PROPERTIES_CAPABILITY } from "../../../lib/panel-capabilities";
+import {
+  RENDER_PROPERTIES_CAPABILITY,
+  REVEAL_LIBRARY_FIXTURE_CAPABILITY,
+} from "../../../lib/panel-capabilities";
 import { definePanel } from "../../../lib/panel-module";
 
 export default definePanel({
@@ -18,7 +21,10 @@ export default definePanel({
   minHeight: 240,
   icon: FileTextIcon,
   loadComponent: () => import("./fixture-library-panel"),
-  capabilities: [RENDER_PROPERTIES_CAPABILITY.id],
+  capabilities: [
+    RENDER_PROPERTIES_CAPABILITY.id,
+    REVEAL_LIBRARY_FIXTURE_CAPABILITY.id,
+  ],
   showInPalette: true,
   singleton: "singleton",
 });

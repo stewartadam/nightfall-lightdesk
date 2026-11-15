@@ -73,3 +73,24 @@ export function fixtureModelLabels(
 function modelKey(fixture: LabeledFixture): string {
   return `${fixture.make}\u0000${fixture.model}`;
 }
+
+/**
+ * Returns the library file each fixture was patched from, keyed by the fixture's position in
+ * `fixtures`: the file name the library lists for its revision, "built-in" for a listed
+ * definition shipped with the app, or "" when the fixture has no revision or the library no
+ * longer lists it.
+ */
+export function fixtureFileNames(
+  fixtures: readonly Pick<Fixture, "library_asset_etag">[],
+  library: readonly Pick<AvailableFixtureInfo, "asset_etag" | "file_name">[],
+): string[] {
+  const libraryByEtag = new Map(
+    library.map((info) => [info.asset_etag, info] as const),
+  );
+  return fixtures.map((fixture) => {
+    const etag = fixture.library_asset_etag;
+    const info = etag ? libraryByEtag.get(etag) : undefined;
+    if (!info) return "";
+    return info.file_name ?? "built-in";
+  });
+}

@@ -231,6 +231,10 @@ pub struct AvailableFixtureInfo {
     /// GDTF specification version the archive is written against, such as `1.2`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gdtf_data_version: Option<String>,
+    /// Name of the definition file, in the library folder or the open show's package, or `None`
+    /// for a built-in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
 }
 
 /// Response for ListAvailableFixtures command
