@@ -275,8 +275,9 @@ mod tests {
         run_command(engine, "FixtureLibraryCommand", command)
     }
 
-    /// Submits one client command of `module` and returns every publication from the next
-    /// frames.
+    /// Submits one client command of `module` and returns every publication from the frames
+    /// it takes: at least [`MIN_COMMAND_TICKS`], and on until its result is published or
+    /// [`MAX_COMMAND_TICKS`] pass.
     fn run_command(
         engine: &mut crate::BrowserEngine,
         module: &str,
@@ -292,26 +293,43 @@ mod tests {
         engine
             .enqueue_command_core(envelope)
             .expect("command should enqueue");
-        engine.tick_core(16.0);
-        engine.tick_core(16.0);
-        let messages = engine
-            .drain_output_core()
-            .iter()
-            .filter_map(|bytes| decode_publication(bytes))
-            .collect();
+        let mut messages = Vec::new();
+        for tick in 1..=MAX_COMMAND_TICKS {
+            engine.tick_core(16.0);
+            messages.extend(
+                engine
+                    .drain_output_core()
+                    .iter()
+                    .filter_map(|bytes| decode_publication(bytes)),
+            );
+            if tick >= MIN_COMMAND_TICKS && find_command_result(&messages, command_id).is_some() {
+                break;
+            }
+        }
         (command_id, messages)
     }
 
-    /// Returns the terminal command-result publication for one command.
-    fn command_result(messages: &[Value], command_id: Uuid) -> &Value {
+    /// Frames every command runs for, so publications that follow a result are collected too.
+    const MIN_COMMAND_TICKS: usize = 2;
+
+    /// Frames a command may take before its result is reported missing. Undo and redo replay
+    /// their steps over several frames, so they need more than the minimum.
+    const MAX_COMMAND_TICKS: usize = 30;
+
+    /// Finds the terminal command-result publication for `command_id` in `messages`.
+    fn find_command_result(messages: &[Value], command_id: Uuid) -> Option<&Value> {
         let command_id = command_id.simple().to_string();
-        messages
-            .iter()
-            .find(|message| {
-                message["type"] == "CommandResult"
-                    && message.pointer("/data/command_id").and_then(Value::as_str)
-                        == Some(command_id.as_str())
-            })
+        messages.iter().find(|message| {
+            message["type"] == "CommandResult"
+                && message.pointer("/data/command_id").and_then(Value::as_str)
+                    == Some(command_id.as_str())
+        })
+    }
+
+    /// Returns the terminal command-result publication for one command, panicking with every
+    /// publication when it is missing.
+    fn command_result(messages: &[Value], command_id: Uuid) -> &Value {
+        find_command_result(messages, command_id)
             .unwrap_or_else(|| panic!("missing command result in {messages:#?}"))
     }
 
