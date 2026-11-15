@@ -240,7 +240,7 @@ export function reportFatalError(source: string, error: unknown): void {
  * Sends a failure the application recovered from on its own to automatic
  * error reporting without showing it, so recoveries cannot hide bugs.
  */
-export function forwardRecoveredError(source: string, error: unknown): void {
+export function forwardHandledError(source: string, error: unknown): void {
   const details = describeUncaughtError(error, "error");
   uncaughtErrorForwarder?.({ ...details, source }, false);
 }

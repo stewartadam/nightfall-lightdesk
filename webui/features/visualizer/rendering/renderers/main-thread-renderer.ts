@@ -50,11 +50,7 @@ import { setSceneDarkness } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import { observeRenderSize } from "./observe-render-size";
-import {
-  describeDeviceLoss,
-  SimulatedRenderFailure,
-  type VisualizerRenderFailure,
-} from "./render-failure";
+import { describeDeviceLoss, SimulatedRenderFailure } from "./render-failure";
 import type {
   CameraState,
   Vec3,
@@ -175,7 +171,7 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   }
 
   resume(): void {
-    if (!this.rendererState?.isPaused) return;
+    if (!this.rendererState?.isPaused || this.failures.failed) return;
     this.instrumentation?.resume();
     this.startRenderLoopInternal();
   }
@@ -407,16 +403,9 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   // Private Methods
   // ============================================================================
 
-  /**
-   * Stops rendering for good and reports the failure once. The render loop is
-   * not restarted, so a broken renderer does not throw on every frame; the
-   * panel decides how to recover.
-   */
-  private fail(failure: VisualizerRenderFailure): void {
-    if (this.failures.failed || this.disposed) return;
-    log.error(`Renderer stopped (${failure.kind}): ${failure.message}`);
+  /** Stops the render loop of a renderer that failed. */
+  protected stopRenderingAfterFailure(): void {
     if (this.rendererState) stopRenderLoop(this.rendererState);
-    this.failures.report(failure);
   }
 
   private startRenderLoopInternal(): void {

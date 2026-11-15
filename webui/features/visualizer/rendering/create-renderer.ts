@@ -137,16 +137,12 @@ export async function createVisualizerRenderer(
       quality: visualizerEffectiveQuality.get(),
       simulateFailure: resolveSimulatedFailure(useWorker),
     });
+    await waitAtRendererInitializationTestGate(renderer);
+    renderer.setupResizeObserver?.(container);
   } catch (error) {
     // Nobody else holds the renderer yet, so release its worker here.
     renderer.dispose();
     throw error;
-  }
-
-  await waitAtRendererInitializationTestGate(renderer);
-
-  if (renderer.setupResizeObserver) {
-    renderer.setupResizeObserver(container);
   }
 
   return renderer;

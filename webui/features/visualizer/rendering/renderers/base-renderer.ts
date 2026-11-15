@@ -28,6 +28,7 @@ import type {
 import type { SceneManager } from "../scene-manager";
 import {
   RenderFailureLatch,
+  type VisualizerRenderFailure,
   type VisualizerRenderFailureCallback,
 } from "./render-failure";
 import type {
@@ -61,6 +62,21 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
   setFailureCallback(callback: VisualizerRenderFailureCallback | null): void {
     this.failures.setCallback(callback);
   }
+
+  /**
+   * Stops rendering for good and reports the failure once. The render loop is
+   * not restarted, so a broken renderer does not throw on every frame; the
+   * panel decides how to recover.
+   */
+  protected fail(failure: VisualizerRenderFailure): void {
+    if (this.failures.failed || this.disposed) return;
+    log.warn(`Renderer stopped (${failure.kind}): ${failure.message}`);
+    this.stopRenderingAfterFailure();
+    this.failures.report(failure);
+  }
+
+  /** Stops the render loop of a renderer that failed. */
+  protected abstract stopRenderingAfterFailure(): void;
 
   /**
    * Initialize debug overlays. Call from subclass init() after creating the scene.

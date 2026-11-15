@@ -17,12 +17,20 @@ import {
 /** A renderer's first failure restarts it in the same mode. */
 test("planRenderRecovery restarts a renderer that failed for the first time", () => {
   assert.deepEqual(
-    planRenderRecovery({ mode: "worker", restarted: false, mountedAt: 0 }, 10),
+    planRenderRecovery(
+      { mode: "worker", restarted: false, mountedAt: 0, kind: "render-error" },
+      10,
+    ),
     { action: "restart", mode: "worker" },
   );
   assert.deepEqual(
     planRenderRecovery(
-      { mode: "main-thread", restarted: false, mountedAt: 0 },
+      {
+        mode: "main-thread",
+        restarted: false,
+        mountedAt: 0,
+        kind: "render-error",
+      },
       10,
     ),
     { action: "restart", mode: "main-thread" },
@@ -32,7 +40,10 @@ test("planRenderRecovery restarts a renderer that failed for the first time", ()
 /** A restarted worker renderer that fails again moves to the main thread. */
 test("planRenderRecovery falls back from a restarted worker renderer", () => {
   assert.deepEqual(
-    planRenderRecovery({ mode: "worker", restarted: true, mountedAt: 0 }, 10),
+    planRenderRecovery(
+      { mode: "worker", restarted: true, mountedAt: 0, kind: "render-error" },
+      10,
+    ),
     { action: "fallback", mode: "main-thread" },
   );
 });
@@ -41,7 +52,12 @@ test("planRenderRecovery falls back from a restarted worker renderer", () => {
 test("planRenderRecovery gives up after the main-thread restart fails", () => {
   assert.deepEqual(
     planRenderRecovery(
-      { mode: "main-thread", restarted: true, mountedAt: 0 },
+      {
+        mode: "main-thread",
+        restarted: true,
+        mountedAt: 0,
+        kind: "render-error",
+      },
       10,
     ),
     { action: "give-up" },
@@ -52,10 +68,38 @@ test("planRenderRecovery gives up after the main-thread restart fails", () => {
 test("planRenderRecovery restarts again after a healthy stretch", () => {
   assert.deepEqual(
     planRenderRecovery(
-      { mode: "main-thread", restarted: true, mountedAt: 0 },
+      {
+        mode: "main-thread",
+        restarted: true,
+        mountedAt: 0,
+        kind: "render-error",
+      },
       HEALTHY_RENDER_MS,
     ),
     { action: "restart", mode: "main-thread" },
+  );
+});
+
+/** Setup failures repeat on every attempt, so they are never restarted. */
+test("planRenderRecovery does not restart a renderer that failed to initialize", () => {
+  assert.deepEqual(
+    planRenderRecovery(
+      { mode: "worker", restarted: false, mountedAt: 0, kind: "init-error" },
+      10,
+    ),
+    { action: "fallback", mode: "main-thread" },
+  );
+  assert.deepEqual(
+    planRenderRecovery(
+      {
+        mode: "main-thread",
+        restarted: false,
+        mountedAt: 0,
+        kind: "init-error",
+      },
+      10,
+    ),
+    { action: "give-up" },
   );
 });
 

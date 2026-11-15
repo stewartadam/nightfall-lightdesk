@@ -64,7 +64,7 @@ test("a failing worker renderer restarts once, then falls back to the main threa
     page.getByRole("img", { name: "3D visualizer viewport" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("alert").filter({ hasText: "Visualizer failed to load" }),
+    page.getByRole("alert").filter({ hasText: /Visualizer (failed|stopped)/ }),
   ).toHaveCount(0);
   await expect
     .poll(
@@ -97,7 +97,7 @@ for (const failure of ["render", "device-lost"] as const) {
 
     const alert = page
       .getByRole("alert")
-      .filter({ hasText: "Visualizer failed to load" });
+      .filter({ hasText: "Visualizer stopped" });
     await expect(alert).toBeVisible({ timeout: 120_000 });
     await expect(alert).toContainText(
       failure === "render"

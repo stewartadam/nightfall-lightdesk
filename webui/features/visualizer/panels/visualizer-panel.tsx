@@ -96,7 +96,9 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
             await captureCameraForRemount(outgoing, "quality change"),
           );
           // A newer quality change supersedes this one and performs its own remount.
-          if (quality() === next) setMountedQuality(next);
+          if (quality() !== next) return;
+          recovery.resetRestarts();
+          setMountedQuality(next);
         })();
       },
       { defer: true },
@@ -200,6 +202,16 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
                 <VisualizerErrorFallback
                   error={recovery.failureError()}
                   reset={recovery.retry}
+                  title={
+                    recovery.failure()?.kind === "init-error"
+                      ? undefined
+                      : "Visualizer stopped"
+                  }
+                  description={
+                    recovery.failure()?.kind === "init-error"
+                      ? undefined
+                      : "The visualizer kept failing while rendering, even after restarting."
+                  }
                 />
               }
             >

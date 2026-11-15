@@ -15,7 +15,7 @@
 import { createSignal } from "solid-js";
 import { isOffscreenCanvasEnabled } from "../../../lib/feature-flags";
 import { getLogger } from "../../../lib/logger";
-import { forwardRecoveredError } from "../../../lib/uncaught-error-reporter";
+import { forwardHandledError } from "../../../lib/uncaught-error-reporter";
 import type { VisualizerCanvasApi } from "../controllers/visualizer-canvas-api";
 import type { VisualizerRenderFailure } from "../rendering/renderers/render-failure";
 import type { CameraState } from "../rendering/renderers/renderer-api";
@@ -94,13 +94,13 @@ export function useRenderRecovery(options: RenderRecoveryOptions) {
   const handleFailure = (next: VisualizerRenderFailure) => {
     if (recovering || failure()) return;
     const plan = planRenderRecovery(
-      { mode: mode(), restarted, mountedAt },
+      { mode: mode(), restarted, mountedAt, kind: next.kind },
       performance.now(),
     );
     log.warn(
       `Visualizer renderer failed (${next.kind}, ${mode()}): ${next.message}; next step: ${plan.action}`,
     );
-    forwardRecoveredError("visualizer", next);
+    forwardHandledError("visualizer", next);
     if (plan.action === "give-up") {
       setFailure(next);
       return;
@@ -111,6 +111,14 @@ export function useRenderRecovery(options: RenderRecoveryOptions) {
     void remount(plan.mode, "a visualizer restart").finally(() => {
       recovering = false;
     });
+  };
+
+  /**
+   * Gives the next renderer a fresh restart allowance. The panel calls this
+   * when it replaces the renderer for its own reasons, such as a quality change.
+   */
+  const resetRestarts = () => {
+    restarted = false;
   };
 
   /** Clears a shown failure and starts over with a fresh restart allowance. */
@@ -134,6 +142,7 @@ export function useRenderRecovery(options: RenderRecoveryOptions) {
     },
     handleFailure,
     retry,
+    resetRestarts,
     /** Changes whenever the canvas must be replaced. */
     mountKey: () => `${mode()}:${generation()}`,
     /** Records when the current canvas mounted, to judge how healthy it was. */

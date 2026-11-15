@@ -25,6 +25,10 @@ const log = getLogger(import.meta.url);
 export function VisualizerErrorFallback(props: {
   error: unknown;
   reset: () => void;
+  /** Replaces the heading, for failures after the visualizer had started. */
+  title?: string;
+  /** Replaces the explanation shown for errors that do not mention the GPU. */
+  description?: string;
 }) {
   log.errorWithCause(props.error, "Visualizer error");
 
@@ -37,7 +41,7 @@ export function VisualizerErrorFallback(props: {
 
   return (
     <ErrorFallback
-      title="Visualizer failed to load"
+      title={props.title ?? "Visualizer failed to load"}
       error={props.error}
       reset={props.reset}
       description={
@@ -60,7 +64,8 @@ export function VisualizerErrorFallback(props: {
             </p>
           </>
         ) : (
-          "An error occurred while initializing the visualizer."
+          (props.description ??
+          "An error occurred while initializing the visualizer.")
         )
       }
     />

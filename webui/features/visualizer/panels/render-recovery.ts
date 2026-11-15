@@ -13,6 +13,7 @@
  */
 
 import { atom } from "nanostores";
+import type { VisualizerRenderFailureKind } from "../rendering/renderers/render-failure";
 
 /** Where a visualizer renders. */
 export type VisualizerRenderMode = "worker" | "main-thread";
@@ -39,6 +40,8 @@ export interface RenderRecoveryState {
   restarted: boolean;
   /** When the failed renderer was mounted, in milliseconds. */
   mountedAt: number;
+  /** How the renderer failed. */
+  kind: VisualizerRenderFailureKind;
 }
 
 /** The next step after a renderer failure. */
@@ -52,11 +55,20 @@ export type RenderRecoveryPlan =
  * or that is not a restart yet, is restarted in the same mode. A restarted
  * worker renderer that fails again falls back to the main thread; a restarted
  * main-thread renderer gives up so the panel can show the error.
+ *
+ * A renderer that never finished initializing is not restarted: setup failures
+ * (no usable GPU adapter, no OffscreenCanvas support) repeat on every attempt,
+ * so a worker moves straight to the main thread and the main thread gives up.
  */
 export function planRenderRecovery(
   state: RenderRecoveryState,
   now: number,
 ): RenderRecoveryPlan {
+  if (state.kind === "init-error") {
+    return state.mode === "worker"
+      ? { action: "fallback", mode: "main-thread" }
+      : { action: "give-up" };
+  }
   const wasHealthy = now - state.mountedAt >= HEALTHY_RENDER_MS;
   if (!state.restarted || wasHealthy) {
     return { action: "restart", mode: state.mode };

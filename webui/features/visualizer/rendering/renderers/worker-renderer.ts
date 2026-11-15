@@ -83,7 +83,6 @@ import {
   describeDeviceLoss,
   describeRenderFailure,
   SimulatedRenderFailure,
-  type VisualizerRenderFailure,
   type VisualizerRenderFailureCallback,
 } from "./render-failure";
 import type {
@@ -463,6 +462,10 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
       });
   }
 
+  /**
+   * Forwards the listener to the worker, wrapped for Comlink so the worker can
+   * call it back across the thread boundary when its renderer fails.
+   */
   setFailureCallback(callback: VisualizerRenderFailureCallback | null): void {
     this.liveApi?.setFailureCallback(callback ? Comlink.proxy(callback) : null);
   }
@@ -623,11 +626,11 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       devicePixelRatio,
     });
     this.renderer.setSize(width, height, false);
+    this.renderer.onDeviceLost = (info) => this.fail(describeDeviceLoss(info));
 
     // Wait for WebGPU and the fixture model that evaluates channel output
     await Promise.all([this.renderer.init(), loadFixtureEvaluation()]);
     supplyWebGpuCanvasContext(this.renderer);
-    this.renderer.onDeviceLost = (info) => this.fail(describeDeviceLoss(info));
     this.simulatedFailure = new SimulatedRenderFailure(config.simulateFailure);
 
     // Create scene
@@ -746,7 +749,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
   }
 
   resume(): void {
-    if (!this._isPaused) return;
+    if (!this._isPaused || this.failures.failed) return;
     this._isPaused = false;
     this.instrumentation?.resume();
     this.startRenderLoop();
@@ -1035,16 +1038,9 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     if (simulated) this.fail(simulated);
   }
 
-  /**
-   * Stops rendering for good and reports the failure once. The render loop is
-   * not restarted, so a broken renderer does not throw on every frame; the
-   * panel decides how to recover.
-   */
-  private fail(failure: VisualizerRenderFailure): void {
-    if (this.failures.failed || this.disposed) return;
-    log.error(`Renderer stopped (${failure.kind}): ${failure.message}`);
+  /** Stops the animation loop of a renderer that failed. */
+  protected stopRenderingAfterFailure(): void {
     this.renderer?.setAnimationLoop(null);
-    this.failures.report(failure);
   }
 
   private applyControlInteractionState(): void {
