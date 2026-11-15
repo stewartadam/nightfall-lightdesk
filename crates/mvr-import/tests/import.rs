@@ -24,7 +24,9 @@ use nightfall_fixtures::prelude::*;
 use nightfall_fixtures::websocket::SuppressFixtureChangedSnapshot;
 use nightfall_fixtures::{FixtureCommand, RouteEndpoint};
 use nightfall_io::prelude::*;
-use nightfall_mvr_import::commands::expand_rig_import_commits;
+use nightfall_mvr_import::commands::{
+    DeferredGroupStores, expand_rig_import_commits, release_deferred_group_stores,
+};
 use nightfall_mvr_import::plan::{ShowFixture, ShowFixtures, ShowGroup, plan_import};
 use nightfall_mvr_import::prelude::*;
 use nightfall_mvr_import::rig::{RigPatch, RigTypeSource, read_rig};
@@ -310,7 +312,62 @@ fn reimport_updates_changed_fixtures() {
     assert_eq!(plan.groups[0].members.len(), 2);
 }
 
-/// Builds an app that expands rig import commits and runs fixture commands.
+/// Commands the test dispatcher received from expanded rig import commits.
+#[derive(Resource, Default)]
+struct Dispatched {
+    /// Fixture commands, in the order they were dispatched.
+    fixtures: Vec<FixtureCommand>,
+    /// Groups stored, in the order their stores were dispatched.
+    groups: Vec<Group>,
+}
+
+/// Makes the test dispatcher fail every fixture command instead of running it, standing in
+/// for a `PatchRig` the fixture handler rejects.
+#[derive(Resource, Default)]
+struct FailFixtureCommands(bool);
+
+/// Stands in for the engine's dispatch of queued commands: forwards fixture commands to the
+/// fixture handler under their commit's IDs, or fails them when [`FailFixtureCommands`] is
+/// set, and records group stores and reports them done.
+fn dispatch_pending(
+    mut pending: ResMut<PendingCommandBuffer>,
+    mut dispatched: ResMut<Dispatched>,
+    fail: Res<FailFixtureCommands>,
+    mut fixture_commands: MessageWriter<CommandEnvelope<FixtureCommand>>,
+    mut responder: CommandResponder,
+) {
+    for envelope in pending.drain() {
+        let payload = envelope.payload.as_any();
+        if let Some(command) = payload.downcast_ref::<FixtureCommand>() {
+            dispatched.fixtures.push(command.clone());
+            if fail.0 {
+                responder
+                    .fail(
+                        envelope.command_id,
+                        CommandError::new("fixture.route_invalid", "Address overlap"),
+                    )
+                    .unwrap();
+                continue;
+            }
+            fixture_commands.write(CommandEnvelope {
+                command_id: envelope.command_id,
+                undo_id: envelope.undo_id,
+                origin: CommandOrigin::Cli,
+                reply_target: ReplyTarget::Detached,
+                command: command.clone(),
+            });
+        } else if let Some(GroupCommand::StoreGroup(group)) = payload.downcast_ref::<GroupCommand>()
+        {
+            dispatched.groups.push(group.clone());
+            responder.succeed(envelope.command_id).unwrap();
+        } else {
+            panic!("unexpected command");
+        }
+    }
+}
+
+/// Builds an app that expands rig import commits, dispatches the commands they turn into
+/// and runs fixture commands, all in one frame.
 fn import_app(library: FixtureLibraryManager, sessions: RigImportSessions) -> App {
     let mut app = App::new();
     app.add_message::<CommandEnvelope<FixtureCommand>>();
@@ -331,24 +388,28 @@ fn import_app(library: FixtureLibraryManager, sessions: RigImportSessions) -> Ap
     app.init_resource::<UsbDmxOutputTargets>();
     app.init_resource::<ConsoleDmxAddresses>();
     app.init_resource::<ConsoleDmxUniverses>();
+    app.init_resource::<DeferredGroupStores>();
+    app.init_resource::<Dispatched>();
+    app.init_resource::<FailFixtureCommands>();
     let (sender, _receiver) = async_channel::unbounded();
     app.insert_resource(ClientEventSink::new(sender));
     app.insert_resource(library);
     app.insert_resource(sessions);
-    app.add_systems(Update, (expand_rig_import_commits, crud_events).chain());
+    app.add_systems(
+        Update,
+        (
+            release_deferred_group_stores,
+            expand_rig_import_commits,
+            dispatch_pending,
+            crud_events,
+        )
+            .chain(),
+    );
     app
 }
 
-/// A commit installs the file's GDTF into the show package and turns into one fixture
-/// command and one group store. The fixture command adds the fixtures with their UUIDs,
-/// placements and patch, and the group holds the fixture hung on LX 1.
-#[test]
-fn commit_adds_fixtures_with_patch_and_placement() {
-    let root = tempfile::tempdir().unwrap();
-    let sessions = RigImportSessions::default();
-    let session = sessions.insert(read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap());
-    let mut app = import_app(empty_library(root.path()), sessions);
-
+/// Queues a commit of `session` with the default options and returns its command ID.
+fn submit_commit(app: &mut App, session: Uuid) -> CommandId {
     let envelope = CommandEnvelope::new(
         RigImportCommand::Commit {
             session,
@@ -368,6 +429,35 @@ fn commit_adds_fixtures_with_patch_and_placement() {
             envelope.undo_id,
             Box::new(envelope.command.clone()),
         ));
+    envelope.command_id
+}
+
+/// Runs frames until the command `command_id` finishes, failing the test after ten.
+fn run_until_finished(app: &mut App, command_id: CommandId) {
+    for _ in 0..10 {
+        app.update();
+        if !app
+            .world()
+            .resource::<CommandTracker>()
+            .is_active(command_id)
+        {
+            return;
+        }
+    }
+    panic!("the commit never finished");
+}
+
+/// A commit installs the file's GDTF into the show package and turns into one `PatchRig`
+/// that adds the fixtures with their UUIDs, placements and patch. Only once that has
+/// succeeded is the LX 1 group stored, under the same commit.
+#[test]
+fn commit_adds_fixtures_with_patch_and_placement() {
+    let root = tempfile::tempdir().unwrap();
+    let sessions = RigImportSessions::default();
+    let session = sessions.insert(read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap());
+    let mut app = import_app(empty_library(root.path()), sessions);
+
+    let command_id = submit_commit(&mut app, session);
     app.update();
 
     let installed: Vec<_> = std::fs::read_dir(root.path().join("show/fixtures"))
@@ -377,38 +467,22 @@ fn commit_adds_fixtures_with_patch_and_placement() {
     assert_eq!(installed.len(), 1, "{installed:?}");
     assert!(installed[0].starts_with("Test@Spot-"));
 
-    let mut queued = app
-        .world_mut()
-        .resource_mut::<PendingCommandBuffer>()
-        .drain();
-    assert_eq!(queued.len(), 2);
-    let group = queued
-        .pop()
-        .unwrap()
-        .payload
-        .as_any()
-        .downcast_ref::<GroupCommand>()
-        .cloned()
-        .expect("a group command");
-    let GroupCommand::StoreGroup(group) = group else {
-        panic!("expected a group store, got {group:?}");
+    let dispatched = app.world().resource::<Dispatched>();
+    assert!(
+        dispatched.groups.is_empty(),
+        "groups wait for the fixtures to be imported"
+    );
+    let [command] = dispatched.fixtures.as_slice() else {
+        panic!(
+            "expected one fixture command, got {:?}",
+            dispatched.fixtures
+        );
     };
-    assert_eq!(group.identifiers.label, "LX 1");
-    assert_eq!(group.identifiers.id, 1);
-    let queued = queued.remove(0);
-    assert_eq!(queued.command_id, envelope.command_id);
-    assert_eq!(queued.undo_id, envelope.undo_id);
-    let command = queued
-        .payload
-        .as_any()
-        .downcast_ref::<FixtureCommand>()
-        .expect("a fixture command")
-        .clone();
     let FixtureCommand::PatchRig {
         add: fixtures,
         update,
         routes,
-    } = &command
+    } = command
     else {
         panic!("expected PatchRig, got {command:?}");
     };
@@ -426,19 +500,47 @@ fn commit_adds_fixtures_with_patch_and_placement() {
             address: Some(11)
         }
     );
-
-    let dispatched = CommandEnvelope::new(command, CommandOrigin::Cli, ReplyTarget::Detached);
-    app.world_mut()
-        .resource_mut::<CommandTracker>()
-        .register(&dispatched)
-        .unwrap();
-    app.world_mut().write_message(dispatched);
-    app.update();
     let provider = app.world().resource::<FixtureDataProviderExt>();
     let spot = provider.inner.get(uuid(SPOT_UUID)).expect("spot imported");
     assert_eq!(spot.make, "Test");
     assert_eq!(spot.mode, "Standard");
+    drop(spot);
     assert_eq!(app.world().resource::<OutputRoutes>().routes.len(), 2);
+
+    run_until_finished(&mut app, command_id);
+    let groups = &app.world().resource::<Dispatched>().groups;
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].identifiers.label, "LX 1");
+    assert_eq!(groups[0].identifiers.id, 1);
+}
+
+/// When `PatchRig` fails, the commit fails with its error and never stores the groups, so a
+/// failed import leaves no groups naming fixtures that were not added.
+#[test]
+fn failed_fixture_import_stores_no_groups() {
+    let root = tempfile::tempdir().unwrap();
+    let sessions = RigImportSessions::default();
+    let session = sessions.insert(read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap());
+    let mut app = import_app(empty_library(root.path()), sessions);
+    app.world_mut().resource_mut::<FailFixtureCommands>().0 = true;
+
+    let command_id = submit_commit(&mut app, session);
+    run_until_finished(&mut app, command_id);
+
+    let dispatched = app.world().resource::<Dispatched>();
+    assert_eq!(dispatched.fixtures.len(), 1);
+    assert!(dispatched.groups.is_empty());
+    let result = app
+        .world_mut()
+        .resource_mut::<Messages<CommandResult>>()
+        .drain()
+        .find(|result| result.command_id == command_id)
+        .expect("the commit reports a result");
+    let CommandOutcome::Failed(error) = result.outcome else {
+        panic!("expected a failure, got {:?}", result.outcome);
+    };
+    assert_eq!(error.code, "fixture.route_invalid");
+    assert!(app.world().resource::<DeferredGroupStores>().is_empty());
 }
 
 /// Opens one of the public samples, or returns `None` when they were not downloaded.
@@ -512,60 +614,21 @@ fn plans_vectorworks_scene_objects() {
     assert_eq!(ids, (1..=72).collect::<Vec<_>>());
 }
 
-/// Submits a commit for `session`, runs its expansion, then dispatches the fixture command
-/// it turned into, if any, and runs that too. Returns the fixture command and the number of
-/// group stores.
+/// Commits `session` and runs it to the end. Returns the fixture command it dispatched, if
+/// any, and the number of groups it stored.
 fn commit_session(app: &mut App, session: Uuid) -> (Option<FixtureCommand>, usize) {
-    let envelope = CommandEnvelope::new(
-        RigImportCommand::Commit {
-            session,
-            options: RigImportOptions::default(),
-        },
-        CommandOrigin::Cli,
-        ReplyTarget::Detached,
+    *app.world_mut().resource_mut::<Dispatched>() = Dispatched::default();
+    let command_id = submit_commit(app, session);
+    run_until_finished(app, command_id);
+    let dispatched = app.world().resource::<Dispatched>();
+    assert!(
+        dispatched.fixtures.len() <= 1,
+        "the commit expands into one fixture command"
     );
-    app.world_mut()
-        .resource_mut::<CommandTracker>()
-        .register(&envelope)
-        .unwrap();
-    app.world_mut()
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            envelope.command_id,
-            envelope.undo_id,
-            Box::new(envelope.command.clone()),
-        ));
-    app.update();
-    let queued = app
-        .world_mut()
-        .resource_mut::<PendingCommandBuffer>()
-        .drain();
-    let mut command = None;
-    let mut groups = 0;
-    for envelope in &queued {
-        let payload = envelope.payload.as_any();
-        if let Some(fixture_command) = payload.downcast_ref::<FixtureCommand>() {
-            assert!(
-                command.is_none(),
-                "the commit expands into one fixture command"
-            );
-            command = Some(fixture_command.clone());
-        } else {
-            assert!(payload.is::<GroupCommand>(), "unexpected command");
-            groups += 1;
-        }
-    }
-    if let Some(command) = &command {
-        let dispatched =
-            CommandEnvelope::new(command.clone(), CommandOrigin::Cli, ReplyTarget::Detached);
-        app.world_mut()
-            .resource_mut::<CommandTracker>()
-            .register(&dispatched)
-            .unwrap();
-        app.world_mut().write_message(dispatched);
-        app.update();
-    }
-    (command, groups)
+    (
+        dispatched.fixtures.first().cloned(),
+        dispatched.groups.len(),
+    )
 }
 
 /// The whole Capture demo show imports: its five GDTFs convert, all 76 fixtures are stored

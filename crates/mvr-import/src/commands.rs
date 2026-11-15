@@ -8,6 +8,7 @@
 
 //! Engine commands that preview, import and discard a read rig.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use bevy_ecs::prelude::*;
@@ -211,16 +212,40 @@ pub fn handle_rig_import_commands(
     }
 }
 
-/// Replaces each queued rig import commit with a `PatchRig` fixture command and a group
-/// store for each group.
+/// Group stores of commits waiting for their `PatchRig` to settle, by commit.
+///
+/// A commit's groups name its fixtures, so they are stored only once the fixtures are in the
+/// show. When `PatchRig` fails, the groups are never stored and the show is left as it was.
+#[derive(Resource, Default)]
+pub struct DeferredGroupStores(HashMap<CommandId, DeferredGroups>);
+
+impl DeferredGroupStores {
+    /// Returns whether no commit is still waiting for its fixtures before storing groups.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+/// The group stores one commit queues once its fixtures are imported.
+struct DeferredGroups {
+    /// Undo group of the commit, which the group stores join.
+    undo_id: UndoId,
+    /// One `StoreGroup` command per group.
+    stores: Vec<DynEnginePayload>,
+}
+
+/// Replaces each queued rig import commit with a `PatchRig` fixture command, followed by a
+/// group store for each group once `PatchRig` succeeds.
 ///
 /// Runs in the pending command expansion stage, so the replacement commands inherit the
 /// commit's command and undo IDs: the commit finishes when all of them have, and undo
 /// captures the whole import as one step. Fixture types from the file are installed into
 /// the show package (and the user library when asked) first, because the fixtures are built
-/// from the library.
+/// from the library. The group stores wait in [`DeferredGroupStores`] for
+/// [`release_deferred_group_stores`].
 pub fn expand_rig_import_commits(
     mut pending: ResMut<PendingCommandBuffer>,
+    mut deferred: ResMut<DeferredGroupStores>,
     sessions: Res<RigImportSessions>,
     mut library: ResMut<FixtureLibraryManager>,
     show_state: ShowState,
@@ -250,7 +275,9 @@ pub fn expand_rig_import_commits(
                 continue;
             }
         };
-        if let Err(error) = responder.expect_completions(envelope.command_id, commands.len()) {
+        let ImportCommands { patch, groups } = commands;
+        let total = usize::from(patch.is_some()) + groups.len();
+        if let Err(error) = responder.expect_completions(envelope.command_id, total) {
             tracing::error!(%error, "rig_import_command_completion_failed");
             log_lifecycle(responder.fail(
                 envelope.command_id,
@@ -262,7 +289,22 @@ pub fn expand_rig_import_commits(
             continue;
         }
         show.apply(&rig, &plan);
-        for command in commands {
+        let now = match patch {
+            Some(patch) => {
+                if !groups.is_empty() {
+                    deferred.0.insert(
+                        envelope.command_id,
+                        DeferredGroups {
+                            undo_id: envelope.undo_id,
+                            stores: groups,
+                        },
+                    );
+                }
+                vec![patch]
+            }
+            None => groups,
+        };
+        for command in now {
             pending.push(PayloadEnvelope::with_context(
                 envelope.command_id,
                 envelope.undo_id,
@@ -270,6 +312,56 @@ pub fn expand_rig_import_commits(
             ));
         }
     }
+}
+
+/// Queues the group stores of each commit whose `PatchRig` has succeeded, under the
+/// commit's command and undo IDs, and fails them unqueued when it has failed.
+///
+/// A commit that already finished, for example because it was canceled, just drops its
+/// group stores.
+pub fn release_deferred_group_stores(
+    mut pending: ResMut<PendingCommandBuffer>,
+    mut deferred: ResMut<DeferredGroupStores>,
+    mut responder: CommandResponder,
+) {
+    let waiting = std::mem::take(&mut deferred.0);
+    for (command_id, groups) in waiting {
+        let Some(command) = responder.active_command(command_id) else {
+            continue;
+        };
+        if command.received_completions() == 0 {
+            deferred.0.insert(command_id, groups);
+            continue;
+        }
+        if command.first_error().is_some() {
+            // The commit reports PatchRig's error, the first one it received.
+            for _ in &groups.stores {
+                log_lifecycle(responder.fail(
+                    command_id,
+                    CommandError::new(
+                        "rig_import.groups_skipped",
+                        "Groups were not stored because the fixtures could not be imported",
+                    ),
+                ));
+            }
+            continue;
+        }
+        for store in groups.stores {
+            pending.push(PayloadEnvelope::with_context(
+                command_id,
+                groups.undo_id,
+                store,
+            ));
+        }
+    }
+}
+
+/// The commands that apply one import plan.
+struct ImportCommands {
+    /// The `PatchRig` adding and updating fixtures, when any change.
+    patch: Option<DynEnginePayload>,
+    /// One `StoreGroup` per group the import makes or refreshes.
+    groups: Vec<DynEnginePayload>,
 }
 
 /// Installs the fixture types the plan needs and builds the commands that apply it: one
@@ -280,7 +372,7 @@ fn build_import(
     library: &mut FixtureLibraryManager,
     groups: &DataProvider<Group>,
     options: &RigImportOptions,
-) -> Result<Vec<DynEnginePayload>, CommandError> {
+) -> Result<ImportCommands, CommandError> {
     if plan.is_empty() {
         return Err(CommandError::new(
             "rig_import.nothing_to_import",
@@ -338,14 +430,14 @@ fn build_import(
         });
     }
 
-    let mut commands: Vec<DynEnginePayload> = Vec::new();
-    if !add.is_empty() || !update.is_empty() {
-        commands.push(Box::new(FixtureCommand::PatchRig {
+    let patch = (!add.is_empty() || !update.is_empty()).then(|| {
+        Box::new(FixtureCommand::PatchRig {
             add,
             update,
             routes,
-        }));
-    }
+        }) as DynEnginePayload
+    });
+    let mut stores: Vec<DynEnginePayload> = Vec::new();
     for planned in &plan.groups {
         let selection = SpatialSelection::identity(SelectionExpr::Resolved(
             planned
@@ -372,9 +464,12 @@ fn build_import(
                 description: format!("Imported from {}", rig.file_name),
             },
         };
-        commands.push(Box::new(GroupCommand::StoreGroup(group)));
+        stores.push(Box::new(GroupCommand::StoreGroup(group)));
     }
-    Ok(commands)
+    Ok(ImportCommands {
+        patch,
+        groups: stores,
+    })
 }
 
 /// Builds the route patching one break of a fixture to its console address.
