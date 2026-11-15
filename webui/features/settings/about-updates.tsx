@@ -13,6 +13,7 @@ import { Alert } from "../../components/ui/alert";
 import { NativeSelect } from "../../components/ui/form-controls";
 import { ProgressBar } from "../../components/ui/progress-bar";
 import { SettingsRow } from "../../components/ui/settings-row";
+import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
 import {
   $desktopUpdate,
@@ -187,10 +188,10 @@ const CHECKABLE_PHASES: ReadonlySet<DesktopUpdatePhase> = new Set([
 ]);
 
 /**
- * Shows a headline for the update status and when updates were last checked, beside Check for
- * Updates. The button stays in place in every state, so an operator holding a downloaded
- * update can still look for a newer one; it is disabled while update checks are off in Settings
- * > Privacy, and while a check, download or install is under way.
+ * Shows a headline for the update status and when updates were last checked, beside the update
+ * channel and Check for Updates. The button stays in place in every state, so an operator
+ * holding a downloaded update can still look for a newer one; it is disabled while update checks
+ * are off in Settings > Privacy, and while a check, download or install is under way.
  */
 function CheckRow(props: {
   update: DesktopUpdateState;
@@ -208,24 +209,44 @@ function CheckRow(props: {
         </p>
         <p class="text-xs text-gray-400">{describeLastCheck(props.update)}</p>
       </div>
-      <Button
-        size="compact"
-        type="button"
-        class="shrink-0 items-center gap-2"
-        disabled={
-          !props.update.checkForUpdates ||
-          !CHECKABLE_PHASES.has(props.update.phase)
-        }
-        onClick={() =>
-          props.updates.run(
-            checkForDesktopUpdates,
-            "Couldn't check for updates.",
-          )
-        }
-      >
-        <ArrowClockwiseIcon class="size-4" aria-hidden />
-        <span>Check for Updates</span>
-      </Button>
+      <div class="flex shrink-0 items-center gap-2">
+        <NativeSelect
+          density="compact"
+          aria-label="Update channel"
+          value={props.update.channel}
+          onChange={(event) =>
+            saveSelectChoice(
+              props.updates,
+              event.currentTarget,
+              props.update.channel,
+              setDesktopUpdateChannel,
+            )
+          }
+        >
+          <For each={UPDATE_CHANNEL_OPTIONS}>
+            {(option) => <option value={option.value}>{option.label}</option>}
+          </For>
+        </NativeSelect>
+        <Tooltip content={() => "Check for Updates"} position="top">
+          <Button
+            size="icon-compact"
+            type="button"
+            aria-label="Check for Updates"
+            disabled={
+              !props.update.checkForUpdates ||
+              !CHECKABLE_PHASES.has(props.update.phase)
+            }
+            onClick={() =>
+              props.updates.run(
+                checkForDesktopUpdates,
+                "Couldn't check for updates.",
+              )
+            }
+          >
+            <ArrowClockwiseIcon class="size-4" aria-hidden />
+          </Button>
+        </Tooltip>
+      </div>
     </div>
   );
 }
@@ -429,33 +450,6 @@ export function AboutUpdateStatus(props: { updates: AboutUpdates }) {
           >
             {(failure) => <UpdateErrorMessage failure={failure()} />}
           </Show>
-          <SettingsRow
-            class="border-t border-gray-700/70"
-            label="Update channel"
-            description="Prerelease also offers alpha, beta and release candidate builds."
-          >
-            {(field) => (
-              <NativeSelect
-                id={field.id}
-                value={update().channel}
-                aria-describedby={field.describedBy}
-                onChange={(event) =>
-                  saveSelectChoice(
-                    props.updates,
-                    event.currentTarget,
-                    update().channel,
-                    setDesktopUpdateChannel,
-                  )
-                }
-              >
-                <For each={UPDATE_CHANNEL_OPTIONS}>
-                  {(option) => (
-                    <option value={option.value}>{option.label}</option>
-                  )}
-                </For>
-              </NativeSelect>
-            )}
-          </SettingsRow>
           <Show
             when={update().canInstall}
             fallback={

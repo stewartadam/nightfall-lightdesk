@@ -516,11 +516,6 @@ test("about dialog switches the update channel", async ({
   const updates = about.getByRole("region", { name: "Updates" });
   const channel = updates.getByRole("combobox", { name: "Update channel" });
   await expect(channel).toHaveValue("prerelease");
-  await expect(
-    updates.getByText(
-      "Prerelease also offers alpha, beta and release candidate builds.",
-    ),
-  ).toBeVisible();
   await channel.selectOption("stable");
   await expect
     .poll(() => updateCalls(page))
