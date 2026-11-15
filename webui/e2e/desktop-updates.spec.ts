@@ -14,6 +14,7 @@ interface UpdateState {
   canInstall: boolean;
   checkForUpdates: boolean;
   updateMode: "notify" | "download" | "install";
+  channel: "stable" | "beta";
   phase:
     | "idle"
     | "checking"
@@ -36,6 +37,7 @@ const idle: UpdateState = {
   canInstall: true,
   checkForUpdates: true,
   updateMode: "download",
+  channel: "beta",
   phase: "idle",
   version: null,
   progress: null,
@@ -116,6 +118,14 @@ async function openDesktopApp(
             desktop.updateState = {
               ...desktop.updateState,
               updateMode: args.mode,
+            };
+            return desktop.updateState;
+          }
+          if (command === "set_update_channel") {
+            desktop.updateCalls.push(`set_update_channel:${args.channel}`);
+            desktop.updateState = {
+              ...desktop.updateState,
+              channel: args.channel,
             };
             return desktop.updateState;
           }
@@ -491,6 +501,35 @@ test("updates wait to download in notify mode", async ({
 });
 
 /**
+ * Verifies the Update channel drop-down shows the channel the shell follows and asks the shell to
+ * switch, and that it stays available in builds that cannot install updates themselves.
+ */
+test("about dialog switches the update channel", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  await openDesktopApp(page, backendSlot.backendPort, {
+    ...idle,
+    canInstall: false,
+  });
+  const about = await openAbout(page);
+  const updates = about.getByRole("region", { name: "Updates" });
+  const channel = updates.getByRole("combobox", { name: "Update channel" });
+  await expect(channel).toHaveValue("beta");
+  await expect(
+    updates.getByText("Beta also offers prereleases with the newest features."),
+  ).toBeVisible();
+  await channel.selectOption("stable");
+  await expect
+    .poll(() => updateCalls(page))
+    .toEqual(["set_update_channel:stable"]);
+  await expect(channel).toHaveValue("stable");
+  await about.screenshot({
+    path: testInfo.outputPath("about-update-channel.png"),
+  });
+});
+
+/**
  * Verifies that a launch after an update says so once, and that an update that failed to install
  * is explained with its error and offers Try Again, which restarts into it again.
  */
@@ -619,7 +658,11 @@ test("builds that cannot install updates check and link to downloads", async ({
   await expect(updates).toContainText(
     "This build of Nightfall can't install updates itself.",
   );
-  await expect(updates.getByRole("combobox")).toHaveCount(0);
+  // Only the channel can be picked: there is no download or install to choose.
+  await expect(updates.getByRole("combobox")).toHaveCount(1);
+  await expect(
+    updates.getByRole("combobox", { name: "Update channel" }),
+  ).toBeVisible();
   await updates.getByRole("button", { name: "Check for Updates" }).click();
   await expect.poll(() => updateCalls(page)).toEqual(["check_for_updates"]);
 

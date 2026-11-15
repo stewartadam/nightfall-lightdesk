@@ -17,6 +17,7 @@ import { Button } from "../../components/ui/visual-language/button";
 import {
   $desktopUpdate,
   checkForDesktopUpdates,
+  type DesktopUpdateChannel,
   type DesktopUpdateError,
   type DesktopUpdateMode,
   type DesktopUpdatePhase,
@@ -24,6 +25,7 @@ import {
   downloadDesktopUpdate,
   openDownloadsPage,
   restartToUpdate,
+  setDesktopUpdateChannel,
   setDesktopUpdateMode,
 } from "../../lib/desktop-updates";
 
@@ -147,6 +149,35 @@ const UPDATE_MODE_OPTIONS: { value: DesktopUpdateMode; label: string }[] = [
   { value: "download", label: "Download, install when I choose" },
   { value: "install", label: "Download and install on quit" },
 ];
+
+/**
+ * Saves the option picked in an update settings drop-down with `save`. When saving fails, the
+ * drop-down goes back to `current`: the store keeps the old value, so Solid won't write it back
+ * to the DOM on its own.
+ */
+function saveSelectChoice<T extends string>(
+  updates: AboutUpdates,
+  select: HTMLSelectElement,
+  current: T,
+  save: (value: T) => Promise<void>,
+): void {
+  const value = select.value as T;
+  updates.run(
+    () =>
+      save(value).catch((error) => {
+        select.value = current;
+        throw error;
+      }),
+    "Couldn't save your update settings.",
+  );
+}
+
+/** Choices for the Update channel drop-down. */
+const UPDATE_CHANNEL_OPTIONS: { value: DesktopUpdateChannel; label: string }[] =
+  [
+    { value: "stable", label: "Stable" },
+    { value: "beta", label: "Beta" },
+  ];
 
 /** Phases in which the desktop shell accepts a check: nothing is checking, downloading or installing. */
 const CHECKABLE_PHASES: ReadonlySet<DesktopUpdatePhase> = new Set([
@@ -398,6 +429,33 @@ export function AboutUpdateStatus(props: { updates: AboutUpdates }) {
           >
             {(failure) => <UpdateErrorMessage failure={failure()} />}
           </Show>
+          <SettingsRow
+            class="border-t border-gray-700/70"
+            label="Update channel"
+            description="Beta also offers prereleases with the newest features."
+          >
+            {(field) => (
+              <NativeSelect
+                id={field.id}
+                value={update().channel}
+                aria-describedby={field.describedBy}
+                onChange={(event) =>
+                  saveSelectChoice(
+                    props.updates,
+                    event.currentTarget,
+                    update().channel,
+                    setDesktopUpdateChannel,
+                  )
+                }
+              >
+                <For each={UPDATE_CHANNEL_OPTIONS}>
+                  {(option) => (
+                    <option value={option.value}>{option.label}</option>
+                  )}
+                </For>
+              </NativeSelect>
+            )}
+          </SettingsRow>
           <Show
             when={update().canInstall}
             fallback={
@@ -418,19 +476,14 @@ export function AboutUpdateStatus(props: { updates: AboutUpdates }) {
                   id={field.id}
                   value={update().updateMode}
                   aria-describedby={field.describedBy}
-                  onChange={(event) => {
-                    const select = event.currentTarget;
-                    const mode = select.value as DesktopUpdateMode;
-                    props.updates.run(
-                      () =>
-                        setDesktopUpdateMode(mode).catch((error) => {
-                          // The store keeps the old mode, so Solid won't write it back to the DOM.
-                          select.value = update().updateMode;
-                          throw error;
-                        }),
-                      "Couldn't save your update settings.",
-                    );
-                  }}
+                  onChange={(event) =>
+                    saveSelectChoice(
+                      props.updates,
+                      event.currentTarget,
+                      update().updateMode,
+                      setDesktopUpdateMode,
+                    )
+                  }
                 >
                   <For each={UPDATE_MODE_OPTIONS}>
                     {(option) => (

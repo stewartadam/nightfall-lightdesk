@@ -78,6 +78,9 @@ struct StoredUpdatePreferences {
     check_for_updates: bool,
     /// What happens when a check finds a newer version.
     update_mode: UpdateMode,
+    /// Release channel the operator chose, or `None` to follow the running build: Beta for a
+    /// prerelease, Stable otherwise.
+    channel: Option<UpdateChannel>,
     /// Seconds since the Unix epoch of the last check that reached the update service. Failed
     /// checks are not recorded, so they are retried sooner.
     last_checked_at: Option<u64>,
@@ -135,6 +138,7 @@ impl Default for StoredUpdatePreferences {
         Self {
             check_for_updates: true,
             update_mode: UpdateMode::default(),
+            channel: None,
             last_checked_at: None,
             downloaded: None,
             install_attempt: None,
@@ -166,6 +170,73 @@ impl UpdateMode {
     fn installs_on_quit(self) -> bool {
         self == Self::Install
     }
+}
+
+/// Which releases a check is offered. The channel names the update service's feed, so they must
+/// match the paths the service answers at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum UpdateChannel {
+    /// Releases without a prerelease tag only.
+    Stable,
+    /// Every release: prereleases, and stable releases when they are newest.
+    Beta,
+}
+
+impl UpdateChannel {
+    /// The channel a build follows until the operator picks one: Beta when `current_version` is
+    /// itself a prerelease, so testers keep getting prereleases, and Stable otherwise.
+    fn default_for(current_version: &str) -> Self {
+        if is_prerelease(current_version) {
+            Self::Beta
+        } else {
+            Self::Stable
+        }
+    }
+
+    /// Name of the channel's feed in the update service's address.
+    fn feed(self) -> &'static str {
+        match self {
+            Self::Stable => "stable",
+            Self::Beta => "beta",
+        }
+    }
+
+    /// Whether this channel offers `version`. Stable refuses prereleases, so an update found or
+    /// downloaded from Beta is dropped when the operator switches to Stable.
+    fn offers(self, version: &str) -> bool {
+        self == Self::Beta || !is_prerelease(version)
+    }
+}
+
+/// Returns whether `version` is a semantic version with a prerelease tag, such as
+/// `0.2.0-beta.1`. Versions that are not semantic versions count as stable.
+fn is_prerelease(version: &str) -> bool {
+    semver::Version::parse(version).is_ok_and(|version| !version.pre.is_empty())
+}
+
+/// Placeholder in the configured updater endpoints that is replaced by the channel's feed.
+const CHANNEL_PLACEHOLDER: &str = "{{channel}}";
+
+/// Returns the configured update service endpoints with [`CHANNEL_PLACEHOLDER`] replaced by
+/// `channel`'s feed. An endpoint without the placeholder, such as a local stand-in service, is
+/// used as is. The placeholder is matched in its percent-encoded form too, because the endpoints
+/// are parsed as URLs.
+fn channel_endpoints(
+    endpoints: &[String],
+    channel: UpdateChannel,
+) -> Result<Vec<tauri::Url>, String> {
+    let encoded = CHANNEL_PLACEHOLDER.replace('{', "%7B").replace('}', "%7D");
+    endpoints
+        .iter()
+        .map(|endpoint| {
+            let endpoint = endpoint
+                .replace(CHANNEL_PLACEHOLDER, channel.feed())
+                .replace(&encoded, channel.feed());
+            tauri::Url::parse(&endpoint)
+                .map_err(|error| format!("Invalid update endpoint {endpoint}: {error}"))
+        })
+        .collect()
 }
 
 /// Where an update currently stands.
@@ -235,6 +306,8 @@ pub(crate) struct UpdateState {
     check_for_updates: bool,
     /// What happens when a check finds a newer version.
     update_mode: UpdateMode,
+    /// Release channel checks follow: the operator's choice, or the running build's default.
+    channel: UpdateChannel,
     phase: UpdatePhase,
     /// Version found, being downloaded, or waiting to install.
     version: Option<String>,
@@ -295,6 +368,21 @@ struct ControllerInner {
     found: Option<Update>,
     /// Whether the operator chose to restart into the downloaded update.
     install_requested: bool,
+    /// Whether the channel changed while a check or download was running, so the new channel is
+    /// checked as soon as it finishes.
+    recheck: bool,
+}
+
+impl ControllerInner {
+    /// The phase and version that describe the update the controller holds while nothing is in
+    /// progress: the downloaded update, else the found one, else nothing.
+    fn settled(&self) -> (UpdatePhase, Option<String>) {
+        match (self.stored.downloaded.as_ref(), self.found.as_ref()) {
+            (Some(downloaded), _) => (UpdatePhase::Ready, Some(downloaded.version.clone())),
+            (None, Some(update)) => (UpdatePhase::Available, Some(update.version.clone())),
+            (None, None) => (UpdatePhase::Idle, None),
+        }
+    }
 }
 
 /// What to do with a downloaded update once the backend has stopped.
@@ -420,6 +508,9 @@ impl UpdateController {
             can_install: public_key().is_some(),
             check_for_updates: stored.check_for_updates,
             update_mode: stored.update_mode,
+            channel: stored
+                .channel
+                .unwrap_or_else(|| UpdateChannel::default_for(current_version)),
             phase: UpdatePhase::Idle,
             version: None,
             progress: None,
@@ -442,6 +533,7 @@ impl UpdateController {
                 preferences_unreadable,
                 found: None,
                 install_requested: false,
+                recheck: false,
             }),
             wake: Notify::new(),
         };
@@ -504,9 +596,14 @@ impl UpdateController {
         &self,
         change: impl FnOnce(&mut UpdateState, &mut StoredUpdatePreferences),
     ) -> UpdateState {
+        self.change_controller(|inner| change(&mut inner.state, &mut inner.stored))
+    }
+
+    /// Applies a preference change that also needs the rest of the controller state, under the
+    /// same lock, then saves the preferences like [`Self::change_preference`].
+    fn change_controller(&self, change: impl FnOnce(&mut ControllerInner)) -> UpdateState {
         let mut inner = self.lock();
-        let ControllerInner { state, stored, .. } = &mut *inner;
-        change(state, stored);
+        change(&mut inner);
         match self.save(&inner) {
             Some(error) => inner.state.error = Some(error),
             // A check or download error stays shown; only an earlier preferences error is fixed.
@@ -568,6 +665,59 @@ impl UpdateController {
         })
     }
 
+    /// Records the release channel the operator picked and saves the choice. A found or
+    /// downloaded version the new channel does not offer is forgotten, and its package deleted,
+    /// so switching to Stable never installs a prerelease; one that is still downloading is
+    /// dropped when its download finishes. An update that is already installing is left alone.
+    /// When a check or download is running, the new channel is checked once it finishes.
+    fn set_channel(&self, channel: UpdateChannel) -> UpdateState {
+        self.change_controller(|inner| {
+            inner.state.channel = channel;
+            inner.stored.channel = Some(channel);
+            let phase = inner.state.phase;
+            if phase == UpdatePhase::Installing {
+                return;
+            }
+            // A version still downloading is dropped once its download finishes.
+            if phase != UpdatePhase::Downloading {
+                inner
+                    .found
+                    .take_if(|update| !channel.offers(&update.version));
+            }
+            if let Some(dropped) = inner
+                .stored
+                .downloaded
+                .take_if(|downloaded| !channel.offers(&downloaded.version))
+            {
+                remove_file_quietly(&dropped.file);
+            }
+            match phase {
+                UpdatePhase::Idle | UpdatePhase::Available | UpdatePhase::Ready => {
+                    (inner.state.phase, inner.state.version) = inner.settled();
+                    inner
+                        .state
+                        .error
+                        .take_if(|error| error.kind == UpdateErrorKind::Install);
+                    if inner.state.error.is_none() {
+                        inner.state.error =
+                            install_error(&inner.stored, inner.state.version.as_deref());
+                    }
+                }
+                UpdatePhase::Checking => {
+                    inner.state.version = inner.settled().1;
+                    inner.recheck = true;
+                }
+                UpdatePhase::Downloading | UpdatePhase::Installing => inner.recheck = true,
+            }
+        })
+    }
+
+    /// Returns whether the channel changed during the check or download that just finished, and
+    /// clears that request, so the caller checks the new channel.
+    fn take_recheck(&self) -> bool {
+        std::mem::take(&mut self.lock().recheck)
+    }
+
     /// Returns how long to wait before the next check is due: a day after the last check that
     /// reached the update service, or no wait when there was none.
     fn delay_until_due(&self) -> Duration {
@@ -623,7 +773,8 @@ impl UpdateController {
             .as_ref()
             .map(|downloaded| downloaded.version.clone());
         let found = match outcome {
-            Ok(found) => found,
+            // A check that started before the operator switched to Stable may find a prerelease.
+            Ok(found) => found.filter(|update| inner.state.channel.offers(&update.version)),
             Err(error) => {
                 // A downloaded update stays ready, and a version found earlier stays available.
                 inner.state.phase = if downloaded_version.is_some() {
@@ -666,6 +817,10 @@ impl UpdateController {
             .ok()
             .map(|elapsed| elapsed.as_secs());
         inner.state.last_checked_at = inner.stored.last_checked_at;
+        // The default channel is kept from the first check on, so a beta tester whom Beta updates
+        // to a stable release stays on Beta.
+        let channel = inner.state.channel;
+        inner.stored.channel.get_or_insert(channel);
         // An unreadable preference file stays untouched and reported until the operator changes
         // a setting, so the check is remembered for this session only.
         // A new check result replaces any earlier check or download error; an install failure
@@ -773,6 +928,20 @@ impl UpdateController {
                 remove_file_quietly(&downloaded.file);
             }
             Err(_) if inner.state.phase == UpdatePhase::Installing => {}
+            // The operator switched to a channel that does not offer this version while it
+            // downloaded, so it is dropped whether or not the download worked.
+            outcome
+                if inner
+                    .found
+                    .as_ref()
+                    .is_some_and(|update| !inner.state.channel.offers(&update.version)) =>
+            {
+                if let Ok(downloaded) = outcome {
+                    remove_file_quietly(&downloaded.file);
+                }
+                inner.found = None;
+                (inner.state.phase, inner.state.version) = inner.settled();
+            }
             Ok(downloaded) => {
                 inner.found = None;
                 inner
@@ -912,38 +1081,70 @@ pub(crate) fn start<R: Runtime>(app: &AppHandle<R>, controller: Arc<UpdateContro
 /// Asks the update service for a newer version, and downloads it when automatic downloads are
 /// on. Returns whether a check reached the service.
 async fn check_once<R: Runtime>(app: &AppHandle<R>, controller: &UpdateController) -> bool {
-    if !controller.begin_check() {
-        return false;
+    let mut reached = false;
+    loop {
+        if !controller.begin_check() {
+            return reached;
+        }
+        broadcast(app, controller);
+        let outcome = find_newer_version(app, controller.snapshot().channel).await;
+        reached = outcome.is_ok();
+        match &outcome {
+            Ok(Some(update)) => tracing::info!(version = %update.version, "Update available"),
+            Ok(None) => tracing::debug!("No newer version is available"),
+            Err(error) => tracing::warn!(%error, "Could not check for updates"),
+        }
+        controller.finish_check(outcome);
+        broadcast(app, controller);
+        if controller.should_download_automatically() {
+            download_found_update(app, controller).await;
+        }
+        // The operator changed the channel while this check or its download ran.
+        if !controller.take_recheck() {
+            return reached;
+        }
     }
-    broadcast(app, controller);
-    let outcome = find_newer_version(app)
-        .await
-        .map_err(|error| error.to_string());
-    let reached = outcome.is_ok();
-    match &outcome {
-        Ok(Some(update)) => tracing::info!(version = %update.version, "Update available"),
-        Ok(None) => tracing::debug!("No newer version is available"),
-        Err(error) => tracing::warn!(%error, "Could not check for updates"),
-    }
-    controller.finish_check(outcome);
-    broadcast(app, controller);
-    if controller.should_download_automatically() {
-        download_found_update(app, controller).await;
-    }
-    reached
 }
 
-/// Asks the update service whether a newer, correctly signed version exists.
-async fn find_newer_version<R: Runtime>(
+/// Downloads the version a check found, then checks again when the operator changed the
+/// channel while it downloaded.
+async fn download_then_recheck<R: Runtime>(app: &AppHandle<R>, controller: &UpdateController) {
+    download_found_update(app, controller).await;
+    if controller.take_recheck() {
+        check_once(app, controller).await;
+    }
+}
+
+/// Builds an updater that asks `channel`'s feed of the configured update service.
+fn channel_updater<R: Runtime>(
     app: &AppHandle<R>,
-) -> tauri_plugin_updater::Result<Option<Update>> {
+    channel: UpdateChannel,
+) -> Result<tauri_plugin_updater::Updater, String> {
+    let configured: Vec<String> = app
+        .config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|updater| updater.get("endpoints"))
+        .and_then(|endpoints| serde_json::from_value(endpoints.clone()).ok())
+        .unwrap_or_default();
     // On Windows the installer replaces the running app by exiting the process directly, so
     // pending reports are written first.
     app.updater_builder()
-        .on_before_exit(app_runtime::flush_reports)
-        .build()?
+        .endpoints(channel_endpoints(&configured, channel)?)
+        .and_then(|builder| builder.on_before_exit(app_runtime::flush_reports).build())
+        .map_err(|error| error.to_string())
+}
+
+/// Asks `channel`'s feed of the update service whether a newer, correctly signed version exists.
+async fn find_newer_version<R: Runtime>(
+    app: &AppHandle<R>,
+    channel: UpdateChannel,
+) -> Result<Option<Update>, String> {
+    channel_updater(app, channel)?
         .check()
         .await
+        .map_err(|error| error.to_string())
 }
 
 /// Downloads and verifies the version a check found, reporting progress to the windows, and
@@ -1042,13 +1243,11 @@ fn remove_installer_leftovers<R: Runtime>(app: &AppHandle<R>) {
 /// package is verified again as it installs.
 fn load_saved_update<R: Runtime>(
     app: &AppHandle<R>,
+    channel: UpdateChannel,
     downloaded: &DownloadedUpdate,
 ) -> Result<(Update, Vec<u8>), String> {
-    let update = app
-        .updater_builder()
-        .on_before_exit(app_runtime::flush_reports)
-        .build()
-        .and_then(|updater| updater.restore_update(downloaded.manifest.clone()))
+    let update = channel_updater(app, channel)?
+        .restore_update(downloaded.manifest.clone())
         .map_err(|error| error.to_string())?
         .ok_or_else(|| format!("Nightfall {} is no longer an update", downloaded.version))?;
     let bytes = std::fs::read(&downloaded.file)
@@ -1077,12 +1276,14 @@ pub(crate) fn install_pending_update<R: Runtime>(app: &AppHandle<R>) -> bool {
         return false;
     };
     tracing::info!(version = %downloaded.version, restart, "Installing update");
-    let installed = load_saved_update(app, &downloaded).and_then(|(update, bytes)| {
-        update
-            .restart_after_install(restart)
-            .install(&bytes)
-            .map_err(|error| error.to_string())
-    });
+    let installed = load_saved_update(app, controller.snapshot().channel, &downloaded).and_then(
+        |(update, bytes)| {
+            update
+                .restart_after_install(restart)
+                .install(&bytes)
+                .map_err(|error| error.to_string())
+        },
+    );
     if let Err(error) = installed {
         tracing::error!(%error, "Could not install the update; keeping the current version");
         controller.record_install_failure(error);
@@ -1124,9 +1325,28 @@ pub(crate) fn set_update_mode<R: Runtime>(
     if controller.should_download_automatically() {
         let controller = Arc::clone(&controller);
         tauri::async_runtime::spawn(async move {
-            download_found_update(&app, &controller).await;
+            download_then_recheck(&app, &controller).await;
         });
     }
+    state
+}
+
+#[tauri::command]
+/// Chooses the release channel, tells every window, and checks the new channel right away, so
+/// the About dialog shows what it offers without waiting for the daily check.
+pub(crate) fn set_update_channel<R: Runtime>(
+    app: AppHandle<R>,
+    controller: tauri::State<'_, Arc<UpdateController>>,
+    channel: UpdateChannel,
+) -> UpdateState {
+    let state = controller.set_channel(channel);
+    broadcast(&app, &controller);
+    let controller = Arc::clone(&controller);
+    tauri::async_runtime::spawn(async move {
+        if check_once(&app, &controller).await {
+            controller.wake.notify_one();
+        }
+    });
     state
 }
 
@@ -1168,7 +1388,7 @@ pub(crate) async fn download_update<R: Runtime>(
     if state.phase != UpdatePhase::Available {
         return Err("No newer version is waiting to download".into());
     }
-    download_found_update(&app, &controller).await;
+    download_then_recheck(&app, &controller).await;
     Ok(controller.snapshot())
 }
 
@@ -1788,5 +2008,125 @@ mod tests {
         controller.finish_download(Ok(saved_download(&path, "2.0.0")));
         assert_eq!(controller.snapshot().phase, UpdatePhase::Ready);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "not json");
+    }
+
+    /// A build follows Beta when it is itself a prerelease and Stable otherwise, until the
+    /// operator picks a channel, which is saved and reloaded by the next session.
+    #[test]
+    fn channel_defaults_to_the_running_build_until_chosen() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(UPDATES_FILE_NAME);
+        let beta = UpdateController::load_for_version(Some(path.clone()), "0.2.0-beta.1");
+        assert_eq!(beta.snapshot().channel, UpdateChannel::Beta);
+        let stable = UpdateController::load_for_version(Some(path.clone()), "1.0.0");
+        assert_eq!(stable.snapshot().channel, UpdateChannel::Stable);
+        assert!(!path.exists(), "the default is not saved");
+
+        let state = stable.set_channel(UpdateChannel::Beta);
+        assert_eq!(state.channel, UpdateChannel::Beta);
+        assert_eq!(state.error, None);
+        let reloaded = UpdateController::load_for_version(Some(path), "1.0.0").snapshot();
+        assert_eq!(reloaded.channel, UpdateChannel::Beta);
+    }
+
+    /// Stable offers only versions without a prerelease tag, while Beta offers every version.
+    #[test]
+    fn channels_offer_their_releases() {
+        assert!(UpdateChannel::Stable.offers("1.2.0"));
+        assert!(!UpdateChannel::Stable.offers("1.3.0-beta.1"));
+        assert!(UpdateChannel::Beta.offers("1.2.0"));
+        assert!(UpdateChannel::Beta.offers("1.3.0-alpha.2"));
+        assert!(
+            UpdateChannel::Stable.offers("nightly"),
+            "versions that are not semantic versions count as stable"
+        );
+    }
+
+    /// The channel placeholder in the configured endpoints becomes the channel's feed, whether it
+    /// is written plainly or percent-encoded, and endpoints without it are kept as they are.
+    #[test]
+    fn endpoints_name_the_channel_feed() {
+        let configured = [
+            "https://nightfall.live/api/v1/updates/{{channel}}/{{target}}".to_owned(),
+            "https://example.com/updates/%7B%7Bchannel%7D%7D/latest.json".to_owned(),
+            "http://localhost:8000/latest.json".to_owned(),
+        ];
+        let endpoints = channel_endpoints(&configured, UpdateChannel::Beta).unwrap();
+        assert_eq!(
+            endpoints[0].as_str(),
+            "https://nightfall.live/api/v1/updates/beta/%7B%7Btarget%7D%7D"
+        );
+        assert_eq!(
+            endpoints[1].as_str(),
+            "https://example.com/updates/beta/latest.json"
+        );
+        assert_eq!(endpoints[2].as_str(), "http://localhost:8000/latest.json");
+        let stable = channel_endpoints(&configured[..1], UpdateChannel::Stable).unwrap();
+        assert!(stable[0].path().starts_with("/api/v1/updates/stable/"));
+    }
+
+    /// Switching to Stable forgets a downloaded prerelease and deletes its package, so it never
+    /// installs, while a downloaded stable release stays ready.
+    #[test]
+    fn switching_to_stable_drops_a_downloaded_prerelease() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(UPDATES_FILE_NAME);
+        let controller = UpdateController::load_for_version(Some(path.clone()), "1.0.0-beta.1");
+        let prerelease = saved_download(&path, "1.0.0-beta.2");
+        controller.finish_download(Ok(prerelease.clone()));
+        let state = controller.set_channel(UpdateChannel::Stable);
+        assert_eq!(state.phase, UpdatePhase::Idle);
+        assert_eq!(state.version, None);
+        assert!(!prerelease.file.exists());
+        controller.set_update_mode(UpdateMode::Install);
+        assert!(controller.take_exit_install().is_none());
+
+        let stable = saved_download(&path, "1.0.0");
+        controller.finish_download(Ok(stable.clone()));
+        let state = controller.set_channel(UpdateChannel::Beta);
+        assert_eq!(state.phase, UpdatePhase::Ready);
+        let state = controller.set_channel(UpdateChannel::Stable);
+        assert_eq!(state.phase, UpdatePhase::Ready);
+        assert_eq!(state.version.as_deref(), Some("1.0.0"));
+        assert!(stable.file.exists());
+        let reloaded = UpdateController::load_for_version(Some(path), "1.0.0-beta.1").snapshot();
+        assert_eq!(reloaded.version.as_deref(), Some("1.0.0"));
+    }
+
+    /// A build that checked on its default channel keeps that channel, so a beta tester whom
+    /// Beta updates to a stable release stays on Beta.
+    #[test]
+    fn the_default_channel_is_kept_once_checked() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(UPDATES_FILE_NAME);
+        let controller = UpdateController::load_for_version(Some(path.clone()), "0.2.0-beta.3");
+        assert!(controller.begin_check());
+        controller.finish_check(Ok(None));
+        let updated = UpdateController::load_for_version(Some(path), "0.2.0").snapshot();
+        assert_eq!(updated.channel, UpdateChannel::Beta);
+    }
+
+    /// Changing the channel while a check runs asks for the new channel to be checked once it
+    /// finishes, and forgets a downloaded prerelease without naming it any longer.
+    #[test]
+    fn changing_the_channel_during_a_check_checks_again() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join(UPDATES_FILE_NAME);
+        let controller = UpdateController::load_for_version(Some(path.clone()), "1.0.0-beta.1");
+        let prerelease = saved_download(&path, "1.0.0-beta.2");
+        controller.finish_download(Ok(prerelease.clone()));
+        assert!(controller.begin_check());
+        let state = controller.set_channel(UpdateChannel::Stable);
+        assert_eq!(state.phase, UpdatePhase::Checking);
+        assert_eq!(state.version, None);
+        assert!(!prerelease.file.exists());
+        controller.finish_check(Err("offline".into()));
+        assert_eq!(controller.snapshot().phase, UpdatePhase::Idle);
+        assert!(controller.take_recheck());
+        assert!(
+            !controller.take_recheck(),
+            "the request is cleared once taken"
+        );
+        assert!(!UpdateController::load_from(None).take_recheck());
     }
 }

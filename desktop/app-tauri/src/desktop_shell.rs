@@ -977,6 +977,7 @@ pub fn run_tauri(log_config: LogConfig, mut runtime_config: RuntimeConfig) {
             crate::updates::update_state,
             crate::updates::set_update_checks,
             crate::updates::set_update_mode,
+            crate::updates::set_update_channel,
             crate::updates::check_for_updates,
             crate::updates::download_update,
             crate::updates::restart_to_update,

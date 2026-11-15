@@ -36,8 +36,8 @@ use serde::{Deserialize, Deserializer};
 use tauri::{AppHandle, Runtime};
 
 use super::{
-    ControllerInner, DownloadProgress, UpdateController, UpdateError, UpdateErrorKind, UpdateMode,
-    UpdatePhase, UpdateState, broadcast, public_key,
+    ControllerInner, DownloadProgress, UpdateChannel, UpdateController, UpdateError,
+    UpdateErrorKind, UpdateMode, UpdatePhase, UpdateState, broadcast, public_key,
 };
 
 /// Script that publishes `window.nightfallUpdates` in every window of a debug build.
@@ -76,6 +76,7 @@ pub(crate) struct UpdateStatePatch {
     can_install: Option<bool>,
     check_for_updates: Option<bool>,
     update_mode: Option<UpdateMode>,
+    channel: Option<UpdateChannel>,
     phase: Option<UpdatePhase>,
     #[serde(default, deserialize_with = "present")]
     version: Option<Option<String>>,
@@ -111,6 +112,7 @@ impl UpdateStatePatch {
         assign(&mut state.can_install, self.can_install);
         assign(&mut state.check_for_updates, self.check_for_updates);
         assign(&mut state.update_mode, self.update_mode);
+        assign(&mut state.channel, self.channel);
         assign(&mut state.phase, self.phase);
         assign(&mut state.version, self.version);
         assign(&mut state.progress, self.progress);
@@ -138,7 +140,7 @@ fn preset(name: &str) -> Option<UpdateStatePatch> {
     let check_error = || {
         error(
             UpdateErrorKind::Check,
-            "error sending request for url (https://nightfall.live/api/v1/updates/alpha/darwin/aarch64/app/0.1.0): connection refused",
+            "error sending request for url (https://nightfall.live/api/v1/updates/beta/darwin/aarch64/app/0.1.0): connection refused",
         )
     };
     let base = UpdateStatePatch {
@@ -278,6 +280,9 @@ impl UpdateController {
         state.can_install = public_key().is_some();
         state.check_for_updates = stored.check_for_updates;
         state.update_mode = stored.update_mode;
+        state.channel = stored
+            .channel
+            .unwrap_or_else(|| UpdateChannel::default_for(env!("CARGO_PKG_VERSION")));
         state.last_checked_at = stored.last_checked_at;
         state.progress = None;
         state.updated_to = None;
