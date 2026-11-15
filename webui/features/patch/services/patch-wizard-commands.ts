@@ -7,7 +7,6 @@
  */
 
 import { v4 as uuidv4 } from "uuid";
-import { findFixtureVersionConflictIds } from "../../../lib/asset-version";
 import {
   commandSucceeded,
   failedCommandKeys,
@@ -65,18 +64,14 @@ function sendConsoleRoutes(
 
 export type PatchWizardCommandResult =
   /** Fixtures were created; `unpatchedFixtureIds` lists those whose DMX route was rejected. */
-  | { status: "success"; unpatchedFixtureIds: number[] }
-  | { status: "conflict"; fixtureIds: number[] }
-  | { status: "failed" };
+  { status: "success"; unpatchedFixtureIds: number[] } | { status: "failed" };
 
 export type PatchWizardCommandOptions = {
   state: PatchWizardState;
-  fixtures: Record<string, types.Fixture>;
   profileFixture: types.Fixture;
   libraryFixtureInfo: types.AvailableFixtureInfo;
   geometry: types.FixtureGeometry | null;
   baseFixtureId: number;
-  forceUpdateExisting?: boolean;
 };
 
 /**
@@ -96,20 +91,6 @@ export async function executePatchWizardCommands(
 
   const { make, model, asset_etag: assetEtag } = options.libraryFixtureInfo;
   const isMorphMode = state.morphFixtureIds.length > 0;
-  const versionConflictIds = isMorphMode
-    ? []
-    : findFixtureVersionConflictIds(
-        options.fixtures,
-        options.profileFixture,
-        options.libraryFixtureInfo.asset_etag,
-      );
-  if (versionConflictIds.length > 0 && !options.forceUpdateExisting) {
-    return { status: "conflict", fixtureIds: versionConflictIds };
-  }
-
-  const updateExistingIds = options.forceUpdateExisting
-    ? versionConflictIds
-    : [];
 
   try {
     if (isMorphMode) {
@@ -154,7 +135,7 @@ export async function executePatchWizardCommands(
       model,
       state.fixtureMode,
       instances,
-      updateExistingIds,
+      undefined,
       assetEtag,
     );
     if (!commandSucceeded(result)) {

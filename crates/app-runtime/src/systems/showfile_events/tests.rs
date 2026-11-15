@@ -3135,8 +3135,10 @@ fn roundtrip_preserves_custom_scene_object_model_properties() {
     }
 }
 
+/// A show may patch fixtures of one make, model and mode from different library revisions;
+/// each fixture keeps the revision it was created from.
 #[test]
-fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
+fn showfile_import_keeps_fixtures_on_different_revisions_of_one_mode() {
     let mut world = setup_world();
 
     let fixture_a = Fixture {
@@ -3218,9 +3220,14 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
         },
     );
 
-    assert!(result.is_err());
-    let error = result.expect_err("expected fixture version validation error");
-    assert!(error.contains("multiple versions of fixture asset"));
+    result.expect("fixtures on different revisions of one mode load");
+    let mut revisions: Vec<_> = collect_snapshot(&mut world)
+        .fixtures
+        .into_iter()
+        .map(|fixture| fixture.library_asset_etag)
+        .collect();
+    revisions.sort();
+    assert_eq!(revisions, [Some("v1".to_string()), Some("v2".to_string())]);
 }
 
 #[test]
@@ -4077,47 +4084,24 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
     seed_world(&mut target_world);
     let baseline_snapshot = collect_snapshot(&mut target_world);
 
-    let fixture_a = Fixture {
-        identifiers: identifiers(401, "fixture-a"),
-        make: "Acme".to_string(),
-        model: "Beam 200".to_string(),
-        mode: "16ch".to_string(),
-        elements: vec![FixtureElement {
-            label: "Element A".to_string(),
-            parameters: vec![ParameterMetadata {
-                attribute: Attribute::Red,
-                native_unit: Attribute::Red.native_unit(),
-                value_polarity: Attribute::Red.value_polarity(),
-                ..Default::default()
-            }],
-        }],
-        layout: None,
-        library_asset_etag: Some("v1".to_string()),
-        ..Default::default()
-    };
-    let fixture_b = Fixture {
-        identifiers: identifiers(402, "fixture-b"),
-        make: "Acme".to_string(),
-        model: "Beam 200".to_string(),
-        mode: "16ch".to_string(),
-        elements: vec![FixtureElement {
-            label: "Element B".to_string(),
-            parameters: vec![ParameterMetadata {
-                attribute: Attribute::Blue,
-                native_unit: Attribute::Blue.native_unit(),
-                value_polarity: Attribute::Blue.value_polarity(),
-                ..Default::default()
-            }],
-        }],
-        layout: None,
-        library_asset_etag: Some("v2".to_string()),
-        ..Default::default()
+    let road_case = |id: u32, version: &str| {
+        SceneObject::new_custom(
+            id,
+            "Road Case",
+            CustomProperties {
+                model_path: format!("show-{version}"),
+                scale: 1.0,
+                color_override: None,
+                library_object_name: Some("Road Case".to_string()),
+                library_object_version: Some(version.to_string()),
+            },
+        )
     };
 
     let invalid_snapshot = ShowfileSnapshot {
         faders: Vec::new(),
         metadata: ShowfileMetadata::default(),
-        fixtures: vec![fixture_a, fixture_b],
+        fixtures: vec![],
         variables: BTreeMap::new(),
         routes: RoutesSnapshot {
             input: vec![],
@@ -4130,7 +4114,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         midi_feedback_devices: vec![],
         #[cfg(feature = "osc")]
         osc_mappings: vec![],
-        scene_objects: vec![],
+        scene_objects: vec![road_case(401, "v1"), road_case(402, "v2")],
         cues: vec![],
         sequences: vec![],
         groups: vec![],
@@ -4154,8 +4138,8 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
 
     let result = try_load_snapshot_in_place(&mut target_world, invalid_snapshot);
     assert!(result.is_err(), "invalid snapshot should fail validation");
-    let error = result.expect_err("expected fixture version validation error");
-    assert!(error.contains("multiple versions of fixture asset"));
+    let error = result.expect_err("expected scene object version validation error");
+    assert!(error.contains("multiple versions of scene object asset"));
 
     let after_snapshot = collect_snapshot(&mut target_world);
     let baseline_value = serde_json::to_value(baseline_snapshot).expect("snapshot to value");

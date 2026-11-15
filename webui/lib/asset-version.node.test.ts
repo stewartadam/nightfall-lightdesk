@@ -10,67 +10,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import * as types from "../types/index";
 import {
-  findFixtureVersionConflictIds,
   findSceneObjectVersionConflictIds,
   hasSceneObjectLibraryVersionWarning,
   objectLibraryVersionMap,
 } from "./asset-version";
-
-/**
- * Builds a fixture record with overridable asset version fields.
- */
-function fixture(
-  id: number,
-  uid: string,
-  attrs: types.Attribute[],
-  libraryAssetVersion?: string,
-): types.Fixture {
-  return {
-    identifiers: {
-      id,
-      uid,
-      label: `Fixture ${id}`,
-    },
-    make: "Acme",
-    model: "Beam 200",
-    mode: "16ch",
-    elements: [
-      {
-        label: "Element",
-        parameters: attrs.map((attribute) => ({
-          attribute,
-          min: 0,
-          max: 255,
-          offset: { type: "Absolute", data: { value: 0 } },
-          resolution: types.DmxValueResolution.Coarse,
-          is_inverted: false,
-          is_snap: false,
-          merge_type: types.MergeStrategy.HTP,
-          use_grandmaster: false,
-        })),
-      },
-    ],
-    physical: undefined,
-    placement: {
-      position: { x: 0, y: 0, z: 0 },
-      rotation: { x: 0, y: 0, z: 0 },
-    },
-    library_asset_etag: libraryAssetVersion,
-  };
-}
-
-test("findFixtureVersionConflictIds identifies mismatched stored profiles", () => {
-  const libraryFixture = fixture(0, "lib", [{ type: "Red" }], "v2");
-  const fixtureMap: Record<string, types.Fixture> = {
-    a: fixture(1, "uid-a", [{ type: "Red" }], "v2"),
-    b: fixture(2, "uid-b", [{ type: "Blue" }], "v1"),
-  };
-
-  assert.deepEqual(
-    findFixtureVersionConflictIds(fixtureMap, libraryFixture, "v2"),
-    [2],
-  );
-});
 
 test("findSceneObjectVersionConflictIds returns IDs with older versions", () => {
   const sceneObjectMap: Record<string, types.SceneObject> = {

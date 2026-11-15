@@ -29,11 +29,11 @@ import {
   type GridColumn,
   type GridSelection,
 } from "../../../lib/data-grid-types";
+import { libraryDefinitionId } from "../../../lib/fixture-service";
 import {
-  libraryDefinitionId,
   libraryRevisionDate,
   libraryRevisionLabel,
-} from "../../../lib/fixture-service";
+} from "../../../lib/library-revision";
 import { fixtureLibrary, runtimeCapabilities } from "../../../state/appStores";
 import type { AvailableFixtureInfo } from "../../../types";
 import { LibraryFixturePreview } from "../../fixture-library";

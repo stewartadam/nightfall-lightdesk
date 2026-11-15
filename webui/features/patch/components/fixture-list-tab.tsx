@@ -7,6 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
+import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import {
   createEffect,
   createMemo,
@@ -16,6 +17,8 @@ import {
   Show,
 } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
+import { openContextMenu } from "../../../components/providers/context-menu";
+import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
@@ -27,6 +30,7 @@ import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions
 import { createDataGridFilterState } from "../../../components/widgets/data-grid/extensions/model/data-grid-filter-state";
 import { PROGRAMMER_SELECTION_ID_TEXT_COLOR } from "../../../lib/constants";
 import type {
+  CellClickedEventArgs,
   GridCell,
   GridSelection,
   GroupHeaderClickedEventArgs,
@@ -66,11 +70,18 @@ import {
   replaceFixtureUidsInSelection,
 } from "../../../lib/visualizer-selection";
 import {
+  dockApi,
+  fixtureLibrary,
   fixtures,
   programmerSelection,
   visualizerEditSelection,
 } from "../../../state/appStores";
 import type * as types from "../../../types";
+import { revealInFixtureLibrary } from "../../fixture-library";
+import {
+  fixtureFileNames,
+  fixtureModelLabels,
+} from "../model/fixture-model-labels";
 import {
   PATCH_FIXTURE_REVEAL_WINDOW_MS,
   patchFixtureRevealRequest,
@@ -91,6 +102,8 @@ type FixtureRow = {
   make: string;
   model: string;
   mode: string;
+  /** Library file the fixture was patched from, or "" when the library doesn't list it. */
+  file: string;
   channelWidth: number;
   posX: number;
   posY: number;
@@ -142,6 +155,14 @@ const DEFAULT_COLUMNS: FilterableGridColumn<
     group: "Fixture",
     filter: { value: (row) => row.mode },
     ...columnVisibilityMeta("Metadata", "Mode"),
+  },
+  {
+    title: "File",
+    id: "file",
+    width: 220,
+    group: "Fixture",
+    filter: { value: (row) => row.file },
+    ...columnVisibilityMeta("Metadata", "File"),
   },
   {
     title: "Ch width",
@@ -364,6 +385,8 @@ function buildPlacementUpdate(
 
 export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
   const $fixtures = useSharedStore(fixtures);
+  const $fixtureLibrary = useStore(fixtureLibrary);
+  const { invokePanelCapability } = usePanelCapabilityRegistry();
   const [baseColumns, setBaseColumns] =
     createSignal<VisibilityGridColumn[]>(DEFAULT_COLUMNS);
   const [collapsedGroups, setCollapsedGroups] = createSignal<readonly string[]>(
@@ -439,28 +462,65 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     syncEditSelectionFromGridSelection(newSelection);
   };
 
-  const rows = createMemo<FixtureRow[]>(() =>
-    Object.values($fixtures())
-      .sort((a, b) => a.identifiers.id - b.identifiers.id)
-      .map((fixture) => {
-        const placement = getPlacementOrDefault(fixture);
-        return {
-          uid: fixture.identifiers.uid,
-          id: fixture.identifiers.id,
-          label: fixture.identifiers.label,
-          make: fixture.make,
-          model: fixture.model,
-          mode: fixture.mode,
-          channelWidth: computeFixtureChannelCount(fixture),
-          posX: placement.position.x,
-          posY: placement.position.y,
-          posZ: placement.position.z,
-          rotX: placement.rotation.x,
-          rotY: placement.rotation.y,
-          rotZ: placement.rotation.z,
-        };
-      }),
+  /**
+   * Model text and library file by fixture UID, naming the revision where a model mixes
+   * revisions. Equal text keeps the previous map, so a library refresh rebuilds rows only
+   * when something shown changes.
+   */
+  const libraryText = createMemo(
+    () => {
+      const patched = Object.values($fixtures());
+      const library = $fixtureLibrary();
+      const models = fixtureModelLabels(patched, library);
+      const files = fixtureFileNames(patched, library);
+      return new Map(
+        patched.map((fixture, index) => [
+          fixture.identifiers.uid,
+          { model: models[index], file: files[index] },
+        ]),
+      );
+    },
+    undefined,
+    {
+      equals: (previous, next) =>
+        previous.size === next.size &&
+        [...next].every(([uid, text]) => {
+          const before = previous.get(uid);
+          return before?.model === text.model && before.file === text.file;
+        }),
+    },
   );
+
+  /** Patched fixtures by ID, each with its model named apart from other revisions of it. */
+  const rows = createMemo<FixtureRow[]>(() => {
+    const text = libraryText();
+    const sorted = Object.values($fixtures()).sort(
+      (a, b) => a.identifiers.id - b.identifiers.id,
+    );
+    return sorted.map((fixture) => {
+      const placement = getPlacementOrDefault(fixture);
+      const { model, file } = text.get(fixture.identifiers.uid) ?? {
+        model: fixture.model,
+        file: "",
+      };
+      return {
+        uid: fixture.identifiers.uid,
+        id: fixture.identifiers.id,
+        label: fixture.identifiers.label,
+        make: fixture.make,
+        model,
+        file,
+        mode: fixture.mode,
+        channelWidth: computeFixtureChannelCount(fixture),
+        posX: placement.position.x,
+        posY: placement.position.y,
+        posZ: placement.position.z,
+        rotX: placement.rotation.x,
+        rotY: placement.rotation.y,
+        rotZ: placement.rotation.z,
+      };
+    });
+  });
   /** Removes this patch tab's fixture UIDs from visualizer edit highlights. */
   const clearEditSelection = () => {
     const nextSelection = replaceFixtureUidsInSelection(
@@ -521,6 +581,9 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
           case "mode":
             cell = makeSafeTextCell(fixtureRow.mode);
             break;
+          case "file":
+            cell = makeSafeTextCell(fixtureRow.file);
+            break;
           case "ch_width":
             cell = toNumericCell(fixtureRow.channelWidth, false);
             break;
@@ -558,6 +621,63 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
       },
     });
   });
+
+  /** The library revision a row's fixture was patched from, when the library lists it. */
+  const libraryRevisionOf = (rowIndex: number) => {
+    const uid = displayRows()[rowIndex]?.uid;
+    const fixture = uid ? $fixtures()[uid] : undefined;
+    const etag = fixture?.library_asset_etag;
+    if (!fixture || !etag) return undefined;
+    return $fixtureLibrary().find(
+      (info) =>
+        info.asset_etag === etag &&
+        info.make === fixture.make &&
+        info.model === fixture.model,
+    );
+  };
+
+  /**
+   * Opens the Fixture Library on the revision a row's fixture was patched from. Returns
+   * whether the library lists that revision.
+   */
+  const showInFixtureLibrary = (rowIndex: number): boolean => {
+    const info = libraryRevisionOf(rowIndex);
+    if (!info) return false;
+    revealInFixtureLibrary(dockApi.get(), invokePanelCapability, {
+      make: info.make,
+      model: info.model,
+      asset_etag: info.asset_etag,
+    });
+    return true;
+  };
+
+  /** Alt+Click on a row follows its fixture to the revision in the Fixture Library. */
+  const handleCellClicked = (cell: Item, event: CellClickedEventArgs) => {
+    if (event.altKey) showInFixtureLibrary(cell[1]);
+  };
+
+  /**
+   * Right-click offers following a row's fixture to the Fixture Library, leaving the
+   * browser's own menu alone for fixtures the library doesn't list.
+   */
+  const handleCellContextMenu = (cell: Item, event: CellClickedEventArgs) => {
+    const row = cell[1];
+    if (!libraryRevisionOf(row)) return;
+    event.preventDefault();
+    openContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        {
+          id: "show-in-fixture-library",
+          label: "Show in Fixture Library",
+          icon: FileTextIcon,
+          shortcut: "Alt+Click",
+          onSelect: () => showInFixtureLibrary(row),
+        },
+      ],
+    });
+  };
 
   const handleGroupHeaderClicked = (
     colIndex: number,
@@ -813,6 +933,8 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
           onGridSelectionChange={handleGridSelectionChange}
           scrollRequest={scrollRequest()}
           onGroupHeaderClicked={handleGroupHeaderClicked}
+          onCellClicked={handleCellClicked}
+          onCellContextMenu={handleCellContextMenu}
           width="100%"
           height="100%"
           primaryColumnIndex={0}

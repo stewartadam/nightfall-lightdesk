@@ -66,6 +66,7 @@ impl BuiltinFixtureProfile {
             gdtf_revision: None,
             gdtf_revision_date: None,
             gdtf_data_version: None,
+            file_name: None,
         }
     }
 

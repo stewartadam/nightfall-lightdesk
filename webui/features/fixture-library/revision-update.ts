@@ -21,25 +21,22 @@ export interface PatchedModeGroup {
 }
 
 /**
- * Returns the patched library fixtures of `make` and `model` on any revision other than
- * `targetEtag`, grouped by the mode they use, modes and fixtures in ascending order.
- *
- * Every older revision is included, not just one, because the engine refuses an update
- * that would leave a mode on two revisions.
+ * Returns the patched fixtures created from library revision `sourceEtag` of `make` and
+ * `model`, grouped by the mode they use, modes and fixtures in ascending order. Fixtures
+ * on other revisions are left out: each keeps its own revision.
  */
 export function patchedModeGroups(
   fixtures: Iterable<Fixture>,
   make: string,
   model: string,
-  targetEtag: string,
+  sourceEtag: string,
 ): PatchedModeGroup[] {
   const groups = new Map<string, Fixture[]>();
   for (const fixture of fixtures) {
     if (
       fixture.make !== make ||
       fixture.model !== model ||
-      !fixture.library_asset_etag ||
-      fixture.library_asset_etag === targetEtag
+      fixture.library_asset_etag !== sourceEtag
     ) {
       continue;
     }

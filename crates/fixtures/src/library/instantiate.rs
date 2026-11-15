@@ -254,10 +254,10 @@ pub fn create_library_fixtures(
 /// mode named for it, as one atomic change.
 ///
 /// `resolve_mode` is called once per distinct mode. Every fixture keeps its ID, UID,
-/// label and placement; DMX routes are left alone. The update is rejected before anything
-/// changes when an ID is missing or repeated, a mode can't be resolved, or a fixture left
-/// out of the update would keep another revision of the same make, model and mode as an
-/// updated fixture, since a show holds one revision of each.
+/// label and placement; DMX routes are left alone. Fixtures left out keep their own
+/// revision, even of the same make, model and mode. The update is rejected before anything
+/// changes when an ID is missing or repeated, a fixture didn't come from the library or is another
+/// make or model, or a mode can't be resolved.
 pub fn update_library_fixtures(
     commands: &mut Commands,
     fixtures: &mut FixtureDataProviderExt,
@@ -297,47 +297,26 @@ pub fn update_library_fixtures(
         .iter()
         .map(|update| {
             let template = &templates[update.mode.as_str()];
+            let existing = fixtures
+                .inner
+                .from_id(update.id)
+                .map_err(|_| fixture_not_found_error(update.id))?;
+            if existing.make != template.fixture.make || existing.model != template.fixture.model {
+                return Err(CommandError::new(
+                    "fixture_library.different_model",
+                    format!(
+                        "Fixture {} is a {} {}, not a {} {}",
+                        update.id,
+                        existing.make,
+                        existing.model,
+                        template.fixture.make,
+                        template.fixture.model
+                    ),
+                ));
+            }
             updated_fixture(fixtures, update.id, &template.fixture, &template.asset_etag)
         })
         .collect::<Result<Vec<_>, _>>()?;
-
-    let updated_ids = updates
-        .iter()
-        .map(|update| update.id)
-        .collect::<HashSet<_>>();
-    let revision_of_mode = replacements
-        .iter()
-        .map(|fixture| {
-            (
-                (&fixture.make, &fixture.model, &fixture.mode),
-                &fixture.library_asset_etag,
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    let left_behind = fixtures
-        .inner
-        .iter()
-        .find(|other| {
-            !updated_ids.contains(&other.identifiers.id)
-                && other.library_asset_etag.is_some()
-                && revision_of_mode
-                    .get(&(&other.make, &other.model, &other.mode))
-                    .is_some_and(|revision| **revision != other.library_asset_etag)
-        })
-        .map(|other| {
-            CommandError::new(
-                "fixture_library.mixed_revisions",
-                format!(
-                    "Fixture {} also uses {} {} ({}) from another revision; update it too, \
-                     since a show holds one revision of each mode",
-                    other.identifiers.id, other.make, other.model, other.mode
-                ),
-            )
-        });
-    drop(revision_of_mode);
-    if let Some(error) = left_behind {
-        return Err(error);
-    }
 
     commit_library_fixtures(
         commands,

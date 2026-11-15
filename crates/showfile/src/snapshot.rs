@@ -184,43 +184,14 @@ pub fn current_showfile_metadata() -> ShowfileMetadata {
     }
 }
 
-/// Validate that versioned fixture and object assets do not conflict inside a snapshot.
+/// Validate that versioned scene object assets do not conflict inside a snapshot.
+///
+/// Fixtures are not checked: each one records the library revision it was created from, so
+/// several revisions of one make, model and mode can share a show.
 pub fn validate_showfile_asset_versions(
     showfile_snapshot: &ShowfileSnapshot,
 ) -> Result<(), String> {
-    validate_unique_fixture_asset_versions(&showfile_snapshot.fixtures)?;
-    validate_unique_scene_object_asset_versions(&showfile_snapshot.scene_objects)?;
-    Ok(())
-}
-
-/// Reject duplicate fixture asset keys that point at different library versions.
-fn validate_unique_fixture_asset_versions(fixtures: &[Fixture]) -> Result<(), String> {
-    let mut versions_by_key: HashMap<(String, String, String), String> = HashMap::new();
-
-    for fixture in fixtures {
-        let Some(asset_version) = fixture.library_asset_etag.as_ref() else {
-            // Built-in or legacy fixtures are not library versioned.
-            continue;
-        };
-
-        let key = (
-            fixture.make.clone(),
-            fixture.model.clone(),
-            fixture.mode.clone(),
-        );
-        if let Some(existing_version) = versions_by_key.get(&key) {
-            if existing_version != asset_version {
-                return Err(format!(
-                    "showfile contains multiple versions of fixture asset {} {} ({})",
-                    fixture.make, fixture.model, fixture.mode
-                ));
-            }
-            continue;
-        }
-        versions_by_key.insert(key, asset_version.clone());
-    }
-
-    Ok(())
+    validate_unique_scene_object_asset_versions(&showfile_snapshot.scene_objects)
 }
 
 /// Reject duplicate scene object asset names that point at different library versions.

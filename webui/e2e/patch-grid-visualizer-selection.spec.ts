@@ -450,7 +450,7 @@ test("patch grid active edit row publishes a visualizer target independently of 
   await expect(grid).toBeVisible();
   await expect(grid.locator("#tanstack-cell-0-1")).toHaveText("2");
 
-  const posXCell = grid.locator("#tanstack-cell-6-1");
+  const posXCell = grid.locator("#tanstack-cell-7-1");
   await expect(posXCell).toBeVisible();
   await posXCell.click();
 

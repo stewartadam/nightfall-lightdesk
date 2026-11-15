@@ -17,13 +17,10 @@ import {
   DialogFooter,
 } from "../../../components/ui/dialog";
 import { Button } from "../../../components/ui/visual-language/button";
-import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { libraryDefinitionId } from "../../../lib/fixture-service";
-import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   fixtureLibrary,
   fixtureProfile,
-  fixtures,
   pushToast,
 } from "../../../state/appStores";
 import { revealPatchFixtures } from "../model/patch-view";
@@ -104,14 +101,9 @@ export function PatchWizard() {
     state,
     updateState,
   } = usePatchWizard();
-  const $fixtures = useSharedStore(fixtures);
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);
   const [isCreating, setIsCreating] = createSignal(false);
-  const [isVersionConflictModalOpen, setIsVersionConflictModalOpen] =
-    createSignal(false);
-  const [versionConflictFixtureIds, setVersionConflictFixtureIds] =
-    createSignal<number[]>([]);
   /** Tracks when the wizard is updating existing fixture definitions. */
   const isMorphMode = createMemo(() => state().morphFixtureIds.length > 0);
 
@@ -122,11 +114,6 @@ export function PatchWizard() {
       (fixture) => libraryDefinitionId(fixture) === fixtureDefinitionId,
     );
   });
-  /** Human-readable name of the selected library fixture for the version-conflict prompt. */
-  const versionConflictFixtureName = () => {
-    const info = selectedLibraryFixtureInfo();
-    return info ? `${info.make} ${info.model}` : "this fixture";
-  };
   const selectedLibraryFixture = createMemo(() => {
     const s = state();
     if (!s.fixtureDefinitionId || !s.fixtureMode) return null;
@@ -159,13 +146,8 @@ export function PatchWizard() {
     return profile.geometry;
   });
 
-  const closeVersionConflictModal = () => {
-    setIsVersionConflictModalOpen(false);
-    setVersionConflictFixtureIds([]);
-  };
-
   /** Runs feature commands for the current wizard state and handles UI lifecycle state. */
-  const finishWithOptions = async (forceUpdateExisting = false) => {
+  const finish = async () => {
     const profileFixture = selectedLibraryFixture();
     const libraryFixtureInfo = selectedLibraryFixtureInfo();
     if (!profileFixture || !libraryFixtureInfo || isCreating()) return;
@@ -181,23 +163,13 @@ export function PatchWizard() {
     );
     const result = await executePatchWizardCommands({
       state: state(),
-      fixtures: $fixtures(),
       profileFixture,
       libraryFixtureInfo,
       geometry: selectedLibraryGeometry(),
       baseFixtureId: firstId,
-      forceUpdateExisting,
     });
 
-    if (result.status === "conflict") {
-      setIsCreating(false);
-      setVersionConflictFixtureIds(result.fixtureIds);
-      setIsVersionConflictModalOpen(true);
-      return;
-    }
-
     setIsCreating(false);
-    closeVersionConflictModal();
     closeWizard();
     if (result.status !== "success" || isMorphMode()) return;
     revealPatchFixtures(newFixtureIds);
@@ -212,7 +184,7 @@ export function PatchWizard() {
     }
   };
   const handleFinish = () => {
-    void finishWithOptions(false);
+    void finish();
   };
 
   /** Advances the wizard, or finishes it on the last step, as its Enter action. */
@@ -358,17 +330,6 @@ export function PatchWizard() {
           </div>
         </DialogFooter>
       </Dialog>
-      <DeleteConfirmModal
-        isOpen={isVersionConflictModalOpen()}
-        title="Version Mismatch Detected"
-        message={`This showfile already contains fixture IDs ${versionConflictFixtureIds().join(", ")} with a different version of ${versionConflictFixtureName()}. Proceeding will update those fixtures to the library version before adding the new fixture(s).`}
-        confirmLabel="Proceed and Update"
-        onCancel={closeVersionConflictModal}
-        onConfirm={() => {
-          setIsVersionConflictModalOpen(false);
-          void finishWithOptions(true);
-        }}
-      />
     </Show>
   );
 }

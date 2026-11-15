@@ -48,22 +48,23 @@ function note(text: string): GdtfRevisionNote {
 }
 
 /**
- * Groups every library fixture of the make and model that isn't on the target revision,
- * by mode, each group sorted by fixture ID.
+ * Groups the make and model's fixtures created from the source revision by mode, each
+ * group sorted by fixture ID, leaving fixtures on other revisions alone.
  */
-test("patchedModeGroups groups other revisions' fixtures by mode", () => {
+test("patchedModeGroups groups the source revision's fixtures by mode", () => {
   const groups = patchedModeGroups(
     [
       fixture(12, "Basic", "old"),
       fixture(3, "Extended", "old"),
-      fixture(4, "Basic", "older"),
+      fixture(4, "Basic", "old"),
+      fixture(8, "Basic", "older"),
       fixture(5, "Basic", "new"),
       fixture(6, "Basic", "old", "Spot"),
       fixture(7, "Basic", undefined),
     ],
     "Acme",
     "Wash",
-    "new",
+    "old",
   );
   assert.deepEqual(
     groups.map((group) => [

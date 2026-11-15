@@ -400,6 +400,10 @@ fn available_fixture_info(profile: &FixtureProfile) -> AvailableFixtureInfo {
             FixtureSource::Gdtf(metadata) => metadata.data_version.clone(),
             FixtureSource::Ofl(_) | FixtureSource::BuiltIn { .. } => None,
         },
+        file_name: profile
+            .file_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned()),
     }
 }
 

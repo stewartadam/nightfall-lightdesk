@@ -336,8 +336,8 @@ test("TanStack patch fixture list commits an editable placement cell", async ({
 }, testInfo) => {
   const grid = await openPatchWithTanStackGrid(page, backendSlot.backendPort);
 
-  const editableCell = grid.locator("#tanstack-cell-6-0");
-  const nextRowCell = grid.locator("#tanstack-cell-6-1");
+  const editableCell = grid.locator("#tanstack-cell-7-0");
+  const nextRowCell = grid.locator("#tanstack-cell-7-1");
   await expect(editableCell).toHaveText(/-?\d/);
   await expect(nextRowCell).toHaveText(/-?\d/);
 
@@ -366,7 +366,7 @@ test("TanStack patch fixture list leaves cells unchanged for shell help shortcut
 }) => {
   const grid = await openPatchWithTanStackGrid(page, backendSlot.backendPort);
 
-  const editableCell = grid.locator("#tanstack-cell-6-0");
+  const editableCell = grid.locator("#tanstack-cell-7-0");
   await expect(editableCell).toHaveText(/-?\d/);
   const originalCellText = (await editableCell.innerText()).trim();
 
@@ -387,7 +387,7 @@ test("TanStack patch fixture list clears editable numeric cells with Delete", as
 }) => {
   const grid = await openPatchWithTanStackGrid(page, backendSlot.backendPort);
 
-  const editableCell = grid.locator("#tanstack-cell-6-0");
+  const editableCell = grid.locator("#tanstack-cell-7-0");
   await expect(editableCell).toHaveText(/-?\d/);
 
   await editableCell.dblclick();
@@ -435,8 +435,8 @@ test("TanStack patch fixture list keeps keyboard active cell visible", async ({
 }) => {
   const grid = await openPatchWithTanStackGrid(page, backendSlot.backendPort);
 
-  await grid.locator("#tanstack-cell-5-0").click();
-  await expect(grid.locator("#tanstack-cell-5-0")).toHaveAttribute(
+  await grid.locator("#tanstack-cell-6-0").click();
+  await expect(grid.locator("#tanstack-cell-6-0")).toHaveAttribute(
     "aria-selected",
     "true",
   );
@@ -446,12 +446,12 @@ test("TanStack patch fixture list keeps keyboard active cell visible", async ({
   await grid.locator("xpath=ancestor::*[@role='grid'][1]").focus();
   await page.keyboard.press("ArrowRight");
 
-  await expect(grid.locator("#tanstack-cell-6-0")).toHaveAttribute(
+  await expect(grid.locator("#tanstack-cell-7-0")).toHaveAttribute(
     "aria-selected",
     "true",
   );
   const metrics = await readActiveCellViewportMetrics(grid);
-  expect(metrics.activeId).toBe("tanstack-cell-6-0");
+  expect(metrics.activeId).toBe("tanstack-cell-7-0");
   expect(metrics.left).toBeGreaterThanOrEqual(metrics.frozenRight - 1);
   expect(metrics.right).toBeLessThanOrEqual(metrics.gridRight + 1);
   expect(metrics.top).toBeGreaterThanOrEqual(metrics.headerBottom - 1);
@@ -572,10 +572,6 @@ test("TanStack patch fixture list grouped header selects its columns", async ({
     .locator('[data-grid-header-id="tanstack-header-group:Position"]')
     .click();
 
-  await expect(grid.locator("#tanstack-cell-6-0")).toHaveAttribute(
-    "data-selected",
-    "true",
-  );
   await expect(grid.locator("#tanstack-cell-7-0")).toHaveAttribute(
     "data-selected",
     "true",
@@ -584,7 +580,11 @@ test("TanStack patch fixture list grouped header selects its columns", async ({
     "data-selected",
     "true",
   );
-  await expect(grid.locator("#tanstack-cell-5-0")).toHaveAttribute(
+  await expect(grid.locator("#tanstack-cell-9-0")).toHaveAttribute(
+    "data-selected",
+    "true",
+  );
+  await expect(grid.locator("#tanstack-cell-6-0")).toHaveAttribute(
     "data-selected",
     "false",
   );
@@ -597,8 +597,8 @@ test("TanStack patch fixture list applies range edits to selected rows", async (
 }) => {
   const grid = await openPatchWithTanStackGrid(page, backendSlot.backendPort);
 
-  const firstRowCell = grid.locator("#tanstack-cell-6-0");
-  const secondRowCell = grid.locator("#tanstack-cell-6-1");
+  const firstRowCell = grid.locator("#tanstack-cell-7-0");
+  const secondRowCell = grid.locator("#tanstack-cell-7-1");
   await expect(firstRowCell).toHaveText(/-?\d/);
   await expect(secondRowCell).toHaveText(/-?\d/);
 
@@ -606,7 +606,7 @@ test("TanStack patch fixture list applies range edits to selected rows", async (
   await page.keyboard.press("Shift+ArrowDown");
   await expect(
     grid.locator("xpath=ancestor::*[@role='grid'][1]"),
-  ).toHaveAttribute("data-selection-range", "6,0,1,2");
+  ).toHaveAttribute("data-selection-range", "7,0,1,2");
   await page.keyboard.press("Enter");
 
   const editor = secondRowCell.locator("input");
@@ -627,7 +627,7 @@ test("TanStack patch fixture list applies edits across additive drag ranges", as
   const grid = await openPatchWithTanStackGrid(page, backendSlot.backendPort);
 
   const targetCells = [0, 1, 2, 3].map((row) =>
-    grid.locator(`#tanstack-cell-6-${row}`),
+    grid.locator(`#tanstack-cell-7-${row}`),
   );
   for (const cell of targetCells) {
     await expect(cell).toHaveText(/-?\d/);
@@ -668,8 +668,8 @@ test("TanStack patch fixture list persists marker-selected Pos Y edits after rel
     .getByRole("checkbox", { name: "Select row 2", exact: true })
     .click({ modifiers: ["Shift"] });
 
-  const firstRowCell = grid.locator("#tanstack-cell-7-0");
-  const secondRowCell = grid.locator("#tanstack-cell-7-1");
+  const firstRowCell = grid.locator("#tanstack-cell-8-0");
+  const secondRowCell = grid.locator("#tanstack-cell-8-1");
   await firstRowCell.dblclick();
   const editor = firstRowCell.locator("input");
   await expect(editor).toBeVisible();
@@ -692,10 +692,10 @@ test("TanStack patch fixture list persists marker-selected Pos Y edits after rel
     page,
     "panel-PatchEditor-tanstack-e2e-reload",
   );
-  await expect(reloadedGrid.locator("#tanstack-cell-7-0")).toHaveText(
+  await expect(reloadedGrid.locator("#tanstack-cell-8-0")).toHaveText(
     /^34\.567/,
   );
-  await expect(reloadedGrid.locator("#tanstack-cell-7-1")).toHaveText(
+  await expect(reloadedGrid.locator("#tanstack-cell-8-1")).toHaveText(
     /^34\.567/,
   );
   const screenshotPath = testInfo.outputPath(
@@ -716,7 +716,7 @@ test("TanStack patch fixture list fans range edits across selected cells", async
   const grid = await openPatchWithTanStackGrid(page, backendSlot.backendPort);
 
   const targetCells = [0, 1, 2, 3].map((row) =>
-    grid.locator(`#tanstack-cell-6-${row}`),
+    grid.locator(`#tanstack-cell-7-${row}`),
   );
   await expect(targetCells[0]!).toHaveText(/-?\d/);
 
@@ -726,7 +726,7 @@ test("TanStack patch fixture list fans range edits across selected cells", async
   }
   await expect(
     grid.locator("xpath=ancestor::*[@role='grid'][1]"),
-  ).toHaveAttribute("data-selection-range", "6,0,1,4");
+  ).toHaveAttribute("data-selection-range", "7,0,1,4");
   await page.keyboard.press("Enter");
 
   const editor = targetCells[3]!.locator("input");
@@ -755,7 +755,7 @@ test("TanStack patch fixture list fans marker-selected Rot Z edits", async ({
     .click({ modifiers: ["Shift"] });
 
   const rotZCells = [0, 1, 2, 3].map((row) =>
-    grid.locator(`#tanstack-cell-11-${row}`),
+    grid.locator(`#tanstack-cell-12-${row}`),
   );
   await rotZCells[0]!.dblclick();
   const editor = rotZCells[0]!.locator("input");
@@ -782,11 +782,11 @@ test("TanStack patch fixture list fans marker-selected Rot Z edits", async ({
     "panel-PatchEditor-tanstack-e2e-fan-reload",
   );
   for (const [row, value] of expected.entries()) {
-    await expect(reloadedGrid.locator(`#tanstack-cell-11-${row}`)).toHaveText(
+    await expect(reloadedGrid.locator(`#tanstack-cell-12-${row}`)).toHaveText(
       value,
     );
   }
-  await reloadedGrid.locator("#tanstack-cell-11-0").scrollIntoViewIfNeeded();
+  await reloadedGrid.locator("#tanstack-cell-12-0").scrollIntoViewIfNeeded();
   const screenshotPath = testInfo.outputPath("patch-rot-z-fan.png");
   await reloadedGrid.screenshot({ path: screenshotPath });
   await testInfo.attach("patch-rot-z-fan", {
