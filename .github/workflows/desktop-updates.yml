@@ -1,8 +1,8 @@
 name: Desktop updates
 
 # Publishing a version release offers it to installed desktop apps. nightfall.live redirects
-# each channel's update checks to its feed (`stable.json` or `beta.json`) on the `updater` release,
-# which this workflow replaces.
+# each channel's update checks to its feed (`stable.json` or `prerelease.json`) on the
+# `updater` release, which this workflow replaces.
 on:
   release:
     types: [published]
@@ -169,8 +169,8 @@ jobs:
             .version == $version and (.platforms | length) > 0 and all(.platforms[];
               (.url | startswith($base) and (ltrimstr($base) | contains("/") | not))
               and (.signature | test("^[A-Za-z0-9+/]+=*$")))' manifest/release.json > /dev/null
-          # Beta offers every release; Stable only those without a SemVer prerelease tag.
-          feeds=(beta)
+          # Prerelease offers every release; Stable only those without a SemVer prerelease tag.
+          feeds=(prerelease)
           core="${version%%+*}"
           if [[ "$core" != *-* ]]; then feeds+=(stable); fi
           if gh release view updater > /dev/null 2>&1; then
@@ -182,9 +182,9 @@ jobs:
           fi
           mkdir feeds
           for feed in "${feeds[@]}"; do
-            # Before channels, the single latest.json feed was Beta's.
+            # Before channels, the single latest.json feed served what is now Prerelease.
             offered="$feed.json"
-            if [[ "$feed" == beta ]] && ! grep -qxF beta.json <<< "$existing"; then offered=latest.json; fi
+            if [[ "$feed" == prerelease ]] && ! grep -qxF prerelease.json <<< "$existing"; then offered=latest.json; fi
             if grep -qxF "$offered" <<< "$existing"; then
               gh release download updater --pattern "$offered" --output "$RUNNER_TEMP/$feed-current.json"
               current=$(jq -r .version "$RUNNER_TEMP/$feed-current.json")
@@ -209,7 +209,7 @@ jobs:
             cp manifest/release.json "feeds/$feed.json"
             echo "Installed apps on $feed are now offered $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
           done
-          if [[ ! -e feeds/beta.json && ! -e feeds/stable.json ]]; then
+          if [[ ! -e feeds/prerelease.json && ! -e feeds/stable.json ]]; then
             echo "::error::Every channel already offers a newer release than $RELEASE_TAG"
             exit 1
           fi

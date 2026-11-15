@@ -857,7 +857,7 @@ function offerUpdate(
   manifest,
   {
     existing = true,
-    current = { beta: "0.1.0-alpha.1", stable: "0.0.0" },
+    current = { prerelease: "0.1.0-alpha.1", stable: "0.0.0" },
     ...environment
   } = {},
 ) {
@@ -1002,7 +1002,7 @@ function updateManifest(
   };
 }
 
-/** A prerelease updates only the Beta feed, while a stable release updates Beta and Stable. */
+/** A prerelease updates only the Prerelease feed, while a stable release updates Prerelease and Stable. */
 test("published releases update their channels' feeds", (t) => {
   const directory = fixtureDirectory(t);
   const prerelease = offerUpdate(directory, updateManifest());
@@ -1010,10 +1010,10 @@ test("published releases update their channels' feeds", (t) => {
   assert.deepEqual(prerelease.calls, [
     "release view updater",
     "release view updater --json assets --jq .assets[].name",
-    `release download updater --pattern beta.json --output ${directory}/beta-current.json`,
-    "release upload updater feeds/beta.json --clobber",
+    `release download updater --pattern prerelease.json --output ${directory}/prerelease-current.json`,
+    "release upload updater feeds/prerelease.json --clobber",
   ]);
-  assert.deepEqual(prerelease.feeds, { "beta.json": "0.1.0-alpha.2" });
+  assert.deepEqual(prerelease.feeds, { "prerelease.json": "0.1.0-alpha.2" });
 
   const stable = offerUpdate(directory, updateManifest("0.1.0"), {
     RELEASE_TAG: "v0.1.0",
@@ -1021,10 +1021,10 @@ test("published releases update their channels' feeds", (t) => {
   assert.equal(stable.status, 0);
   assert.equal(
     stable.calls.at(-1),
-    "release upload updater feeds/beta.json feeds/stable.json --clobber",
+    "release upload updater feeds/prerelease.json feeds/stable.json --clobber",
   );
   assert.deepEqual(stable.feeds, {
-    "beta.json": "0.1.0",
+    "prerelease.json": "0.1.0",
     "stable.json": "0.1.0",
   });
 });
@@ -1046,16 +1046,16 @@ test("the first publish creates the updater release and an empty Stable feed", (
   );
   assert.equal(
     created.calls[2],
-    "release upload updater feeds/beta.json feeds/stable.json --clobber",
+    "release upload updater feeds/prerelease.json feeds/stable.json --clobber",
   );
   assert.deepEqual(created.feeds, {
-    "beta.json": "0.1.0-alpha.2",
+    "prerelease.json": "0.1.0-alpha.2",
     "stable.json": "0.0.0",
   });
 });
 
-/** Until Beta has its own feed, the single feed from before channels guards it against downgrades. */
-test("the Beta feed starts from the feed that came before channels", (t) => {
+/** Until Prerelease has its own feed, the single feed from before channels guards it against downgrades. */
+test("the Prerelease feed starts from the feed that came before channels", (t) => {
   const directory = fixtureDirectory(t);
   const upgraded = offerUpdate(directory, updateManifest(), {
     current: { latest: "0.1.0-alpha.1" },
@@ -1063,10 +1063,10 @@ test("the Beta feed starts from the feed that came before channels", (t) => {
   assert.equal(upgraded.status, 0);
   assert.equal(
     upgraded.calls[2],
-    `release download updater --pattern latest.json --output ${directory}/beta-current.json`,
+    `release download updater --pattern latest.json --output ${directory}/prerelease-current.json`,
   );
   assert.deepEqual(upgraded.feeds, {
-    "beta.json": "0.1.0-alpha.2",
+    "prerelease.json": "0.1.0-alpha.2",
     "stable.json": "0.0.0",
   });
   const downgrade = offerUpdate(directory, updateManifest(), {
@@ -1079,7 +1079,7 @@ test("the Beta feed starts from the feed that came before channels", (t) => {
 /**
  * A manifest for another version or another release's files, a run outside a release event,
  * or an older release than every feed already offers uploads nothing. A stable release older
- * than the newest beta still updates Stable.
+ * than the newest prerelease still updates Stable.
  */
 test("the updater release only accepts the published release's manifest", (t) => {
   const directory = fixtureDirectory(t);
@@ -1105,24 +1105,24 @@ test("the updater release only accepts the published release's manifest", (t) =>
     assert.notEqual(result.status, 0);
     assert.deepEqual(result.calls, []);
   }
-  for (const beta of ["0.1.0-alpha.10", "0.1.0", "0.2.0-alpha.1"]) {
+  for (const prerelease of ["0.1.0-alpha.10", "0.1.0", "0.2.0-alpha.1"]) {
     const downgrade = offerUpdate(directory, updateManifest(), {
-      current: { beta, stable: "0.0.0" },
+      current: { prerelease, stable: "0.0.0" },
     });
-    assert.notEqual(downgrade.status, 0, beta);
-    assert.doesNotMatch(downgrade.calls.join("\n"), /upload/, beta);
+    assert.notEqual(downgrade.status, 0, prerelease);
+    assert.doesNotMatch(downgrade.calls.join("\n"), /upload/, prerelease);
   }
-  for (const beta of ["0.1.0-alpha.2", "0.1.0-alpha.1", "0.1.0-1"]) {
+  for (const prerelease of ["0.1.0-alpha.2", "0.1.0-alpha.1", "0.1.0-1"]) {
     assert.equal(
       offerUpdate(directory, updateManifest(), {
-        current: { beta, stable: "0.0.0" },
+        current: { prerelease, stable: "0.0.0" },
       }).status,
       0,
-      beta,
+      prerelease,
     );
   }
   const hotfix = offerUpdate(directory, updateManifest("0.1.1"), {
-    current: { beta: "0.2.0-alpha.1", stable: "0.1.0" },
+    current: { prerelease: "0.2.0-alpha.1", stable: "0.1.0" },
     RELEASE_TAG: "v0.1.1",
   });
   assert.equal(hotfix.status, 0);

@@ -140,7 +140,7 @@ fn preset(name: &str) -> Option<UpdateStatePatch> {
     let check_error = || {
         error(
             UpdateErrorKind::Check,
-            "error sending request for url (https://nightfall.live/api/v1/updates/beta/darwin/aarch64/app/0.1.0): connection refused",
+            "error sending request for url (https://nightfall.live/api/v1/updates/prerelease/darwin/aarch64/app/0.1.0): connection refused",
         )
     };
     let base = UpdateStatePatch {

@@ -78,8 +78,8 @@ struct StoredUpdatePreferences {
     check_for_updates: bool,
     /// What happens when a check finds a newer version.
     update_mode: UpdateMode,
-    /// Release channel the operator chose, or `None` to follow the running build: Beta for a
-    /// prerelease, Stable otherwise.
+    /// Release channel the operator chose, or `None` to follow the running build: Prerelease
+    /// for a prerelease build, Stable otherwise.
     channel: Option<UpdateChannel>,
     /// Seconds since the Unix epoch of the last check that reached the update service. Failed
     /// checks are not recorded, so they are retried sooner.
@@ -180,15 +180,16 @@ pub(crate) enum UpdateChannel {
     /// Releases without a prerelease tag only.
     Stable,
     /// Every release: prereleases, and stable releases when they are newest.
-    Beta,
+    Prerelease,
 }
 
 impl UpdateChannel {
-    /// The channel a build follows until the operator picks one: Beta when `current_version` is
-    /// itself a prerelease, so testers keep getting prereleases, and Stable otherwise.
+    /// The channel a build follows until the operator picks one: Prerelease when
+    /// `current_version` is itself a prerelease, so testers keep getting prereleases, and Stable
+    /// otherwise.
     fn default_for(current_version: &str) -> Self {
         if is_prerelease(current_version) {
-            Self::Beta
+            Self::Prerelease
         } else {
             Self::Stable
         }
@@ -198,14 +199,14 @@ impl UpdateChannel {
     fn feed(self) -> &'static str {
         match self {
             Self::Stable => "stable",
-            Self::Beta => "beta",
+            Self::Prerelease => "prerelease",
         }
     }
 
     /// Whether this channel offers `version`. Stable refuses prereleases, so an update found or
-    /// downloaded from Beta is dropped when the operator switches to Stable.
+    /// downloaded from Prerelease is dropped when the operator switches to Stable.
     fn offers(self, version: &str) -> bool {
-        self == Self::Beta || !is_prerelease(version)
+        self == Self::Prerelease || !is_prerelease(version)
     }
 }
 
@@ -817,8 +818,8 @@ impl UpdateController {
             .ok()
             .map(|elapsed| elapsed.as_secs());
         inner.state.last_checked_at = inner.stored.last_checked_at;
-        // The default channel is kept from the first check on, so a beta tester whom Beta updates
-        // to a stable release stays on Beta.
+        // The default channel is kept from the first check on, so someone testing prereleases
+        // whom Prerelease updates to a stable release stays on Prerelease.
         let channel = inner.state.channel;
         inner.stored.channel.get_or_insert(channel);
         // An unreadable preference file stays untouched and reported until the operator changes
@@ -2010,32 +2011,33 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "not json");
     }
 
-    /// A build follows Beta when it is itself a prerelease and Stable otherwise, until the
+    /// A build follows Prerelease when it is itself a prerelease and Stable otherwise, until the
     /// operator picks a channel, which is saved and reloaded by the next session.
     #[test]
     fn channel_defaults_to_the_running_build_until_chosen() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join(UPDATES_FILE_NAME);
-        let beta = UpdateController::load_for_version(Some(path.clone()), "0.2.0-beta.1");
-        assert_eq!(beta.snapshot().channel, UpdateChannel::Beta);
+        let prerelease = UpdateController::load_for_version(Some(path.clone()), "0.2.0-beta.1");
+        assert_eq!(prerelease.snapshot().channel, UpdateChannel::Prerelease);
         let stable = UpdateController::load_for_version(Some(path.clone()), "1.0.0");
         assert_eq!(stable.snapshot().channel, UpdateChannel::Stable);
         assert!(!path.exists(), "the default is not saved");
 
-        let state = stable.set_channel(UpdateChannel::Beta);
-        assert_eq!(state.channel, UpdateChannel::Beta);
+        let state = stable.set_channel(UpdateChannel::Prerelease);
+        assert_eq!(state.channel, UpdateChannel::Prerelease);
         assert_eq!(state.error, None);
         let reloaded = UpdateController::load_for_version(Some(path), "1.0.0").snapshot();
-        assert_eq!(reloaded.channel, UpdateChannel::Beta);
+        assert_eq!(reloaded.channel, UpdateChannel::Prerelease);
     }
 
-    /// Stable offers only versions without a prerelease tag, while Beta offers every version.
+    /// Stable offers only versions without a prerelease tag, while Prerelease offers every
+    /// version.
     #[test]
     fn channels_offer_their_releases() {
         assert!(UpdateChannel::Stable.offers("1.2.0"));
         assert!(!UpdateChannel::Stable.offers("1.3.0-beta.1"));
-        assert!(UpdateChannel::Beta.offers("1.2.0"));
-        assert!(UpdateChannel::Beta.offers("1.3.0-alpha.2"));
+        assert!(UpdateChannel::Prerelease.offers("1.2.0"));
+        assert!(UpdateChannel::Prerelease.offers("1.3.0-alpha.2"));
         assert!(
             UpdateChannel::Stable.offers("nightly"),
             "versions that are not semantic versions count as stable"
@@ -2051,14 +2053,14 @@ mod tests {
             "https://example.com/updates/%7B%7Bchannel%7D%7D/latest.json".to_owned(),
             "http://localhost:8000/latest.json".to_owned(),
         ];
-        let endpoints = channel_endpoints(&configured, UpdateChannel::Beta).unwrap();
+        let endpoints = channel_endpoints(&configured, UpdateChannel::Prerelease).unwrap();
         assert_eq!(
             endpoints[0].as_str(),
-            "https://nightfall.live/api/v1/updates/beta/%7B%7Btarget%7D%7D"
+            "https://nightfall.live/api/v1/updates/prerelease/%7B%7Btarget%7D%7D"
         );
         assert_eq!(
             endpoints[1].as_str(),
-            "https://example.com/updates/beta/latest.json"
+            "https://example.com/updates/prerelease/latest.json"
         );
         assert_eq!(endpoints[2].as_str(), "http://localhost:8000/latest.json");
         let stable = channel_endpoints(&configured[..1], UpdateChannel::Stable).unwrap();
@@ -2083,7 +2085,7 @@ mod tests {
 
         let stable = saved_download(&path, "1.0.0");
         controller.finish_download(Ok(stable.clone()));
-        let state = controller.set_channel(UpdateChannel::Beta);
+        let state = controller.set_channel(UpdateChannel::Prerelease);
         assert_eq!(state.phase, UpdatePhase::Ready);
         let state = controller.set_channel(UpdateChannel::Stable);
         assert_eq!(state.phase, UpdatePhase::Ready);
@@ -2093,8 +2095,8 @@ mod tests {
         assert_eq!(reloaded.version.as_deref(), Some("1.0.0"));
     }
 
-    /// A build that checked on its default channel keeps that channel, so a beta tester whom
-    /// Beta updates to a stable release stays on Beta.
+    /// A build that checked on its default channel keeps that channel, so someone testing
+    /// prereleases whom Prerelease updates to a stable release stays on Prerelease.
     #[test]
     fn the_default_channel_is_kept_once_checked() {
         let directory = tempfile::tempdir().unwrap();
@@ -2103,7 +2105,7 @@ mod tests {
         assert!(controller.begin_check());
         controller.finish_check(Ok(None));
         let updated = UpdateController::load_for_version(Some(path), "0.2.0").snapshot();
-        assert_eq!(updated.channel, UpdateChannel::Beta);
+        assert_eq!(updated.channel, UpdateChannel::Prerelease);
     }
 
     /// Changing the channel while a check runs asks for the new channel to be checked once it

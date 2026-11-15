@@ -76,7 +76,7 @@ Publication (fresh runner; contents: write; no Apple credentials)
   the `TAURI_SIGNING_PUBLIC_KEY` variable, removes the decoded key on exit, and
   writes the release's update manifest. A second runner, which never sees the key,
   checks that the manifest names the published version and copies it to each
-  channel's feed on the `updater` release (`beta.json`, and `stable.json` for a
+  channel's feed on the `updater` release (`prerelease.json`, and `stable.json` for a
   release without a prerelease tag), skipping a feed that already offers a newer
   version.
 - **Website release:** when that workflow succeeds for a release, `website-release.yml`

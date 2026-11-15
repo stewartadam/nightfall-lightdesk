@@ -176,7 +176,7 @@ function saveSelectChoice<T extends string>(
 const UPDATE_CHANNEL_OPTIONS: { value: DesktopUpdateChannel; label: string }[] =
   [
     { value: "stable", label: "Stable" },
-    { value: "beta", label: "Beta" },
+    { value: "prerelease", label: "Prerelease" },
   ];
 
 /** Phases in which the desktop shell accepts a check: nothing is checking, downloading or installing. */
@@ -432,7 +432,7 @@ export function AboutUpdateStatus(props: { updates: AboutUpdates }) {
           <SettingsRow
             class="border-t border-gray-700/70"
             label="Update channel"
-            description="Beta also offers prereleases with the newest features."
+            description="Prerelease also offers alpha, beta and release candidate builds."
           >
             {(field) => (
               <NativeSelect

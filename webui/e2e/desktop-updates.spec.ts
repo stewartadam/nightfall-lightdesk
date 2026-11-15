@@ -14,7 +14,7 @@ interface UpdateState {
   canInstall: boolean;
   checkForUpdates: boolean;
   updateMode: "notify" | "download" | "install";
-  channel: "stable" | "beta";
+  channel: "stable" | "prerelease";
   phase:
     | "idle"
     | "checking"
@@ -37,7 +37,7 @@ const idle: UpdateState = {
   canInstall: true,
   checkForUpdates: true,
   updateMode: "download",
-  channel: "beta",
+  channel: "prerelease",
   phase: "idle",
   version: null,
   progress: null,
@@ -515,9 +515,11 @@ test("about dialog switches the update channel", async ({
   const about = await openAbout(page);
   const updates = about.getByRole("region", { name: "Updates" });
   const channel = updates.getByRole("combobox", { name: "Update channel" });
-  await expect(channel).toHaveValue("beta");
+  await expect(channel).toHaveValue("prerelease");
   await expect(
-    updates.getByText("Beta also offers prereleases with the newest features."),
+    updates.getByText(
+      "Prerelease also offers alpha, beta and release candidate builds.",
+    ),
   ).toBeVisible();
   await channel.selectOption("stable");
   await expect

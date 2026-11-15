@@ -40,10 +40,10 @@ export type DesktopUpdatePhase =
 export type DesktopUpdateMode = "notify" | "download" | "install";
 
 /**
- * Which releases checks are offered: `stable` only releases without a prerelease tag, `beta`
- * every release, including stable ones when they are newest.
+ * Which releases checks are offered: `stable` only releases without a prerelease tag, and
+ * `prerelease` every release, including stable ones when they are newest.
  */
-export type DesktopUpdateChannel = "stable" | "beta";
+export type DesktopUpdateChannel = "stable" | "prerelease";
 
 /** Update status owned by the desktop shell; only the desktop app's own window receives it. */
 export interface DesktopUpdateState {
@@ -56,7 +56,7 @@ export interface DesktopUpdateState {
   checkForUpdates: boolean;
   /** What happens when a check finds a newer version. */
   updateMode: DesktopUpdateMode;
-  /** Release channel checks follow: the operator's choice, or Beta for a prerelease build. */
+  /** Release channel checks follow: the operator's choice, or Prerelease for a prerelease build. */
   channel: DesktopUpdateChannel;
   phase: DesktopUpdatePhase;
   /** Version found, being downloaded, or waiting to install. */
