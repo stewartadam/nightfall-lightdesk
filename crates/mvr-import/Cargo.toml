@@ -1,0 +1,38 @@
+[package]
+name = "nightfall-mvr-import"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum.workspace = true
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+futures-util.workspace = true
+nightfall = { path = "../common" }
+nightfall-engine = { path = "../engine" }
+nightfall-fixture-library = { path = "../fixture-library" }
+nightfall-fixture-model = { path = "../fixture-model" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-mvr = { path = "../mvr" }
+nightfall-websocket = { path = "../websocket" }
+serde.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+async-channel.workspace = true
+nightfall-io = { path = "../io" }
+nightfall-fixture-library = { path = "../fixture-library", features = ["test-support"] }
+serde_json.workspace = true
+zip = { version = "9.1", default-features = false, features = ["deflate"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[lints]
+workspace = true

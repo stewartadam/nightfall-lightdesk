@@ -63,6 +63,10 @@ pub(super) fn handle_command(
             );
         }
 
+        FixtureCommand::AddPatchedFixtures { fixtures, routes } => {
+            add_patched_fixtures(context, command_id, fixtures, routes);
+        }
+
         FixtureCommand::RemoveDmxRoutes {
             source,
             target,
@@ -257,6 +261,24 @@ fn apply_staged_route_change(
     mutation_error_code: &'static str,
     mutate: impl FnOnce(&mut RoutePreview, &FixtureCrudContext) -> Result<(), String>,
 ) {
+    match stage_route_change(context, mutation_error_code, mutate) {
+        Ok(()) => succeed_fixture_command(&mut context.responder, command_id),
+        Err((code, message)) => {
+            tracing::warn!("{}: {}", failure_log, message);
+            fail_fixture_command(&mut context.responder, command_id, code, message);
+        }
+    }
+}
+
+/// Applies a route change to staged copies and keeps them when no new issue appears.
+///
+/// Returns the failure code and message instead of finishing the command, so callers can
+/// undo related changes first. See [`apply_staged_route_change`] for the rules.
+fn stage_route_change(
+    context: &mut FixtureCrudContext,
+    mutation_error_code: &'static str,
+    mutate: impl FnOnce(&mut RoutePreview, &FixtureCrudContext) -> Result<(), String>,
+) -> Result<(), (&'static str, String)> {
     let existing_issues = validate_routes(
         context.route_settings.as_ref(),
         &context.input_routes,
@@ -271,11 +293,7 @@ fn apply_staged_route_change(
         disabled: context.disabled_routes.clone(),
     };
 
-    if let Err(err) = mutate(&mut preview, context) {
-        tracing::warn!("{}: {}", failure_log, err);
-        fail_fixture_command(&mut context.responder, command_id, mutation_error_code, err);
-        return;
-    }
+    mutate(&mut preview, context).map_err(|error| (mutation_error_code, error))?;
 
     let next_issues = validate_routes(
         context.route_settings.as_ref(),
@@ -293,21 +311,125 @@ fn apply_staged_route_change(
     if let Some(issue) = next_issues.into_iter().find(|issue| {
         !existing_issue_keys.contains(&format!("{}|{:?}", issue.message, issue.involved_fixtures))
     }) {
-        let message = issue.to_string();
-        tracing::warn!("{}: {}", failure_log, message);
-        fail_fixture_command(
-            &mut context.responder,
-            command_id,
-            "fixture.route_invalid",
-            message,
-        );
-        return;
+        return Err(("fixture.route_invalid", issue.to_string()));
     }
 
     *context.input_routes = preview.input;
     *context.output_routes = preview.output;
     *context.disabled_routes = preview.disabled;
-    succeed_fixture_command(&mut context.responder, command_id);
+    Ok(())
+}
+
+/// Adds a batch of fixtures and their routes, keeping either all of it or none.
+///
+/// The fixtures are checked for IDs and UIDs that are repeated or already in use, then
+/// stored so the routes can resolve them. When a route fails or would introduce a new route
+/// issue, the fixtures are removed again and the command fails with the route's reason.
+fn add_patched_fixtures(
+    context: &mut FixtureCrudContext,
+    command_id: CommandId,
+    fixtures: &[Fixture],
+    routes: &[crate::PatchRoute],
+) {
+    if let Err(message) = validate_new_fixtures(&context.fixture_data_provider, fixtures) {
+        tracing::warn!("Failed to add patched fixtures: {}", message);
+        fail_fixture_command(
+            &mut context.responder,
+            command_id,
+            "fixture.add_patched_invalid",
+            message,
+        );
+        return;
+    }
+
+    for fixture in fixtures {
+        if let Err(error) = context.fixture_data_provider.inner.add(fixture.clone()) {
+            remove_added_fixtures(context, fixtures);
+            fail_fixture_command(
+                &mut context.responder,
+                command_id,
+                "fixture.store_failed",
+                format!(
+                    "Failed to store fixture {}: {error}",
+                    fixture.identifiers.id
+                ),
+            );
+            return;
+        }
+        crate::library::instantiate::add_fixture_parameters(
+            &mut context.commands,
+            &mut context.fixture_data_provider,
+            fixture,
+        );
+    }
+
+    let staged = stage_route_change(context, "fixture.route_invalid", |preview, context| {
+        for route in routes {
+            apply_dmx_route_add(
+                &route.source,
+                &route.target,
+                0,
+                false,
+                &mut preview.input,
+                &mut preview.output,
+                &mut preview.disabled,
+                &context.fixture_data_provider,
+                &context.network_outputs,
+                &context.usb_outputs,
+            )?;
+        }
+        Ok(())
+    });
+    match staged {
+        Ok(()) => succeed_fixture_command(&mut context.responder, command_id),
+        Err((code, message)) => {
+            tracing::warn!("Failed to patch added fixtures: {}", message);
+            remove_added_fixtures(context, fixtures);
+            fail_fixture_command(&mut context.responder, command_id, code, message);
+        }
+    }
+}
+
+/// Checks that a batch of new fixtures has no repeated IDs or UIDs and none already used.
+fn validate_new_fixtures(
+    data_provider: &FixtureDataProviderExt,
+    fixtures: &[Fixture],
+) -> Result<(), String> {
+    if fixtures.is_empty() {
+        return Err("No fixtures were provided".to_string());
+    }
+    let mut ids = HashSet::new();
+    let mut uids = HashSet::new();
+    for fixture in fixtures {
+        let (id, uid) = (fixture.identifiers.id, fixture.identifiers.uid);
+        if !ids.insert(id) {
+            return Err(format!("Fixture ID {id} is used more than once"));
+        }
+        if !uids.insert(uid) {
+            return Err(format!("Fixture {id} repeats another fixture's UID"));
+        }
+        if data_provider.inner.from_id(id).is_ok() {
+            return Err(format!("Fixture ID {id} is already in use"));
+        }
+        if data_provider.inner.get(uid).is_ok() {
+            return Err(format!("Fixture {id} has the UID of an existing fixture"));
+        }
+    }
+    Ok(())
+}
+
+/// Removes fixtures added by a batch that is being rolled back, with their parameters.
+fn remove_added_fixtures(context: &mut FixtureCrudContext, fixtures: &[Fixture]) {
+    for fixture in fixtures {
+        if let Ok((_, parameters)) = context
+            .fixture_data_provider
+            .remove_fixture(&fixture.identifiers.uid)
+        {
+            for parameter in parameters {
+                context.commands.entity(parameter.entity()).despawn();
+            }
+        }
+    }
 }
 
 /// Error for patching an output to `disabled`; an unsent output is simply left unbound.

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 #[typeshare::typeshare]
 pub struct PlacementPosition {
-    /// X coordinate in meters (stage right is positive)
+    /// X coordinate in meters (positive is the audience's right, which is stage left)
     pub x: f32,
     /// Y coordinate in meters (up is positive)
     pub y: f32,

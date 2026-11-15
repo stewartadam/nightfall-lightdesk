@@ -63,6 +63,7 @@
       "nightfall-macros",
       "nightfall-park",
       "nightfall-references",
+      "nightfall-mvr-import",
       "nightfall-showfile",
       "nightfall-wasm-bridge"
     ],

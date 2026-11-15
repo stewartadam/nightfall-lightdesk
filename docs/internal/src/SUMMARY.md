@@ -26,6 +26,7 @@
 
 - [Launch quantize](requirements/launch-quantize.md)
 - [Macros](requirements/macros.md)
+- [MVR rig import](requirements/mvr-import.md)
 
 # Working on Nightfall
 

@@ -20,7 +20,7 @@ flowchart TB
   accTitle: Crate layers, their crates, and allowed dependencies
   accDescr: Five layers from hosts down to base, each listing its crates. Each layer may depend on any layer below it. Plugin crates may not depend on other plugin crates.
   hosts["<b>Hosts</b><br/>app-runtime · app-tauri · browser-runtime · cli · composition"]
-  crossPlugin["<b>Cross-plugin</b><br/>boards · macros · references · showfile · wasm-bridge"]
+  crossPlugin["<b>Cross-plugin</b><br/>boards · macros · mvr-import · references · showfile · wasm-bridge"]
   plugins["<b>Plugins</b><br/>audio · controls · cues · fixture-library · flow · fx · fx-module · object-library · programming <br/> scene-objects · timeline · input-artnet · input-ltc · input-midi · input-osc <br /> input-sacn · output-artnet · output-sacn · output-usb"]
   engineCore["<b>Engine core</b><br/>actions · clips · compositor · engine · fixtures · framepace · io · lookahead <br /> selection-runtime · service-host · tempo · timecode · undo · websocket"]
   base["<b>Base</b><br/>nightfall · open-fixture-library · beat-detection · cmd-parse · config <br /> coremidi-hotplug · dmx · engine-derive · fixture-model · instances <br /> lookahead-projection · mvr · playback-planner · selection · waveform · workspace-hack"]
@@ -133,6 +133,7 @@ Cross-plugin crates combine several plugins, which plugin crates can't do themse
 |-------|------|-------------|
 | `boards` | Demo | Boards: grids of buttons, button presses, and button status. |
 | `macros` | Demo | Macros: numbered command-line scripts, the backend runner that executes them line by line, and the `macro.start`, `macro.release`, and `macro.stop` actions. |
+| `mvr-import` | No | Imports a rig from an MVR file: the upload route, a preview of fixture types, IDs, patch and placement, and the commit that adds the fixtures as one undo step. |
 | `references` | Demo | Show-wide report of which objects use which, for the **References** panel and delete guards. |
 | `showfile` | Demo | The versioned showfile JSON format, migrations, applying a showfile to an engine world, snapshots of a world, and the requests to create, save, load, import, and delete shows. |
 | `wasm-bridge` | Bridge | Functions the web UI calls in WASM. See [what the WASM bridge exports](#what-the-wasm-bridge-exports). |
