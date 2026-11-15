@@ -46,7 +46,9 @@ export function supplyWebGpuCanvasContext(
   renderer: WebGPURenderer | CanvasContextRenderer,
 ): void {
   const { backend, domElement } = renderer as CanvasContextRenderer;
-  if (!backend.isWebGPUBackend || backend.parameters.context) return;
+  if (!backend.isWebGPUBackend || backend.parameters.context !== undefined) {
+    return;
+  }
   try {
     const context = domElement.getContext("webgpu");
     if (context) backend.parameters.context = context;

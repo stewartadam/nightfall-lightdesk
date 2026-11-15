@@ -8,6 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { WebGPUBackend } from "three/webgpu";
 import { supplyWebGpuCanvasContext } from "./webgpu-canvas-context";
 
 /** Builds a renderer double whose canvas counts and optionally fails `getContext` calls. */
@@ -67,4 +68,52 @@ test("supplyWebGpuCanvasContext tolerates a refused context", () => {
   });
   assert.doesNotThrow(() => supplyWebGpuCanvasContext(renderer));
   assert.equal(renderer.backend.parameters.context, undefined);
+});
+
+/**
+ * Pins the three.js behaviour the fix relies on: after a resize drops the
+ * backend's canvas data, the real `WebGPUBackend` reuses the supplied context
+ * instead of asking the canvas again. A three.js upgrade that changes this
+ * breaks Firefox 159 again, so it must fail here.
+ */
+test("three.js reuses a supplied canvas context after a resize", () => {
+  const globals = globalThis as { GPUTextureUsage?: unknown };
+  const previousUsage = globals.GPUTextureUsage;
+  globals.GPUTextureUsage = { RENDER_ATTACHMENT: 16, COPY_SRC: 1 };
+  try {
+    const configured: unknown[] = [];
+    const context = {
+      configure: (options: unknown) => configured.push(options),
+    };
+    const getContextCalls: string[] = [];
+    const canvas = {
+      getContext: (type: string) => {
+        getContextCalls.push(type);
+        return context;
+      },
+    };
+    const backend = new WebGPUBackend({ canvas } as never);
+    const canvasTarget = { isDefaultCanvasTarget: true, domElement: canvas };
+    const internals = backend as unknown as {
+      renderer: unknown;
+      context: unknown;
+      updateSize: () => void;
+      utils: { getPreferredCanvasFormat: () => string };
+    };
+    internals.renderer = { getCanvasTarget: () => canvasTarget };
+    internals.utils.getPreferredCanvasFormat = () => "bgra8unorm";
+
+    supplyWebGpuCanvasContext({
+      domElement: canvas as never,
+      backend: backend as never,
+    });
+    assert.equal(internals.context, context);
+    internals.updateSize();
+    assert.equal(internals.context, context);
+
+    assert.deepEqual(getContextCalls, ["webgpu"]);
+    assert.equal(configured.length, 2);
+  } finally {
+    globals.GPUTextureUsage = previousUsage;
+  }
 });
