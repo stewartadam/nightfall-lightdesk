@@ -66,6 +66,7 @@ import {
   updateFloorTransparency,
   updateOrbitTargetIndicator,
 } from "./scene-environment";
+import { supplyWebGpuCanvasContext } from "./webgpu-canvas-context";
 
 export {
   cancelControlsInteraction,
@@ -258,6 +259,7 @@ export async function initRenderer(
 
   // Setup post-processing with bloom
   await renderer.init();
+  supplyWebGpuCanvasContext(renderer);
   const postProcessing = createPostProcessing(renderer, scene, camera, {
     profile,
   });
