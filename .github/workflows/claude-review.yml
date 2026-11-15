@@ -53,7 +53,9 @@ jobs:
           skip_ci: true
           skip_reviews: true
       # A maintainer asked, so the author checks of the automatic review do not apply; the PR must
-      # still target develop from this repository, outside a stack and without no-auto-merge.
+      # still come from this repository without no-auto-merge and target develop, directly or
+      # through the PRs below it in a stack. A PR higher in a stack is reviewed on its own diff but
+      # never auto-merges, so there is no size and path check to waive on it.
       - id: start
         name: Check the PR and open a check run
         if: steps.command.outputs.continue == 'true'
@@ -79,11 +81,16 @@ jobs:
             *) refuse "use \`/review\`, or \`/review skip-policy\` to waive the size and path check." ;;
           esac
           pr="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER")"
-          why="$(jq -r --arg repo "$GH_REPO" '
-            if .base.ref != "develop" then "it targets \(.base.ref), not develop."
+          # A PR higher in a stack targets the branch of the PR below it; the stack's base says
+          # where the whole stack lands.
+          why="$(jq -r --arg repo "$GH_REPO" --argjson skip "$skip_policy" '
+            (.stack != null and .stack.base.ref != .base.ref) as $higher
+            | (if $higher then .stack.base.ref else .base.ref end) as $target
+            | if $target != "develop" then "it targets \($target), not develop."
             elif .head.repo.full_name != $repo then "it comes from a fork."
-            elif .stack != null then "it is part of a stack."
             elif any(.labels[]; .name == "no-auto-merge") then "it has the no-auto-merge label."
+            elif $skip and $higher then
+              "it builds on other PRs in a stack, so it never auto-merges and there is no size and path check to waive; use `/review`."
             else empty end' <<< "$pr")"
           [[ -z "$why" ]] || refuse "$why"
           sha="$(jq -r .head.sha <<< "$pr")"
@@ -187,7 +194,9 @@ jobs:
           test -f scripts/merge-policy.mjs && test ! -L scripts/merge-policy.mjs
           cp scripts/merge-policy.mjs "$dir/"
           gh api "repos/$GH_REPO/pulls/$PR_NUMBER" \
-            --jq '{number, title, body, draft, user: .user.login, base: .base.ref, head: .head.ref, head_sha: .head.sha}' \
+            --jq '{number, title, body, draft, user: .user.login, base: .base.ref, head: .head.ref, head_sha: .head.sha,
+              stack: (if .stack != null and .stack.base.ref != .base.ref
+                then {position: .stack.position, size: .stack.size, target: .stack.base.ref} else null end)}' \
             > "$dir/pr.json"
           # The snapshot must describe the commit the review checks out; a newer push has its own run.
           if [[ "$(jq -r .head_sha "$dir/pr.json")" != "$HEAD_SHA" ]]; then
@@ -337,7 +346,8 @@ jobs:
         run: |
           marker='<!-- claude-mergeability-review -->'
           # A newer push has its own run; never label or merge a head this run did not review.
-          state="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER" --jq '"\(.head.sha) \(.state) \(.draft)"')"
+          pr="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER")"
+          state="$(jq -r '"\(.head.sha) \(.state) \(.draft)"' <<< "$pr")"
           if [[ "$state" != "$HEAD_SHA open false" ]]; then
             echo "::notice::PR moved on since this review ($state); leaving it to the newer run."
             printf '%s\n' 'conclusion=skipped' 'title=The PR changed during the review' >> "$GITHUB_OUTPUT"
@@ -346,6 +356,15 @@ jobs:
           if [[ "$REVOKE_RESULT" == failure ]]; then
             echo "::error::Could not withdraw the earlier auto-merge; not posting a new verdict."
             exit 1
+          fi
+          # Merging a PR higher in a stack would also land the unmerged PRs below it, so it never
+          # auto-merges and no waiver applies. Read live: a retarget does not change the head.
+          if [[ -n "$ASSESSMENT" ]] &&
+            jq -e '.stack != null and .stack.base.ref != .base.ref' <<< "$pr" > /dev/null; then
+            ASSESSMENT="$(jq '.eligible = false
+              | .reasons = ["It builds on other PRs in a stack, so it merges with the stack by hand."] + .reasons' \
+              <<< "$ASSESSMENT")"
+            SKIP_POLICY=false
           fi
 
           # Every path that is not a successful policy pass plus a successful auto-merge verdict

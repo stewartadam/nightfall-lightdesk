@@ -216,8 +216,12 @@ check that links to the run and ends with the verdict, while the verdict comment
 `/review skip-policy` waives the size and path check for that commit: the "Auto-merge scope" check
 passes with a note naming who waived it, so a PR Claude clears gets auto-merge. The waiver lasts
 until the next push, whose automatic review applies the check again. Requested reviews work on bot
-PRs too, but never on drafts, fork PRs, stacked PRs, PRs into other branches or PRs labelled
-`no-auto-merge`; the workflow says why in a comment instead. A request on a cleared PR first
+PRs and on PRs in a stack on `develop` too, but never on drafts, fork PRs, PRs into other branches
+or PRs labelled `no-auto-merge`; the workflow says why in a comment instead. A PR higher in a stack
+is reviewed on its own diff against the PR below it and never auto-merges, because merging it
+would also land the unmerged PRs it builds on: its "Auto-merge scope" check fails with that reason,
+and `/review skip-policy` is refused on it. The lowest PR of a stack targets `develop` and is
+reviewed like any other PR. A request on a cleared PR first
 withdraws its auto-merge, and a newer request or push cancels a running one.
 
 The workflow runs on `pull_request_target`, so the workflow, the rubric and the policy script
