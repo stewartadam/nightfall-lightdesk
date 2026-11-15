@@ -26,10 +26,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
-import {
-  consumeVisualizerQualityUrlOverride,
-  isOffscreenCanvasEnabled,
-} from "../../../lib/feature-flags";
+import { consumeVisualizerQualityUrlOverride } from "../../../lib/feature-flags";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
@@ -43,7 +40,10 @@ import {
 const log = getLogger(import.meta.url);
 
 import { VisualizerCanvas } from "../components/visualizer-canvas";
-import { VisualizerErrorBoundary } from "../components/visualizer-error-boundary";
+import {
+  VisualizerErrorBoundary,
+  VisualizerErrorFallback,
+} from "../components/visualizer-error-boundary";
 import VisualizerProperties from "../components/visualizer-properties";
 import { VisualizerToolToolbar } from "../components/visualizer-tool-toolbar";
 import {
@@ -57,6 +57,10 @@ import {
   unregisterVisualizerDebugApi,
 } from "../services/visualizer-debug-api-registry";
 import { createCameraHandoff } from "./camera-handoff";
+import {
+  captureCameraForRemount,
+  useRenderRecovery,
+} from "./use-render-recovery";
 
 interface VisualizerPanelProps extends BasePanelComponentProps {
   initialPanelId?: string;
@@ -73,6 +77,12 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
   /** Quality the mounted renderer was built with; trails `quality` while the outgoing camera is captured. */
   const [mountedQuality, setMountedQuality] = createSignal(quality());
   const cameraHandoff = createCameraHandoff();
+  const recovery = useRenderRecovery({
+    getApi: () => visualizerApi,
+    cameraHandoff,
+  });
+  /** Identifies the mounted canvas; a new value replaces it with a fresh renderer. */
+  const canvasMountKey = () => `${mountedQuality()}|${recovery.mountKey()}`;
 
   /** Captures the outgoing renderer's camera pose, then remounts the canvas at the new quality. */
   createEffect(
@@ -83,14 +93,7 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
         const outgoing = visualizerApi;
         void (async () => {
           cameraHandoff.offer(
-            outgoing
-              ? await outgoing.getCameraState().catch((error: unknown) => {
-                  log.warn("Could not capture camera before quality change", {
-                    error,
-                  });
-                  return undefined;
-                })
-              : undefined,
+            await captureCameraForRemount(outgoing, "quality change"),
           );
           // A newer quality change supersedes this one and performs its own remount.
           if (quality() === next) setMountedQuality(next);
@@ -190,15 +193,26 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
         <VisualizerToolToolbar />
         <VisualizerErrorBoundary>
           <div class="min-h-0 flex-1">
-            <Show when={mountedQuality()} keyed>
-              {(_preset) => {
+            <Show
+              when={!recovery.failure() && canvasMountKey()}
+              keyed
+              fallback={
+                <VisualizerErrorFallback
+                  error={recovery.failureError()}
+                  reset={recovery.retry}
+                />
+              }
+            >
+              {(_mountKey) => {
                 // Consumed once per mount so later remounts use the current persisted camera.
                 const initialCameraState = cameraHandoff.take();
+                recovery.markMounted();
                 return (
                   <VisualizerCanvas
                     class="h-full w-full"
-                    forceMainThread={!isOffscreenCanvasEnabled()}
+                    forceMainThread={recovery.mode() === "main-thread"}
                     initialCameraState={initialCameraState}
+                    onRendererFailure={recovery.handleFailure}
                     apiRef={(api) => {
                       visualizerApi = api;
                       setVisualizerHandle(api ?? undefined);

@@ -26,6 +26,10 @@ import type {
   RenderableSceneObject,
 } from "../../model/types";
 import type { SceneManager } from "../scene-manager";
+import {
+  RenderFailureLatch,
+  type VisualizerRenderFailureCallback,
+} from "./render-failure";
 import type {
   CameraState,
   FixtureDmxBatch,
@@ -50,6 +54,13 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
   protected debugOverlays: DebugOverlayRegistry | undefined;
   /** Set by dispose(); scene updates arriving afterwards are dropped instead of reported as calls made before init. */
   protected disposed = false;
+  /** Holds the first render failure; once set, the render loop stays stopped. */
+  protected readonly failures = new RenderFailureLatch();
+
+  /** Delivers this renderer's failure, if any, to the given listener. */
+  setFailureCallback(callback: VisualizerRenderFailureCallback | null): void {
+    this.failures.setCallback(callback);
+  }
 
   /**
    * Initialize debug overlays. Call from subclass init() after creating the scene.

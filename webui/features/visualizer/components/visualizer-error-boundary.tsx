@@ -18,12 +18,15 @@ import { getLogger } from "../../../lib/logger";
 const log = getLogger(import.meta.url);
 
 /**
- * Error fallback UI displayed when visualizer initialization fails. Errors
- * that mention the GPU or its adapter add WebGPU support guidance with a link
- * to the browser support table.
+ * Error fallback UI displayed when the visualizer fails to start or keeps
+ * failing after recovery. Errors that mention the GPU or its adapter add WebGPU
+ * support guidance with a link to the browser support table.
  */
-function VisualizerErrorFallback(props: { error: unknown; reset: () => void }) {
-  log.errorWithCause(props.error, "Initialization error");
+export function VisualizerErrorFallback(props: {
+  error: unknown;
+  reset: () => void;
+}) {
+  log.errorWithCause(props.error, "Visualizer error");
 
   const message =
     props.error instanceof Error ? props.error.message : String(props.error);

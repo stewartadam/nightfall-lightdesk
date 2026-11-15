@@ -15,12 +15,14 @@
 
 import * as Comlink from "comlink";
 import {
+  getVisualizerSimulatedFailure,
   isVisualizerFramePacingEnabled,
   isVisualizerInspectorEnabled,
 } from "../../../lib/feature-flags";
 import { watchWorkerUncaughtErrors } from "../../../lib/uncaught-error-reporter";
 import { visualizerEffectiveQuality } from "../state/settings";
 import { MainThreadRenderer } from "./renderers/main-thread-renderer";
+import type { SimulatedRenderFailureKind } from "./renderers/render-failure";
 import type {
   CameraState,
   IVisualizerRenderer,
@@ -54,6 +56,19 @@ function supportsOffscreenCanvas(): boolean {
     typeof HTMLCanvasElement !== "undefined" &&
     "transferControlToOffscreen" in HTMLCanvasElement.prototype
   );
+}
+
+/**
+ * Picks the failure a renderer in this mode should fake, from the
+ * `visualizer:simulateFailure` URL flag; `render-worker` spares main-thread
+ * renderers so the fallback to them can be tested.
+ */
+function resolveSimulatedFailure(
+  useWorker: boolean,
+): SimulatedRenderFailureKind | undefined {
+  const simulated = getVisualizerSimulatedFailure();
+  if (simulated === "render-worker") return useWorker ? "render" : undefined;
+  return simulated ?? undefined;
 }
 
 /**
@@ -110,16 +125,23 @@ export async function createVisualizerRenderer(
 
   const renderer = createRenderer();
 
-  await renderer.init({
-    canvas,
-    width,
-    height,
-    devicePixelRatio: window.devicePixelRatio,
-    initialCameraState: options.initialCameraState,
-    diagnostics:
-      isVisualizerInspectorEnabled() || isVisualizerFramePacingEnabled(),
-    quality: visualizerEffectiveQuality.get(),
-  });
+  try {
+    await renderer.init({
+      canvas,
+      width,
+      height,
+      devicePixelRatio: window.devicePixelRatio,
+      initialCameraState: options.initialCameraState,
+      diagnostics:
+        isVisualizerInspectorEnabled() || isVisualizerFramePacingEnabled(),
+      quality: visualizerEffectiveQuality.get(),
+      simulateFailure: resolveSimulatedFailure(useWorker),
+    });
+  } catch (error) {
+    // Nobody else holds the renderer yet, so release its worker here.
+    renderer.dispose();
+    throw error;
+  }
 
   await waitAtRendererInitializationTestGate(renderer);
 
