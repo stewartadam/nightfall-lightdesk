@@ -218,7 +218,7 @@ impl CliApp {
                         }
                     }
                 }
-                Ok(Signal::CtrlC) | Ok(Signal::CtrlD) => {
+                Ok(Signal::CtrlC(_)) | Ok(Signal::CtrlD) => {
                     // User wants to exit
                     return Ok(());
                 }

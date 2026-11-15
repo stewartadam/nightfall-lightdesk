@@ -33,10 +33,9 @@ bitflags = { version = "2.13.2", default-features = false, features = ["serde", 
 bumpalo = { version = "3.20.3", features = ["allocator-api2"] }
 bytemuck = { version = "1.25.2", default-features = false, features = ["aarch64_simd", "derive", "wasm_simd"] }
 byteorder = { version = "1.5.0" }
-chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde", "wasmbind"] }
 concurrent-queue = { version = "2.5.0" }
 cranelift-bitset = { version = "0.137.1", default-features = false, features = ["enable-serde"] }
-crc32fast = { version = "1.5.4" }
+crc32fast = { version = "1.5.5" }
 crossbeam-channel = { version = "0.5.17" }
 crossbeam-utils = { version = "0.8.23" }
 crypto-common = { version = "0.1.7", default-features = false, features = ["std"] }
@@ -82,7 +81,7 @@ serde_with = { version = "3.24.0", features = ["json"] }
 sha2 = { version = "0.10.9" }
 simd-adler32 = { version = "0.3.10" }
 slab = { version = "0.4.12" }
-smallvec = { version = "1.16.4", default-features = false, features = ["const_new", "serde", "union"] }
+smallvec = { version = "1.16.5", default-features = false, features = ["const_new", "serde", "union"] }
 stable_deref_trait = { version = "1.2.1" }
 sync_wrapper = { version = "1.0.2", default-features = false, features = ["futures"] }
 thiserror = { version = "2.0.21" }
@@ -97,7 +96,7 @@ tracing-core = { version = "0.1.36" }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 typenum = { version = "1.20.1", default-features = false, features = ["const-generics"] }
 url = { version = "2.5.8", features = ["serde"] }
-uuid = { version = "1.29.0", features = ["js", "serde", "v4", "v5"] }
+uuid = { version = "1.29.2", features = ["js", "serde", "v4", "v5"] }
 wasm-encoder = { version = "0.261.0", features = ["wasmparser"] }
 wasmparser = { version = "0.261.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
 wasmtime-internal-core = { version = "50.0.1", default-features = false, features = ["backtrace", "serde"] }
@@ -115,7 +114,7 @@ bitflags = { version = "2.13.2", default-features = false, features = ["serde", 
 bumpalo = { version = "3.20.3", features = ["allocator-api2"] }
 byteorder = { version = "1.5.0" }
 cranelift-bitset = { version = "0.137.1", default-features = false, features = ["enable-serde"] }
-crc32fast = { version = "1.5.4" }
+crc32fast = { version = "1.5.5" }
 crypto-common = { version = "0.1.7", default-features = false, features = ["std"] }
 derive_more = { version = "2.1.1", features = ["add", "add_assign", "as_ref", "deref", "deref_mut", "display", "from", "into", "is_variant"] }
 derive_more-impl = { version = "2.1.1", features = ["add", "add_assign", "as_ref", "deref", "deref_mut", "display", "from", "into", "is_variant"] }
@@ -149,9 +148,9 @@ serde_json = { version = "1.0.154", features = ["preserve_order", "raw_value", "
 serde_with = { version = "3.24.0", features = ["json"] }
 sha2 = { version = "0.10.9" }
 simd-adler32 = { version = "0.3.10" }
-smallvec = { version = "1.16.4", default-features = false, features = ["const_new", "serde", "union"] }
+smallvec = { version = "1.16.5", default-features = false, features = ["const_new", "serde", "union"] }
 stable_deref_trait = { version = "1.2.1" }
-syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3.0.9", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
+syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3.0.10", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
 syn-f595c2ba2a3f28df = { package = "syn", version = "2.0.119", features = ["extra-traits", "full", "visit", "visit-mut"] }
 thiserror = { version = "2.0.21" }
 time = { version = "0.3.55", features = ["formatting", "local-offset", "macros", "parsing"] }
@@ -159,7 +158,7 @@ toml_datetime = { version = "1.1.3", features = ["serde"] }
 toml_parser = { version = "1.1.5" }
 typenum = { version = "1.20.1", default-features = false, features = ["const-generics"] }
 url = { version = "2.5.8", features = ["serde"] }
-uuid = { version = "1.29.0", features = ["js", "serde", "v4", "v5"] }
+uuid = { version = "1.29.2", features = ["js", "serde", "v4", "v5"] }
 wasm-encoder = { version = "0.261.0", features = ["wasmparser"] }
 wasmparser = { version = "0.261.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
 wasmtime-internal-core = { version = "50.0.1", default-features = false, features = ["backtrace", "serde"] }
@@ -170,7 +169,7 @@ zlib-rs = { version = "0.6.8", default-features = false, features = ["std"] }
 [target.aarch64-apple-darwin.dependencies]
 block2 = { version = "0.6.2" }
 dispatch2 = { version = "0.3.1" }
-errno = { version = "0.3.14" }
+errno = { version = "0.3.15" }
 getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
 hyper = { version = "1.12.0", features = ["client", "http1", "server"] }
 hyper-util = { version = "0.1.21", features = ["client-legacy", "client-proxy", "http1", "server", "service"] }
@@ -183,6 +182,7 @@ objc2-foundation = { version = "0.3.2" }
 object = { version = "0.40.0", default-features = false, features = ["archive", "read_core", "unaligned", "write"] }
 rustix = { version = "1.1.6", features = ["fs", "mm", "param", "stdio", "termios"] }
 tower = { version = "0.5.3", default-features = false, features = ["log", "make", "retry", "timeout"] }
+zeroize = { version = "1.9.1", features = ["derive"] }
 
 [target.aarch64-apple-darwin.build-dependencies]
 block2 = { version = "0.6.2" }
@@ -204,6 +204,7 @@ windows = { version = "0.62.2", features = ["Wdk_System_SystemInformation", "Wdk
 windows-core = { version = "0.62.2" }
 windows-sys-b21d60becc0929df = { package = "windows-sys", version = "0.52.0", features = ["Win32_Devices_Communication", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Registry", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_Shell"] }
 windows-sys-d4189bed749088b6 = { package = "windows-sys", version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_IO", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Devices_Usb", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Media", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security_Authorization", "Win32_Security_Credentials", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Time", "Win32_System_WindowsProgramming", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }
+zeroize = { version = "1.9.1", features = ["derive"] }
 
 [target.x86_64-pc-windows-msvc.build-dependencies]
 cc = { version = "1.11.1", default-features = false, features = ["parallel"] }
@@ -227,8 +228,9 @@ num-complex = { version = "0.4.6" }
 num-rational = { version = "0.4.2", features = ["num-bigint-std"] }
 object = { version = "0.40.0", default-features = false, features = ["archive", "read_core", "unaligned", "write"] }
 rustix = { version = "1.1.6", features = ["event", "fs", "mm", "net", "param", "pipe", "process", "stdio", "termios", "time"] }
-syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3.0.9", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
+syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3.0.10", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
 tower = { version = "0.5.3", default-features = false, features = ["log", "make", "retry", "timeout"] }
+zeroize = { version = "1.9.1", features = ["derive"] }
 
 [target.x86_64-unknown-linux-gnu.build-dependencies]
 cc = { version = "1.11.1", default-features = false, features = ["parallel"] }
