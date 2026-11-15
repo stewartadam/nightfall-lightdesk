@@ -296,7 +296,7 @@ test("visualizer shortcut does not leak after editing a TanStack grid cell", asy
     );
 
     const grid = await openPatchGrid(page);
-    const editableCell = grid.locator("#tanstack-cell-6-0");
+    const editableCell = grid.locator("#tanstack-cell-7-0");
     // Selecting the row must not reflow the narrow Patch toolbar, or the
     // second click of this double-click lands on another row.
     await editableCell.dblclick();
