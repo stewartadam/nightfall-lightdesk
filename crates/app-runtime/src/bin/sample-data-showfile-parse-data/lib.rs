@@ -311,11 +311,23 @@ fn add_input_mappings(world: &mut World) {
     let _ = world;
 
     #[cfg(feature = "midi")]
+    let parser_grid = uuid::Uuid::from_u128(0x5a3d_d001);
+    #[cfg(feature = "midi")]
+    world
+        .resource_mut::<MidiMappings>()
+        .set_devices(MidiDeviceRegistry::new([MidiDeviceSetting {
+            id: parser_grid,
+            model: "Parser Grid".to_owned(),
+            number: 1,
+            units: Vec::new(),
+            feedback: None,
+        }]));
+    #[cfg(feature = "midi")]
     world
         .resource_mut::<MidiMappings>()
         .set_mappings(vec![MidiMapping {
             id: uuid::Uuid::from_u128(0x5a3d_0001),
-            device_name: "Parser Grid".to_owned(),
+            device: parser_grid,
             source: MidiSource::ControlChange {
                 channel: 0,
                 controller: 36,

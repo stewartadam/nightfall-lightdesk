@@ -196,7 +196,7 @@ impl ShowSummary {
             snapshot
                 .midi_mappings
                 .iter()
-                .map(|mapping| &mapping.device_name)
+                .map(|mapping| mapping.device)
                 .collect::<BTreeSet<_>>()
                 .len(),
         );

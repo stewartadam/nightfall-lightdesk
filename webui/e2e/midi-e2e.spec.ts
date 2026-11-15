@@ -22,7 +22,7 @@ import { test, type VirtualMidi, waitForMidiDevice } from "./virtual-midi";
 /** Stored MIDI mapping fields the specs compare. */
 interface StoredMidiMapping {
   id: string;
-  device_name: string;
+  device: string;
   source: { type: string; data: Record<string, number> };
   behavior: string;
   action: { id: string; arguments: Record<string, unknown> };
@@ -43,6 +43,22 @@ async function openMidiApp(
     "nightfall-dismissed-prompts": JSON.stringify(["midi-device-detected"]),
   });
   await waitForMidiDevice(page, midi);
+}
+
+/** Returns the ID of the MIDI device the backend lists under `name`. */
+async function midiDeviceId(page: Page, name: string): Promise<string> {
+  const id = await page.evaluate(
+    (name) =>
+      (
+        (window as any).appStores.midiDevices.get() as {
+          id: string;
+          name: string;
+        }[]
+      ).find((device) => device.name === name)?.id,
+    name,
+  );
+  if (!id) throw new Error(`MIDI device '${name}' is not listed`);
+  return id;
 }
 
 /** Returns the MIDI mappings the backend has stored, in list order. */
@@ -99,22 +115,23 @@ async function storeNoteToggleMapping(
   note: number,
 ): Promise<void> {
   const masterUid = (await globalMaster(page)).identifiers.uid;
+  const device = await midiDeviceId(page, midi.name);
   await page.evaluate(
-    ({ deviceName, masterUid, note }) =>
+    ({ device, masterUid, note }) =>
       (window as any).appStores.sendAndAwait({
         module: "MidiCommand",
         command: {
           type: "UpsertMapping",
           data: {
             id: crypto.randomUUID().replace(/-/g, ""),
-            device_name: deviceName,
+            device,
             source: { type: "Note", data: { channel: 0, note } },
             behavior: "Press",
             action: { id: "master.toggle", arguments: { master: masterUid } },
           },
         },
       }),
-    { deviceName: midi.name, masterUid, note },
+    { device, masterUid, note },
   );
   await expect.poll(async () => (await midiMappings(page)).length).toBe(1);
 }
@@ -156,14 +173,14 @@ test("a learned MIDI note keeps toggling its master after its panels close", asy
   await expect
     .poll(async () =>
       (await midiMappings(page)).map((mapping) => ({
-        device: mapping.device_name,
+        device: mapping.device,
         source: mapping.source,
         action: mapping.action.id,
       })),
     )
     .toEqual([
       {
-        device: virtualMidi.name,
+        device: await midiDeviceId(page, virtualMidi.name),
         source: { type: "Note", data: { channel: 0, note: 60 } },
         action: "master.toggle",
       },

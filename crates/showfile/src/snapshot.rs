@@ -69,10 +69,11 @@ pub struct ShowfileSnapshot {
     #[cfg(feature = "midi")]
     #[serde(default, rename = "midiMappings")]
     pub midi_mappings: Vec<MidiMapping>,
-    /// LED feedback choices for MIDI devices that differ from their controller profile.
+    /// MIDI devices the mappings refer to, with their numbers, unit keys, and LED feedback
+    /// choices.
     #[cfg(feature = "midi")]
-    #[serde(default, rename = "midiFeedbackDevices")]
-    pub midi_feedback_devices: Vec<MidiFeedbackSetting>,
+    #[serde(default, rename = "midiDevices")]
+    pub midi_devices: Vec<MidiDeviceSetting>,
     /// OSC action mappings when compiled with OSC support.
     #[cfg(feature = "osc")]
     #[serde(default, rename = "oscMappings")]

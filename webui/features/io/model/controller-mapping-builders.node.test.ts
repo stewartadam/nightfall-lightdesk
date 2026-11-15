@@ -237,26 +237,49 @@ test("OSC binding problems describe what the control sent", () => {
   assert.equal(problem(gestureOf(ONE, ZERO), Trigger, Hold), undefined);
 });
 
-/**
- * Verifies the Device dropdown lists the mapping's device first, then connected devices and
- * devices other mappings use, marks unplugged ones, and reads the chosen device.
- */
-test("midiDeviceCell offers connected and mapped devices", () => {
-  const connected = midiDeviceCell("Pad", ["Pad", "Keys"], ["Pad"]);
-  assert.deepEqual(connected.data.allowedValues, [
-    { value: "Pad", label: "Pad" },
-    { value: "Keys", label: "Keys" },
-  ]);
+/** Builds a MIDI device as the backend lists it. */
+function midiDevice(
+  id: string,
+  name: string,
+  connected: boolean,
+): types.MidiDevice {
+  return {
+    id,
+    name,
+    model: name,
+    number: 1,
+    saved: true,
+    connected,
+    hasOutput: false,
+    feedback: false,
+  };
+}
 
-  const missing = midiDeviceCell("Old Pad", ["Pad"], ["Old Pad", "Fader Box"]);
+/**
+ * Verifies the Device dropdown offers every listed device by ID under its name, marks
+ * unplugged ones, lists an unknown mapped device first, and reads the chosen ID.
+ */
+test("midiDeviceCell offers listed devices by ID", () => {
+  const devices = [
+    midiDevice("pad", "Pad", true),
+    midiDevice("pad-2", "Pad (2)", false),
+  ];
+  const known = midiDeviceCell("pad", devices);
+  assert.deepEqual(known.data.allowedValues, [
+    { value: "pad", label: "Pad" },
+    { value: "pad-2", label: "Pad (2) (not connected)" },
+  ]);
+  assert.equal(known.copyData, "Pad");
+
+  const missing = midiDeviceCell("gone", devices);
   assert.deepEqual(missing.data.allowedValues, [
-    { value: "Old Pad", label: "Old Pad (not connected)" },
-    { value: "Pad", label: "Pad" },
-    { value: "Fader Box", label: "Fader Box (not connected)" },
+    { value: "gone", label: "Unknown device (not connected)" },
+    { value: "pad", label: "Pad" },
+    { value: "pad-2", label: "Pad (2) (not connected)" },
   ]);
   assert.equal(
-    editedMidiDevice({ ...missing, data: { ...missing.data, value: "Pad" } }),
-    "Pad",
+    editedMidiDevice({ ...missing, data: { ...missing.data, value: "pad-2" } }),
+    "pad-2",
   );
   assert.equal(
     editedMidiDevice({

@@ -8,6 +8,11 @@
 
 import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { Badge } from "../../../components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+} from "../../../components/ui/dropdown-menu";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -53,6 +58,7 @@ import {
   ActionSurface,
   ControlBehavior,
   type InvocationError,
+  type MidiDevice,
   type MidiMapping,
 } from "../../../types";
 import {
@@ -74,6 +80,7 @@ import {
   editedMidiDevice,
   formatBehavior,
   midiDeviceCell,
+  midiDeviceName,
   midiMappingFromEvent,
   midiSourceLabel,
   midiSourceNumber,
@@ -82,6 +89,7 @@ import {
 } from "../model/controller-mapping-builders";
 import {
   announceReplacedMappings,
+  assignMidiDevice,
   deleteMidiMapping,
   setMidiDeviceFeedback,
   upsertMidiMapping,
@@ -105,6 +113,8 @@ export interface MidiInputPanelProps extends BasePanelComponentProps {}
 interface MidiMappingRow {
   mapping: MidiMapping;
   index: number;
+  /** Name the mapping's device is shown under. */
+  deviceName: string;
   /** Why the mapping cannot currently invoke its action, when the backend diagnosed it. */
   error?: InvocationError;
 }
@@ -112,9 +122,9 @@ interface MidiMappingRow {
 const columns: FilterableGridColumn<MidiMappingRow, VisibilityGridColumn>[] = [
   {
     title: "Device",
-    id: "device_name",
+    id: "device",
     width: 150,
-    filter: { value: (row) => row.mapping.device_name },
+    filter: { value: (row) => row.deviceName },
     ...alwaysVisibleColumnMeta("Identity", "Device"),
   },
   {
@@ -223,21 +233,27 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
       ? chosenBehavior()
       : ControlBehavior.Press;
   const panelId = props.id;
-  /** Names of the connected MIDI devices, offered in each Device cell. */
-  const connectedDeviceNames = createMemo(() =>
-    $midiDevices().map((device) => device.name),
-  );
-  /** Controller profiles of connected and mapped devices, by device name, for naming LED colors. */
-  const deviceProfiles = createMemo(
+  /** Controller profiles of connected and saved devices, by model, for naming LED colors. */
+  const profilesByModel = createMemo(
     () =>
-      new Map(
-        $midiDeviceProfiles().map((profile) => [profile.device, profile]),
-      ),
+      new Map($midiDeviceProfiles().map((profile) => [profile.model, profile])),
   );
-  /** Devices the show's mappings listen to, offered even while unplugged. */
-  const mappedDeviceNames = createMemo(() => [
-    ...new Set($midiMappings().map((mapping) => mapping.device_name)),
-  ]);
+  /** Returns the controller profile of the device with ID `id`, if its model has one. */
+  const deviceProfile = (id: string) => {
+    const device = $midiDevices().find((candidate) => candidate.id === id);
+    return device ? profilesByModel().get(device.model) : undefined;
+  };
+  /**
+   * Returns the saved devices a connected new unit can be recognized as: those of its model
+   * that are not plugged in. Saved or unplugged rows get none.
+   */
+  const assignableDevices = (unit: MidiDevice) =>
+    unit.saved || !unit.connected
+      ? []
+      : $midiDevices().filter(
+          (device) =>
+            device.saved && !device.connected && device.model === unit.model,
+        );
 
   const [selection, setSelection] = createSignal<GridSelection>(
     emptyGridSelection(),
@@ -254,6 +270,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     return $midiMappings().map((mapping, index) => ({
       mapping,
       index,
+      deviceName: midiDeviceName($midiDevices(), mapping.device),
       error: errorFor(mapping.id),
     }));
   });
@@ -288,12 +305,8 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
       getCellContent: ({ row, column }): GridCell => {
         const mapping = row.mapping;
         switch (column.id) {
-          case "device_name":
-            return midiDeviceCell(
-              mapping.device_name,
-              connectedDeviceNames(),
-              mappedDeviceNames(),
-            );
+          case "device":
+            return midiDeviceCell(mapping.device, $midiDevices());
           case "control": {
             const label = midiSourceLabel(mapping.source);
             return {
@@ -356,7 +369,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
             return ledValueCell(
               mapping.led,
               LED_COLUMN_KEYS[column.id],
-              deviceProfiles().get(mapping.device_name),
+              deviceProfile(mapping.device),
             );
           default:
             return {
@@ -442,9 +455,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
   return (
     <div class="flex flex-col h-full">
       <div class="p-3 border-b border-gray-700">
-        <h3 class="text-sm font-medium text-gray-300 mb-2">
-          Connected MIDI Devices
-        </h3>
+        <h3 class="text-sm font-medium text-gray-300 mb-2">MIDI Devices</h3>
         <Show
           when={$midiDevices().length > 0}
           fallback={
@@ -459,8 +470,18 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                   data-testid="midi-device"
                 >
                   <div class="min-w-0">
-                    <div class="truncate text-sm">{device.name}</div>
-                    <Show when={deviceProfiles().get(device.name)}>
+                    <div class="flex items-center gap-2">
+                      <span class="truncate text-sm">{device.name}</span>
+                      <Show when={!device.saved}>
+                        <Badge tone="info" size="xs">
+                          New
+                        </Badge>
+                      </Show>
+                      <Show when={!device.connected}>
+                        <Badge size="xs">Not connected</Badge>
+                      </Show>
+                    </div>
+                    <Show when={profilesByModel().get(device.model)}>
                       {(profile) => (
                         <div
                           class="text-xs text-gray-400"
@@ -477,24 +498,51 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                       )}
                     </Show>
                   </div>
-                  <Show
-                    when={device.hasOutput}
-                    fallback={
-                      <span class="shrink-0 text-xs text-gray-500">
-                        No LED output
-                      </span>
-                    }
-                  >
-                    <ToggleSwitch
-                      class="shrink-0 text-xs"
-                      ariaLabel={`LED feedback for ${device.name}`}
-                      label="LED feedback"
-                      checked={device.feedback}
-                      onChange={(enabled) =>
-                        void setMidiDeviceFeedback(device.name, enabled)
-                      }
-                    />
-                  </Show>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <Show when={assignableDevices(device).length > 0}>
+                      <DropdownMenu
+                        trigger="Assign to…"
+                        triggerSize="compact"
+                        triggerVariant="secondary"
+                        triggerTitle={`Use the mappings of a saved ${device.model} for this unit`}
+                        placement="below"
+                        align="end"
+                        contentLabel={`Saved devices ${device.name} can be`}
+                      >
+                        <For each={assignableDevices(device)}>
+                          {(saved) => (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                void assignMidiDevice(device.id, saved.id)
+                              }
+                            >
+                              {saved.name}
+                            </DropdownMenuItem>
+                          )}
+                        </For>
+                      </DropdownMenu>
+                    </Show>
+                    <Show when={device.connected}>
+                      <Show
+                        when={device.hasOutput}
+                        fallback={
+                          <span class="text-xs text-gray-500">
+                            No LED output
+                          </span>
+                        }
+                      >
+                        <ToggleSwitch
+                          class="text-xs"
+                          ariaLabel={`LED feedback for ${device.name}`}
+                          label="LED feedback"
+                          checked={device.feedback}
+                          onChange={(enabled) =>
+                            void setMidiDeviceFeedback(device.id, enabled)
+                          }
+                        />
+                      </Show>
+                    </Show>
+                  </div>
                 </div>
               )}
             </For>
@@ -508,7 +556,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                 <div class="text-xs text-gray-400">
                   Last Input:{" "}
                   <span class="font-mono text-green-400">
-                    {event().device}{" "}
+                    {event().device_name}{" "}
                     {event().source
                       ? midiSourceLabel(event().source!)
                       : `Status ${event().channel}`}{" "}
@@ -641,11 +689,9 @@ function editedMapping(
   value: GridCell,
 ): MidiMapping | undefined {
   switch (columnId) {
-    case "device_name": {
+    case "device": {
       const device = editedMidiDevice(value);
-      return device === undefined
-        ? undefined
-        : { ...mapping, device_name: device };
+      return device === undefined ? undefined : { ...mapping, device };
     }
     case "channel": {
       if (value.kind !== GridCellKind.Number) return undefined;

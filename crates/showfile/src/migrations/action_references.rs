@@ -514,10 +514,13 @@ mod tests {
             serde_json::from_value::<nightfall_timeline::prelude::Action>(action).unwrap();
         }
         #[cfg(feature = "midi")]
-        serde_json::from_value::<Vec<nightfall_input_midi::prelude::MidiMapping>>(
-            showfile["midiMappings"].clone(),
-        )
-        .unwrap();
+        {
+            super::super::midi_devices::migrate_v27_to_v28(&mut showfile).unwrap();
+            serde_json::from_value::<Vec<nightfall_input_midi::prelude::MidiMapping>>(
+                showfile["midiMappings"].clone(),
+            )
+            .unwrap();
+        }
         #[cfg(feature = "osc")]
         serde_json::from_value::<Vec<nightfall_input_osc::prelude::OscMapping>>(
             showfile["oscMappings"].clone(),

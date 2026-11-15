@@ -265,7 +265,8 @@ test("mapping popover is built from shared menu components", async ({
   await page.evaluate(async () => {
     const { mappingMode } = await window.__nightfallHarness.load("app");
     mappingMode.armMidiSource({
-      device: "Demo pad",
+      device: "0000000000000000000000000000d0e1",
+      device_name: "Demo pad",
       channel: 0x90,
       note: 36,
       velocity: 127,

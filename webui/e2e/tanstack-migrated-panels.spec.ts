@@ -192,7 +192,28 @@ async function latestUpsertedMapping(
 async function seedMappingStores(page: Page) {
   await page.evaluate(() => {
     const stores = (window as any).appStores;
-    stores.midiDevices.set([{ name: "E2E Pad" }]);
+    stores.midiDevices.set([
+      {
+        id: "0000000000000000000000000000e2e1",
+        name: "E2E Controller",
+        model: "E2E Controller",
+        number: 1,
+        saved: true,
+        connected: false,
+        hasOutput: false,
+        feedback: false,
+      },
+      {
+        id: "0000000000000000000000000000e2e2",
+        name: "E2E Pad",
+        model: "E2E Pad",
+        number: 1,
+        saved: false,
+        connected: true,
+        hasOutput: false,
+        feedback: false,
+      },
+    ]);
     stores.actionCatalog.set(
       ["clip.start", "clip.stop", "clip.go"].map((id) => ({
         descriptor: {
@@ -210,14 +231,14 @@ async function seedMappingStores(page: Page) {
     stores.midiMappings.set([
       {
         id: "00000000000000000000000000000001",
-        device_name: "E2E Controller",
+        device: "0000000000000000000000000000e2e1",
         source: { type: "Note", data: { channel: 0, note: 60 } },
         behavior: "Press",
         action: { id: "clip.start", arguments: { clip: "1" } },
       },
       {
         id: "00000000000000000000000000000002",
-        device_name: "E2E Controller",
+        device: "0000000000000000000000000000e2e1",
         source: { type: "Note", data: { channel: 0, note: 61 } },
         behavior: "Release",
         action: { id: "clip.stop", arguments: { clip: "1" } },
@@ -505,10 +526,9 @@ test("TanStack migrated MIDI and OSC mapping panels edit live rows", async ({
   );
   await expect
     .poll(
-      async () =>
-        (await latestUpsertedMapping(page, "MidiCommand"))?.device_name,
+      async () => (await latestUpsertedMapping(page, "MidiCommand"))?.device,
     )
-    .toBe("E2E Pad");
+    .toBe("0000000000000000000000000000e2e2");
   const midiBehavior = gridCellByRowIndex(midiGrid, {
     columnKey: "behavior",
     rowIndex: 1,

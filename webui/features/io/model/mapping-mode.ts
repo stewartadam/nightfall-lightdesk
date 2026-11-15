@@ -204,7 +204,7 @@ const UNMAPPABLE_MIDI_KINDS: Record<number, string> = {
 export function describeUnmappableMidi(event: types.MidiLastEvent): string {
   const kind = UNMAPPABLE_MIDI_KINDS[event.channel & 0xf0] ?? "message";
   const channel = (event.channel & 0x0f) + 1;
-  return `${event.device} sent a MIDI ${kind} on channel ${channel}, which can't be mapped. Move a key, pad, fader, or knob instead.`;
+  return `${event.device_name} sent a MIDI ${kind} on channel ${channel}, which can't be mapped. Move a key, pad, fader, or knob instead.`;
 }
 
 /**
@@ -302,5 +302,5 @@ export function describeArmedSource(
   const control = source.event.source
     ? describeMidi(source.event.source)
     : `status ${source.event.channel}`;
-  return `MIDI ${control} (${source.event.device})`;
+  return `MIDI ${control} (${source.event.device_name})`;
 }

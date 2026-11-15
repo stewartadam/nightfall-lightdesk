@@ -8,6 +8,7 @@ edition.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
 midir = "0.11"
+nightfall = { path = "../common" }
 nightfall-actions = { path = "../actions" }
 nightfall-coremidi-hotplug = { path = "../coremidi_hotplug" }
 nightfall-engine = { path = "../engine" }
@@ -21,8 +22,17 @@ tracing.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+alsa = "0.11"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+coremidi-sys = "3.2"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

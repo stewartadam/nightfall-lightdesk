@@ -136,7 +136,7 @@ fn apply_save_contribution(
             #[cfg(feature = "midi")]
             {
                 snapshot.midi_mappings = contribution.midi_mappings.into_owned();
-                snapshot.midi_feedback_devices = contribution.midi_feedback_devices.into_owned();
+                snapshot.midi_devices = contribution.midi_devices.into_owned();
             }
             #[cfg(feature = "osc")]
             {
@@ -206,7 +206,7 @@ fn load_contribution_for_domain(
                 #[cfg(feature = "midi")]
                 midi_mappings: Cow::Borrowed(&snapshot.midi_mappings),
                 #[cfg(feature = "midi")]
-                midi_feedback_devices: Cow::Borrowed(&snapshot.midi_feedback_devices),
+                midi_devices: Cow::Borrowed(&snapshot.midi_devices),
                 #[cfg(feature = "osc")]
                 osc_mappings: Cow::Borrowed(&snapshot.osc_mappings),
             })

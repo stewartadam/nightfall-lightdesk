@@ -32,6 +32,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 pub mod command;
 mod detected;
+mod devices;
 mod feedback;
 pub mod mapping;
 mod mtc;
@@ -42,9 +43,12 @@ mod websocket;
 
 use command::{MidiCommand, MidiLastEvent, MidiMapping, MidiMappingUpserted, MidiSource};
 use detected::DetectedMidiDevices;
+pub use devices::MidiDevices;
+use devices::{DiscoveredPort, resolve};
 use feedback::{MidiFeedbackCache, MidiOutput, send_midi_feedback};
 use mapping::MidiMappings;
 use service::MidiInputEvent;
+use uuid::Uuid;
 
 type RawMidiEvent = MidiInputEvent;
 const MIDI_DEVICE_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
@@ -54,7 +58,7 @@ pub mod prelude {
     pub use crate::command::{
         MidiCommand, MidiLastEvent, MidiLedValues, MidiMapping, MidiMappingUpserted, MidiSource,
     };
-    pub use crate::feedback::{MidiFeedbackDevices, MidiFeedbackSetting};
+    pub use crate::devices::{MidiDeviceRegistry, MidiDeviceSetting};
     pub use crate::mapping::MidiMappings;
     pub use crate::profile::{MidiDeviceProfile, MidiLedColor};
     pub use crate::websocket::MidiDevice;
@@ -91,8 +95,13 @@ impl Plugin for InputMidiPlugin {
         app.world_mut()
             .get_resource_or_init::<ExternalTimecodeFeeds>()
             .register(TimecodeSource::MidiMtc, midi_service.timecode_feed());
-        let devices = MidiDevices::read(&midi_client, &midi_service.output_client());
-        app.insert_resource(DetectedMidiDevices::new(devices.device_names()));
+        let ports = read_ports(&midi_client, &midi_service.output_client());
+        let (devices, _) = resolve(
+            &ports,
+            &devices::MidiDeviceRegistry::default(),
+            &MidiDevices::default(),
+        );
+        app.insert_resource(DetectedMidiDevices::new(&devices));
         app.insert_resource(devices);
         app.insert_resource(MidiEventReceiver(midi_rx));
         app.insert_resource(MidiOutput(midi_service.output_client()));
@@ -140,41 +149,20 @@ impl Plugin for InputMidiPlugin {
     }
 }
 
-/// Resource holding connected MIDI devices and whether each has an output for feedback.
-#[derive(Resource, Default, PartialEq)]
-pub struct MidiDevices(Vec<(String, bool)>);
-
-impl MidiDevices {
-    /// Returns whether a device with this name is currently connected.
-    fn contains(&self, name: &str) -> bool {
-        self.0.iter().any(|(connected, _)| connected == name)
-    }
-
-    /// Reads the connected devices and their paired outputs from the MIDI service clients.
-    fn read(input: &service::MidiInputClient, output: &service::MidiOutputClient) -> Self {
-        Self(
-            input
-                .device_names()
-                .into_iter()
-                .map(|name| {
-                    let has_output = output.has_output(&name);
-                    (name, has_output)
-                })
-                .collect(),
-        )
-    }
-
-    /// Get the list of connected device names.
-    pub fn device_names(&self) -> Vec<String> {
-        self.0.iter().map(|(name, _)| name.clone()).collect()
-    }
-
-    /// Returns each connected device's name and whether an output is paired with it.
-    pub fn devices(&self) -> impl Iterator<Item = (&str, bool)> {
-        self.0
-            .iter()
-            .map(|(name, has_output)| (name.as_str(), *has_output))
-    }
+/// Reads the connected input ports and whether each has a paired output from the MIDI
+/// service clients.
+fn read_ports(
+    input: &service::MidiInputClient,
+    output: &service::MidiOutputClient,
+) -> Vec<DiscoveredPort> {
+    input
+        .ports()
+        .into_iter()
+        .map(|port| {
+            let has_output = output.has_output(&port.port);
+            (port, has_output)
+        })
+        .collect()
 }
 
 /// Resource holding the channel receiver for MIDI events
@@ -217,7 +205,7 @@ impl MidiControlTouches {
 #[derive(Clone, Debug, Message)]
 struct MidiInput {
     /// Device that sent the message.
-    device: String,
+    device: Uuid,
     /// Control that sent the message.
     source: MidiSource,
     /// Button edge or level carried by the message.
@@ -234,11 +222,17 @@ fn is_channel_message(status: u8) -> bool {
 
 /// System that polls the MIDI event channel and writes events to the ECS event stream
 ///
+/// Each message is attributed to the device connected through the port that received it.
+/// Messages from a port no longer listed are dropped: its device's mappings were already
+/// released when it vanished, and a late note on would hold them again with no note off left
+/// to come.
+///
 /// While controller mapping mode is active, channel messages received after it began are
 /// also recorded as touches for reliable delivery to mapping clients. System messages such
 /// as clock are never touches, since they stream continuously.
 fn midi_event_system(
     mut midi_rx: ResMut<MidiEventReceiver>,
+    devices: Res<MidiDevices>,
     mut last_event: ResMut<LastMidiEvent>,
     mapping_mode: Res<ControllerMappingMode>,
     mut touches: ResMut<MidiControlTouches>,
@@ -246,17 +240,22 @@ fn midi_event_system(
 ) {
     while let Ok(raw_event) = midi_rx.0.try_recv() {
         tracing::trace!(
-            "Received MIDI event: device={}, channel={}, note={}, velocity={}",
-            raw_event.device,
+            "Received MIDI event: port={}, channel={}, note={}, velocity={}",
+            raw_event.port,
             raw_event.channel,
             raw_event.note,
             raw_event.velocity
         );
 
+        let Some(connected) = devices.by_port(&raw_event.port) else {
+            tracing::debug!(port = %raw_event.port, "MIDI message from a disconnected port dropped");
+            continue;
+        };
         let classified =
             MidiSource::classify(raw_event.channel, raw_event.note, raw_event.velocity);
         let midi_last_event = MidiLastEvent {
-            device: raw_event.device,
+            device: connected.device,
+            device_name: connected.name.clone(),
             channel: raw_event.channel,
             note: raw_event.note,
             velocity: raw_event.velocity,
@@ -283,35 +282,55 @@ fn midi_event_system(
     }
 }
 
-/// Poll the process-wide MIDI service and record changed devices; the change publishes the
-/// device list to websocket clients, and devices never seen before are queued for announcement.
+/// Polls the process-wide MIDI service and assigns the connected ports to devices; a changed
+/// assignment publishes the device list to websocket clients, and units never seen before are
+/// queued for announcement.
 ///
+/// Ports are reassigned when the connected ports or the show's devices change, as after
+/// loading a show or mapping a new unit. Unit keys a saved device learns are saved with it.
 /// A device that disappears never sends the note offs for pads held on it, so its mappings'
 /// press state is forgotten, which releases any Hold or Flash those pads were holding.
 fn refresh_midi_devices(
     mut next_refresh_deadline: Local<Option<Instant>>,
+    mut ports: Local<Option<Vec<DiscoveredPort>>>,
     mut devices: ResMut<MidiDevices>,
     mut detected: ResMut<DetectedMidiDevices>,
-    mappings: Res<MidiMappings>,
+    mut mappings: ResMut<MidiMappings>,
     mut edges: ResMut<SourceEdgeStates>,
 ) {
     let now = Instant::now();
-    if next_refresh_deadline.is_some_and(|deadline| now < deadline) {
+    let mut ports_changed = false;
+    if next_refresh_deadline.is_none_or(|deadline| now >= deadline) {
+        *next_refresh_deadline = Some(now + MIDI_DEVICE_REFRESH_INTERVAL);
+        let midi_service = service::process_midi_input_service();
+        let _ = midi_service.refresh();
+        let current = read_ports(&midi_service.client(), &midi_service.output_client());
+        if ports.as_ref() != Some(&current) {
+            *ports = Some(current);
+            ports_changed = true;
+        }
+    }
+    if !ports_changed && !mappings.is_changed() {
         return;
     }
-    *next_refresh_deadline = Some(now + MIDI_DEVICE_REFRESH_INTERVAL);
-
-    let midi_service = service::process_midi_input_service();
-    let _ = midi_service.refresh();
-    let current = MidiDevices::read(&midi_service.client(), &midi_service.output_client());
+    let Some(ports) = ports.as_ref() else {
+        return;
+    };
+    let (current, learned) = resolve(ports, mappings.devices(), &devices);
+    if !learned.is_empty() {
+        let registry = mappings.devices_mut();
+        for (device, unit) in learned {
+            registry.learn_unit(device, &unit);
+        }
+    }
     forget_vanished_device_mappings(&devices, &current, &mappings, &mut edges);
     if devices.set_if_neq(current) {
-        detected.observe(devices.devices().map(|(name, _)| name));
+        detected.observe(&devices);
     }
 }
 
-/// Forgets press state for every mapping on a device in `previous` that is missing from
-/// `current`.
+/// Forgets press state for every mapping on a device connected in `previous` that is not
+/// connected in `current`.
 ///
 /// `edges` is only borrowed mutably when a device vanished, so a quiet poll leaves the press
 /// state unchanged for change detection.
@@ -321,16 +340,16 @@ fn forget_vanished_device_mappings(
     mappings: &MidiMappings,
     edges: &mut impl DerefMut<Target = SourceEdgeStates>,
 ) {
-    let vanished: Vec<&str> = previous
-        .devices()
-        .map(|(name, _)| name)
-        .filter(|name| !current.contains(name))
+    let vanished: Vec<Uuid> = previous
+        .iter()
+        .map(|connected| connected.device)
+        .filter(|device| !current.is_connected(*device))
         .collect();
     if vanished.is_empty() {
         return;
     }
     for mapping in mappings.mappings() {
-        if vanished.contains(&mapping.device_name.as_str()) {
+        if vanished.contains(&mapping.device) {
             edges.forget(mapping.id);
         }
     }
@@ -343,9 +362,8 @@ fn forget_vanished_device_mappings(
 /// While controller mapping mode is active, input is suppressed as described by
 /// [`SourceEdgeStates`]: nothing new fires, but releases completing live presses still do.
 ///
-/// Messages still queued from a device that is no longer connected are dropped: its mappings
-/// were already released when it vanished, and a late note on would hold them again with no
-/// note off left to come.
+/// Messages from a device that is no longer connected are dropped, for the reason given on
+/// [`midi_event_system`].
 fn handle_midi_events(
     mut events: MessageReader<MidiInput>,
     mappings: Res<MidiMappings>,
@@ -357,11 +375,11 @@ fn handle_midi_events(
 ) {
     let suppressed = mapping_mode.is_active();
     for event in events.read() {
-        if !devices.contains(&event.device) {
+        let Some(connected) = devices.by_device(event.device) else {
             tracing::debug!(?event, "MIDI message from a disconnected device dropped");
             continue;
-        }
-        for mapping in mappings.lookup(&event.device, event.source) {
+        };
+        for mapping in mappings.lookup(event.device, event.source) {
             tracing::debug!(?event, action = ?mapping.action, "MIDI mapping matched");
             let Some((action, input)) = edges.resolve(
                 &registry,
@@ -376,7 +394,7 @@ fn handle_midi_events(
             };
             invocations.write(
                 ActionInvocation::new(action, ActionSurface::Midi, input)
-                    .with_source(format!("MIDI {}", event.device))
+                    .with_source(format!("MIDI {}", connected.name))
                     .with_received_at(event.received_at),
             );
         }
@@ -424,11 +442,81 @@ fn refresh_midi_mapping_diagnostics(world: &mut World) {
         .set_if_neq(MidiMappingDiagnostics(diagnostics));
 }
 
-/// System that applies MIDI mapping and device feedback edits and reports their terminal
-/// outcomes.
+/// Makes sure device `id` is saved, saving a connected new unit under it; fails for a device
+/// that is neither saved nor connected.
+fn save_device(
+    id: Uuid,
+    mappings: &mut MidiMappings,
+    devices: &MidiDevices,
+) -> Result<(), CommandError> {
+    if mappings.devices().get(id).is_some() {
+        return Ok(());
+    }
+    let setting = devices
+        .by_device(id)
+        .and_then(devices::ConnectedDevice::unsaved_setting)
+        .ok_or_else(|| {
+            CommandError::new(
+                "midi.device_not_found",
+                format!("MIDI device {id} is neither saved nor connected"),
+            )
+        })?;
+    mappings.devices_mut().insert(setting);
+    Ok(())
+}
+
+/// Recognizes connected new unit `unit` as saved device `device`, which must be of the same
+/// model and not plugged in, by teaching the device the unit's key.
+fn assign_device(
+    unit: Uuid,
+    device: Uuid,
+    mappings: &mut MidiMappings,
+    devices: &MidiDevices,
+) -> Result<(), CommandError> {
+    let connected = devices
+        .by_device(unit)
+        .filter(|connected| connected.unsaved_number.is_some())
+        .ok_or_else(|| {
+            CommandError::new(
+                "midi.unit_not_found",
+                format!("No new MIDI unit {unit} is connected"),
+            )
+        })?;
+    let saved = mappings.devices().get(device).ok_or_else(|| {
+        CommandError::new(
+            "midi.device_not_found",
+            format!("MIDI device {device} is not saved"),
+        )
+    })?;
+    if saved.model != connected.model {
+        return Err(CommandError::new(
+            "midi.device_model_mismatch",
+            format!(
+                "{} is a {}, not a {}",
+                saved.display_name(),
+                saved.model,
+                connected.model
+            ),
+        ));
+    }
+    if devices.is_connected(device) {
+        return Err(CommandError::new(
+            "midi.device_connected",
+            format!("{} is already connected", saved.display_name()),
+        ));
+    }
+    let unit_key = connected.unit.clone();
+    mappings.devices_mut().learn_unit(device, &unit_key);
+    Ok(())
+}
+
+/// System that applies MIDI mapping and device edits and reports their terminal outcomes.
+///
+/// Mapping a connected new unit or changing its feedback saves it as a device.
 fn handle_midi_crud(
     mut events: MessageReader<CommandEnvelope<MidiCommand>>,
     mut mappings: ResMut<MidiMappings>,
+    devices: Res<MidiDevices>,
     registry: Res<ActionRegistry>,
     mut edges: ResMut<SourceEdgeStates>,
     mut responder: CommandResponder,
@@ -442,7 +530,10 @@ fn handle_midi_crud(
                     .validate_binding(&mapping.action, ActionSurface::Midi, |_| true)
                     .and_then(|()| {
                         registry.validate_behavior(&mapping.action, mapping.behavior, true)
-                    }) {
+                    })
+                    .map_err(CommandError::from)
+                    .and_then(|()| save_device(mapping.device, &mut mappings, &devices))
+                {
                     Ok(()) => {
                         edges.forget(mapping.id);
                         let replaced = mappings
@@ -455,7 +546,7 @@ fn handle_midi_crud(
                             &MidiMappingUpserted { replaced },
                         )
                     }
-                    Err(error) => responder.fail(event.command_id, error.into()),
+                    Err(error) => responder.fail(event.command_id, error),
                 }
             }
             MidiCommand::DeleteMapping(id) => {
@@ -472,19 +563,26 @@ fn handle_midi_crud(
                     )
                 }
             }
-            MidiCommand::SetDeviceFeedback { device, .. } if device.trim().is_empty() => responder
-                .fail(
-                    event.command_id,
-                    CommandError::new(
-                        "midi.device_name_empty",
-                        "MIDI LED feedback needs a device name",
-                    ),
-                ),
             MidiCommand::SetDeviceFeedback { device, enabled } => {
-                if mappings.feedback_devices().is_enabled(device) != *enabled {
-                    mappings.feedback_devices_mut().set(device, *enabled);
+                let changes = mappings.devices().feedback_enabled(*device) != *enabled
+                    || mappings.devices().get(*device).is_none();
+                let saved = if changes {
+                    save_device(*device, &mut mappings, &devices).map(|()| {
+                        mappings.devices_mut().set_feedback(*device, *enabled);
+                    })
+                } else {
+                    Ok(())
+                };
+                match saved {
+                    Ok(()) => responder.succeed(event.command_id),
+                    Err(error) => responder.fail(event.command_id, error),
                 }
-                responder.succeed(event.command_id)
+            }
+            MidiCommand::AssignDevice { unit, device } => {
+                match assign_device(*unit, *device, &mut mappings, &devices) {
+                    Ok(()) => responder.succeed(event.command_id),
+                    Err(error) => responder.fail(event.command_id, error),
+                }
             }
         };
         if let Err(error) = result {
@@ -501,15 +599,53 @@ mod tests {
 
     use super::*;
     use crate::command::MidiMapping;
+    use crate::devices::{ConnectedDevice, MidiDeviceRegistry, MidiDeviceSetting};
+
+    /// ID of the saved pad device most tests map.
+    const PAD: Uuid = Uuid::from_u128(0xFAD);
+
+    /// Builds a connected port `port` of model `model` assigned to device `device`, saved
+    /// unless `unsaved_number` numbers it as a new unit.
+    fn connected(
+        device: Uuid,
+        port: &str,
+        model: &str,
+        unsaved_number: Option<u32>,
+    ) -> ConnectedDevice {
+        ConnectedDevice {
+            port: port.to_string(),
+            model: model.to_string(),
+            unit: format!("unit-{port}"),
+            has_output: false,
+            device,
+            name: devices::display_name(model, unsaved_number.unwrap_or(1)),
+            unsaved_number,
+        }
+    }
+
+    /// Builds a saved device setting with no unit keys.
+    fn saved(id: Uuid, model: &str, number: u32) -> MidiDeviceSetting {
+        MidiDeviceSetting {
+            id,
+            model: model.to_string(),
+            number,
+            units: Vec::new(),
+            feedback: None,
+        }
+    }
 
     /// Creates a focused app containing semantic MIDI mapping CRUD.
     fn midi_command_app() -> App {
         let mut app = App::new();
-        app.init_resource::<MidiMappings>();
+        let mut mappings = MidiMappings::default();
+        mappings.set_devices(MidiDeviceRegistry::new([saved(PAD, "Pad", 1)]));
+        app.insert_resource(mappings);
         app.init_resource::<SourceEdgeStates>();
         app.init_resource::<ControllerMappingMode>();
         app.init_resource::<MidiControlTouches>();
-        app.insert_resource(MidiDevices(vec![("Pad".to_string(), false)]));
+        app.insert_resource(MidiDevices::new(vec![connected(
+            PAD, "port-pad", "Pad", None,
+        )]));
         app.init_resource::<CommandTracker>();
         app.init_resource::<ActionRegistry>();
         for descriptor in [
@@ -608,7 +744,7 @@ mod tests {
     fn note_mapping(id: u128, note: u8) -> MidiMapping {
         MidiMapping {
             id: uuid::Uuid::from_u128(id),
-            device_name: "Pad".to_string(),
+            device: PAD,
             source: MidiSource::Note { channel: 0, note },
             behavior: nightfall_actions::ControlBehavior::Press,
             led: Default::default(),
@@ -777,7 +913,7 @@ mod tests {
             let (source, signal) =
                 MidiSource::classify(0xB0, 20, value).expect("CC should classify");
             app.world_mut().write_message(MidiInput {
-                device: "Pad".to_string(),
+                device: PAD,
                 source,
                 signal,
                 received_at: Instant::now(),
@@ -820,7 +956,7 @@ mod tests {
             let (source, signal) =
                 MidiSource::classify(status, 60, velocity).expect("note should classify");
             app.world_mut().write_message(MidiInput {
-                device: "Pad".to_string(),
+                device: PAD,
                 source,
                 signal,
                 received_at: Instant::now(),
@@ -867,7 +1003,7 @@ mod tests {
             let (source, signal) =
                 MidiSource::classify(status, 60, velocity).expect("note should classify");
             app.world_mut().write_message(MidiInput {
-                device: "Pad".to_string(),
+                device: PAD,
                 source,
                 signal,
                 received_at: Instant::now(),
@@ -909,7 +1045,7 @@ mod tests {
             let (source, signal) =
                 MidiSource::classify(status, 60, velocity).expect("note should classify");
             app.world_mut().write_message(MidiInput {
-                device: "Pad".to_string(),
+                device: PAD,
                 source,
                 signal,
                 received_at: Instant::now(),
@@ -1054,9 +1190,10 @@ mod tests {
 
         let world = app.world_mut();
         world.resource_scope(|world, mut edges: Mut<SourceEdgeStates>| {
+            let keys = connected(Uuid::from_u128(0xEE), "port-keys", "Keys", None);
             forget_vanished_device_mappings(
-                &MidiDevices(vec![("Pad".to_string(), false), ("Keys".to_string(), true)]),
-                &MidiDevices(vec![("Keys".to_string(), true)]),
+                &MidiDevices::new(vec![connected(PAD, "port-pad", "Pad", None), keys.clone()]),
+                &MidiDevices::new(vec![keys]),
                 world.resource::<MidiMappings>(),
                 &mut edges,
             );
@@ -1073,7 +1210,7 @@ mod tests {
     #[test]
     fn messages_from_a_disconnected_device_are_dropped() {
         let mut app = midi_dispatch_app(vec![hold_mapping(4)]);
-        app.insert_resource(MidiDevices(Vec::new()));
+        app.insert_resource(MidiDevices::default());
 
         assert!(play_notes(&mut app, &[(0x90, 100)]).is_empty());
     }
@@ -1107,7 +1244,7 @@ mod tests {
     /// Builds a raw message from the test pad received now.
     fn raw_message(status: u8, data1: u8, data2: u8) -> MidiInputEvent {
         MidiInputEvent {
-            device: "Pad".to_string(),
+            port: "port-pad".to_string(),
             channel: status,
             note: data1,
             velocity: data2,
@@ -1196,5 +1333,174 @@ mod tests {
             CommandOutcome::Failed(CommandError { ref code, .. })
                 if code == "midi.mapping_not_found"
         ));
+    }
+
+    /// Second unit of the pad model, connected next to [`PAD`].
+    const PAD_2: Uuid = Uuid::from_u128(0xFAD2);
+
+    /// Verifies two identical units each fire only their own mappings on the same control.
+    #[test]
+    fn identical_units_fire_their_own_mappings() {
+        let second = MidiMapping {
+            device: PAD_2,
+            action: nightfall_actions::ActionReference::new("test.start", serde_json::json!({})),
+            ..note_mapping(2, 60)
+        };
+        let mut app = midi_dispatch_app(vec![note_mapping(1, 60), second]);
+        app.world_mut()
+            .resource_mut::<MidiMappings>()
+            .devices_mut()
+            .insert(saved(PAD_2, "Pad", 2));
+        app.insert_resource(MidiDevices::new(vec![
+            connected(PAD, "port-pad", "Pad", None),
+            connected(PAD_2, "port-pad-2", "Pad", None),
+        ]));
+
+        app.world_mut().write_message(MidiInput {
+            device: PAD_2,
+            source: MidiSource::Note {
+                channel: 0,
+                note: 60,
+            },
+            signal: SourceSignal::Button(true),
+            received_at: Instant::now(),
+        });
+        app.update();
+        let fired: Vec<_> = app
+            .world_mut()
+            .resource_mut::<Messages<ActionInvocation>>()
+            .drain()
+            .map(|invocation| invocation.action.id.as_str().to_string())
+            .collect();
+        assert_eq!(fired, vec!["test.start".to_string()]);
+    }
+
+    /// Verifies raw messages are attributed to the device behind the port that received them,
+    /// and messages from an unknown port are dropped.
+    #[test]
+    fn raw_messages_are_attributed_by_port() {
+        let (mut app, tx) = midi_touch_app();
+        app.insert_resource(MidiDevices::new(vec![
+            connected(PAD, "port-pad", "Pad", None),
+            connected(PAD_2, "port-pad-2", "Pad", Some(2)),
+        ]));
+
+        let mut second = raw_message(0x90, 60, 100);
+        second.port = "port-pad-2".to_string();
+        tx.send(second).unwrap();
+        app.update();
+        let event = app
+            .world()
+            .resource::<LastMidiEvent>()
+            .0
+            .clone()
+            .expect("message should be recorded");
+        assert_eq!(
+            (event.device, event.device_name.as_str()),
+            (PAD_2, "Pad (2)")
+        );
+
+        let mut unknown = raw_message(0x90, 61, 100);
+        unknown.port = "port-gone".to_string();
+        tx.send(unknown).unwrap();
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<LastMidiEvent>()
+                .0
+                .as_ref()
+                .map(|event| event.note),
+            Some(60)
+        );
+    }
+
+    /// Verifies mapping a connected new unit saves it under its ID with its number and unit
+    /// key, while mapping a device that is neither saved nor connected fails.
+    #[test]
+    fn mapping_a_new_unit_saves_it() {
+        let mut app = midi_command_app();
+        app.insert_resource(MidiDevices::new(vec![
+            connected(PAD, "port-pad", "Pad", None),
+            connected(PAD_2, "port-pad-2", "Pad", Some(2)),
+        ]));
+
+        submit_command(
+            &mut app,
+            MidiCommand::UpsertMapping(MidiMapping {
+                device: PAD_2,
+                ..note_mapping(1, 60)
+            }),
+        );
+        app.update();
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Succeeded { .. }
+        ));
+        let saved_device = app
+            .world()
+            .resource::<MidiMappings>()
+            .devices()
+            .get(PAD_2)
+            .cloned()
+            .expect("the new unit should be saved");
+        assert_eq!(saved_device.number, 2);
+        assert_eq!(saved_device.units, vec!["unit-port-pad-2".to_string()]);
+
+        submit_command(
+            &mut app,
+            MidiCommand::UpsertMapping(MidiMapping {
+                device: Uuid::from_u128(0xDEAD),
+                ..note_mapping(2, 61)
+            }),
+        );
+        app.update();
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Failed(CommandError { ref code, .. }) if code == "midi.device_not_found"
+        ));
+    }
+
+    /// Verifies a connected new unit can be assigned to a saved device of its model that is
+    /// not plugged in, which learns the unit's key, but not to a connected device.
+    #[test]
+    fn assigning_a_new_unit_teaches_the_device_its_key() {
+        let mut app = midi_command_app();
+        let unit = Uuid::from_u128(0x0E1);
+        app.world_mut()
+            .resource_mut::<MidiMappings>()
+            .devices_mut()
+            .insert(saved(PAD_2, "Pad", 2));
+        app.insert_resource(MidiDevices::new(vec![
+            connected(PAD, "port-pad", "Pad", None),
+            connected(unit, "port-new", "Pad", Some(3)),
+        ]));
+
+        submit_command(&mut app, MidiCommand::AssignDevice { unit, device: PAD });
+        app.update();
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Failed(CommandError { ref code, .. }) if code == "midi.device_connected"
+        ));
+
+        submit_command(
+            &mut app,
+            MidiCommand::AssignDevice {
+                unit,
+                device: PAD_2,
+            },
+        );
+        app.update();
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Succeeded { .. }
+        ));
+        assert_eq!(
+            app.world()
+                .resource::<MidiMappings>()
+                .devices()
+                .get(PAD_2)
+                .map(|device| device.units.clone()),
+            Some(vec!["unit-port-new".to_string()])
+        );
     }
 }

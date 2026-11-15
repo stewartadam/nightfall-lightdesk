@@ -85,7 +85,8 @@ export async function deleteMidiMapping(id: string): Promise<boolean> {
 }
 
 /**
- * Turns LED feedback to a MIDI device on or off; resolves to whether the desk accepted it.
+ * Turns LED feedback to a MIDI device, by ID, on or off; resolves to whether the desk
+ * accepted it. A connected new unit is saved to the show.
  */
 export async function setMidiDeviceFeedback(
   device: string,
@@ -94,6 +95,21 @@ export async function setMidiDeviceFeedback(
   const output = await submitMappingCommand("MidiCommand", {
     type: "SetDeviceFeedback",
     data: { device, enabled },
+  });
+  return output !== null;
+}
+
+/**
+ * Recognizes connected new unit `unit` as the saved device `device` of the same model, so
+ * that device's mappings follow the unit; resolves to whether the desk accepted it.
+ */
+export async function assignMidiDevice(
+  unit: string,
+  device: string,
+): Promise<boolean> {
+  const output = await submitMappingCommand("MidiCommand", {
+    type: "AssignDevice",
+    data: { unit, device },
   });
   return output !== null;
 }

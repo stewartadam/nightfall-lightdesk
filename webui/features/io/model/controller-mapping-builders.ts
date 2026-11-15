@@ -13,37 +13,45 @@ import {
 } from "../../../lib/tanstack-dropdown-cell";
 import * as types from "../../../types";
 
+/** Returns the name a MIDI device is shown under, given its ID. */
+export function midiDeviceName(
+  devices: readonly types.MidiDevice[],
+  id: string,
+): string {
+  return devices.find((device) => device.id === id)?.name ?? "Unknown device";
+}
+
 /**
- * Builds a MIDI mapping's Device cell as a dropdown of devices, so a mapping whose device
- * was renamed or swapped can be moved onto the device now sending, or onto a device other
- * mappings already use while it is unplugged. The mapping's own device is listed first;
- * devices that are not connected are marked as such.
+ * Builds a MIDI mapping's Device cell as a dropdown of the show's saved devices and the
+ * connected new units, so a mapping can be moved onto another controller, including a second
+ * unit of the same model. Values are device IDs and labels their numbered names; devices
+ * that are not connected are marked as such.
  */
 export function midiDeviceCell(
-  deviceName: string,
-  connectedDevices: readonly string[],
-  mappedDevices: readonly string[],
+  deviceId: string,
+  devices: readonly types.MidiDevice[],
 ): DropdownGridCell {
-  const connected = new Set(connectedDevices);
-  const names = [
-    ...new Set([deviceName, ...connectedDevices, ...mappedDevices]),
-  ];
+  const name = midiDeviceName(devices, deviceId);
+  const options = devices.map((device) => ({
+    value: device.id,
+    label: device.connected ? device.name : `${device.name} (not connected)`,
+  }));
+  if (!devices.some((device) => device.id === deviceId)) {
+    options.unshift({ value: deviceId, label: `${name} (not connected)` });
+  }
   return {
     kind: GridCellKind.Custom,
     data: {
       kind: "dropdown-cell",
-      value: deviceName,
-      allowedValues: names.map((name) => ({
-        value: name,
-        label: connected.has(name) ? name : `${name} (not connected)`,
-      })),
+      value: deviceId,
+      allowedValues: options,
     },
-    copyData: deviceName,
+    copyData: name,
     allowOverlay: true,
   };
 }
 
-/** Returns the device chosen in an edited Device cell, or undefined for other cells. */
+/** Returns the device ID chosen in an edited Device cell, or undefined for other cells. */
 export function editedMidiDevice(cell: GridCell): string | undefined {
   if (!isDropdownCell(cell)) return undefined;
   return cell.data.value || undefined;
@@ -119,7 +127,7 @@ export function midiMappingFromEvent(
   if (!event.source) return undefined;
   return {
     id: newMappingId(),
-    device_name: event.device,
+    device: event.device,
     source: event.source,
     behavior,
     action: plain(action),

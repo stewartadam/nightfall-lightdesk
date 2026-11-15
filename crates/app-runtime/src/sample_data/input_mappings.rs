@@ -15,9 +15,17 @@ pub(super) fn add_midi_mappings(world: &mut World) {
         return;
     };
 
+    let grid = uuid::Uuid::from_u128(0x5a3d_d001);
+    midi_mappings.set_devices(MidiDeviceRegistry::new([MidiDeviceSetting {
+        id: grid,
+        model: "Grid".to_string(),
+        number: 1,
+        units: Vec::new(),
+        feedback: None,
+    }]));
     midi_mappings.set_mappings(vec![MidiMapping {
         id: uuid::Uuid::from_u128(0x5a3d_0001),
-        device_name: "Grid".to_string(),
+        device: grid,
         source: MidiSource::ControlChange {
             channel: 0,
             controller: 36,
