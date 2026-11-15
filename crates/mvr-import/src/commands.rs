@@ -134,6 +134,10 @@ impl ShowState<'_> {
                     placement: fixture.placement.clone(),
                     patch,
                     shared_patch,
+                    rig_source: fixture
+                        .rig_source
+                        .as_ref()
+                        .map(|source| source.file_name.clone()),
                 },
             );
         }
@@ -164,6 +168,10 @@ impl ShowState<'_> {
                         }
                         _ => None,
                     },
+                    rig_source: entry
+                        .rig_source
+                        .as_ref()
+                        .map(|source| source.file_name.clone()),
                 },
             );
         }
@@ -236,11 +244,12 @@ pub fn handle_rig_import_commands(
     }
 }
 
-/// Group stores of commits waiting for their `PatchRig` and scenery stores to settle, by
-/// commit.
+/// Group stores and scene object deletes of commits waiting for their `PatchRig` and scenery
+/// stores to settle, by commit.
 ///
 /// A commit's groups name its fixtures, so they are stored only once the fixtures are in the
-/// show. When anything queued before them fails, the groups are never stored.
+/// show, and removals wait with them. When anything queued before them fails, none of them
+/// are queued.
 #[derive(Resource, Default)]
 pub struct DeferredGroupStores(HashMap<CommandId, DeferredGroups>);
 
@@ -305,9 +314,9 @@ pub fn expand_rig_import_commits(
         let ImportCommands {
             patch,
             scenery,
-            groups,
+            after_fixtures,
         } = commands;
-        let total = usize::from(patch.is_some()) + scenery.len() + groups.len();
+        let total = usize::from(patch.is_some()) + scenery.len() + after_fixtures.len();
         if let Err(error) = responder.expect_completions(envelope.command_id, total) {
             tracing::error!(%error, "rig_import_command_completion_failed");
             log_lifecycle(responder.fail(
@@ -321,15 +330,15 @@ pub fn expand_rig_import_commits(
         }
         show.apply(&rig, &plan);
         let mut now: Vec<DynEnginePayload> = patch.into_iter().chain(scenery).collect();
-        if now.is_empty() || groups.is_empty() {
-            now.extend(groups);
+        if now.is_empty() || after_fixtures.is_empty() {
+            now.extend(after_fixtures);
         } else {
             deferred.0.insert(
                 envelope.command_id,
                 DeferredGroups {
                     undo_id: envelope.undo_id,
                     queued_first: now.len(),
-                    stores: groups,
+                    stores: after_fixtures,
                 },
             );
         }
@@ -369,7 +378,7 @@ pub fn release_deferred_group_stores(
                     command_id,
                     CommandError::new(
                         "rig_import.groups_skipped",
-                        "Groups were not stored because the fixtures could not be imported",
+                        "Groups and removals were skipped because the fixtures could not be imported",
                     ),
                 ));
             }
@@ -391,13 +400,15 @@ struct ImportCommands {
     patch: Option<DynEnginePayload>,
     /// One `StoreSceneObject` per piece of scenery the import adds or moves.
     scenery: Vec<DynEnginePayload>,
-    /// One `StoreGroup` per group the import makes or refreshes.
-    groups: Vec<DynEnginePayload>,
+    /// Commands that wait for the fixtures and scenery to be stored: one `StoreGroup` per
+    /// group the import makes or refreshes, then one `DeleteSceneObject` per scene object it
+    /// removes, so a failed import removes nothing.
+    after_fixtures: Vec<DynEnginePayload>,
 }
 
 /// Installs the fixture types the plan needs and builds the commands that apply it: one
 /// `PatchRig` for the fixtures, when any change, one scene object store per piece of scenery,
-/// and one group store per group.
+/// and one group store per group, followed by one delete per scene object to remove.
 fn build_import(
     rig: &RigFile,
     plan: &ImportPlan,
@@ -435,6 +446,9 @@ fn build_import(
         fixture.identifiers.uid = rig_fixture.uid;
         fixture.identifiers.label = planned.label.clone();
         fixture.placement = rig_fixture.placement.clone();
+        fixture.rig_source = Some(RigSource {
+            file_name: rig.file_name.clone(),
+        });
         routes.extend(
             rig_fixture
                 .patch
@@ -462,11 +476,13 @@ fn build_import(
         });
     }
 
-    let patch = (!add.is_empty() || !update.is_empty()).then(|| {
+    let remove = plan.remove_fixtures.clone();
+    let patch = (!add.is_empty() || !update.is_empty() || !remove.is_empty()).then(|| {
         Box::new(FixtureCommand::PatchRig {
             add,
             update,
             routes,
+            remove,
         }) as DynEnginePayload
     });
     let mut stores: Vec<DynEnginePayload> = Vec::new();
@@ -506,14 +522,17 @@ fn build_import(
             let scenery = &rig.scenery[planned.index];
             let existing = scenery_object(show, scenery.uid, planned.existing);
             scenery_stores.push(Box::new(SceneObjectCommand::StoreSceneObject(
-                scene_object_for(scenery, planned, existing),
+                scene_object_for(&rig.file_name, scenery, planned, existing),
             )));
         }
+    }
+    for id in &plan.remove_scenery {
+        stores.push(Box::new(SceneObjectCommand::DeleteSceneObject(*id)));
     }
     Ok(ImportCommands {
         patch,
         scenery: scenery_stores,
-        groups: stores,
+        after_fixtures: stores,
     })
 }
 
@@ -529,8 +548,9 @@ fn scenery_object(show: &ShowState, uid: Uuid, existing: bool) -> Option<SceneOb
 /// imported model around its own origin.
 ///
 /// An object already in the show keeps its ID, colour and scale, and its label unless the
-/// plan renames it.
+/// plan renames it. A new object records `file_name` as the rig file it came from.
 fn scene_object_for(
+    file_name: &str,
     scenery: &RigScenery,
     planned: &PlannedScenery,
     existing: Option<SceneObject>,
@@ -548,6 +568,9 @@ fn scene_object_for(
         object_type: SceneObjectType::Custom,
         placement: SceneObjectPlacement::default(),
         properties: SceneObjectProperties::Custom(CustomProperties::default()),
+        rig_source: Some(RigSource {
+            file_name: file_name.to_string(),
+        }),
     });
     if let Some(label) = &planned.label {
         object.identifiers.label = label.clone();

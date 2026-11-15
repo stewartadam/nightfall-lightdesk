@@ -48,6 +48,7 @@ import * as types from "../../../types";
 import { revealPatchFixtures } from "../../patch";
 import { createGdtfShareLookup } from "../model/gdtf-share-lookup";
 import {
+  droppedKindLabel,
   fixtureStatusLabel,
   fixtureStatusTone,
   fixtureTypeNeedsChoice,
@@ -71,6 +72,7 @@ import {
   sceneryStatusLabel,
   sceneryStatusTone,
   withMappingMode,
+  withRemoval,
   withTypeMapping,
 } from "../model/rig-import-model";
 import {
@@ -112,6 +114,7 @@ export function RigImportDialog() {
   );
   const [scenery, setScenery] = createSignal(true);
   const [mappings, setMappings] = createSignal<types.FixtureTypeMapping[]>([]);
+  const [remove, setRemove] = createSignal<string[]>([]);
   const [dragging, setDragging] = createSignal(false);
   const [tab, setTab] = createSignal<RigImportTab>("fixtures");
   const tabsId = createUniqueId();
@@ -127,6 +130,7 @@ export function RigImportDialog() {
     scenery: scenery(),
     addToUserLibrary: addToUserLibrary(),
     typeMappings: mappings(),
+    remove: remove(),
   });
 
   const { openSettings } = useAppShell();
@@ -168,6 +172,7 @@ export function RigImportDialog() {
     setGroupSource(types.RigGroupSource.Auto);
     setScenery(true);
     setMappings([]);
+    setRemove([]);
     setTab("fixtures");
     setStage("pick");
   };
@@ -226,6 +231,7 @@ export function RigImportDialog() {
         groupSource,
         scenery,
         mappings,
+        remove,
       ],
       () => {
         if (stage() === "preview") void refreshPreview();
@@ -427,6 +433,11 @@ export function RigImportDialog() {
                 <Show when={current().sceneryChanges > 0}>
                   , with {current().sceneryChanges} scenery{" "}
                   {current().sceneryChanges === 1 ? "object" : "objects"}
+                </Show>
+                <Show when={current().removed > 0}>
+                  , and {current().removed}{" "}
+                  {current().removed === 1 ? "object" : "objects"} the file no
+                  longer has will be removed
                 </Show>
                 .
               </p>
@@ -903,6 +914,85 @@ export function RigImportDialog() {
                                 <td>
                                   {fixture.hangingPosition ?? fixture.layer}
                                 </td>
+                              </tr>
+                            )}
+                          </For>
+                        </tbody>
+                      </Table>
+                    </TableScroll>
+                  </Match>
+                  <Match when={activeTab() === "dropped"}>
+                    <TableScroll
+                      aria-label="Imported objects not in this file"
+                      class={TAB_TABLE_CLASS}
+                    >
+                      <Table aria-label="Imported objects not in this file">
+                        <thead class="text-left">
+                          <tr>
+                            <th scope="col" class="w-12">
+                              <Checkbox
+                                aria-label="Remove all"
+                                checked={current().dropped.every((row) =>
+                                  remove().includes(row.uid),
+                                )}
+                                onChange={(event) => {
+                                  const picked = event.currentTarget.checked;
+                                  setRemove(
+                                    current().dropped.reduce(
+                                      (next, row) =>
+                                        withRemoval(next, row.uid, picked),
+                                      remove(),
+                                    ),
+                                  );
+                                }}
+                              />
+                            </th>
+                            <th scope="col" class="w-32">
+                              Status
+                            </th>
+                            <th scope="col" class="w-16">
+                              ID
+                            </th>
+                            <th scope="col">Name</th>
+                            <th scope="col">Kind</th>
+                            <th scope="col">Imported from</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <For each={current().dropped}>
+                            {(row) => (
+                              <tr data-remove={remove().includes(row.uid)}>
+                                <td>
+                                  <Checkbox
+                                    aria-label={`Remove ${row.label || `${droppedKindLabel(row.kind)} ${row.id}`}`}
+                                    checked={remove().includes(row.uid)}
+                                    onChange={(event) =>
+                                      setRemove(
+                                        withRemoval(
+                                          remove(),
+                                          row.uid,
+                                          event.currentTarget.checked,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                </td>
+                                <StatusCell
+                                  label={
+                                    remove().includes(row.uid)
+                                      ? "Remove"
+                                      : "Keep"
+                                  }
+                                  tone={
+                                    remove().includes(row.uid)
+                                      ? "danger"
+                                      : "neutral"
+                                  }
+                                />
+                                <td>{row.id}</td>
+                                <td>{row.label || "–"}</td>
+                                <td>{droppedKindLabel(row.kind)}</td>
+                                <td>{row.sourceFile}</td>
                               </tr>
                             )}
                           </For>

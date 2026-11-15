@@ -34,6 +34,8 @@ pub struct ShowSceneObject {
     pub placement: FixturePlacement,
     /// Model path token of a custom object, if it is one.
     pub model_path: Option<String>,
+    /// Name of the rig file the object was imported from, if it was.
+    pub rig_source: Option<String>,
 }
 
 /// The show's scene objects as the planner sees them.
@@ -170,6 +172,7 @@ impl ShowScenery {
                     label: String::new(),
                     placement: scenery.placement.clone(),
                     model_path: None,
+                    rig_source: Some(rig.file_name.clone()),
                 });
             if let Some(label) = &planned.label {
                 object.label = label.clone();

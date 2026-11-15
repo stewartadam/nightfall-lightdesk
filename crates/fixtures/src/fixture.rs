@@ -43,6 +43,23 @@ pub struct Fixture {
     /// Optional fixture library content ETag fingerprint
     #[serde(default)]
     pub library_asset_etag: Option<String>,
+    /// The rig file the fixture was imported from, so a later import of a newer revision can
+    /// offer to remove it when the file no longer has it; `None` for fixtures made any other
+    /// way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rig_source: Option<RigSource>,
+}
+
+/// Where an imported fixture or scene object came from: a rig file such as an MVR.
+///
+/// The object's UID is the rig file's UUID for it, so this only records that it came from a
+/// rig file and which one.
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[typeshare::typeshare]
+pub struct RigSource {
+    /// Name of the file it was first imported from, shown when offering to remove it.
+    pub file_name: String,
 }
 impl HasIdentifiers for Fixture {
     fn identifiers(&self) -> &Identifiers {

@@ -19,6 +19,7 @@ import {
   rigImportTabCount,
   rigImportTabs,
   withMappingMode,
+  withRemoval,
   withTypeMapping,
 } from "./rig-import-model";
 
@@ -114,9 +115,11 @@ test("import blocked reason", () => {
     newFixtures,
     updatedFixtures: 0,
     sceneryChanges,
+    removed: 0,
     groups: [],
     fixtures: statuses.map((status) => ({ status })),
     scenery: [] as { status: types.SceneryImportStatus }[],
+    dropped: [] as unknown[],
   });
   assert.equal(importBlockedReason(preview([Status.New], 1)), undefined);
   assert.equal(importBlockedReason(preview([], 0, 2)), undefined);
@@ -135,11 +138,29 @@ test("import blocked reason", () => {
     importBlockedReason(preview([Status.Unchanged])),
     "Nothing to import: the show already matches this file.",
   );
+  assert.match(
+    importBlockedReason({ ...preview([Status.Unchanged]), dropped: [{}] }) ??
+      "",
+    /pick it on the Not in file tab/,
+  );
+  assert.equal(
+    importBlockedReason({
+      ...preview([Status.Unchanged]),
+      dropped: [{}],
+      removed: 1,
+    }),
+    undefined,
+  );
 });
 
-/** The import toast names what changed and the file it came from. */
+/** The import toast names what changed and the file it came from, then what it removed. */
 test("import done message", () => {
-  const base = { fileName: "rig.mvr", groups: [], sceneryChanges: 0 };
+  const base = {
+    fileName: "rig.mvr",
+    groups: [],
+    sceneryChanges: 0,
+    removed: 0,
+  };
   assert.equal(
     importDoneMessage({ ...base, newFixtures: 2, updatedFixtures: 1 }),
     "Added 2 fixtures and updated 1 fixture from rig.mvr",
@@ -157,15 +178,41 @@ test("import done message", () => {
     importDoneMessage({ ...base, newFixtures: 0, updatedFixtures: 0 }),
     "Refreshed the groups from rig.mvr",
   );
+  assert.equal(
+    importDoneMessage({
+      ...base,
+      newFixtures: 1,
+      updatedFixtures: 0,
+      removed: 3,
+    }),
+    "Added 1 fixture from rig.mvr and removed 3 fixtures and scene objects it no longer has",
+  );
+  assert.equal(
+    importDoneMessage({
+      ...base,
+      newFixtures: 0,
+      updatedFixtures: 0,
+      removed: 1,
+    }),
+    "Removed 1 fixture or scene object that rig.mvr no longer has",
+  );
 });
 
-/** Groups and scenery tabs appear only when the preview has rows for them, and counts follow the rows. */
+/** Picking a row adds its UID once, and unpicking it takes it out. */
+test("removal picks", () => {
+  assert.deepEqual(withRemoval([], "a", true), ["a"]);
+  assert.deepEqual(withRemoval(["a"], "a", true), ["a"]);
+  assert.deepEqual(withRemoval(["a", "b"], "a", false), ["b"]);
+});
+
+/** Groups, scenery and Not in file tabs appear only when the preview has rows for them, and counts follow the rows. */
 test("review tabs follow the preview", () => {
   const preview = {
     fixtureTypes: [{}, {}],
     groups: [],
     scenery: [{}],
     fixtures: [{}, {}, {}],
+    dropped: [],
   } as unknown as types.RigImportPreview;
   assert.deepEqual(rigImportTabs(preview), ["types", "scenery", "fixtures"]);
   assert.equal(rigImportTabCount(preview, "types"), 2);
@@ -175,6 +222,17 @@ test("review tabs follow the preview", () => {
     "types",
     "fixtures",
   ]);
+  const dropped = {
+    ...preview,
+    dropped: [{}, {}],
+  } as unknown as types.RigImportPreview;
+  assert.deepEqual(rigImportTabs(dropped), [
+    "types",
+    "scenery",
+    "fixtures",
+    "dropped",
+  ]);
+  assert.equal(rigImportTabCount(dropped, "dropped"), 2);
 });
 
 /** Only missing types with both names are looked up on GDTF Share. */

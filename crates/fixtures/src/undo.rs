@@ -442,18 +442,25 @@ impl Undoable for FixtureCommand {
             FixtureCommand::AddDmxRoute { .. } => {
                 Some(Box::new(RestoreDmxRoutesSnapshot(snapshot_dmx_routes(ctx))))
             }
-            FixtureCommand::PatchRig { add, update, .. } => {
-                Some(Box::new(RestorePatchedFixtures(PatchedFixturesSnapshot {
-                    remove: add.iter().map(|fixture| fixture.identifiers.uid).collect(),
-                    restore: Vec::new(),
-                    revert: update
-                        .iter()
-                        .filter_map(|change| fixtures.inner.get(change.uid).ok())
-                        .map(|fixture| (*fixture).clone())
-                        .collect(),
-                    routes: snapshot_dmx_routes(ctx),
-                })))
-            }
+            FixtureCommand::PatchRig {
+                add,
+                update,
+                remove,
+                ..
+            } => Some(Box::new(RestorePatchedFixtures(PatchedFixturesSnapshot {
+                remove: add.iter().map(|fixture| fixture.identifiers.uid).collect(),
+                restore: remove
+                    .iter()
+                    .filter_map(|uid| fixtures.inner.get(*uid).ok())
+                    .map(|fixture| snapshot_fixture(ctx, &fixture))
+                    .collect(),
+                revert: update
+                    .iter()
+                    .filter_map(|change| fixtures.inner.get(change.uid).ok())
+                    .map(|fixture| (*fixture).clone())
+                    .collect(),
+                routes: snapshot_dmx_routes(ctx),
+            }))),
             FixtureCommand::RemoveDmxRoutes { .. } => {
                 Some(Box::new(RestoreDmxRoutesSnapshot(snapshot_dmx_routes(ctx))))
             }
@@ -514,6 +521,17 @@ impl Undoable for FixtureCommand {
                 format!("Update Fixture {} Routes", id)
             }
             FixtureCommand::AddDmxRoute { .. } => "Add DMX Route".to_string(),
+            FixtureCommand::PatchRig {
+                add,
+                update,
+                remove,
+                ..
+            } if !remove.is_empty() => format!(
+                "Patch Rig ({} New, {} Updated, {} Removed)",
+                add.len(),
+                update.len(),
+                remove.len()
+            ),
             FixtureCommand::PatchRig { add, update, .. } => {
                 format!("Patch Rig ({} New, {} Updated)", add.len(), update.len())
             }
@@ -698,6 +716,7 @@ mod tests {
             placement: Default::default(),
             layout: None,
             library_asset_etag: None,
+            rig_source: None,
         }
     }
 
@@ -935,6 +954,7 @@ mod tests {
             placement: Default::default(),
             layout: None,
             library_asset_etag: None,
+            rig_source: None,
         };
 
         // Create FixtureDataProviderExt and add fixture

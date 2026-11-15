@@ -90,11 +90,15 @@ pub struct RigImportOptions {
     /// Library fixtures standing in for types the file leaves out or that should be
     /// replaced.
     pub type_mappings: Vec<FixtureTypeMapping>,
+    /// UIDs of fixtures and scene objects imported from a rig file that this file no longer
+    /// has, picked to be removed. Anything else listed as not in the file stays.
+    #[typeshare(serialized_as = "Vec<String>")]
+    pub remove: Vec<Uuid>,
 }
 
 impl Default for RigImportOptions {
-    /// Keeps file IDs, updates fixtures already in the show, groups automatically and
-    /// brings in the scenery.
+    /// Keeps file IDs, updates fixtures already in the show, groups automatically, brings
+    /// in the scenery and removes nothing.
     fn default() -> Self {
         Self {
             numbering: FixtureNumbering::default(),
@@ -103,6 +107,7 @@ impl Default for RigImportOptions {
             scenery: true,
             add_to_user_library: false,
             type_mappings: Vec::new(),
+            remove: Vec::new(),
         }
     }
 }
@@ -319,8 +324,45 @@ pub struct RigImportPreview {
     pub scenery: Vec<SceneryPreview>,
     /// Number of scene objects the import adds or changes.
     pub scenery_changes: u32,
+    /// Fixtures and scene objects imported from a rig file that this file no longer has,
+    /// by fixture or scene object ID.
+    pub dropped: Vec<DroppedPreview>,
+    /// Number of them picked to be removed.
+    pub removed: u32,
     /// Problems with the file as a whole.
     pub warnings: Vec<String>,
+}
+
+/// What kind of show object a [`DroppedPreview`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub enum DroppedKind {
+    /// A fixture.
+    Fixture,
+    /// A scene object made from a truss, support or layer of scenery.
+    SceneObject,
+}
+
+/// A fixture or scene object imported from a rig file that this file no longer has, such
+/// as one taken out of the plot in a newer revision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[typeshare::typeshare]
+pub struct DroppedPreview {
+    /// UID, which is the UUID the earlier file gave it.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub uid: Uuid,
+    /// Whether it is a fixture or a scene object.
+    pub kind: DroppedKind,
+    /// Fixture or scene object ID.
+    pub id: u32,
+    /// Label in the show.
+    pub label: String,
+    /// Name of the file it was imported from.
+    pub source_file: String,
+    /// Whether the import removes it.
+    pub remove: bool,
 }
 
 /// Reply to a finished upload: the session to preview and import from.

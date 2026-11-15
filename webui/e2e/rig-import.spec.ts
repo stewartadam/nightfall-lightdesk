@@ -166,13 +166,15 @@ function trussRig(): Buffer {
 /**
  * Builds an MVR file with two hung washes on the LX 1 truss whose fixture type is not in the
  * file, so the import has to borrow a stand-in from the library. The right wash's position
- * and address can be moved to stand for the designer's next revision of the rig.
+ * and address can be moved, or the wash left out with `withRight` false, to stand for the
+ * designer's next revision of the rig.
  */
 function washRig(
   rightX = 2000,
   rightAddress = "200.233",
   extraLayers = "",
   extraFiles: Record<string, Buffer> = {},
+  withRight = true,
 ): Buffer {
   const fixture = (
     uuid: string,
@@ -195,7 +197,7 @@ function washRig(
     <AUXData><Position uuid="0E2DC6B1-7C42-4B3F-9D0B-7D1C8C2F2A11" name="LX 1"/></AUXData>
     <Layers>
       <Layer uuid="83A405B6-8378-482D-9F72-AAD2EE51AABE" name="Rig">
-        <ChildList>${fixture("9D1C0D7E-0000-4000-8000-000000000001", "Wash left", FIRST_ID, -2000, "200.1")}${fixture("9D1C0D7E-0000-4000-8000-000000000002", "Wash right", SECOND_ID, rightX, rightAddress)}
+        <ChildList>${fixture("9D1C0D7E-0000-4000-8000-000000000001", "Wash left", FIRST_ID, -2000, "200.1")}${withRight ? fixture("9D1C0D7E-0000-4000-8000-000000000002", "Wash right", SECOND_ID, rightX, rightAddress) : ""}
         </ChildList>
       </Layer>${extraLayers}
     </Layers>
@@ -362,6 +364,90 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
   await expect.poll(() => fixtureX(page, SECOND_ID)).toBeCloseTo(3);
   expect(await fixtureX(page, FIRST_ID)).toBeCloseTo(-2);
   await page.screenshot({ path: test.info().outputPath("6-updated.png") });
+});
+
+/**
+ * Imports the rig, then a revision that takes the right wash out of the plot. The review
+ * lists the wash on its Not in file tab, kept until it is picked; picking it removes the
+ * fixture with the import.
+ */
+test("removes a fixture a newer revision dropped", async ({
+  backendSlot,
+  page,
+}) => {
+  await prepareFreshBackendShowfile(backendSlot.backendPort);
+  await page.goto("/?e2e=1");
+  await waitForDockviewApp(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).appStores?.fixtureLibrary?.get?.().length ?? 0,
+      ),
+    )
+    .toBeGreaterThan(0);
+
+  const dialog = page.getByRole("dialog", { name: "Import Rig from MVR" });
+  const summary = dialog.getByTestId("rig-import-summary");
+  await page.locator("button[title='Menu']").click();
+  await page.getByRole("button", { name: "Import Rig from MVR" }).click();
+  await dialog.getByTestId("rig-import-file").setInputFiles({
+    name: "wash-rig.mvr",
+    mimeType: "application/octet-stream",
+    buffer: washRig(),
+  });
+  await dialog
+    .getByLabel("Library fixture for Acme@Wash.gdtf")
+    .selectOption({ label: "Generic Moving Head RGBW" });
+  await expect(summary).toContainText("2 of 2 fixtures will be added");
+  await dialog.getByRole("button", { name: "Import", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect
+    .poll(() => importedFixtureIds(page))
+    .toEqual([FIRST_ID, SECOND_ID]);
+
+  await page.locator("button[title='Menu']").click();
+  await page.getByRole("button", { name: "Import Rig from MVR" }).click();
+  await dialog.getByTestId("rig-import-file").setInputFiles({
+    name: "wash-rig-v2.mvr",
+    mimeType: "application/octet-stream",
+    buffer: washRig(2000, "200.233", "", {}, false),
+  });
+  await expect(summary).toContainText("0 of 1 fixtures will be added");
+  const droppedTab = dialog.getByRole("tab", { name: "Not in file (1)" });
+  await droppedTab.click();
+  const dropped = dialog.getByRole("table", {
+    name: "Imported objects not in this file",
+  });
+  await expect(
+    dropped.getByRole("cell", { name: "Wash right", exact: true }),
+  ).toBeVisible();
+  await expect(
+    dropped.getByRole("cell", { name: "wash-rig.mvr" }),
+  ).toBeVisible();
+  await expect(
+    dropped.getByRole("cell", { name: "Keep", exact: true }),
+  ).toBeVisible();
+  const removeRight = dropped.getByLabel("Remove Wash right");
+  await expect(
+    removeRight,
+    "nothing is removed unless picked",
+  ).not.toBeChecked();
+  await settleTabPanel(dialog);
+  await page.screenshot({ path: test.info().outputPath("1-not-in-file.png") });
+
+  await removeRight.check();
+  await expect(
+    dropped.getByRole("cell", { name: "Remove", exact: true }),
+  ).toBeVisible();
+  await expect(summary).toContainText(
+    "1 object the file no longer has will be removed",
+  );
+  await page.screenshot({ path: test.info().outputPath("2-picked.png") });
+
+  await dialog.getByRole("button", { name: "Import", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => importedFixtureIds(page)).toEqual([FIRST_ID]);
+  await page.screenshot({ path: test.info().outputPath("3-removed.png") });
 });
 
 /** Waits for the review's tab panel to finish sliding in, so a screenshot shows its table. */

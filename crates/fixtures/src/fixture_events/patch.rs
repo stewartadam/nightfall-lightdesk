@@ -67,8 +67,9 @@ pub(super) fn handle_command(
             add,
             update,
             routes,
+            remove,
         } => {
-            patch_rig(context, command_id, add, update, routes);
+            patch_rig(context, command_id, add, update, routes, remove);
         }
 
         FixtureCommand::RemoveDmxRoutes {
@@ -324,20 +325,25 @@ fn stage_route_change(
     Ok(())
 }
 
-/// Adds and changes a rig's fixtures and patches them, keeping either all of it or none.
+/// Adds, changes and removes a rig's fixtures and patches them, keeping either all of it or
+/// none.
 ///
 /// New fixtures are checked for IDs and UIDs that are repeated or already in use, and
-/// changed fixtures must exist. Fixtures are stored first so the routes can resolve them;
-/// when the patch fails or would introduce a new route issue, every fixture goes back to
-/// how it was and the command fails with the route's reason.
+/// changed and removed fixtures must exist. Removed fixtures are taken out of the store
+/// first, so a new fixture can take one's ID, and their routes are dropped before the new
+/// routes are added, so their addresses are free. Fixtures are stored next so the routes can
+/// resolve them. When the patch fails or would introduce a new route issue, every fixture
+/// goes back to how it was, removed ones included, and the command fails with the route's
+/// reason; removed fixtures only lose their parameters once the patch has been kept.
 fn patch_rig(
     context: &mut FixtureCrudContext,
     command_id: CommandId,
     add: &[Fixture],
     update: &[crate::RigFixtureUpdate],
     routes: &[crate::PatchRoute],
+    remove: &[Uuid],
 ) {
-    let originals = match validate_rig_patch(&context.fixture_data_provider, add, update) {
+    let originals = match validate_rig_patch(&context.fixture_data_provider, add, update, remove) {
         Ok(originals) => originals,
         Err(message) => {
             tracing::warn!("Failed to patch rig: {}", message);
@@ -351,6 +357,10 @@ fn patch_rig(
         }
     };
 
+    let taken: Vec<Fixture> = remove
+        .iter()
+        .filter_map(|uid| context.fixture_data_provider.inner.remove(uid).ok())
+        .collect();
     for (original, change) in originals.iter().zip(update) {
         let mut fixture = original.clone();
         if let Some(label) = &change.label {
@@ -364,7 +374,7 @@ fn patch_rig(
     }
     for fixture in add {
         if let Err(error) = context.fixture_data_provider.inner.add(fixture.clone()) {
-            roll_back_rig(context, add, &originals);
+            roll_back_rig(context, add, &originals, &taken);
             fail_fixture_command(
                 &mut context.responder,
                 command_id,
@@ -388,7 +398,14 @@ fn patch_rig(
         .filter(|change| change.repatch)
         .map(|change| change.uid)
         .collect();
+    let removed: HashSet<Uuid> = remove.iter().copied().collect();
     let staged = stage_route_change(context, "fixture.route_invalid", |preview, context| {
+        retain_route_fixtures(
+            &mut preview.input,
+            &mut preview.output,
+            &mut preview.disabled,
+            |uid| !removed.contains(uid),
+        );
         remove_console_patch(&mut preview.output, &repatched)?;
         for route in routes {
             apply_dmx_route_add(
@@ -407,10 +424,20 @@ fn patch_rig(
         Ok(())
     });
     match staged {
-        Ok(()) => succeed_fixture_command(&mut context.responder, command_id),
+        Ok(()) => {
+            for fixture in &taken {
+                let parameters = context
+                    .fixture_data_provider
+                    .forget_fixture_parameters(fixture);
+                for parameter in parameters {
+                    context.commands.entity(parameter.entity()).despawn();
+                }
+            }
+            succeed_fixture_command(&mut context.responder, command_id);
+        }
         Err((code, message)) => {
             tracing::warn!("Failed to patch rig: {}", message);
-            roll_back_rig(context, add, &originals);
+            roll_back_rig(context, add, &originals, &taken);
             fail_fixture_command(&mut context.responder, command_id, code, message);
         }
     }
@@ -418,16 +445,34 @@ fn patch_rig(
 
 /// Checks a rig patch and returns the fixtures it changes as they are now, in `update`
 /// order.
+///
+/// Every fixture to remove must be in the show, once, and not also changed.
 fn validate_rig_patch(
     data_provider: &FixtureDataProviderExt,
     add: &[Fixture],
     update: &[crate::RigFixtureUpdate],
+    remove: &[Uuid],
 ) -> Result<Vec<Fixture>, String> {
-    if add.is_empty() && update.is_empty() {
+    if add.is_empty() && update.is_empty() && remove.is_empty() {
         return Err("No fixtures were provided".to_string());
     }
+    let mut removed = HashSet::new();
+    for uid in remove {
+        if !removed.insert(*uid) {
+            return Err(format!("Fixture {uid} is removed more than once"));
+        }
+        if data_provider.inner.get(*uid).is_err() {
+            return Err(format!("Fixture {uid} is not in the show"));
+        }
+    }
     if !add.is_empty() {
-        validate_new_fixtures(data_provider, add)?;
+        validate_new_fixtures(data_provider, add, &removed)?;
+    }
+    if let Some(change) = update.iter().find(|change| removed.contains(&change.uid)) {
+        return Err(format!(
+            "Fixture {} is both changed and removed",
+            change.uid
+        ));
     }
     let mut seen = HashSet::new();
     update
@@ -486,19 +531,26 @@ fn remove_console_patch(output: &mut OutputRoutes, uids: &HashSet<Uuid>) -> Resu
     Ok(())
 }
 
-/// Puts the fixtures of a failed rig patch back: removes the added ones and restores the
-/// changed ones.
-fn roll_back_rig(context: &mut FixtureCrudContext, add: &[Fixture], originals: &[Fixture]) {
+/// Puts the fixtures of a failed rig patch back: removes the added ones, restores the
+/// changed ones and returns the ones taken out for removal, whose parameters were kept.
+fn roll_back_rig(
+    context: &mut FixtureCrudContext,
+    add: &[Fixture],
+    originals: &[Fixture],
+    taken: &[Fixture],
+) {
     remove_added_fixtures(context, add);
-    for original in originals {
+    for original in originals.iter().chain(taken) {
         let _ = context.fixture_data_provider.inner.add(original.clone());
     }
 }
 
-/// Checks that a batch of new fixtures has no repeated IDs or UIDs and none already used.
+/// Checks that a batch of new fixtures has no repeated IDs or UIDs and none already used,
+/// except IDs held by fixtures in `removing`, which the batch frees.
 fn validate_new_fixtures(
     data_provider: &FixtureDataProviderExt,
     fixtures: &[Fixture],
+    removing: &HashSet<Uuid>,
 ) -> Result<(), String> {
     if fixtures.is_empty() {
         return Err("No fixtures were provided".to_string());
@@ -513,7 +565,11 @@ fn validate_new_fixtures(
         if !uids.insert(uid) {
             return Err(format!("Fixture {id} repeats another fixture's UID"));
         }
-        if data_provider.inner.from_id(id).is_ok() {
+        if data_provider
+            .inner
+            .from_id(id)
+            .is_ok_and(|holder| !removing.contains(&holder.identifiers.uid))
+        {
             return Err(format!("Fixture ID {id} is already in use"));
         }
         if data_provider.inner.get(uid).is_ok() {

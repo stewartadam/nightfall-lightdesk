@@ -14,7 +14,7 @@ use std::path::Path;
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use nightfall::prelude::Group;
+use nightfall::prelude::{Group, Identifiers};
 use nightfall_engine::prelude::*;
 use nightfall_fixture_library::FixtureLibraryManager;
 use nightfall_fixture_library::testing::{ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec};
@@ -31,6 +31,7 @@ use nightfall_mvr_import::geometry::{Mesh, read_gltf};
 use nightfall_mvr_import::plan::{ShowFixture, ShowFixtures, ShowGroup, plan_import};
 use nightfall_mvr_import::prelude::*;
 use nightfall_mvr_import::rig::{RigPatch, RigTypeSource, read_rig};
+use nightfall_mvr_import::scenery::ShowSceneObject;
 use nightfall_programming::prelude::GroupCommand;
 use nightfall_scene_objects::prelude::*;
 use uuid::Uuid;
@@ -270,6 +271,7 @@ fn show_after_import(rig: &nightfall_mvr_import::rig::RigFile) -> ShowFixtures {
         placement: fixture.placement.clone(),
         patch: fixture.patch.clone(),
         shared_patch: false,
+        rig_source: Some("test.mvr".into()),
     };
     let mut show = ShowFixtures::default();
     show.ids.extend([101, 102]);
@@ -357,6 +359,124 @@ fn reimport_updates_changed_fixtures() {
     assert_eq!(plan.groups[0].members.len(), 2);
 }
 
+/// Fixtures and scene objects from an earlier rig file that this file no longer has are
+/// listed by ID and kept unless picked; ones made in Nightfall are never listed, and scene
+/// objects are left out when scenery is not imported.
+#[test]
+fn lists_what_the_file_dropped_and_removes_only_picked() {
+    let root = tempfile::tempdir().unwrap();
+    let library = empty_library(root.path());
+    let rig = read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap();
+    let mut show = show_after_import(&rig);
+    let dropped = Uuid::new_v4();
+    let spare = |label: &str, id: u32, rig_source: Option<String>| ShowFixture {
+        id,
+        label: label.into(),
+        make: "Test".into(),
+        model: "Spot".into(),
+        mode: "Standard".into(),
+        placement: FixturePlacement::default(),
+        patch: Vec::new(),
+        shared_patch: false,
+        rig_source,
+    };
+    show.fixtures
+        .insert(dropped, spare("Spare", 104, Some("plot v1.mvr".into())));
+    show.fixtures
+        .insert(Uuid::new_v4(), spare("Hand patched", 103, None));
+    let dropped_truss = Uuid::new_v4();
+    show.scenery.objects.insert(
+        dropped_truss,
+        ShowSceneObject {
+            id: 5,
+            label: "Old truss".into(),
+            placement: FixturePlacement::default(),
+            model_path: None,
+            rig_source: Some("plot v1.mvr".into()),
+        },
+    );
+    let plan_with =
+        |options: RigImportOptions| plan_import(Uuid::new_v4(), &rig, &library, &show, &options);
+
+    let kept = plan_with(RigImportOptions::default());
+    let rows: Vec<_> = kept
+        .preview
+        .dropped
+        .iter()
+        .map(|row| (row.kind, row.id, row.label.as_str(), row.remove))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (DroppedKind::Fixture, 104, "Spare", false),
+            (DroppedKind::SceneObject, 5, "Old truss", false)
+        ]
+    );
+    assert_eq!(kept.preview.dropped[0].source_file, "plot v1.mvr");
+    assert_eq!(kept.preview.removed, 0);
+    assert!(kept.remove_fixtures.is_empty() && kept.remove_scenery.is_empty());
+
+    let removed = plan_with(RigImportOptions {
+        remove: vec![dropped, dropped_truss],
+        ..RigImportOptions::default()
+    });
+    assert!(removed.preview.dropped.iter().all(|row| row.remove));
+    assert_eq!(removed.preview.removed, 2);
+    assert_eq!(removed.remove_fixtures, [dropped]);
+    assert_eq!(removed.remove_scenery, [5]);
+
+    let no_scenery = plan_with(RigImportOptions {
+        scenery: false,
+        remove: vec![dropped_truss],
+        ..RigImportOptions::default()
+    });
+    assert_eq!(no_scenery.preview.dropped.len(), 1);
+    assert!(no_scenery.remove_scenery.is_empty());
+}
+
+/// A fixture picked for removal frees its ID, so a new fixture the file numbers the same
+/// takes it; while it stays, the new fixture is numbered after the highest ID.
+#[test]
+fn removed_fixture_frees_its_id() {
+    let root = tempfile::tempdir().unwrap();
+    let library = empty_library(root.path());
+    let rig = read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap();
+    let replaced = Uuid::new_v4();
+    let mut show = ShowFixtures {
+        ids: [101].into_iter().collect(),
+        ..Default::default()
+    };
+    show.fixtures.insert(
+        replaced,
+        ShowFixture {
+            id: 101,
+            label: "Old spot".into(),
+            make: "Test".into(),
+            model: "Spot".into(),
+            mode: "Standard".into(),
+            placement: FixturePlacement::default(),
+            patch: Vec::new(),
+            shared_patch: false,
+            rig_source: Some("plot v1.mvr".into()),
+        },
+    );
+    let spot_id = |options: RigImportOptions| {
+        plan_import(Uuid::new_v4(), &rig, &library, &show, &options)
+            .preview
+            .fixtures[0]
+            .fixture_id
+    };
+
+    assert_eq!(spot_id(RigImportOptions::default()), Some(102));
+    assert_eq!(
+        spot_id(RigImportOptions {
+            remove: vec![replaced],
+            ..RigImportOptions::default()
+        }),
+        Some(101)
+    );
+}
+
 /// Commands the test dispatcher received from expanded rig import commits.
 #[derive(Resource, Default)]
 struct Dispatched {
@@ -366,6 +486,8 @@ struct Dispatched {
     groups: Vec<Group>,
     /// Scene objects stored for the rig's scenery, in the order they were dispatched.
     scenery: Vec<SceneObject>,
+    /// IDs of scene objects deleted, in the order their deletes were dispatched.
+    deleted_scenery: Vec<u32>,
 }
 
 /// Makes the test dispatcher fail every fixture command instead of running it, standing in
@@ -375,7 +497,8 @@ struct FailFixtureCommands(bool);
 
 /// Stands in for the engine's dispatch of queued commands: forwards fixture commands to the
 /// fixture handler under their commit's IDs, or fails them when [`FailFixtureCommands`] is
-/// set, and records group and scene object stores and reports them done.
+/// set, and records group and scene object stores and scene object deletes and reports them
+/// done.
 fn dispatch_pending(
     mut pending: ResMut<PendingCommandBuffer>,
     mut dispatched: ResMut<Dispatched>,
@@ -411,6 +534,11 @@ fn dispatch_pending(
             payload.downcast_ref::<SceneObjectCommand>()
         {
             dispatched.scenery.push(object.clone());
+            responder.succeed(envelope.command_id).unwrap();
+        } else if let Some(SceneObjectCommand::DeleteSceneObject(id)) =
+            payload.downcast_ref::<SceneObjectCommand>()
+        {
+            dispatched.deleted_scenery.push(*id);
             responder.succeed(envelope.command_id).unwrap();
         } else {
             panic!("unexpected command");
@@ -463,11 +591,13 @@ fn import_app(library: FixtureLibraryManager, sessions: RigImportSessions) -> Ap
 
 /// Queues a commit of `session` with the default options and returns its command ID.
 fn submit_commit(app: &mut App, session: Uuid) -> CommandId {
+    submit_commit_with(app, session, RigImportOptions::default())
+}
+
+/// Queues a commit of `session` with `options` and returns its command ID.
+fn submit_commit_with(app: &mut App, session: Uuid, options: RigImportOptions) -> CommandId {
     let envelope = CommandEnvelope::new(
-        RigImportCommand::Commit {
-            session,
-            options: RigImportOptions::default(),
-        },
+        RigImportCommand::Commit { session, options },
         CommandOrigin::Cli,
         ReplyTarget::Detached,
     );
@@ -535,13 +665,22 @@ fn commit_adds_fixtures_with_patch_and_placement() {
         add: fixtures,
         update,
         routes,
+        remove,
     } = command
     else {
         panic!("expected PatchRig, got {command:?}");
     };
     assert!(update.is_empty());
+    assert!(remove.is_empty());
     assert_eq!(fixtures.len(), 2);
     assert_eq!(fixtures[0].identifiers.uid, uuid(SPOT_UUID));
+    assert_eq!(
+        fixtures[0]
+            .rig_source
+            .as_ref()
+            .map(|source| &*source.file_name),
+        Some("test.mvr")
+    );
     assert_eq!(fixtures[0].identifiers.id, 101);
     assert_eq!(fixtures[0].placement.rotation.x, 180.0);
     assert_eq!(fixtures[1].identifiers.id, 102);
@@ -594,6 +733,75 @@ fn failed_fixture_import_stores_no_groups() {
     };
     assert_eq!(error.code, "fixture.route_invalid");
     assert!(app.world().resource::<DeferredGroupStores>().is_empty());
+}
+
+/// Re-importing with dropped objects picked removes them: the fixture through the same
+/// `PatchRig` as the rest of the fixture change, and the scene object with a delete, all
+/// under the commit.
+#[test]
+fn commit_removes_picked_dropped_objects() {
+    let root = tempfile::tempdir().unwrap();
+    let sessions = RigImportSessions::default();
+    let session = sessions.insert(read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap());
+    let mut app = import_app(empty_library(root.path()), sessions);
+    let first = submit_commit(&mut app, session);
+    run_until_finished(&mut app, first);
+
+    let source = Some(RigSource {
+        file_name: "plot v1.mvr".into(),
+    });
+    let dropped = Uuid::new_v4();
+    app.world_mut()
+        .resource_mut::<FixtureDataProviderExt>()
+        .inner
+        .add(Fixture {
+            identifiers: Identifiers {
+                id: 200,
+                uid: dropped,
+                label: "Spare".into(),
+            },
+            rig_source: source.clone(),
+            ..Default::default()
+        })
+        .unwrap();
+    let dropped_truss = Uuid::new_v4();
+    app.world_mut()
+        .resource_mut::<SceneObjectDataProvider>()
+        .add(SceneObject {
+            identifiers: Identifiers {
+                id: 50,
+                uid: dropped_truss,
+                label: "Old truss".into(),
+            },
+            rig_source: source,
+            ..Default::default()
+        })
+        .unwrap();
+    *app.world_mut().resource_mut::<Dispatched>() = Dispatched::default();
+
+    let command_id = submit_commit_with(
+        &mut app,
+        session,
+        RigImportOptions {
+            remove: vec![dropped, dropped_truss],
+            ..RigImportOptions::default()
+        },
+    );
+    run_until_finished(&mut app, command_id);
+
+    let dispatched = app.world().resource::<Dispatched>();
+    let [FixtureCommand::PatchRig { add, remove, .. }] = dispatched.fixtures.as_slice() else {
+        panic!("expected one PatchRig, got {:?}", dispatched.fixtures);
+    };
+    assert!(
+        add.is_empty(),
+        "the file's fixtures are already in the show"
+    );
+    assert_eq!(remove, &[dropped]);
+    assert_eq!(dispatched.deleted_scenery, [50]);
+    let fixtures = app.world().resource::<FixtureDataProviderExt>();
+    assert!(fixtures.inner.get(dropped).is_err());
+    assert_eq!(fixtures.inner.iter().count(), 2);
 }
 
 /// UUID of the truss in the scenery rig.

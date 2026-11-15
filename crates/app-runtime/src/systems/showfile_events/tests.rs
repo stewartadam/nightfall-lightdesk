@@ -3158,6 +3158,7 @@ fn showfile_import_keeps_fixtures_on_different_revisions_of_one_mode() {
         }],
         layout: None,
         library_asset_etag: Some("v1".to_string()),
+        rig_source: None,
         ..Default::default()
     };
 
@@ -3177,6 +3178,7 @@ fn showfile_import_keeps_fixtures_on_different_revisions_of_one_mode() {
         }],
         layout: None,
         library_asset_etag: Some("v2".to_string()),
+        rig_source: None,
         ..Default::default()
     };
 

@@ -304,6 +304,7 @@ pub(super) fn create_strobe(
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::StrobeMatrix),
         library_asset_etag: None,
+        rig_source: None,
     }
 }
 
@@ -444,5 +445,6 @@ pub(super) fn create_rgb_strobe_bar_168(id: u32, make: &str, model: &str) -> Fix
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::RgbStrobeBar),
         library_asset_etag: None,
+        rig_source: None,
     }
 }

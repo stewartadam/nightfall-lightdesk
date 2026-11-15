@@ -228,8 +228,16 @@ type PreviewCounts = {
   newFixtures: number;
   updatedFixtures: number;
   sceneryChanges: number;
+  removed: number;
   groups: readonly unknown[];
 };
+
+/** Counts removed show objects in words: "1 fixture or scene object", "3 fixtures and scene objects". */
+function removedObjects(count: number): string {
+  return count === 1
+    ? "1 fixture or scene object"
+    : `${count} fixtures and scene objects`;
+}
 
 /** Counts scenery objects in words: "1 scenery object", "17 scenery objects". */
 function sceneryObjects(count: number): string {
@@ -241,12 +249,13 @@ function sceneryObjects(count: number): string {
  * disabled, or undefined when the import would change the show. Fixture types that need a
  * library fixture come first, since choosing one is what unblocks their fixtures; then
  * fixtures that differ but are kept because updates are off; then a show that already
- * matches the file.
+ * matches the file, pointing at the Not in file tab when the file dropped something.
  */
 export function importBlockedReason(
   preview: PreviewCounts & {
     fixtures: readonly { status: types.FixtureImportStatus }[];
     scenery: readonly { status: types.SceneryImportStatus }[];
+    dropped: readonly unknown[];
   },
 ): string | undefined {
   if (previewHasChanges(preview)) return undefined;
@@ -271,6 +280,9 @@ export function importBlockedReason(
   ) {
     return "The file's scenery is left out because importing trusses and scenery is turned off.";
   }
+  if (preview.dropped.length > 0) {
+    return "The show already matches this file. To remove what the file no longer has, pick it on the Not in file tab.";
+  }
   if (preview.fixtures.length === 0 && preview.scenery.length === 0) {
     return "The file has no fixtures or scenery to import.";
   }
@@ -283,11 +295,15 @@ export function previewHasChanges(preview: PreviewCounts): boolean {
     preview.newFixtures > 0 ||
     preview.updatedFixtures > 0 ||
     preview.sceneryChanges > 0 ||
+    preview.removed > 0 ||
     preview.groups.length > 0
   );
 }
 
-/** Toast text after an import, naming what changed and the file. */
+/**
+ * Toast text after an import, naming what changed and the file, then how many objects the
+ * file no longer has were removed.
+ */
 export function importDoneMessage(
   preview: PreviewCounts & { fileName: string },
 ): string {
@@ -300,9 +316,40 @@ export function importDoneMessage(
   if (preview.sceneryChanges > 0) {
     parts.push(`imported ${sceneryObjects(preview.sceneryChanges)}`);
   }
-  if (parts.length === 0) parts.push("refreshed the groups");
+  const removed =
+    preview.removed > 0
+      ? ` and removed ${removedObjects(preview.removed)} it no longer has`
+      : "";
+  if (parts.length === 0) {
+    if (preview.removed > 0) {
+      const groups =
+        preview.groups.length > 0 ? " and refreshed the groups" : "";
+      return `Removed ${removedObjects(preview.removed)} that ${preview.fileName} no longer has${groups}`;
+    }
+    parts.push("refreshed the groups");
+  }
   const sentence = parts.join(" and ");
-  return `${sentence[0]?.toUpperCase()}${sentence.slice(1)} from ${preview.fileName}`;
+  return `${sentence[0]?.toUpperCase()}${sentence.slice(1)} from ${preview.fileName}${removed}`;
+}
+
+/** Short words for what kind of show object a row of the "Not in file" tab is. */
+export function droppedKindLabel(kind: types.DroppedKind): string {
+  switch (kind) {
+    case types.DroppedKind.Fixture:
+      return "Fixture";
+    case types.DroppedKind.SceneObject:
+      return "Scene object";
+  }
+}
+
+/** Returns `remove` with `uid` added when `picked`, or taken out when not. */
+export function withRemoval(
+  remove: readonly string[],
+  uid: string,
+  picked: boolean,
+): string[] {
+  const rest = remove.filter((candidate) => candidate !== uid);
+  return picked ? [...rest, uid] : rest;
 }
 
 /** Short words for what the import does with a truss, support or layer of scenery. */
@@ -324,7 +371,12 @@ export function sceneryStatusLabel(status: types.SceneryImportStatus): string {
 }
 
 /** The lists the import review shows, one per tab. */
-export type RigImportTab = "types" | "groups" | "scenery" | "fixtures";
+export type RigImportTab =
+  | "types"
+  | "groups"
+  | "scenery"
+  | "fixtures"
+  | "dropped";
 
 /** Tab names in the import review. */
 export const RIG_IMPORT_TAB_LABELS: Readonly<Record<RigImportTab, string>> = {
@@ -332,19 +384,22 @@ export const RIG_IMPORT_TAB_LABELS: Readonly<Record<RigImportTab, string>> = {
   groups: "Groups",
   scenery: "Scenery",
   fixtures: "Fixtures",
+  dropped: "Not in file",
 };
 
 /**
  * The tabs a preview has rows for, in review order. Fixture types and fixtures always show;
- * groups and scenery only when the import makes groups or the file has scenery.
+ * groups and scenery only when the import makes groups or the file has scenery, and the
+ * Not in file tab only when the show has imported objects this file no longer has.
  */
 export function rigImportTabs(
-  preview: Pick<types.RigImportPreview, "groups" | "scenery">,
+  preview: Pick<types.RigImportPreview, "groups" | "scenery" | "dropped">,
 ): RigImportTab[] {
   const tabs: RigImportTab[] = ["types"];
   if (preview.groups.length > 0) tabs.push("groups");
   if (preview.scenery.length > 0) tabs.push("scenery");
   tabs.push("fixtures");
+  if (preview.dropped.length > 0) tabs.push("dropped");
   return tabs;
 }
 
@@ -352,7 +407,7 @@ export function rigImportTabs(
 export function rigImportTabCount(
   preview: Pick<
     types.RigImportPreview,
-    "fixtureTypes" | "groups" | "scenery" | "fixtures"
+    "fixtureTypes" | "groups" | "scenery" | "fixtures" | "dropped"
   >,
   tab: RigImportTab,
 ): number {
@@ -365,6 +420,8 @@ export function rigImportTabCount(
       return preview.scenery.length;
     case "fixtures":
       return preview.fixtures.length;
+    case "dropped":
+      return preview.dropped.length;
   }
 }
 

@@ -129,7 +129,7 @@ pub mod prelude {
         clear_stale_parameter_assertions, clear_unbound_parameter_assertions,
     };
     pub use crate::data_provider_ext::{FixtureDataProviderExt, ResolvedElementParameter};
-    pub use crate::fixture::{Fixture, FixtureElement, FixtureLayout};
+    pub use crate::fixture::{Fixture, FixtureElement, FixtureLayout, RigSource};
     pub use crate::geometry::{
         AxisType, FixtureGeometry, GeometryModel, GeometryNode, GeometryProvider,
         GeometryProviderResource, GeometryType, MeshFormat, MeshResource, PrimitiveType, Transform,
@@ -543,11 +543,12 @@ pub enum FixtureCommand {
     /// Delete a fixture
     DeleteFixture(u32),
 
-    /// Add fixtures, change fixtures already in the show and patch them, as one change.
+    /// Add fixtures, change or remove fixtures already in the show and patch them, as one
+    /// change.
     ///
     /// Every fixture and route is checked before the change is kept, so one conflicting ID,
     /// UID or address leaves the show unchanged. Used to bring in or refresh a whole rig at
-    /// once.
+    /// once. Removed fixtures free their addresses for the added and repatched ones.
     PatchRig {
         /// Fixtures to add, each with an ID and UID no other fixture uses.
         add: Vec<fixture::Fixture>,
@@ -555,6 +556,10 @@ pub enum FixtureCommand {
         update: Vec<RigFixtureUpdate>,
         /// Routes patching the added and repatched fixtures, applied in order.
         routes: Vec<PatchRoute>,
+        /// UIDs of fixtures in the show to remove, with their routes.
+        #[serde(default)]
+        #[typeshare(serialized_as = "Vec<String>")]
+        remove: Vec<uuid::Uuid>,
     },
 
     /// Set raw DMX channel values

@@ -137,6 +137,7 @@ fn create_rgbw_bar(id: u32, make: &str, model: &str, segments: usize) -> Fixture
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::LedBar),
         library_asset_etag: None,
+        rig_source: None,
     }
 }
 
@@ -234,6 +235,7 @@ pub(super) fn create_rgb_bar_60(id: u32, make: &str, model: &str) -> Fixture {
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::LedBar),
         library_asset_etag: None,
+        rig_source: None,
     }
 }
 
@@ -332,6 +334,7 @@ pub(super) fn create_grb_bar_40(id: u32, make: &str, model: &str) -> Fixture {
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::LedBar),
         library_asset_etag: None,
+        rig_source: None,
     }
 }
 
@@ -430,6 +433,7 @@ pub(super) fn create_rgb_bar_40(id: u32, make: &str, model: &str) -> Fixture {
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::LedBar),
         library_asset_etag: None,
+        rig_source: None,
     }
 }
 

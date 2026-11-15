@@ -19,8 +19,9 @@ use nightfall_fixtures::prelude::FixturePlacement;
 use uuid::Uuid;
 
 use crate::preview::{
-    FixtureImportStatus, FixtureNumbering, FixturePreview, FixtureTypePreview, FixtureTypeStatus,
-    GroupPreview, PatchPreview, RigGroupSource, RigImportOptions, RigImportPreview,
+    DroppedKind, DroppedPreview, FixtureImportStatus, FixtureNumbering, FixturePreview,
+    FixtureTypePreview, FixtureTypeStatus, GroupPreview, PatchPreview, RigGroupSource,
+    RigImportOptions, RigImportPreview,
 };
 use crate::rig::{RigFile, RigFixture, RigPatch, RigTypeSource};
 use crate::scenery::{SceneryPlan, ShowScenery, plan_scenery};
@@ -125,6 +126,8 @@ pub struct ShowFixture {
     /// Whether the fixture shares a console route with other fixtures, which the import
     /// cannot move without moving them.
     pub shared_patch: bool,
+    /// Name of the rig file the fixture was imported from, if it was.
+    pub rig_source: Option<String>,
 }
 
 /// A group already in the show.
@@ -155,9 +158,19 @@ pub struct ShowFixtures {
 }
 
 impl ShowFixtures {
-    /// Records what a planned import adds, so a later import in the same frame is planned
-    /// against the show as it will be.
+    /// Records what a planned import adds, changes and removes, so a later import in the same
+    /// frame is planned against the show as it will be.
     pub fn apply(&mut self, rig: &RigFile, plan: &ImportPlan) {
+        for uid in &plan.remove_fixtures {
+            if let Some(removed) = self.fixtures.remove(uid) {
+                self.ids.remove(&removed.id);
+            }
+        }
+        let removed_scenery: HashSet<u32> = plan.remove_scenery.iter().copied().collect();
+        self.scenery
+            .objects
+            .retain(|_, object| !removed_scenery.contains(&object.id));
+        self.scenery.ids.retain(|id| !removed_scenery.contains(id));
         for planned in &plan.fixtures {
             let fixture = &rig.fixtures[planned.index];
             self.ids.insert(planned.id);
@@ -172,6 +185,7 @@ impl ShowFixtures {
                     placement: fixture.placement.clone(),
                     patch: fixture.patch.clone(),
                     shared_patch: false,
+                    rig_source: Some(rig.file_name.clone()),
                 },
             );
         }
@@ -279,6 +293,11 @@ pub struct ImportPlan {
     pub groups: Vec<PlannedGroup>,
     /// Scene objects to add or change for the rig's scenery.
     pub scenery: SceneryPlan,
+    /// UIDs of fixtures from an earlier rig file to remove, because this file no longer
+    /// has them and the user picked them.
+    pub remove_fixtures: Vec<Uuid>,
+    /// IDs of scene objects from an earlier rig file to remove, for the same reason.
+    pub remove_scenery: Vec<u32>,
 }
 
 impl ImportPlan {
@@ -288,7 +307,86 @@ impl ImportPlan {
             && self.updates.is_empty()
             && self.groups.is_empty()
             && self.scenery.objects.is_empty()
+            && self.remove_fixtures.is_empty()
+            && self.remove_scenery.is_empty()
     }
+}
+
+/// Fixtures and scene objects imported from a rig file that this file no longer has, and
+/// which of them the import removes.
+struct DroppedPlan {
+    /// One row per dropped fixture, then per dropped scene object, each by ID.
+    previews: Vec<DroppedPreview>,
+    /// UIDs of the fixtures to remove.
+    fixtures: Vec<Uuid>,
+    /// IDs of the scene objects to remove.
+    scenery: Vec<u32>,
+}
+
+/// Finds the fixtures, and the scene objects when scenery is imported, that came from a rig
+/// file but are not in this one, and picks the ones the options ask to remove.
+///
+/// Objects made in Nightfall carry no rig source, so they are never listed.
+fn plan_dropped(rig: &RigFile, show: &ShowFixtures, options: &RigImportOptions) -> DroppedPlan {
+    let remove: HashSet<Uuid> = options.remove.iter().copied().collect();
+    let in_file: HashSet<Uuid> = rig
+        .fixtures
+        .iter()
+        .map(|fixture| fixture.uid)
+        .chain(rig.scenery.iter().map(|scenery| scenery.uid))
+        .collect();
+    let mut plan = DroppedPlan {
+        previews: Vec::new(),
+        fixtures: Vec::new(),
+        scenery: Vec::new(),
+    };
+    let mut fixtures: Vec<(&Uuid, &ShowFixture, &String)> = show
+        .fixtures
+        .iter()
+        .filter(|(uid, _)| !in_file.contains(uid))
+        .filter_map(|(uid, fixture)| Some((uid, fixture, fixture.rig_source.as_ref()?)))
+        .collect();
+    fixtures.sort_by_key(|(_, fixture, _)| fixture.id);
+    for (uid, fixture, source) in fixtures {
+        let picked = remove.contains(uid);
+        if picked {
+            plan.fixtures.push(*uid);
+        }
+        plan.previews.push(DroppedPreview {
+            uid: *uid,
+            kind: DroppedKind::Fixture,
+            id: fixture.id,
+            label: fixture.label.clone(),
+            source_file: source.clone(),
+            remove: picked,
+        });
+    }
+    if !options.scenery {
+        return plan;
+    }
+    let mut objects: Vec<_> = show
+        .scenery
+        .objects
+        .iter()
+        .filter(|(uid, _)| !in_file.contains(uid))
+        .filter_map(|(uid, object)| Some((uid, object, object.rig_source.as_ref()?)))
+        .collect();
+    objects.sort_by_key(|(_, object, _)| object.id);
+    for (uid, object, source) in objects {
+        let picked = remove.contains(uid);
+        if picked {
+            plan.scenery.push(object.id);
+        }
+        plan.previews.push(DroppedPreview {
+            uid: *uid,
+            kind: DroppedKind::SceneObject,
+            id: object.id,
+            label: object.label.clone(),
+            source_file: source.clone(),
+            remove: picked,
+        });
+    }
+    plan
 }
 
 /// Plans an import of `rig` into a show that already holds `show`.
@@ -412,7 +510,15 @@ pub fn plan_import(
         .iter()
         .map(|(index, _)| rig.fixtures[*index].file_id)
         .collect();
-    let ids = assign_ids(&wanted, &show.ids, options.numbering);
+    // Fixtures picked for removal leave in the same change, so their IDs are free.
+    let dropped = plan_dropped(rig, show, options);
+    let mut used_ids = show.ids.clone();
+    for uid in &dropped.fixtures {
+        if let Some(fixture) = show.fixtures.get(uid) {
+            used_ids.remove(&fixture.id);
+        }
+    }
+    let ids = assign_ids(&wanted, &used_ids, options.numbering);
     let mut fixtures = Vec::with_capacity(importable.len());
     for ((index, source), id) in importable.into_iter().zip(ids) {
         let preview = &mut previews[index];
@@ -451,12 +557,16 @@ pub fn plan_import(
             fixtures: previews,
             scenery_changes: scenery.objects.len() as u32,
             scenery: scenery.previews.clone(),
+            removed: (dropped.fixtures.len() + dropped.scenery.len()) as u32,
+            dropped: dropped.previews,
             warnings,
         },
         fixtures,
         updates,
         groups,
         scenery,
+        remove_fixtures: dropped.fixtures,
+        remove_scenery: dropped.scenery,
     }
 }
 

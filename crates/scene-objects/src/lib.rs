@@ -22,6 +22,7 @@ use bevy_ecs::prelude::*;
 use nightfall::data::{HasIdentifiers, Identifiers};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::placement::{PlacementPosition, PlacementRotation};
+use nightfall_fixtures::prelude::RigSource;
 use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
@@ -304,6 +305,11 @@ pub struct SceneObject {
     pub placement: SceneObjectPlacement,
     /// Type-specific properties
     pub properties: SceneObjectProperties,
+    /// The rig file the object was imported from, so a later import of a newer revision can
+    /// offer to remove it when the file no longer has it; `None` for objects made any other
+    /// way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rig_source: Option<RigSource>,
 }
 
 impl HasIdentifiers for SceneObject {
@@ -324,6 +330,7 @@ impl SceneObject {
             object_type: SceneObjectType::Truss,
             placement: SceneObjectPlacement::default(),
             properties: SceneObjectProperties::Truss(properties),
+            rig_source: None,
         }
     }
 
@@ -342,6 +349,7 @@ impl SceneObject {
             object_type: SceneObjectType::StageElement,
             placement: SceneObjectPlacement::default(),
             properties: SceneObjectProperties::StageElement(properties),
+            rig_source: None,
         }
     }
 
@@ -356,6 +364,7 @@ impl SceneObject {
             object_type: SceneObjectType::Custom,
             placement: SceneObjectPlacement::default(),
             properties: SceneObjectProperties::Custom(properties),
+            rig_source: None,
         }
     }
 }

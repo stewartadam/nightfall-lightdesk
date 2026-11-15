@@ -132,6 +132,7 @@ fn adds_fixtures_and_routes_together() {
             add: vec![dimmer(1), dimmer(2), dimmer(3)],
             update: vec![],
             routes: vec![patch(1, 1, 1), patch(2, 1, 2)],
+            remove: vec![],
         },
     );
 
@@ -155,6 +156,7 @@ fn rejects_a_batch_reusing_an_id() {
             add: vec![dimmer(1)],
             update: vec![],
             routes: vec![],
+            remove: vec![],
         },
     );
     send(
@@ -163,6 +165,7 @@ fn rejects_a_batch_reusing_an_id() {
             add: vec![dimmer(2), dimmer(1)],
             update: vec![],
             routes: vec![],
+            remove: vec![],
         },
     );
 
@@ -180,6 +183,7 @@ fn rolls_back_when_a_route_overlaps() {
             add: vec![dimmer(1), dimmer(2)],
             update: vec![],
             routes: vec![patch(1, 1, 1), patch(2, 1, 1)],
+            remove: vec![],
         },
     );
     app.update();
@@ -209,6 +213,7 @@ fn restore_removes_the_batch_and_its_routes() {
             add: fixtures,
             update: vec![],
             routes: vec![patch(1, 1, 1)],
+            remove: vec![],
         },
     );
     assert_eq!(fixture_ids(&app), [1, 2]);
@@ -271,6 +276,7 @@ fn updates_and_repatches_existing_fixtures() {
             add: vec![existing],
             update: vec![],
             routes: vec![patch(1, 1, 1)],
+            remove: vec![],
         },
     );
 
@@ -287,6 +293,7 @@ fn updates_and_repatches_existing_fixtures() {
                 repatch: true,
             }],
             routes: vec![patch(1, 1, 10), patch(2, 1, 1)],
+            remove: vec![],
         },
     );
 
@@ -315,6 +322,7 @@ fn failed_update_restores_the_fixture() {
             add: vec![existing, dimmer(2)],
             update: vec![],
             routes: vec![patch(1, 1, 1), patch(2, 1, 2)],
+            remove: vec![],
         },
     );
     send(
@@ -328,6 +336,7 @@ fn failed_update_restores_the_fixture() {
                 repatch: true,
             }],
             routes: vec![patch(1, 1, 2)],
+            remove: vec![],
         },
     );
 
@@ -353,6 +362,7 @@ fn restore_brings_back_changed_fixtures() {
             add: vec![existing],
             update: vec![],
             routes: vec![],
+            remove: vec![],
         },
     );
     send(
@@ -366,6 +376,7 @@ fn restore_brings_back_changed_fixtures() {
                 repatch: false,
             }],
             routes: vec![],
+            remove: vec![],
         },
     );
     assert_eq!(stored(&app, 1).identifiers.label, "Changed");
@@ -408,6 +419,7 @@ fn undo_and_redo_of_a_repatch_round_trip() {
             add: vec![existing],
             update: vec![],
             routes: vec![patch(1, 1, 1)],
+            remove: vec![],
         },
     );
     let mut placement = FixturePlacement::default();
@@ -421,6 +433,7 @@ fn undo_and_redo_of_a_repatch_round_trip() {
             repatch: true,
         }],
         routes: vec![patch(1, 1, 10), patch(2, 1, 1)],
+        remove: vec![],
     };
     let undo = command
         .inverse(&UndoContext { world: app.world() })
@@ -473,4 +486,127 @@ fn undo_and_redo_of_a_repatch_round_trip() {
         parameters, 2,
         "redo brings back the added fixture's parameter"
     );
+}
+
+/// Removing fixtures drops them with their parameters and routes, and frees their addresses
+/// for fixtures added in the same batch.
+#[test]
+fn removes_fixtures_and_frees_their_addresses() {
+    let mut app = app();
+    let dropped = dimmer(1);
+    let dropped_uid = dropped.identifiers.uid;
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![dropped, dimmer(2)],
+            update: vec![],
+            routes: vec![patch(1, 1, 1), patch(2, 1, 2)],
+            remove: vec![],
+        },
+    );
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![dimmer(3)],
+            update: vec![],
+            routes: vec![patch(3, 1, 1)],
+            remove: vec![dropped_uid],
+        },
+    );
+
+    assert_eq!(fixture_ids(&app), [2, 3]);
+    assert_eq!(
+        console_addresses(&app),
+        [
+            (Some(DmxRange::single(1)), Some(1)),
+            (Some(DmxRange::single(1)), Some(2))
+        ]
+    );
+    let parameters = app
+        .world_mut()
+        .query::<&Parameter>()
+        .iter(app.world())
+        .count();
+    assert_eq!(parameters, 2);
+}
+
+/// A batch that fails keeps the fixtures it would have removed, with their patch.
+#[test]
+fn failed_batch_keeps_fixtures_to_remove() {
+    let mut app = app();
+    let dropped = dimmer(1);
+    let dropped_uid = dropped.identifiers.uid;
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![dropped, dimmer(2)],
+            update: vec![],
+            routes: vec![patch(1, 1, 1), patch(2, 1, 2)],
+            remove: vec![],
+        },
+    );
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![dimmer(3)],
+            update: vec![],
+            routes: vec![patch(3, 1, 2)],
+            remove: vec![dropped_uid],
+        },
+    );
+
+    assert_eq!(fixture_ids(&app), [1, 2]);
+    assert_eq!(app.world().resource::<OutputRoutes>().routes.len(), 2);
+}
+
+/// A batch can give a new fixture the ID of a fixture it removes, and its undo operation
+/// takes the new fixture out and brings the removed one back with its parameter and patch.
+#[test]
+fn replaces_a_fixture_and_undo_brings_it_back() {
+    let mut app = app();
+    let replaced = dimmer(1);
+    let replaced_uid = replaced.identifiers.uid;
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![replaced],
+            update: vec![],
+            routes: vec![patch(1, 1, 1)],
+            remove: vec![],
+        },
+    );
+    let command = FixtureCommand::PatchRig {
+        add: vec![dimmer(1)],
+        update: vec![],
+        routes: vec![patch(1, 1, 1)],
+        remove: vec![replaced_uid],
+    };
+    let inverse = command
+        .inverse(&UndoContext { world: app.world() })
+        .expect("a rig patch has an undo operation");
+    send(&mut app, command);
+    assert_eq!(fixture_ids(&app), [1]);
+    assert_ne!(stored(&app, 1).identifiers.uid, replaced_uid);
+
+    let restore = inverse
+        .as_any()
+        .downcast_ref::<RestorePatchedFixtures>()
+        .expect("the undo operation restores patched fixtures")
+        .clone();
+    app.world_mut()
+        .write_message(EngineOperationEnvelope::detached(restore));
+    app.update();
+
+    assert_eq!(fixture_ids(&app), [1]);
+    assert_eq!(stored(&app, 1).identifiers.uid, replaced_uid);
+    assert_eq!(
+        console_addresses(&app),
+        [(Some(DmxRange::single(1)), Some(1))]
+    );
+    let parameters = app
+        .world_mut()
+        .query::<&Parameter>()
+        .iter(app.world())
+        .count();
+    assert_eq!(parameters, 1);
 }
