@@ -280,7 +280,7 @@ test("timeline action paste creates an undoable command", async ({
     );
     expect(selectedTextAfterRangeClick).toBe("");
     await expect(
-      page.getByRole("button", { name: /Undo: Store Timeline/ }),
+      page.getByRole("button", { name: /Undo: Store 1 Timeline Action/ }),
     ).toBeEnabled();
 
     await pressShortcut(page, modifier, "z");

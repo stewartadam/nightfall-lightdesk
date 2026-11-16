@@ -72,7 +72,7 @@ pub fn forward_timeline_commands(
             | TimelineCommand::DeleteTimelineRegion { .. }
             | TimelineCommand::SetTimelineLoopRange { .. }
             | TimelineCommand::InsertRecordedActions { .. }
-            | TimelineCommand::DeleteRecordedActions { .. }
+            | TimelineCommand::EditTimeline { .. }
             | TimelineCommand::NudgeTimelineSelection { .. }
             | TimelineCommand::DeleteTimeline(_)
             | TimelineCommand::RenameTimeline { .. }

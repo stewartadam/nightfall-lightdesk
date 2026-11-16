@@ -7,7 +7,7 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createEffect, createMemo, onCleanup, untrack } from "solid-js";
+import { createEffect, createMemo, untrack } from "solid-js";
 import { resyncComplete } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
 import { resolveTimelineAudioUrl } from "../../../lib/timeline-audio";
@@ -27,6 +27,7 @@ import {
 import * as types from "../../../types";
 import type { InstanceCommandCallbacks } from "../context/timeline-context-contract";
 import { ScrollMode } from "../model/types";
+import type { TimelineEdits } from "./timeline-edits";
 import { createTimelinePlaybackController } from "./timeline-playback-controller";
 import type { createTimelineSelectionController } from "./timeline-selection-controller";
 import type { TimelineState } from "./timeline-state-controller";
@@ -40,6 +41,7 @@ type TimelineSelectionController = ReturnType<
 interface TimelineHydrationControllerOptions {
   timelineUid: string;
   state: TimelineState;
+  edits: TimelineEdits;
   selection: TimelineSelectionController;
   playbackCommands: InstanceCommandCallbacks;
 }
@@ -86,12 +88,11 @@ export function createTimelineHydrationController(
     state.setTimelineHydrated(false);
   };
 
-  /** Copies one backend snapshot into the local editing signals. */
-  const syncFromTimelineSnapshot = (
-    snapshot: Record<string, types.Timeline> | undefined,
+  /** Copies the timeline, with unconfirmed edits applied, into the local editing signals. */
+  const syncFromTimeline = (
+    timeline: types.Timeline | undefined,
     reason: string,
   ) => {
-    const timeline = snapshot?.[options.timelineUid];
     if (!timeline) {
       log.warn(
         `Could not find timeline ${options.timelineUid} during ${reason}; clearing local timeline state`,
@@ -126,15 +127,25 @@ export function createTimelineHydrationController(
       timeline.timecode_start ? durationToMs(timeline.timecode_start) : 0,
     );
     state.setTracks(timeline.tracks);
-    state.setMarkers(timeline.markers ?? []);
-    state.setRegions(timeline.regions ?? []);
-    state.setLoopRange(timeline.loop_range);
     state.setTimelineHydrated(true);
   };
 
-  /** Copies the current timeline store snapshot into local editing signals. */
-  const syncFromTimelineStore = (reason: string) => {
-    syncFromTimelineSnapshot(untrack($timelines), reason);
+  /**
+   * The timeline's markers, regions and loop range. Each memo changes only when its own value
+   * is replaced, so adding or settling a track or settings edit doesn't copy them again over
+   * this panel's own unconfirmed marker, region or loop changes.
+   */
+  const markers = createMemo(() => options.edits.timeline()?.markers);
+  const regions = createMemo(() => options.edits.timeline()?.regions);
+  const loopRange = createMemo(() => options.edits.timeline()?.loop_range);
+
+  /** Copies the markers, regions and loop range into the local editing signals. */
+  const syncAnnotations = () => {
+    if (!untrack(options.edits.timeline)) return;
+    const state = options.state;
+    state.setMarkers(untrack(markers) ?? []);
+    state.setRegions(untrack(regions) ?? []);
+    state.setLoopRange(untrack(loopRange));
   };
 
   /** Projects staged recording actions into the visible track list. */
@@ -208,10 +219,31 @@ export function createTimelineHydrationController(
     }
   });
 
-  const unsubscribe = timelines.listen((snapshot) => {
-    syncFromTimelineSnapshot(snapshot, "timeline store subscription update");
+  /**
+   * Mirrors the timeline into the local editing signals whenever the engine's copy or this
+   * panel's unconfirmed edits change, so an edit stays shown until the engine confirms it.
+   */
+  createEffect(() => {
+    syncFromTimeline(options.edits.timeline(), "timeline update");
   });
-  onCleanup(unsubscribe);
+
+  /** Mirrors the markers whenever they are replaced. */
+  createEffect(() => {
+    const next = markers();
+    if (untrack(options.edits.timeline)) options.state.setMarkers(next ?? []);
+  });
+
+  /** Mirrors the regions whenever they are replaced. */
+  createEffect(() => {
+    const next = regions();
+    if (untrack(options.edits.timeline)) options.state.setRegions(next ?? []);
+  });
+
+  /** Mirrors the loop range whenever it is replaced. */
+  createEffect(() => {
+    const next = loopRange();
+    if (untrack(options.edits.timeline)) options.state.setLoopRange(next);
+  });
 
   /** Mirrors backend recording state into the selected timeline controls. */
   createEffect(() => {
@@ -229,7 +261,10 @@ export function createTimelineHydrationController(
 
   /** Reloads local state after a websocket resynchronization completes. */
   createEffect(() => {
-    if (resyncComplete()) syncFromTimelineStore("resync complete");
+    if (resyncComplete()) {
+      syncFromTimeline(untrack(options.edits.timeline), "resync complete");
+      syncAnnotations();
+    }
   });
 
   return { playback, displayTracks };

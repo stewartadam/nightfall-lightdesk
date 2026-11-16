@@ -88,31 +88,6 @@ export const createTimelineSelectionController = (
     }
   };
 
-  /** Repairs selected track identities after one action moves between tracks. */
-  const repositionAction = (
-    trackId: string,
-    actionId: string,
-    targetTrackId: string,
-  ) => {
-    if (targetTrackId === trackId) return;
-    const movedSelection = { trackId: targetTrackId, actionId };
-    setSelectedActions((current) =>
-      current.map((entry) =>
-        sameSelectedAction(entry, { trackId, actionId })
-          ? movedSelection
-          : entry,
-      ),
-    );
-    const currentSelection = selection();
-    if (
-      currentSelection?.type === "Action" &&
-      currentSelection.data.track_id === trackId &&
-      currentSelection.data.action_id === actionId
-    ) {
-      setSelection(toTimelineActionSelection(movedSelection));
-    }
-  };
-
   /** Repairs selected track identities after a multi-action move. */
   const repositionActions = (actions: MoveTimelineActionOptions[]) => {
     const movedSelections = new Map(
@@ -497,7 +472,6 @@ export const createTimelineSelectionController = (
     nudgeSelectionEvent,
     clear,
     removeTrack,
-    repositionAction,
     repositionActions,
     selectAction,
     deleteAction,

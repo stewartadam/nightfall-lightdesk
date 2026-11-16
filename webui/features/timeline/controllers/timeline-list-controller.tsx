@@ -165,19 +165,27 @@ export function createTimelineListController(
     commandClient.emit("TimecodeCommand", command);
   };
 
-  /** Stores a timeline label change without changing timing content. */
-  const updateTimelineLabel = (timeline: Timeline, label: string) => {
-    if (label === timeline.identifiers.label) return;
+  /**
+   * Changes only a timeline's label, so a rename never reverts tracks, markers or settings that
+   * another client changed after this list last heard from the engine.
+   */
+  const sendTimelineLabel = (timelineId: number, label: string) => {
     sendTimelineCommand({
-      type: "StoreTimeline",
+      type: "EditTimeline",
       data: {
-        ...timeline,
-        identifiers: {
-          ...timeline.identifiers,
-          label,
+        timeline_id: timelineId,
+        edit: {
+          type: "UpdateSettings",
+          data: { settings: [{ type: "Label", data: label }] },
         },
       },
     });
+  };
+
+  /** Renames a timeline from its inline label cell, when the label changed. */
+  const updateTimelineLabel = (timeline: Timeline, label: string) => {
+    if (label === timeline.identifiers.label) return;
+    sendTimelineLabel(timeline.identifiers.id, label);
   };
 
   /** Requests inline editing for the selected timeline label cell. */
@@ -322,8 +330,10 @@ export function createTimelineListController(
       scroll_mode: TimelineScrollMode.Free,
     };
 
-    sendTimecodeCommand({ type: "StoreTimecode", data: timecode });
-    sendTimelineCommand({ type: "StoreTimeline", data: timeline });
+    sendTimelineCommand({
+      type: "CreateTimeline",
+      data: { timeline, timecode },
+    });
     crud.clearSelection();
     setIsCreateModalOpen(false);
     setTimeout(() => openTimeline(timeline), 100);
@@ -392,18 +402,9 @@ export function createTimelineListController(
       });
     }
 
-    if (timelineIdChanged || timelineLabelChanged) {
-      sendTimelineCommand({
-        type: "StoreTimeline",
-        data: {
-          ...timeline,
-          identifiers: {
-            ...timeline.identifiers,
-            id: payload.id,
-            label: payload.label,
-          },
-        },
-      });
+    if (timelineLabelChanged) {
+      // Runs after the rename above, so it addresses the timeline by its new number.
+      sendTimelineLabel(payload.id, payload.label);
     }
 
     setIsEditModalOpen(false);

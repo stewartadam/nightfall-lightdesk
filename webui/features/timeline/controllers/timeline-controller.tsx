@@ -98,7 +98,7 @@ const TimelinePropertiesProvider = (props: { componentId: string }) => {
     () => (
       <Show
         when={selectedAction()}
-        fallback={<TimelineProperties timelineUid={ctx.timelineUid} />}
+        fallback={<TimelineProperties edits={ctx.edits} />}
       >
         <TimelineActionProperties
           timelineUid={ctx.timelineUid}

@@ -6,65 +6,34 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal, untrack } from "solid-js";
-import type {
-  BeatgridSettingsEvent,
-  ScrollModeEvent,
-} from "../context/timeline-context-contract";
+import type * as types from "../../../types";
 import type { ScrollMode } from "../model/types";
-import type { TimelineState } from "./timeline-state-controller";
+import type { TimelineEdits } from "./timeline-edits";
 
-/** Coordinates editable timeline settings with the events persisted by the listener. */
-export function createTimelineSettingsController(state: TimelineState) {
-  const [scrollModeEvent, setScrollModeEvent] = createSignal<ScrollModeEvent>();
-  const [beatgridSettingsEvent, setBeatgridSettingsEvent] =
-    createSignal<BeatgridSettingsEvent>();
-
-  /** Stores a user-requested scroll mode change and emits a persistence event. */
+/**
+ * Sends the timeline settings the timeline panel edits (beat grid and scroll mode) as granular
+ * setting edits, so they never overwrite the timeline's tracks or markers.
+ */
+export function createTimelineSettingsController(edits: TimelineEdits) {
+  /** Changes how the timeline view scrolls during playback. */
   const setScrollMode = (mode: ScrollMode) => {
-    state.setScrollModeSignal(mode);
-    setScrollModeEvent({ type: "set-scroll-mode", scrollMode: mode });
+    void edits.editSettings({ scroll_mode: mode as types.TimelineScrollMode });
   };
 
-  /** Stores a user-requested beatgrid enabled-state change and emits a persistence event. */
+  /** Turns the beat grid on or off. */
   const setUseBeatgrid = (useBeatgrid: boolean) => {
-    state.setUseBeatgridSignal(useBeatgrid);
-    setBeatgridSettingsEvent({
-      type: "set-beatgrid-settings",
-      useBeatgrid,
-      bpm: untrack(state.bpm),
-      beatsPerBar: untrack(state.beatsPerBar),
-    });
+    void edits.editSettings({ use_beat_grid: useBeatgrid });
   };
 
-  /** Stores a user-requested BPM change and emits a persistence event. */
+  /** Changes the beat grid's tempo. */
   const setBpm = (bpm: number) => {
-    state.setBpmSignal(bpm);
-    setBeatgridSettingsEvent({
-      type: "set-beatgrid-settings",
-      useBeatgrid: untrack(state.useBeatgrid),
-      bpm,
-      beatsPerBar: untrack(state.beatsPerBar),
-    });
+    void edits.editSettings({ bpm });
   };
 
-  /** Stores a user-requested beats-per-bar change and emits a persistence event. */
+  /** Changes how many beats make one bar of the beat grid. */
   const setBeatsPerBar = (beatsPerBar: number) => {
-    state.setBeatsPerBarSignal(beatsPerBar);
-    setBeatgridSettingsEvent({
-      type: "set-beatgrid-settings",
-      useBeatgrid: untrack(state.useBeatgrid),
-      bpm: untrack(state.bpm),
-      beatsPerBar,
-    });
+    void edits.editSettings({ beats_per_bar: beatsPerBar });
   };
 
-  return {
-    setScrollMode,
-    scrollModeEvent,
-    setUseBeatgrid,
-    setBpm,
-    setBeatsPerBar,
-    beatgridSettingsEvent,
-  };
+  return { setScrollMode, setUseBeatgrid, setBpm, setBeatsPerBar };
 }

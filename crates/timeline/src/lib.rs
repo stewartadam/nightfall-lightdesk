@@ -37,6 +37,7 @@ mod beatgrid_detection;
 mod browser_audio;
 mod components;
 mod diagnostics;
+mod edit;
 #[cfg(feature = "http")]
 mod http_routes;
 /// Deterministic, ECS-free timeline playback planning.
@@ -62,6 +63,10 @@ pub mod prelude {
     pub use crate::components::{
         ActionRangeStart, MaterializedTimeline, SpawnedEntityType, TimecodeTransport,
         TimelineActionCursor,
+    };
+    pub use crate::edit::{
+        ActionTime, MarkerTime, RegionSpan, TimelineActionMove, TimelineActionRef, TimelineEdit,
+        TimelineSetting, TrackAction, TrackSetting,
     };
     pub use crate::recording::{
         TimelineRecordingPreview, TimelineRecordingState, TimelineRecordingStates,
@@ -352,14 +357,13 @@ pub enum TimelineCommand {
         actions: Vec<Action>,
     },
 
-    /// Delete recorded timeline actions by ID.
-    DeleteRecordedActions {
-        /// ID of the timeline to update.
+    /// Apply one granular edit to a timeline's tracks, actions, automation lanes or settings,
+    /// leaving the rest of the timeline as stored.
+    EditTimeline {
+        /// ID of the timeline to edit.
         timeline_id: u32,
-        /// Track ID to delete from.
-        track_id: String,
-        /// Action IDs to delete.
-        action_ids: Vec<String>,
+        /// The change to apply.
+        edit: TimelineEdit,
     },
 
     /// Nudge selected timeline objects by a signed millisecond delta.
