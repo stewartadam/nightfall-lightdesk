@@ -44,6 +44,14 @@ const MAX_RERUNS_PER_UPDATE: usize = 256;
 /// maintain state that handlers or undo inverses read here after [`EventHandling`]. Systems that
 /// only publish, persist or derive output from what commands changed belong in [`Update`] after
 /// [`CommandApplication`], so reruns don't repeat them.
+///
+/// The schedule can run several times in one update, so every system in it must be safe to
+/// rerun: a run with no new input must change nothing and publish nothing. Act on messages
+/// through a `MessageReader`, which yields each message once, or on state that the work itself
+/// clears or marks done. Don't act on a timer, a counter, or change detection of state that
+/// another system in this schedule marks changed on every run. The `rerun_safety` test in
+/// `app-runtime` drives a sample show with an extra run in every update and fails when results,
+/// client messages or output differ.
 #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ApplyCommands;
 

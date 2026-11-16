@@ -239,7 +239,7 @@ Acknowledgements of input go in `ClientFeedback` in `PostUpdate`. Render-derived
 
 `Update` systems run in input-only frames too, so they must not assume time has passed since the last render. Clocks advance only in `ClockUpdate`, by the wall-clock time since the previous render pass, so playback timing stays correct however many input-only frames ran in between.
 
-`ApplyCommands` can run more than once in a frame. A system in it whose work waits on a handler's next run, such as an undo that replays a group one entry at a time, calls `CommandRerun::request`, and `CommandApplication` runs `ApplyCommands` again before the rest of `Update`, for at most 8 ms per frame. Nothing else reruns, so input, timers, publication and the render pass still run once. Systems in `EventHandling` must therefore stay message-driven or idempotent. For the design, see [ADR 5](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/adr/0005-undo-replays-step-by-step.md).
+`ApplyCommands` can run more than once in a frame. A system in it whose work waits on a handler's next run, such as an undo that replays a group one entry at a time, calls `CommandRerun::request`, and `CommandApplication` runs `ApplyCommands` again before the rest of `Update`, for at most 8 ms per frame. Nothing else reruns, so input, timers, publication and the render pass still run once. Every system in `ApplyCommands` must therefore be safe to rerun: a run with no new input changes nothing and publishes nothing. The `rerun_safety` test in `app-runtime` checks this on the sample show. For the design, see [ADR 5](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/adr/0005-undo-replays-step-by-step.md).
 
 ### Register the render schedule in plugin tests
 

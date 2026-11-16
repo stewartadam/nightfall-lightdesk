@@ -68,5 +68,5 @@ A typical undo of a macro with four entries now settles in one update: the first
 - A conflict partway through a group leaves a partial undo. The error says so, and the replayed half can be redone.
 - Command handlers register in `ApplyCommands`, not `Update`. `Update` systems order against `CommandApplication`, not against the sets inside `ApplyCommands`.
 - A new system that finishes commands, or keeps state that handlers or inverses read, belongs in `ApplyCommands` after `EventHandling`. Everything else that reacts to command changes belongs in `Update` after `CommandApplication`.
-- Systems in `EventHandling` can run several times in one update. They are message-driven or idempotent today, and new ones must stay that way.
+- Every system in `ApplyCommands` can run several times in one update, so it must be safe to rerun: a run with no new input changes nothing and publishes nothing. Handlers meet this by acting on each message they read once. The `rerun_safety` test in `app-runtime` runs a sample show with an extra run in every update and fails when command results, client messages or output differ.
 - Other work that settles in dependent steps can use `CommandRerun::request`.

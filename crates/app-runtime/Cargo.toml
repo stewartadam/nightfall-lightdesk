@@ -102,6 +102,7 @@ debug = ["nightfall-engine/debug"]
 telemetry = ["dep:sentry", "dep:reqwest", "dep:sysinfo"]
 
 [dev-dependencies]
+minicbor-serde.workspace = true
 async-channel.workspace = true
 criterion.workspace = true
 nightfall-fixture-library = { path = "../fixture-library", features = ["test-support"] }

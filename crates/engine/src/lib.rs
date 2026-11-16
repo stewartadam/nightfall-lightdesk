@@ -345,6 +345,9 @@ pub struct PendingCommandProcessing;
 ///
 /// Command handlers register here, in the [`ApplyCommands`] schedule. Ordering an [`Update`]
 /// system against this set has no effect; order it against [`CommandApplication`] instead.
+///
+/// A handler can run several times in one update and must be safe to rerun: it acts on each
+/// message it reads once and does nothing on a run with no new input. See [`ApplyCommands`].
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EventHandling;
 

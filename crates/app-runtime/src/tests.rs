@@ -2668,6 +2668,7 @@ mod macros;
 #[cfg(all(feature = "artnet", feature = "sacn"))]
 mod packet_timing;
 mod park;
+mod rerun_safety;
 mod schedule_split;
 mod timeline_undo;
 mod undo_groups;
