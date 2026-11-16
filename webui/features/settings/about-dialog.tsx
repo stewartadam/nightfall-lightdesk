@@ -20,7 +20,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useAppShell } from "../../components/providers/app-shell";
-import { Badge } from "../../components/ui/badge";
+import { CountBadge } from "../../components/ui/badge";
 import { Dialog, DialogBody } from "../../components/ui/dialog";
 import { SegmentedTabs } from "../../components/ui/segmented-tabs";
 import Tooltip from "../../components/ui/tooltip";
@@ -92,15 +92,7 @@ export function AboutDialog() {
             <span class="inline-flex items-center gap-1.5">
               Updates
               <span class="sr-only">, update available</span>
-              <Badge
-                tone="info"
-                appearance="solid"
-                size="sm"
-                mono
-                aria-hidden="true"
-              >
-                1
-              </Badge>
+              <CountBadge count={1} placement="inline" aria-hidden="true" />
             </span>
           ),
         }
