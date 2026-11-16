@@ -30,21 +30,12 @@ test("shared shell dialogs fit a narrow viewport", async ({
   /** Finds one of the dialog body's own scroll edges, skipping the tab strip's nested ones. */
   const bodyEdge = (edge: "top" | "bottom") =>
     body.locator(`:scope > div > [data-edge="${edge}"]`);
-  await expect(bodyEdge("bottom")).toHaveAttribute(
-    "data-visible",
-    "true",
-  );
+  await expect(bodyEdge("bottom")).toHaveAttribute("data-visible", "true");
   await body.locator(":scope > .nf-scroll-viewport").evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
-  await expect(bodyEdge("top")).toHaveAttribute(
-    "data-visible",
-    "true",
-  );
-  await expect(bodyEdge("bottom")).toHaveAttribute(
-    "data-visible",
-    "false",
-  );
+  await expect(bodyEdge("top")).toHaveAttribute("data-visible", "true");
+  await expect(bodyEdge("bottom")).toHaveAttribute("data-visible", "false");
   await expect(
     about.getByRole("button", { name: "Close about dialog" }),
   ).toBeInViewport();
