@@ -3107,6 +3107,7 @@ fn roundtrip_preserves_custom_scene_object_model_properties() {
                 color_override: Some("#336699".to_string()),
                 library_object_name: None,
                 library_object_version: None,
+                keep_model_origin: false,
             },
         ))
         .expect("custom scene object should be added");
@@ -3157,6 +3158,7 @@ fn showfile_import_keeps_fixtures_on_different_revisions_of_one_mode() {
         }],
         layout: None,
         library_asset_etag: Some("v1".to_string()),
+        rig_source: None,
         ..Default::default()
     };
 
@@ -3176,6 +3178,7 @@ fn showfile_import_keeps_fixtures_on_different_revisions_of_one_mode() {
         }],
         layout: None,
         library_asset_etag: Some("v2".to_string()),
+        rig_source: None,
         ..Default::default()
     };
 
@@ -3324,6 +3327,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             color_override: None,
             library_object_name: Some("Road Case".to_string()),
             library_object_version: Some("v1".to_string()),
+            keep_model_origin: false,
         },
     );
     let scene_object_b = SceneObject::new_custom(
@@ -3335,6 +3339,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             color_override: None,
             library_object_name: Some("Road Case".to_string()),
             library_object_version: Some("v2".to_string()),
+            keep_model_origin: false,
         },
     );
 
@@ -3411,6 +3416,7 @@ fn copy_imported_scene_object_assets_copies_showfile_bundle() {
             color_override: None,
             library_object_name: None,
             library_object_version: None,
+            keep_model_origin: false,
         },
     )];
 
@@ -3464,6 +3470,7 @@ fn remove_orphaned_showfile_object_snapshots_keeps_only_referenced_showfile_asse
             color_override: None,
             library_object_name: None,
             library_object_version: None,
+            keep_model_origin: false,
         },
     )];
 
@@ -4094,6 +4101,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
                 color_override: None,
                 library_object_name: Some("Road Case".to_string()),
                 library_object_version: Some(version.to_string()),
+                keep_model_origin: false,
             },
         )
     };

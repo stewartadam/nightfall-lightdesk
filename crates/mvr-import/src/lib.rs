@@ -17,14 +17,16 @@
 //!    options: which fixture types come from the library or the file, each fixture's ID,
 //!    label, patch and placement, and what cannot be imported. The show is not touched.
 //! 3. [`RigImportCommand::Commit`] applies the same plan as a single
-//!    `FixtureCommand::AddPatchedFixtures`, so one undo removes the whole import.
+//!    `FixtureCommand::PatchRig` plus group stores, so one undo reverts the whole import.
 
 pub mod commands;
+pub mod geometry;
 pub mod http;
 pub mod placement;
 pub mod plan;
 pub mod preview;
 pub mod rig;
+pub mod scenery;
 pub mod sessions;
 
 use bevy_app::prelude::*;
@@ -51,7 +53,8 @@ pub struct RigImportPlugin;
 
 impl Plugin for RigImportPlugin {
     /// Shares the session store with the upload route, registers the command for undo
-    /// capture, and schedules commit expansion and the preview and discard handler.
+    /// capture, and schedules commit expansion, the release of group stores held back until
+    /// a commit's fixtures are imported, and the preview and discard handler.
     fn build(&self, app: &mut App) {
         assert!(
             app.world().contains_resource::<FixtureLibraryManager>(),
@@ -59,6 +62,7 @@ impl Plugin for RigImportPlugin {
         );
         let sessions = RigImportSessions::default();
         app.insert_resource(sessions.clone());
+        app.init_resource::<commands::DeferredGroupStores>();
         if let Some(mut routes) = app
             .world_mut()
             .get_resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>()
@@ -68,7 +72,11 @@ impl Plugin for RigImportPlugin {
         register_client_command::<RigImportCommand>(app, Undo::Captured);
         app.add_systems(
             Update,
-            commands::expand_rig_import_commits.in_set(PendingCommandExpansion),
+            (
+                commands::release_deferred_group_stores,
+                commands::expand_rig_import_commits,
+            )
+                .in_set(PendingCommandExpansion),
         );
         app.add_systems(
             Update,

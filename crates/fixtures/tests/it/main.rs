@@ -8,13 +8,13 @@
 
 //! Integration tests, linked into one binary to avoid per-file link overhead.
 
-mod add_patched_fixtures;
 mod ast_conv;
 mod compositor_pipeline_tests;
 mod compositor_system_tests;
 mod fixture_layout_dmx_order;
 mod manual_dmx_release_system;
 mod patch_priority;
+mod patch_rig;
 mod relation_output_tests;
 mod restore_fixture_snapshot_system;
 mod route_resolution;

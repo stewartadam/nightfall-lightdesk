@@ -128,6 +128,7 @@ fn test_available_fixture_info_serialization() {
         gdtf_revision_date: None,
         gdtf_data_version: None,
         file_name: None,
+        missing_3d_model: false,
     };
 
     let json = serde_json::to_value(&info).unwrap();
@@ -163,6 +164,7 @@ fn test_list_available_fixtures_response_serialization() {
                 gdtf_revision_date: None,
                 gdtf_data_version: None,
                 file_name: None,
+                missing_3d_model: false,
             },
             AvailableFixtureInfo {
                 make: "Generic".to_string(),
@@ -175,6 +177,7 @@ fn test_list_available_fixtures_response_serialization() {
                 gdtf_revision_date: None,
                 gdtf_data_version: None,
                 file_name: None,
+                missing_3d_model: false,
             },
         ],
         unloadable: vec![UnloadableFixtureFile {
@@ -214,6 +217,7 @@ fn test_get_fixture_profile_response_serialization() {
             gdtf_revision_date: None,
             gdtf_data_version: None,
             file_name: None,
+            missing_3d_model: false,
         },
         requested_mode: Some("6 Channel".to_string()),
         fixture: None,

@@ -295,31 +295,37 @@ impl FixtureDataProviderExt {
         uuid: &Uuid,
     ) -> Result<(Fixture, Vec<Instance<Parameter>>), DataStoreError<Fixture>> {
         let fixture = self.inner.remove(uuid)?;
-        let mut removed_parameters = Vec::new();
+        let removed_parameters = self.forget_fixture_parameters(&fixture);
+        Ok((fixture, removed_parameters))
+    }
 
-        // Collect element refs for this fixture
-        let element_count = fixture.elements.len();
-        for idx in 0..element_count {
+    /// Drops the parameter map, parameter index and color path default entries of a fixture
+    /// already taken out of the store, and returns its parameter entities for despawning.
+    ///
+    /// Lets a batch take fixtures out of the store first, so their IDs are free, and only
+    /// forget their parameters once the batch is kept.
+    pub fn forget_fixture_parameters(&mut self, fixture: &Fixture) -> Vec<Instance<Parameter>> {
+        let uuid = fixture.identifiers.uid;
+        let mut removed_parameters = Vec::new();
+        for idx in 0..fixture.elements.len() {
             let element_ref = FixtureRef {
-                fixture_uid: *uuid,
+                fixture_uid: uuid,
                 index: Some(idx as u32 + 1),
             };
-
             if let Some((_, params)) = self.parameter_map.remove(&element_ref) {
                 removed_parameters.extend(params);
             }
         }
-        self.parameter_index.write().unwrap().remove_fixture(*uuid);
+        self.parameter_index.write().unwrap().remove_fixture(uuid);
         self.color_path_defaults
-            .retain(|fixture_ref, _| fixture_ref.fixture_uid != *uuid);
+            .retain(|fixture_ref, _| fixture_ref.fixture_uid != uuid);
 
         tracing::debug!(
             "Removed fixture {} with {} parameter entities",
             fixture.identifiers.id,
             removed_parameters.len()
         );
-
-        Ok((fixture, removed_parameters))
+        removed_parameters
     }
 
     /// Removes all fixtures and returns parameter entities for despawning.

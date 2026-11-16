@@ -59,6 +59,15 @@ The following table lists who imports rigs and what each needs:
 - A fixture the file leaves unpatched keeps the patch made in Nightfall.
 - A fixture that shares a patch route with other fixtures keeps its patch, with a warning, because moving the route would move the others too.
 
+### Removing what a revision drops
+
+- Every fixture, scene object and group the import adds records the rig file it came from, saved with the show. Objects made in Nightfall have no rig source.
+- The review lists, on a Not in file tab, the fixtures and scene objects that have a rig source but whose UID is not in the file being imported, with the file they came from. Scene objects are listed only when scenery is imported.
+- The tab also lists groups with a rig source whose name no fixture in the file has under the chosen group source, such as the group for a truss the new revision took down. Groups are listed only when the import makes groups. A group that cues or other objects use is kept with a warning instead, because it can't be deleted.
+- Nothing is removed unless the user picks it, because a fixture missing from a file may still be wanted, for example when a show combines two rig files.
+- Removed fixtures leave in the same fixture command as the rest of the change, so their addresses are free for the fixtures the file adds or repatches, and a failed patch keeps them. Removed scene objects and groups are deleted in the same undo step, once the fixture command succeeds.
+- A group the file no longer makes and the user keeps may still list a removed fixture.
+
 ### Groups
 
 - The import makes one group per hanging position, or per layer when the file has no hanging positions. Options use layers or classes instead, or make no groups.
@@ -73,7 +82,7 @@ The following table lists who imports rigs and what each needs:
 
 ### Undo
 
-- One import is one undo step: new fixtures, updated fixtures, patch, groups and scene objects together.
+- One import is one undo step: new, updated and removed fixtures, patch, groups and scene objects together.
 - Fixture types added to the show package or the user's library stay after an undo, like any other library install.
 
 ## Design
@@ -82,7 +91,7 @@ The import runs in three steps, so the slow work happens once and off the engine
 
 1. **Upload.** The web UI uploads the file over HTTP, because a file with venue models is too large for a websocket command. The server reads it off the engine thread into a rig: the fixtures, the GDTF files they use with their make, model and modes, the scenery with its models converted to glTF binary, and every warning. The rig is kept under a session ID, and only the newest four rigs are kept, so a client that never discards one can't fill the disk.
 2. **Preview.** The client sends the session ID and the chosen options. The engine plans the import against the current show and replies with the review. This runs again whenever an option changes, without reading the file again.
-3. **Commit.** The client sends the same session ID and options. The engine plans the import again, so it applies exactly what the review showed, then expands the commit into one fixture command that adds and updates the fixtures with their patch, plus the group and scene object stores, all inside the commit's undo step.
+3. **Commit.** The client sends the same session ID and options. The engine plans the import again, so it applies exactly what the review showed, then expands the commit into one fixture command that adds, updates and removes the fixtures with their patch, plus the scene object stores, all inside the commit's undo step. The group stores and the scene object and group deletes are queued only once the fixture command succeeds, because groups name the imported fixtures; if it fails, the commit fails with its error and no group changes and nothing is deleted.
 
 ```mermaid
 sequenceDiagram
@@ -122,7 +131,6 @@ The following parts of MVR aren't imported yet:
 - Focus points, gel colors, gobos, video mappings and connections.
 - Multipatch fixtures. Only the parent fixture is imported.
 - `.gltf` models that keep their buffers in separate files or data URIs. Only GLB and 3DS models are read.
-- Removing fixtures or scenery that a newer revision of the file no longer has.
 
 ## In the code
 
@@ -135,7 +143,7 @@ The following table lists where each part of the import lives:
 | Planning | `crates/mvr-import/src/plan.rs` | Fixture types, IDs, labels and statuses, shared by the preview and the commit. |
 | Commands | `crates/mvr-import/src/commands.rs` | The preview, commit and discard commands. |
 | Upload route | `crates/mvr-import/src/http.rs` | `POST /api/mvr-import`, which returns the session ID. |
-| Import dialog | `webui/features/rig-import` | The review and its options. |
+| Import dialog | `webui/features/mvr-import` | The review and its options. |
 | Sample files | `scripts/mvr-samples.mjs` | Fetches the public sample files the ignored tests use, pinned by SHA-256. |
 
 ## Related topics

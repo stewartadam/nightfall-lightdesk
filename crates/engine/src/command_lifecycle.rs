@@ -50,6 +50,19 @@ pub struct ActiveCommand {
     success_outputs: Vec<Option<CommandOutput>>,
 }
 
+impl ActiveCommand {
+    /// Number of delegated operation outcomes received so far, successful or not, so a
+    /// workflow can wait for one operation to settle before queuing work that depends on it.
+    pub fn received_completions(&self) -> usize {
+        self.received_completions
+    }
+
+    /// First delegated operation failure received so far, if any.
+    pub fn first_error(&self) -> Option<&CommandError> {
+        self.first_error.as_ref()
+    }
+}
+
 /// Terminal command data returned when the tracker accepts a finish operation.
 #[derive(Clone, Debug, Message)]
 pub struct FinishedCommand {
@@ -477,6 +490,12 @@ impl CommandResponder<'_> {
     /// Returns the client session that submitted an active command, if one was identified.
     pub fn connection(&self, command_id: CommandId) -> Option<ClientId> {
         self.tracker.connection(command_id)
+    }
+
+    /// Returns the context of a command still awaiting its terminal outcome, including the
+    /// delegated outcomes it has received so far.
+    pub fn active_command(&self, command_id: CommandId) -> Option<&ActiveCommand> {
+        self.tracker.active_command(command_id)
     }
 
     /// Returns the surface that accepted an active command, such as the web UI or a MIDI

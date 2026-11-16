@@ -404,6 +404,7 @@ fn available_fixture_info(profile: &FixtureProfile) -> AvailableFixtureInfo {
             .file_path
             .file_name()
             .map(|name| name.to_string_lossy().into_owned()),
+        missing_3d_model: matches!(&profile.source, FixtureSource::Gdtf(metadata) if !metadata.has_models),
     }
 }
 

@@ -403,6 +403,7 @@ mod tests {
                 identifiers: identifiers(7, GROUP, "Front"),
                 selection: SpatialSelection::identity(fixture_13()),
                 description: String::new(),
+                rig_source: None,
             })
             .expect("group should insert");
         world

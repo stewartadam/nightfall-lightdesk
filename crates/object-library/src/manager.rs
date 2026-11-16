@@ -187,27 +187,7 @@ impl ObjectLibraryManager {
 
         let filename = format!("{}.robj", safe_name);
         let dest_path = self.library_path.join(&filename);
-
-        // Create the ZIP archive
-        let file = std::fs::File::create(&dest_path)?;
-        let mut zip = zip::ZipWriter::new(file);
-
-        // Add object.json
-        let options = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
-        zip.start_file("object.json", options)
-            .map_err(|e| ObjectLibraryError::Archive(e.to_string()))?;
-
-        let metadata_json = serde_json::to_string_pretty(metadata)?;
-        zip.write_all(metadata_json.as_bytes())?;
-
-        // Add model.glb
-        zip.start_file("model.glb", options)
-            .map_err(|e| ObjectLibraryError::Archive(e.to_string()))?;
-        zip.write_all(glb_content)?;
-
-        zip.finish()
-            .map_err(|e| ObjectLibraryError::Archive(e.to_string()))?;
+        write_object_bundle(&dest_path, metadata, glb_content)?;
 
         tracing::info!(path = %dest_path.display(), "Created object bundle");
 
@@ -289,6 +269,32 @@ pub struct ObjectModelPath {
     pub scope: ObjectModelPathScope,
     /// Basename of the `.robj` bundle file.
     pub bundle_filename: String,
+}
+
+/// Writes a `.robj` bundle holding `object.json` metadata and the `model.glb` model to
+/// `dest_path`, replacing any file there.
+pub fn write_object_bundle(
+    dest_path: &Path,
+    metadata: &ObjectMetadata,
+    glb_content: &[u8],
+) -> Result<()> {
+    let file = std::fs::File::create(dest_path)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+
+    zip.start_file("object.json", options)
+        .map_err(|e| ObjectLibraryError::Archive(e.to_string()))?;
+    let metadata_json = serde_json::to_string_pretty(metadata)?;
+    zip.write_all(metadata_json.as_bytes())?;
+
+    zip.start_file("model.glb", options)
+        .map_err(|e| ObjectLibraryError::Archive(e.to_string()))?;
+    zip.write_all(glb_content)?;
+
+    zip.finish()
+        .map_err(|e| ObjectLibraryError::Archive(e.to_string()))?;
+    Ok(())
 }
 
 /// Extract the GLB model data from an object bundle file

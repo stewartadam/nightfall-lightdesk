@@ -668,6 +668,7 @@ mod tests {
                 },
                 selection: SpatialSelection::default(),
                 description: String::new(),
+                rig_source: None,
             })
             .expect("group should store");
     }

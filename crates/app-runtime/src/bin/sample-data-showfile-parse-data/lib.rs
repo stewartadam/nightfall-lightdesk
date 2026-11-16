@@ -198,6 +198,7 @@ fn add_fixture(world: &mut World) -> Result<FixtureRef, String> {
         },
         layout: None,
         library_asset_etag: None,
+        rig_source: None,
     };
 
     let mut system_state: SystemState<(Commands, ResMut<FixtureDataProviderExt>)> =
@@ -360,6 +361,7 @@ fn add_scene_object(world: &mut World) -> Result<(), String> {
             object_type: SceneObjectType::Truss,
             placement: SceneObjectPlacement::at_position(0.0, 5.0, 0.0),
             properties: SceneObjectProperties::Truss(TrussProperties::default()),
+            rig_source: None,
         })
         .map_err(|error| format!("failed to add parser scene object: {error}"))
 }
@@ -379,6 +381,7 @@ fn add_group(world: &mut World, fixture_ref: FixtureRef) -> Result<(), String> {
             },
             selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
             description: "Procedural showfile parser test group".to_owned(),
+            rig_source: None,
         })
         .map_err(|error| format!("failed to add parser group: {error}"))?;
     system_state.apply(world);

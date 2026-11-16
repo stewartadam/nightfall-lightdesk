@@ -166,6 +166,7 @@ fn insert_group_for_fixture(app: &mut App, group_id: u32, fixture_id: u32) {
                 fixture_id,
             )])),
             description: String::new(),
+            rig_source: None,
         })
         .expect("group should insert");
 }

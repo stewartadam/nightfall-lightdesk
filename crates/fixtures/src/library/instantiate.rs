@@ -369,7 +369,8 @@ fn has_repeats(values: impl ExactSizeIterator<Item = u32>) -> bool {
     values.collect::<HashSet<_>>().len() != count
 }
 
-/// Builds an updated fixture definition without changing stored state.
+/// Builds an updated fixture definition without changing stored state: the template with the
+/// existing fixture's identifiers, placement and rig source.
 fn updated_fixture(
     fixtures: &FixtureDataProviderExt,
     fixture_id: u32,
@@ -384,6 +385,7 @@ fn updated_fixture(
     let mut updated = template.clone();
     updated.identifiers = existing.identifiers;
     updated.placement = existing.placement;
+    updated.rig_source = existing.rig_source;
     updated.library_asset_etag = Some(asset_etag.to_string());
     Ok(updated)
 }

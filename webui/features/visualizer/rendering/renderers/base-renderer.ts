@@ -233,6 +233,15 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
   }
 
   abstract setGridEnabled(enabled: boolean): void;
+
+  /** Whether scene objects are drawn; kept here so a scene manager created later starts with it. */
+  protected sceneObjectsVisible = true;
+
+  /** Shows or hides every scene object, now and in any scene manager created later. */
+  setSceneObjectsVisible(visible: boolean): void {
+    this.sceneObjectsVisible = visible;
+    this.sceneManager?.setSceneObjectsVisible(visible);
+  }
   /** Changes ambient rig visibility without changing fixture output. */
   abstract setDarkness(darkness: number): void;
   abstract setOrbitTargetIndicatorEnabled(enabled: boolean): void;

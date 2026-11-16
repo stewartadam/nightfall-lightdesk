@@ -140,6 +140,7 @@ fn insert_group(app: &mut App, group_id: u32, selection: Vec<FixtureRef>) {
             },
             selection: SelectionExpr::Resolved(selection).into(),
             description: String::new(),
+            rig_source: None,
         })
         .expect("group should insert");
 }

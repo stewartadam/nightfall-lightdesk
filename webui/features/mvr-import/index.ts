@@ -9,6 +9,6 @@
 export {
   IMPORT_RIG_ACTION_ID,
   RigImportCommand,
-} from "./commands/rig-import-command";
-export { RigImportDialog } from "./dialogs/rig-import-dialog";
-export { openRigImportDialog } from "./model/rig-import-model";
+} from "./commands/mvr-import-command";
+export { RigImportDialog } from "./dialogs/mvr-import-dialog";
+export { openRigImportDialog } from "./model/mvr-import-model";

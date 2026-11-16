@@ -96,6 +96,7 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
 
     // Create scene manager
     this.sceneManager = new SceneManager(this.rendererState.scene, profile);
+    this.sceneManager.setSceneObjectsVisible(this.sceneObjectsVisible);
     if (this.rendererState.postProcessing) {
       setOutlineSelectedObjects(
         this.rendererState.postProcessing,

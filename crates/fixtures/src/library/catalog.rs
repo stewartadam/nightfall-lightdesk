@@ -67,6 +67,7 @@ impl BuiltinFixtureProfile {
             gdtf_revision_date: None,
             gdtf_data_version: None,
             file_name: None,
+            missing_3d_model: false,
         }
     }
 

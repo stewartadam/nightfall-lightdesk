@@ -60,7 +60,9 @@ pub mod prelude {
         ProjectionBounds, ResolvedSelection, SelectionExpr, SelectionIndex, SelectionType,
         SpatialClause, SpatialSelection, UnresolvedFixtureRef,
     };
-    pub use crate::data::{FixtureRef, Group, HasIdentifiers, Identifiers, Priority, References};
+    pub use crate::data::{
+        FixtureRef, Group, HasIdentifiers, Identifiers, Priority, References, RigSource,
+    };
     pub use crate::fan::{
         resolve_fan, resolve_fan_duration, resolve_fan_number, resolve_fanned_parameter_value,
     };

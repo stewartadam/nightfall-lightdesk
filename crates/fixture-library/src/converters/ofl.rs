@@ -64,6 +64,7 @@ pub fn convert_ofl_to_fixture(
         placement: FixturePlacement::default(),
         layout: None,
         library_asset_etag: None,
+        rig_source: None,
     };
 
     // OFL doesn't have geometry data

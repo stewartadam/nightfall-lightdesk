@@ -1137,6 +1137,7 @@ mod tests {
             placement: Default::default(),
             layout: None,
             library_asset_etag: None,
+            rig_source: None,
         }
     }
 

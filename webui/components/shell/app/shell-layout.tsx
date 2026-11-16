@@ -17,12 +17,12 @@ import {
   MidiDeviceDetectedNotice,
 } from "../../../features/io";
 import { KeybindingController } from "../../../features/keybindings";
-import { ObjectPatchWizardModal } from "../../../features/object-library";
-import { PatchWizard } from "../../../features/patch";
 import {
   RigImportCommand,
   RigImportDialog,
-} from "../../../features/rig-import";
+} from "../../../features/mvr-import";
+import { ObjectPatchWizardModal } from "../../../features/object-library";
+import { PatchWizard } from "../../../features/patch";
 import { SelectionFlattenConfirmModal } from "../../../features/selection";
 import {
   AboutDialog,

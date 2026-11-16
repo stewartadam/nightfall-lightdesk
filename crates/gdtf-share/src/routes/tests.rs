@@ -241,6 +241,56 @@ async fn search_fetches_the_list_once_and_returns_every_match() {
     assert_eq!((share.login_count(), share.list_count()), (1, 1));
 }
 
+/// Matching looks names up in request order, fetching the list when signed in; signed out
+/// it answers from the saved list alone and never contacts GDTF Share.
+#[tokio::test]
+async fn match_answers_from_the_saved_list_even_when_signed_out() {
+    let share = MockShare::start().await;
+    list_fixtures(&share);
+    let (router, _data) = router(&share);
+    let names = json!({ "fixtures": [
+        { "manufacturer": "Martin", "fixture": "Unknown" },
+        { "manufacturer": "robe", "fixture": "SPIIDER" },
+    ]});
+
+    let (status, body) = Call::new(Method::POST, MATCH_PATH, PHONE)
+        .body(names.clone())
+        .send(&router)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap(),
+        json!({ "matches": [{ "fixture": null }, { "fixture": null }] })
+    );
+    assert_eq!(share.list_count(), 0);
+
+    Call::new(Method::POST, ACCOUNT_PATH, LOCAL)
+        .body(credentials_body())
+        .send(&router)
+        .await;
+    let (status, body) = Call::new(Method::POST, MATCH_PATH, PHONE)
+        .body(names.clone())
+        .send(&router)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let matches: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(matches["matches"][0]["fixture"], Value::Null);
+    assert_eq!(matches["matches"][1]["fixture"]["rid"], 11);
+
+    Call::new(Method::POST, SIGN_OUT_PATH, LOCAL)
+        .send(&router)
+        .await;
+    let (_, body) = Call::new(Method::POST, MATCH_PATH, PHONE)
+        .body(names)
+        .send(&router)
+        .await;
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["matches"][1]["fixture"]["rid"],
+        11
+    );
+    assert_eq!(share.list_count(), 1);
+}
+
 /// Refreshing fetches the list again even when the saved one is fresh, and an empty
 /// reply keeps the saved list instead of replacing it with nothing.
 #[tokio::test]

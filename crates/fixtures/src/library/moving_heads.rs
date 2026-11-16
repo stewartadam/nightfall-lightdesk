@@ -254,6 +254,7 @@ pub(super) fn create_rotating_wash_beam_194(id: u32, make: &str, model: &str) ->
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::RotatingWashBeam),
         library_asset_etag: None,
+        rig_source: None,
     }
 }
 
@@ -474,6 +475,7 @@ pub(super) fn create_moving_spot_16ch(id: u32, make: &str, model: &str) -> Fixtu
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::MovingHead),
         library_asset_etag: None,
+        rig_source: None,
     }
 }
 
@@ -647,6 +649,7 @@ pub(super) fn create_moving_spot(id: u32, make: &str, model: &str) -> Fixture {
         placement: FixturePlacement::default(),
         layout: Some(FixtureLayout::MovingHead),
         library_asset_etag: None,
+        rig_source: None,
     }
 }
 
