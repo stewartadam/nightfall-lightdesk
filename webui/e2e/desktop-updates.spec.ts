@@ -473,6 +473,9 @@ test("updates wait to download in notify mode", async ({
   await expect(updates.getByTestId("update-alert")).toContainText(
     "Nightfall 0.1.0-alpha.4 is available",
   );
+  await expect(
+    about.getByRole("tab", { name: /^Updates\s*, update available$/ }),
+  ).toContainText("1");
   const notice = page
     .locator('[data-component="Toast"]')
     .filter({ hasText: "Update available" });

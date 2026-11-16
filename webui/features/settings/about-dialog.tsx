@@ -17,10 +17,10 @@ import {
   on,
   Show,
   Switch,
-  untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useAppShell } from "../../components/providers/app-shell";
+import { Badge } from "../../components/ui/badge";
 import { Dialog, DialogBody } from "../../components/ui/dialog";
 import { SegmentedTabs } from "../../components/ui/segmented-tabs";
 import Tooltip from "../../components/ui/tooltip";
@@ -57,8 +57,9 @@ const UPDATES_TAB = { key: "updates", label: "Updates" } as const;
 const NOTICES_TAB = { key: "notices", label: "Third-Party Notices" } as const;
 
 /**
- * Presents application metadata and data-directory actions, desktop update status and controls,
- * and bundled licenses, each on its own tab. The Updates tab only exists in the desktop app.
+ * Presents the app name and license above tabs for build metadata and data-directory actions,
+ * desktop update status and controls, and bundled licenses. The Updates tab only exists in the
+ * desktop app, and carries a badge while a newer version is available.
  */
 export function AboutDialog() {
   const { isAboutOpen, closeAbout } = useAppShell();
@@ -72,31 +73,46 @@ export function AboutDialog() {
   /** Whether the desktop app reports an update status, which is what the Updates tab shows. */
   const hasUpdates = createMemo(() => !!updates.update());
 
-  /** Tabs to offer, rebuilt only when the Updates tab comes or goes so focus stays on its tab. */
-  const tabs = createMemo(() =>
-    hasUpdates()
-      ? [INFO_TAB, UPDATES_TAB, NOTICES_TAB]
-      : [INFO_TAB, NOTICES_TAB],
-  );
-
-  /** Whether an update, or a failed update step, is waiting for the operator in the Updates tab. */
-  const updateNeedsAttention = () => {
-    const update = updates.update();
-    return (
-      !!update &&
-      (!!update.error ||
-        (update.phase !== "idle" && update.phase !== "checking"))
-    );
-  };
+  /** Whether a newer version has been found, from the offer through its install. */
+  const updateAvailable = createMemo(() => {
+    const phase = updates.update()?.phase;
+    return !!phase && phase !== "idle" && phase !== "checking";
+  });
 
   /**
-   * Picks the tab each time the dialog opens: Updates when an update or failure is waiting there,
-   * which is where the update notices send the operator, and Info otherwise.
+   * Tabs to offer, rebuilt only when the Updates tab or its badge comes or goes, so focus stays
+   * on its tab while the update status changes.
    */
+  const tabs = createMemo(() => {
+    if (!hasUpdates()) return [INFO_TAB, NOTICES_TAB];
+    const updatesTab = updateAvailable()
+      ? {
+          key: "updates" as const,
+          label: (
+            <span class="inline-flex items-center gap-1.5">
+              Updates
+              <span class="sr-only">, update available</span>
+              <Badge
+                tone="info"
+                appearance="solid"
+                size="sm"
+                mono
+                aria-hidden="true"
+              >
+                1
+              </Badge>
+            </span>
+          ),
+        }
+      : UPDATES_TAB;
+    return [INFO_TAB, updatesTab, NOTICES_TAB];
+  });
+
+  /** Opens the dialog on Info each time, and forgets the notices so they reload when next opened. */
   createEffect(
-    on(isAboutOpen, (open) => {
+    on(isAboutOpen, () => {
       setNoticesLoaded(false);
-      if (open) setTab(untrack(updateNeedsAttention) ? "updates" : "info");
+      setTab("info");
     }),
   );
 
@@ -172,7 +188,24 @@ export function AboutDialog() {
       onDismiss={closeAbout}
       class="max-w-[600px]"
     >
-      <div class="shrink-0 px-4 pt-4">
+      <div class="shrink-0 space-y-4 px-4 pt-4">
+        <div class="flex items-center gap-4">
+          <img
+            src={`${import.meta.env.BASE_URL}logo.svg`}
+            alt={`${APP_NAME} logo`}
+            class="size-18 rounded-xl border border-gray-700 bg-[#0B1020] p-2 shadow-inner"
+          />
+          <div class="min-w-0">
+            <h3 class="text-xl font-semibold text-gray-50">{APP_NAME}</h3>
+            <p class="text-sm text-gray-400">
+              Lighting control and visualization
+            </p>
+            <p class="text-sm text-gray-400">
+              <span innerHTML={APP_COPYRIGHT}></span>, licensed under{" "}
+              {APP_LICENSE}.
+            </p>
+          </div>
+        </div>
         <SegmentedTabs
           id="about-tabs"
           label="About sections"
@@ -190,24 +223,6 @@ export function AboutDialog() {
         <Switch>
           <Match when={tab() === "info"}>
             <div class="space-y-5">
-              <div class="flex items-center gap-4">
-                <img
-                  src={`${import.meta.env.BASE_URL}logo.svg`}
-                  alt={`${APP_NAME} logo`}
-                  class="size-18 rounded-xl border border-gray-700 bg-[#0B1020] p-2 shadow-inner"
-                />
-                <div class="min-w-0">
-                  <h3 class="text-xl font-semibold text-gray-50">{APP_NAME}</h3>
-                  <p class="text-sm text-gray-400">
-                    Lighting control and visualization
-                  </p>
-                  <p class="text-sm text-gray-400">
-                    <span innerHTML={APP_COPYRIGHT}></span>, licensed under{" "}
-                    {APP_LICENSE}.
-                  </p>
-                </div>
-              </div>
-
               <div class="grid gap-3 rounded-lg border border-gray-700 bg-gray-900/60 p-4 text-sm">
                 <div class="flex items-center justify-between gap-3">
                   <span class="text-gray-400">Version</span>
