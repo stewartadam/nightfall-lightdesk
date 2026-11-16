@@ -69,7 +69,7 @@ pub use undo::*;
 /// Registers cue-domain event handlers with explicit ordering between dependent use cases.
 pub(crate) fn register_event_systems(app: &mut App) {
     app.add_systems(
-        Update,
+        ApplyCommands,
         (
             handle_events.after(DeskEventSet::ClipForwarding),
             cue_store_operations,
@@ -94,7 +94,7 @@ pub(crate) fn register_event_systems(app: &mut App) {
             .after(ObjectChangePublication),
     );
     app.add_systems(
-        Update,
+        ApplyCommands,
         handle_cue_preview_commands
             .in_set(EventHandling)
             .after(DeskEventSet::InstancePlayback),

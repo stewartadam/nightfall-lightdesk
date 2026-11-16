@@ -21,7 +21,7 @@ use crate::{
 /// Section the showfile's input and output transport settings are saved and sent under.
 pub const IO_SETTINGS_SECTION: SettingsSection<IoRuntimeSettings> = SettingsSection::new("io");
 
-/// `Update` system set, inside [`EventHandling`] and after [`SettingsCommandHandling`], in which
+/// [`ApplyCommands`] system set, inside [`EventHandling`] and after [`SettingsCommandHandling`], in which
 /// the IO settings are clamped and copied into the resources transports read, and the host's
 /// network interface snapshot is refreshed.
 ///
@@ -50,13 +50,13 @@ impl Plugin for IoPlugin {
         app.add_message::<NotificationEnvelope<IoRuntimeNotification>>();
 
         app.configure_sets(
-            Update,
+            ApplyCommands,
             IoStateSync
                 .in_set(EventHandling)
                 .after(SettingsCommandHandling),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 sync_runtime_resources_from_settings.in_set(IoStateSync),
                 network_interfaces::alerts::announce_network_interface_changes
@@ -68,7 +68,7 @@ impl Plugin for IoPlugin {
         {
             app.add_systems(Startup, network_interfaces::init_network_interface_watcher);
             app.add_systems(
-                Update,
+                ApplyCommands,
                 network_interfaces::refresh_network_interface_state.in_set(IoStateSync),
             );
         }

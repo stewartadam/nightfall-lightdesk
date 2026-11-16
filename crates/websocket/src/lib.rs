@@ -155,7 +155,7 @@ impl Plugin for WebsocketPlugin {
         register_client_command::<ExternalControlCommand>(app, Undo::Skipped);
         app.add_systems(Startup, start_or_attach_axum_task);
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 external_control::commands::handle_external_control_commands,
                 external_control::sync_listener_control,
@@ -164,13 +164,16 @@ impl Plugin for WebsocketPlugin {
                 .in_set(EventHandling),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             external_control::alerts::announce_external_control_interface_changes
                 .in_set(EventHandling)
                 .after(nightfall_io::IoStateSync),
         );
         app.add_resource_feed::<ExternalControlState>();
-        app.add_systems(Update, notify_axum_shutdown_on_exit.in_set(EventHandling));
+        app.add_systems(
+            Update,
+            notify_axum_shutdown_on_exit.after(CommandApplication),
+        );
     }
 }
 

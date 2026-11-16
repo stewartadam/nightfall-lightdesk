@@ -30,6 +30,7 @@ mod client;
 pub mod client_bridge;
 pub mod client_feed;
 pub mod client_ingress;
+pub mod command_apply;
 pub mod command_forwarding;
 pub mod command_lifecycle;
 pub mod data_provider;
@@ -113,6 +114,9 @@ pub mod prelude {
     pub use crate::client_ingress::{
         ClientIngressGate, CommandJsonEnvelopeReceiver, READ_ONLY_COMMAND_ERROR,
         UpdateJsonEnvelopeReceiver, allow_command_while_read_only, allow_update_while_read_only,
+    };
+    pub use crate::command_apply::{
+        ApplyCommands, CommandApplication, CommandRerun, add_apply_commands, run_apply_commands,
     };
     pub use crate::command_forwarding::{
         CommandForwarding, CommandForwardingAppExt, FORWARDED_COMMAND_SOURCE, ForwardedEntry,
@@ -212,16 +216,8 @@ impl Plugin for EnginePlugin {
         app.init_resource::<StartupFrameCounter>();
         app.init_resource::<RuntimeCapabilities>();
         render_pass::add_render_schedule(app);
-        app.configure_sets(
-            Update,
-            (
-                InputHandling,
-                PendingCommandExpansion.after(InputHandling),
-                PendingCommandProcessing.after(PendingCommandExpansion),
-                EventHandling.after(PendingCommandProcessing),
-                ResyncHandling.after(EventHandling),
-            ),
-        );
+        command_apply::add_apply_commands(app);
+        app.configure_sets(Update, ResyncHandling.after(CommandApplication));
         app.configure_sets(
             Render,
             (
@@ -306,16 +302,21 @@ impl Plugin for EnginePlugin {
         register_engine_operation::<EvalOperation>(app);
         app.init_resource::<PendingCommandBuffer>();
         app.init_resource::<DelayedCommandQueue>();
+        // Delayed commands coming due are input for this update, so they queue once per update
+        // and never between two reruns of the command schedule.
         app.add_systems(
             Update,
-            (
-                eval::process_scheduled_commands,
-                eval::expand_pending_eval_commands.in_set(DeskEventSet::EvalExpansion),
-            )
-                .chain()
+            eval::process_scheduled_commands
+                .after(InputHandling)
+                .before(CommandApplication),
+        );
+        app.add_systems(
+            ApplyCommands,
+            eval::expand_pending_eval_commands
+                .in_set(DeskEventSet::EvalExpansion)
                 .in_set(PendingCommandExpansion),
         );
-        app.add_systems(Update, eval::handle_eval.in_set(EventHandling));
+        app.add_systems(ApplyCommands, eval::handle_eval.in_set(EventHandling));
     }
 }
 
@@ -323,7 +324,8 @@ impl Plugin for EnginePlugin {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InputHandling;
 
-/// System set for systems that rewrite queued commands before undo capture and dispatch.
+/// [`ApplyCommands`] system set for systems that rewrite queued commands before undo capture and
+/// dispatch.
 ///
 /// Expanders replace wrapper commands in the pending buffer with the concrete commands they
 /// stand for, such as command-line eval text or context-dependent transport commands, so the
@@ -331,14 +333,21 @@ pub struct InputHandling;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PendingCommandExpansion;
 
-/// System set that drains queued ingress commands and engine operations for undo capture.
+/// [`ApplyCommands`] system set that drains queued ingress commands and engine operations for undo
+/// capture.
 ///
-/// Runs after [`InputHandling`] and before [`EventHandling`]; producers that queue commands
-/// outside input handling order themselves before this set to dispatch in the same frame.
+/// Runs before [`EventHandling`]. Producers in [`Update`] that queue commands outside input
+/// handling order themselves before [`CommandApplication`] to dispatch in the same update.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PendingCommandProcessing;
 
-/// System set for turning ingested events into engine operations.
+/// [`ApplyCommands`] system set for turning ingested events into engine operations.
+///
+/// Command handlers register here, in the [`ApplyCommands`] schedule. Ordering an [`Update`]
+/// system against this set has no effect; order it against [`CommandApplication`] instead.
+///
+/// A handler can run several times in one update and must be safe to rerun: it acts on each
+/// message it reads once and does nothing on a run with no new input. See [`ApplyCommands`].
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EventHandling;
 
@@ -375,7 +384,8 @@ pub struct ClientFeedback;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CommandFeedbackEgress;
 
-/// System set for plugin state resend handlers during a resync.
+/// [`Update`] system set for plugin state resend handlers during a resync. Runs after
+/// [`CommandApplication`].
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ResyncHandling;
 

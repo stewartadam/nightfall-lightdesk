@@ -815,6 +815,7 @@ mod client_bridge_tests {
 
     use super::*;
     use crate::EventHandling;
+    use crate::command_apply::ApplyCommands;
     use crate::prelude::{
         CommandId, CommandNotice, CommandOutcome, CommandResult, CommandTracker, FinishedCommand,
         NoticeLevel,
@@ -967,7 +968,7 @@ mod client_bridge_tests {
         let (mut app, output) = bridge_app();
         let command_id = CommandId::new();
         app.insert_resource(PendingReply(Some(command_id)));
-        app.add_systems(Update, finish_pending_reply.in_set(EventHandling));
+        app.add_systems(ApplyCommands, finish_pending_reply.in_set(EventHandling));
 
         app.update();
 

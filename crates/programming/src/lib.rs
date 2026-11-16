@@ -142,14 +142,14 @@ impl Plugin for ProgrammingPlugin {
         }
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             events::plan_pending_user_commands
                 .after(DeskEventSet::EvalExpansion)
                 .in_set(PendingCommandExpansion),
         );
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 (
                     events::handle_group_events,

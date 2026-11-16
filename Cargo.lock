@@ -253,6 +253,7 @@ dependencies = [
  "flate2",
  "gdt-cpus",
  "jiff",
+ "minicbor-serde",
  "moonshine-kind",
  "nightfall",
  "nightfall-actions",

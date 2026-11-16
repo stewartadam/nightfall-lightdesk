@@ -113,7 +113,10 @@ impl Plugin for TelemetryCommandsPlugin {
         app.init_resource::<TelemetryState>();
         app.init_resource::<ReportedGraphics>();
         register_client_command::<TelemetryCommand>(app, Undo::Skipped);
-        app.add_systems(Update, handle_telemetry_commands.in_set(EventHandling));
+        app.add_systems(
+            ApplyCommands,
+            handle_telemetry_commands.in_set(EventHandling),
+        );
         app.add_resource_feed::<TelemetryState>();
     }
 }

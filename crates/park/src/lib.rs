@@ -14,7 +14,7 @@
 //! the show, and survives `release` and `clear`. See [`output`] for where park applies in the
 //! render pipeline.
 
-use bevy_app::{App, Plugin, Update};
+use bevy_app::{App, Plugin};
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall_actions::{ActionAppExt, ActionDescriptor};
 use nightfall_engine::prelude::*;
@@ -59,7 +59,10 @@ impl Plugin for ParkPlugin {
             |_world, _arguments| Ok(command::ParkCommand::UnparkAll),
         );
 
-        app.add_systems(Update, command::handle_park_commands.in_set(EventHandling));
+        app.add_systems(
+            ApplyCommands,
+            command::handle_park_commands.in_set(EventHandling),
+        );
         app.add_systems(
             Render,
             (

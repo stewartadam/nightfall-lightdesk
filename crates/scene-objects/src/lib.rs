@@ -57,7 +57,7 @@ impl Plugin for SceneObjectPlugin {
             .register::<SceneObjectCommand>();
 
         // Event handling
-        app.add_systems(Update, events::crud_events.in_set(EventHandling));
+        app.add_systems(ApplyCommands, events::crud_events.in_set(EventHandling));
 
         // WebSocket forwarding and sends
         app.add_client_feed::<websocket::SceneObjectsFeed>()

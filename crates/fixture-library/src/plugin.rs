@@ -91,7 +91,7 @@ impl Plugin for FixtureLibraryPlugin {
 
         // Add WebSocket systems
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 crate::websocket::handle_fixture_library_commands,
                 finish_fixture_library_commands,

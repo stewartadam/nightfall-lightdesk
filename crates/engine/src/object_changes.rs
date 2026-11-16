@@ -22,7 +22,7 @@ use nightfall::prelude::*;
 use uuid::Uuid;
 
 use crate::{
-    EventHandling,
+    command_apply::CommandApplication,
     data_provider::{DataChanges, DataProvider, DataRevision},
 };
 
@@ -67,7 +67,7 @@ impl<T: Send + Sync + 'static> fmt::Debug for ObjectChanged<T> {
 
 /// `Update` system set in which [`ObjectChanged`] messages are written.
 ///
-/// Runs after [`EventHandling`], so every command and operation applied that frame is reported
+/// Runs after [`CommandApplication`], so every command and operation applied that frame is reported
 /// in the same frame. Consumers order themselves after this set.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ObjectChangePublication;
@@ -101,7 +101,7 @@ impl ObjectChangesAppExt for App {
         }
         self.init_resource::<ObjectChangesPublished<T>>();
         self.add_message::<ObjectChanged<T>>();
-        self.configure_sets(Update, ObjectChangePublication.after(EventHandling));
+        self.configure_sets(Update, ObjectChangePublication.after(CommandApplication));
         self.add_systems(
             Update,
             publish_object_changes::<T>.in_set(ObjectChangePublication),

@@ -58,10 +58,10 @@ pub use mapping_mode::{
     ControllerMappingMode, ControllerMappingModeState, MAPPING_MODE_LEASE, MappingLeaseExpired,
 };
 use nightfall_engine::prelude::{
-    ClientDisconnected, ClientFeedAppExt, ClientFeedback, ClientIngressGate,
-    CommandDeserializerRegistry, CommandIngressRouter, EventHandling, InputHandling,
-    PendingCommandExpansion, READ_ONLY_COMMAND_ERROR, ResyncRequested,
-    register_command_deserializer, register_ingress_command,
+    ApplyCommands, ClientDisconnected, ClientFeedAppExt, ClientFeedback, ClientIngressGate,
+    CommandApplication, CommandDeserializerRegistry, CommandIngressRouter, EventHandling,
+    InputHandling, READ_ONLY_COMMAND_ERROR, ResyncRequested, register_command_deserializer,
+    register_ingress_command,
 };
 pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
 pub use source::{
@@ -100,9 +100,9 @@ impl Plugin for ActionsPlugin {
             Update,
             ActionInvocationHandling
                 .after(InputHandling)
-                .before(PendingCommandExpansion),
+                .before(CommandApplication),
         );
-        app.configure_sets(Update, ActionTargetTracking.after(EventHandling));
+        app.configure_sets(Update, ActionTargetTracking.after(CommandApplication));
         app.add_systems(
             Update,
             (dispatch_forgotten_releases, dispatch_action_invocations)
@@ -110,7 +110,7 @@ impl Plugin for ActionsPlugin {
                 .in_set(ActionInvocationHandling),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 mapping_mode::release_disconnected_mapping_clients.in_set(EventHandling),
                 mapping_mode::expire_mapping_mode_leases
@@ -142,7 +142,7 @@ impl Plugin for ActionsPlugin {
                 command::deserialize_action_command,
             );
             app.add_systems(
-                Update,
+                ApplyCommands,
                 command::handle_action_commands
                     .in_set(EventHandling)
                     .before(mapping_mode::release_disconnected_mapping_clients),

@@ -64,7 +64,7 @@ impl Plugin for TempoPlugin {
 
         app.configure_sets(Render, TempoUpdate.in_set(ClockUpdate));
         app.add_systems(Render, advance_show_tempo.in_set(TempoUpdate));
-        app.add_systems(Update, handle_tempo_commands.in_set(EventHandling));
+        app.add_systems(ApplyCommands, handle_tempo_commands.in_set(EventHandling));
         // The beat counter only advances in the render pass, so the feed publishes there: from an
         // input-only update the stale counter would look like a jump and be sent.
         app.add_client_feed::<ResourceFeedParam<ShowTempo>>()

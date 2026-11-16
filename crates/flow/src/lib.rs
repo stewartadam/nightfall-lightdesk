@@ -94,7 +94,7 @@ impl Plugin for FlowPlugin {
         );
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 events::handle_events.after(DeskEventSet::ClipRouting),
                 events::crud_events,
@@ -107,7 +107,7 @@ impl Plugin for FlowPlugin {
                 .in_set(EventHandling),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 events::reject_disabled_commands.run_if(not(experimental_flows_enabled)),
                 events::finish_flow_commands,

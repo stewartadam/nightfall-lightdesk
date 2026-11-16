@@ -214,12 +214,12 @@ impl Plugin for TimelinePlugin {
                 recording::clear_timeline_command_origins,
             )
                 .chain()
-                .after(EventHandling),
+                .after(CommandApplication),
         );
 
         transport::register_timeline_actions(app);
         app.add_systems(
-            Update,
+            ApplyCommands,
             transport::expand_timeline_transport_commands
                 .after(DeskEventSet::EvalExpansion)
                 .in_set(PendingCommandExpansion),
@@ -238,7 +238,7 @@ impl Plugin for TimelinePlugin {
         app.add_resource_feed::<timeline::TimelinePlannedCuesByAction>();
         app.add_systems(
             Update,
-            systems::update_timeline_planned_cues_system.after(EventHandling),
+            systems::update_timeline_planned_cues_system.after(CommandApplication),
         );
     }
 }

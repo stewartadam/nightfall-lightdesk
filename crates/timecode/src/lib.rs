@@ -82,7 +82,7 @@ impl Plugin for TimecodePlugin {
             (systems::update_timecode_system).in_set(ClockUpdate),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 events::handle_events,
                 events::handle_actions,

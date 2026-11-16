@@ -17,7 +17,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     app.init_resource::<crate::systems::PendingStoppedTimelineReleaseClocks>();
 
     app.add_systems(
-        Update,
+        ApplyCommands,
         (
             crate::timeline_events::handle_timecode_events,
             crate::timeline_events::handle_timeline_events,
@@ -37,7 +37,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     );
 
     app.add_systems(
-        Update,
+        ApplyCommands,
         ApplyDeferred
             .run_if(crate::systems::timeline_reconstruction_deferred_flush_requested)
             .in_set(EventHandling)
@@ -49,7 +49,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     );
 
     app.add_systems(
-        Update,
+        ApplyCommands,
         (
             crate::systems::clear_timeline_reconstruction_deferred_flush,
             crate::systems::reset_timeline_triggers_system,
@@ -65,7 +65,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     );
 
     app.add_systems(
-        Update,
+        ApplyCommands,
         crate::systems::cleanup_timeline_entities
             .in_set(EventHandling)
             .after(DeskEventSet::ClipRouting)
@@ -80,7 +80,7 @@ pub fn add_event_handling_systems(app: &mut App) {
             crate::systems::detach_stopped_timeline_release_clocks,
         )
             .chain()
-            .after(EventHandling),
+            .after(CommandApplication),
     );
 
     app.add_systems(
@@ -146,7 +146,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     app.init_resource::<crate::systems::PendingStoppedTimelineReleaseClocks>();
 
     app.add_systems(
-        Update,
+        ApplyCommands,
         (
             crate::timeline_events::handle_timecode_events,
             crate::timeline_events::handle_timeline_events,
@@ -166,7 +166,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     );
 
     app.add_systems(
-        Update,
+        ApplyCommands,
         ApplyDeferred
             .run_if(crate::systems::timeline_reconstruction_deferred_flush_requested)
             .in_set(EventHandling)
@@ -178,7 +178,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     );
 
     app.add_systems(
-        Update,
+        ApplyCommands,
         (
             crate::systems::clear_timeline_reconstruction_deferred_flush,
             crate::systems::reset_timeline_triggers_system,
@@ -194,7 +194,7 @@ pub fn add_event_handling_systems(app: &mut App) {
     );
 
     app.add_systems(
-        Update,
+        ApplyCommands,
         crate::systems::cleanup_timeline_entities
             .in_set(EventHandling)
             .after(DeskEventSet::ClipRouting)
@@ -209,7 +209,7 @@ pub fn add_event_handling_systems(app: &mut App) {
             crate::systems::detach_stopped_timeline_release_clocks,
         )
             .chain()
-            .after(EventHandling),
+            .after(CommandApplication),
     );
 
     app.add_systems(

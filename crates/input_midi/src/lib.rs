@@ -115,7 +115,7 @@ impl Plugin for InputMidiPlugin {
                 .in_set(InputHandling),
         );
 
-        app.add_systems(Update, handle_midi_crud.in_set(EventHandling));
+        app.add_systems(ApplyCommands, handle_midi_crud.in_set(EventHandling));
         app.init_resource::<MidiMappingDiagnostics>();
 
         app.add_systems(

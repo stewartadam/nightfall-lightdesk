@@ -99,7 +99,7 @@ impl Plugin for OutputArtnetPlugin {
                 .after(nightfall_fixtures::output_frames::compose_output_frames)
                 .in_set(DmxOutput),
         );
-        app.add_systems(Update, sync_artnet_output_binding.after(EventHandling));
+        app.add_systems(Update, sync_artnet_output_binding.after(CommandApplication));
     }
 }
 

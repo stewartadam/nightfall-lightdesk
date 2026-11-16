@@ -120,7 +120,7 @@ impl Plugin for ClipsPlugin {
         );
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 clip_events::forward_clip_ingress_actions
                     .in_set(DeskEventSet::ClipForwarding)

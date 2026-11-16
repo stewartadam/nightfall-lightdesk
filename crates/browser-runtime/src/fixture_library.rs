@@ -39,7 +39,7 @@ impl Plugin for BuiltinFixtureLibraryPlugin {
     fn build(&self, app: &mut App) {
         register_fixture_library_commands(app);
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 handle_builtin_fixture_library_commands,
                 finish_fixture_library_commands,

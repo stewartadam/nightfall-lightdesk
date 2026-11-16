@@ -386,7 +386,7 @@ pub(crate) fn register(app: &mut App) {
     crate::client::register_client_command::<SessionHistoryCommand>(app, Undo::Skipped);
     allow_command_while_read_only(app, SessionHistoryCommand::COMMAND_MODULE, "Read");
     app.add_systems(
-        Update,
+        ApplyCommands,
         handle_session_history_commands.in_set(EventHandling),
     );
     app.add_systems(Last, record_outcomes);

@@ -37,7 +37,7 @@ impl IngressCommand for ReferenceCommand {}
 pub(crate) fn register(app: &mut App) {
     register_client_command::<ReferenceCommand>(app, Undo::Captured);
     app.add_systems(
-        bevy_app::Update,
+        ApplyCommands,
         handle_reference_commands.in_set(EventHandling),
     );
 }

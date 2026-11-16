@@ -47,14 +47,12 @@ impl ResourceFeed for AvailableAudioDevices {
 
 /// Registers the device list, its discovery and rerouting monitor, and the client feed.
 pub(crate) fn register(app: &mut bevy_app::App) {
-    use bevy_app::Update;
     app.init_resource::<AvailableAudioDevices>();
     app.init_resource::<AudioOutputDiscovery>();
+    // Device discovery is polled once per update, after this update's settings commands.
     app.add_systems(
-        Update,
-        monitor_audio_output_changes
-            .in_set(EventHandling)
-            .after(SettingsCommandHandling),
+        bevy_app::Update,
+        monitor_audio_output_changes.after(CommandApplication),
     );
     app.add_resource_feed::<AvailableAudioDevices>();
 }
