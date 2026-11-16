@@ -20,6 +20,12 @@ const versionCommands = {
   "typeshare-cli": ["typeshare", ["--version"]],
 };
 
+// Crate features a source build needs to produce the tool's binary. cargo-about gates its CLI
+// behind the `cli` feature, which its release binaries already include.
+const sourceBuildFeatures = {
+  "cargo-about": ["cli"],
+};
+
 /**
  * Return the version of a tool as the shell would run it, or `undefined` when it is missing or
  * prints no version. Probing the binary instead of cargo's install registry also sees tools
@@ -35,8 +41,8 @@ export function probeVersion(name, run = spawnSync) {
 /**
  * Return the install commands, one per tool, that bring the requested tools to their pinned versions, skipping
  * tools that already match. cargo-binstall downloads release binaries when it is available;
- * otherwise `cargo install --locked` builds each tool from source. Both replace a binary of the
- * same name that cargo didn't install.
+ * otherwise `cargo install --locked` builds each tool from source, enabling the features its binary
+ * needs. Both replace a binary of the same name that cargo didn't install.
  */
 export function installPlan(
   tools,
@@ -63,7 +69,18 @@ export function installPlan(
             "--locked",
             `${name}@${version}`,
           ]
-        : ["install", "--force", "--locked", name, "--version", version],
+        : [
+            "install",
+            "--force",
+            "--locked",
+            name,
+            "--version",
+            version,
+            ...(sourceBuildFeatures[name] ?? []).flatMap((feature) => [
+              "--features",
+              feature,
+            ]),
+          ],
     }));
 }
 

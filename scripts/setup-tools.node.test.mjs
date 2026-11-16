@@ -40,8 +40,9 @@ test("installed versions come from the tool's own --version output", () => {
 });
 
 /**
- * Checks that only missing or mismatched tools are installed, with binstall when available, and
- * that naming an unpinned tool fails instead of installing nothing.
+ * Checks that only missing or mismatched tools are installed, with binstall when available, that
+ * source builds enable the features a tool's binary needs, and that naming an unpinned tool fails
+ * instead of installing nothing.
  */
 test("the install plan covers only tools off their pin", () => {
   const tools = { mdbook: "0.5.4", "typeshare-cli": "1.13.3" };
@@ -71,6 +72,10 @@ test("the install plan covers only tools off their pin", () => {
         ],
       },
     ],
+  );
+  assert.deepEqual(
+    installPlan({ "cargo-about": "0.9.3" }, new Map())[0].args.slice(-2),
+    ["--features", "cli"],
   );
   assert.throws(
     () => installPlan(tools, installed, { only: ["cargo-udeps"] }),

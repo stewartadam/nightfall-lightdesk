@@ -29,7 +29,7 @@ async-channel.workspace = true
 nightfall-io = { path = "../io" }
 nightfall-fixture-library = { path = "../fixture-library", features = ["test-support"] }
 serde_json.workspace = true
-zip = { version = "9.1", default-features = false, features = ["deflate"] }
+zip = { version = "9.5", default-features = false, features = ["deflate"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }

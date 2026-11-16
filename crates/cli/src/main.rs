@@ -218,8 +218,7 @@ impl CliApp {
                         }
                     }
                 }
-                Ok(Signal::CtrlC) | Ok(Signal::CtrlD) => {
-                    // User wants to exit
+                Ok(signal) if ends_session(&signal) => {
                     return Ok(());
                 }
                 Ok(_) => {
@@ -232,6 +231,17 @@ impl CliApp {
                 }
             }
         }
+    }
+}
+
+/// Returns whether a line-editor signal should end the interactive session. Ctrl+D always ends
+/// it, while Ctrl+C ends it only on an empty line: with a half-typed command, Ctrl+C abandons that
+/// line and reedline starts the next read with an empty buffer.
+fn ends_session(signal: &Signal) -> bool {
+    match signal {
+        Signal::CtrlC(buffer) => buffer.is_empty(),
+        Signal::CtrlD => true,
+        _ => false,
     }
 }
 
@@ -349,6 +359,16 @@ mod tests {
             Some(CLI_WEBSOCKET_MAX_PAYLOAD_SIZE)
         );
         assert_eq!(config.max_frame_size, Some(CLI_WEBSOCKET_MAX_PAYLOAD_SIZE));
+    }
+
+    /// Verifies Ctrl+C clears a half-typed command without quitting, and quits on an empty line or
+    /// Ctrl+D.
+    #[test]
+    fn ctrl_c_quits_only_on_an_empty_line() {
+        assert!(!ends_session(&Signal::CtrlC("go 1".to_string())));
+        assert!(ends_session(&Signal::CtrlC(String::new())));
+        assert!(ends_session(&Signal::CtrlD));
+        assert!(!ends_session(&Signal::Success(String::new())));
     }
 
     /// Verifies CLI envelopes use the semantic command and undo wire fields.
