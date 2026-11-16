@@ -24,13 +24,14 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall::prelude::{FadeCurve, MaterializedTransition};
 use nightfall::prelude::{Identifiers, SpatialSelection};
+use nightfall_clips::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
 use nightfall_dmx::prelude::{Attribute, ParameterValue};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::Fixture;
 pub use nightfall_fx::prelude::StoredFxModule;
 use nightfall_instances::{
     ClipInstanceAttachment, ClipInstanceRequest, ClipInstanceStartContext,
-    DomainInstanceReconstructionRequest, InstanceClock,
+    DomainInstanceReconstructionRequest, InstanceClock, InstanceKind,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -42,6 +43,7 @@ pub mod ast_conv;
 pub mod events;
 /// Runtime playback and layer materialization for active fx module objects.
 pub mod instances;
+mod notifications;
 mod runtime;
 mod undo;
 /// Websocket integration for stored fx module commands and definitions.
@@ -163,6 +165,15 @@ pub enum FxModuleRuntimeNotification {
         /// User-facing runtime error summary.
         error: String,
     },
+    /// A running fx module trapped or hit a sandbox limit and was stopped.
+    Stopped {
+        /// Numeric stored fx module ID that was stopped.
+        fx_module_id: u32,
+        /// Module name resolved from the stored fx module definition.
+        module_name: String,
+        /// User-facing reason the module stopped.
+        error: String,
+    },
 }
 
 /// Active fx module IDs that have been started.
@@ -270,19 +281,27 @@ impl Plugin for FxModulePlugin {
         app.insert_non_send(instances::FxModuleRuntimeStates::default());
         app.insert_non_send(instances::PreviewFxModuleRuntimeStates::default());
 
-        register_ingress_command::<FxModuleCommand>(app);
+        register_client_command::<FxModuleCommand>(app, Undo::Captured);
+        allow_command_while_read_only(
+            app,
+            FxModuleCommand::COMMAND_MODULE,
+            "ListAvailableFxModules",
+        );
         app.add_message::<FxModulePreviewUpdate>();
-        register_engine_operation::<events::FxModulePlaybackOperation>(app);
+        app.register_clip_source(
+            ClipSourceKind::FxModule,
+            ClipSourceDomain {
+                playback_kind: InstanceKind::Fx,
+                handles_clip_operations: false,
+                restarts_on_go: true,
+            },
+        );
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         app.add_message::<NotificationEnvelope<FxModuleRuntimeNotification>>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::FxModuleAstConverter,
         >();
-        register_command_deserializer::<FxModuleCommand>(
-            app,
-            websocket::deserialize_fx_module_command,
-        );
         register_update_deserializer(
             app,
             "FxModulePreviewUpdate",
@@ -294,13 +313,14 @@ impl Plugin for FxModulePlugin {
             .register::<FxModuleCommand>();
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 events::forward_generic_fx_management_commands
                     .before(nightfall_fx::events::crud_events),
                 events::handle_events,
                 events::handle_domain_playback_reconstruction_requests,
-                events::handle_clip_commands,
+                events::handle_clip_commands.after(DeskEventSet::ClipRouting),
+                notifications::forward_fx_module_runtime_notifications,
                 events::handle_preview_commands,
                 instances::cleanup_inactive_fx_module,
                 instances::cleanup_preview_fx_module_runtimes,
@@ -312,10 +332,8 @@ impl Plugin for FxModulePlugin {
             PostUpdate,
             websocket::forward_fx_module_commands.in_set(ClientFeedback),
         );
-        app.add_systems(
-            Render,
-            websocket::send_fx_module_on_change.in_set(ClientOutput),
-        );
+        app.add_client_feed::<websocket::FxModulesFeed>()
+            .on_change(resource_changed::<DataProvider<StoredFxModule>>);
         app.add_systems(
             Render,
             instances::evaluate_fx_module.in_set(LayerGeneration),
@@ -325,12 +343,8 @@ impl Plugin for FxModulePlugin {
             instances::evaluate_preview_fx_module.in_set(LayerGeneration),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             instances::cleanup_released_fx_module_layers.in_set(EventHandling),
-        );
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
         );
     }
 }

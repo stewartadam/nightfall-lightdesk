@@ -93,7 +93,7 @@ function playbackCue(fixture: OwnedRgbFixture): object {
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values: {
             Intensity: inlinePercent(1),
             VirtualIntensity: inlinePercent(1),

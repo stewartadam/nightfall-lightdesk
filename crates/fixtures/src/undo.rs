@@ -75,6 +75,26 @@ pub struct DmxRoutesSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 pub struct RestoreDmxRoutesSnapshot(pub DmxRoutesSnapshot);
 
+/// State to return to after a rig was patched, or to bring the rig back after it was
+/// undone.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatchedFixturesSnapshot {
+    /// Fixtures to remove, by UID.
+    pub remove: Vec<uuid::Uuid>,
+    /// Fixtures to bring back with their parameter state.
+    pub restore: Vec<FixtureSnapshot>,
+    /// Fixture definitions (label, placement and the rest) to put back on fixtures that stay
+    /// in the show, leaving their parameters alone.
+    pub revert: Vec<Fixture>,
+    /// Every DMX route as it should be afterwards.
+    pub routes: DmxRoutesSnapshot,
+}
+
+/// Command that removes and restores a batch of fixtures and puts back the DMX routes;
+/// undoes and redoes [`FixtureCommand::PatchRig`].
+#[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
+pub struct RestorePatchedFixtures(pub PatchedFixturesSnapshot);
+
 /// Snapshot of parameter offset configuration for a fixture.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OffsetSnapshot {
@@ -111,6 +131,8 @@ impl EngineOperation for RestoreFixtureRoutesSnapshot {}
 
 impl EngineOperation for RestoreDmxRoutesSnapshot {}
 
+impl EngineOperation for RestorePatchedFixtures {}
+
 impl EngineOperation for RestoreOffsetSnapshot {}
 
 impl EngineOperation for RestoreColorPathDefaultsSnapshot {}
@@ -118,11 +140,19 @@ impl EngineOperation for RestoreColorPathDefaultsSnapshot {}
 impl EngineOperation for RestoreFixtureSnapshot {}
 
 impl Undoable for RestoreFixtureSnapshot {
-    fn inverse(&self, _ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
-        // Inverse of restore is delete
-        Some(Box::new(FixtureCommand::DeleteFixture(
-            self.0.fixture.identifiers.id,
-        )))
+    /// Redoes a restore: a fixture that is stored now (an undone update) is snapshotted so
+    /// redo puts this state back, while a fixture that is gone (an undone delete) is deleted
+    /// again.
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
+        let fixtures = ctx.world.resource::<FixtureDataProviderExt>();
+        match fixtures.inner.get(self.0.fixture.identifiers.uid) {
+            Ok(current) => Some(Box::new(RestoreFixtureSnapshot(snapshot_fixture(
+                ctx, &current,
+            )))),
+            Err(_) => Some(Box::new(FixtureCommand::DeleteFixture(
+                self.0.fixture.identifiers.id,
+            ))),
+        }
     }
 
     fn description(&self) -> String {
@@ -149,6 +179,48 @@ impl Undoable for RestoreDmxRoutesSnapshot {
 
     fn description(&self) -> String {
         "Restore DMX Routes".to_string()
+    }
+}
+
+impl Undoable for RestorePatchedFixtures {
+    /// Swaps the roles: fixtures this restore removes come back, fixtures it brings back
+    /// are removed again, and reverted fixtures get their current definitions back, with
+    /// the routes as they are now.
+    fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
+        let fixtures = ctx.world.resource::<FixtureDataProviderExt>();
+        let restore = self
+            .0
+            .remove
+            .iter()
+            .filter_map(|uid| fixtures.inner.get(*uid).ok())
+            .map(|fixture| snapshot_fixture(ctx, &fixture))
+            .collect();
+        let remove = self
+            .0
+            .restore
+            .iter()
+            .map(|snapshot| snapshot.fixture.identifiers.uid)
+            .collect();
+        let revert = self
+            .0
+            .revert
+            .iter()
+            .filter_map(|fixture| fixtures.inner.get(fixture.identifiers.uid).ok())
+            .map(|fixture| (*fixture).clone())
+            .collect();
+        Some(Box::new(RestorePatchedFixtures(PatchedFixturesSnapshot {
+            remove,
+            restore,
+            revert,
+            routes: snapshot_dmx_routes(ctx),
+        })))
+    }
+
+    fn description(&self) -> String {
+        format!(
+            "Restore Patch of {} Fixtures",
+            self.0.remove.len().max(self.0.restore.len()) + self.0.revert.len()
+        )
     }
 }
 
@@ -370,6 +442,25 @@ impl Undoable for FixtureCommand {
             FixtureCommand::AddDmxRoute { .. } => {
                 Some(Box::new(RestoreDmxRoutesSnapshot(snapshot_dmx_routes(ctx))))
             }
+            FixtureCommand::PatchRig {
+                add,
+                update,
+                remove,
+                ..
+            } => Some(Box::new(RestorePatchedFixtures(PatchedFixturesSnapshot {
+                remove: add.iter().map(|fixture| fixture.identifiers.uid).collect(),
+                restore: remove
+                    .iter()
+                    .filter_map(|uid| fixtures.inner.get(*uid).ok())
+                    .map(|fixture| snapshot_fixture(ctx, &fixture))
+                    .collect(),
+                revert: update
+                    .iter()
+                    .filter_map(|change| fixtures.inner.get(change.uid).ok())
+                    .map(|fixture| (*fixture).clone())
+                    .collect(),
+                routes: snapshot_dmx_routes(ctx),
+            }))),
             FixtureCommand::RemoveDmxRoutes { .. } => {
                 Some(Box::new(RestoreDmxRoutesSnapshot(snapshot_dmx_routes(ctx))))
             }
@@ -403,6 +494,8 @@ impl Undoable for FixtureCommand {
                     defaults: fixtures.color_path_default_entries(),
                 }),
             )),
+            // Stale input values come from the wire and cannot be restored.
+            FixtureCommand::ReleaseStaleInputs => None,
         }
     }
 
@@ -428,6 +521,20 @@ impl Undoable for FixtureCommand {
                 format!("Update Fixture {} Routes", id)
             }
             FixtureCommand::AddDmxRoute { .. } => "Add DMX Route".to_string(),
+            FixtureCommand::PatchRig {
+                add,
+                update,
+                remove,
+                ..
+            } if !remove.is_empty() => format!(
+                "Patch Rig ({} New, {} Updated, {} Removed)",
+                add.len(),
+                update.len(),
+                remove.len()
+            ),
+            FixtureCommand::PatchRig { add, update, .. } => {
+                format!("Patch Rig ({} New, {} Updated)", add.len(), update.len())
+            }
             FixtureCommand::RemoveDmxRoutes { .. } => "Remove DMX Routes".to_string(),
             FixtureCommand::UpdateFixtureParameterOffset { id, .. } => {
                 format!("Update Fixture {} Parameter Offset", id)
@@ -458,6 +565,7 @@ impl Undoable for FixtureCommand {
                     None => format!("Clear Fixture {} Color Path", target),
                 }
             }
+            FixtureCommand::ReleaseStaleInputs => "Release Stale Inputs".to_string(),
         }
     }
 }
@@ -466,7 +574,29 @@ impl Undoable for FixtureCommand {
 ///
 /// Parameter entities are respawned from this metadata and value state during restoration.
 fn snapshot_fixture(ctx: &UndoContext, fixture: &Fixture) -> FixtureSnapshot {
-    let fixtures = ctx.world.resource::<FixtureDataProviderExt>();
+    snapshot_fixture_state(
+        ctx.world.resource::<FixtureDataProviderExt>(),
+        fixture,
+        |entity| {
+            ctx.world
+                .get::<Parameter>(entity)
+                .map(|parameter| parameter.values.clone())
+        },
+    )
+}
+
+/// Snapshots a stored fixture with its parameter metadata, the values `parameter_values`
+/// reports for each indexed parameter entity, and its color path defaults, leaving routes
+/// untouched.
+///
+/// Systems that replace fixtures call this with a parameter query before the replacement,
+/// so the snapshot restores what the fixture was. Parameters without a reported value
+/// restore their defaults.
+pub fn snapshot_fixture_state(
+    fixtures: &FixtureDataProviderExt,
+    fixture: &Fixture,
+    parameter_values: impl Fn(bevy_ecs::entity::Entity) -> Option<ParameterValues>,
+) -> FixtureSnapshot {
     let mut parameters = Vec::new();
 
     for (idx, element) in fixture.elements.iter().enumerate() {
@@ -480,11 +610,7 @@ fn snapshot_fixture(ctx: &UndoContext, fixture: &Fixture) -> FixtureSnapshot {
             let parameter_instance = fixtures
                 .try_parameter_for_element_attribute(&element_ref, &param_metadata.attribute);
             let values = parameter_instance
-                .and_then(|parameter| {
-                    ctx.world
-                        .get::<Parameter>(parameter.entity())
-                        .map(|parameter| parameter.values.clone())
-                })
+                .and_then(|parameter| parameter_values(parameter.entity()))
                 .unwrap_or_default();
 
             parameters.push(ParameterSnapshot {
@@ -590,6 +716,7 @@ mod tests {
             placement: Default::default(),
             layout: None,
             library_asset_etag: None,
+            rig_source: None,
         }
     }
 
@@ -827,6 +954,7 @@ mod tests {
             placement: Default::default(),
             layout: None,
             library_asset_etag: None,
+            rig_source: None,
         };
 
         // Create FixtureDataProviderExt and add fixture

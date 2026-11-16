@@ -207,6 +207,62 @@ test("embedded demo fixture library hides upload and delete for built-ins", asyn
   });
 });
 
+/**
+ * Verifies the configure step keeps out-of-range numbers as typed, explains each one and blocks
+ * Next, instead of quietly keeping the last valid value from an earlier keystroke.
+ */
+test("patch wizard flags out-of-range numbers as they are typed", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60_000);
+  await openEmbeddedDemo(page);
+  await openPatchPanel(page);
+  await page
+    .locator(`[data-panel-id="${PATCH_PANEL_ID}"]`)
+    .getByRole("button", { name: "Add fixture", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Patch Wizard" });
+  await dialog
+    .getByRole("row")
+    .filter({ hasText: "Generic" })
+    .filter({ hasText: "Moving Head Spot 16ch" })
+    .click();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await dialog.getByRole("button", { name: "Spot", exact: true }).click();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+
+  const next = dialog.getByRole("button", { name: "Next", exact: true });
+  const addressInput = dialog.getByRole("spinbutton", {
+    name: "Start address",
+  });
+  const quantityInput = dialog.getByRole("spinbutton", { name: "Quantity" });
+  await expect(addressInput).toHaveValue("481");
+  await expect(next).toBeEnabled();
+
+  // Typed key by key, "600" passes through the valid "60" on its way.
+  await addressInput.fill("");
+  await addressInput.pressSequentially("600");
+  await expect(addressInput).toHaveValue("600");
+  await expect(
+    dialog.getByText("Start address must be a whole number from 1 to 512."),
+  ).toBeVisible();
+  await expect(next).toBeDisabled();
+
+  await quantityInput.fill("");
+  await expect(quantityInput).toHaveValue("");
+  await expect(
+    dialog.getByText(/^Quantity must be a whole number from 1/),
+  ).toBeVisible();
+  await dialog.locator(".nf-dialog-surface").screenshot({
+    path: testInfo.outputPath("demo-patch-wizard-invalid-numbers.png"),
+  });
+
+  await quantityInput.fill("1");
+  await addressInput.fill("481");
+  await expect(dialog.getByText(/must be a whole number/)).toHaveCount(0);
+  await expect(next).toBeEnabled();
+});
+
 /** Verifies the demo lists built-in profiles and patches a working fixture through the wizard. */
 test("embedded demo patches a built-in fixture through the patch wizard", async ({
   page,

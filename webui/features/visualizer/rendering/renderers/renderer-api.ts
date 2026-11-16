@@ -27,6 +27,10 @@ import type {
   RenderableSceneObject,
 } from "../../model/types";
 import type { VisualizerQualityPreset } from "../../state/settings";
+import type {
+  SimulatedRenderFailureKind,
+  VisualizerRenderFailureCallback,
+} from "./render-failure";
 
 export type {
   CameraState,
@@ -34,6 +38,11 @@ export type {
   VisualizerScreenPoint,
   VisualizerScreenRect,
 } from "../../interactions/visualizer-interaction-types";
+export type {
+  VisualizerRenderFailure,
+  VisualizerRenderFailureCallback,
+  VisualizerRenderFailureKind,
+} from "./render-failure";
 
 /**
  * Active user interaction mode for VIS2.
@@ -93,6 +102,11 @@ export interface VisualizerInitConfig {
   initialCameraState?: CameraState;
   /** Quality preset selected in Settings (or its session URL override), resolved to a profile at init. */
   quality: VisualizerQualityPreset;
+  /**
+   * Failure to fake after a few frames, from the `visualizer:simulateFailure`
+   * URL flag, so recovery can be tested without a broken GPU.
+   */
+  simulateFailure?: SimulatedRenderFailureKind;
 }
 
 /**
@@ -220,6 +234,8 @@ export interface IVisualizerRenderer {
    * Enable or disable ground-reference helpers (grid + axes).
    */
   setGridEnabled(enabled: boolean): void;
+  /** Shows or hides every scene object (trusses, set pieces, venue models). */
+  setSceneObjectsVisible(visible: boolean): void;
   /** Changes ambient rig visibility without changing fixture output. */
   setDarkness(darkness: number): void;
 
@@ -351,4 +367,12 @@ export interface IVisualizerRenderer {
   setStatsCallback(
     callback: ((stats: VisualizerStats | null) => void) | null,
   ): void;
+
+  /**
+   * Set a callback to receive the renderer's failure. A failed renderer stops
+   * rendering for good and reports once; a failure that happened before the
+   * callback was set is delivered to it straight away.
+   * @param callback Function called with the failure, or null to clear callback
+   */
+  setFailureCallback(callback: VisualizerRenderFailureCallback | null): void;
 }

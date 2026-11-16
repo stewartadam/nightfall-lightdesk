@@ -12,6 +12,7 @@ import {
   Input,
   NativeSelect,
   Radio,
+  RadioCard,
   Textarea,
 } from "../components/ui/form-controls";
 import { NumericStepper } from "../components/ui/numeric-stepper";
@@ -29,8 +30,21 @@ const initialValues = {
   trigger: "manual",
   completion: "hold",
   tracking: "track",
+  release: "fade",
   enabled: true,
 };
+const releaseOptions = [
+  {
+    value: "fade",
+    title: "Fade out",
+    description: "Releases the cue's values over its fade time.",
+  },
+  {
+    value: "snap",
+    title: "Snap out",
+    description: "Releases the cue's values immediately.",
+  },
+];
 const layouts = ["Standard", "Properties"] as const;
 const numericFields = [
   { key: "intensity", label: "Intensity", unit: "%", min: 0, max: 100 },
@@ -327,6 +341,34 @@ export function InputFormsDemo() {
                   <Checkbox disabled />
                   Send to live output · Unavailable
                 </label>
+              </fieldset>
+            </div>
+            <div class="input-form-field input-form-wide">
+              <span id={`${id}-release-label`}>Release</span>
+              <fieldset
+                class="input-form-choices"
+                aria-labelledby={`${id}-release-label`}
+              >
+                <For each={releaseOptions}>
+                  {(option) => (
+                    <RadioCard
+                      title={option.title}
+                      description={option.description}
+                      name={`${id}-release`}
+                      value={option.value}
+                      checked={values().release === option.value}
+                      onChange={() => update("release", option.value)}
+                    />
+                  )}
+                </For>
+                <RadioCard
+                  title="Release to cue list"
+                  description="Unavailable until the cue belongs to a list."
+                  name={`${id}-release`}
+                  value="list"
+                  checked={false}
+                  disabled
+                />
               </fieldset>
             </div>
             <div class="input-form-field input-form-wide">

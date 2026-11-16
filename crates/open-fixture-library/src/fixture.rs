@@ -10,7 +10,7 @@
 
 use std::path::Path;
 
-use crate::schema::OflFixtureSchema;
+use crate::schema::{OflChannelOrder, OflFixtureSchema, OflModeChannel};
 use crate::{OflMode, Result};
 
 /// An Open Fixture Library fixture definition
@@ -96,16 +96,60 @@ impl OflFixture {
         &self.inner.available_channels
     }
 
-    /// Get template channels if any
+    /// Get template channels, keyed by a channel key containing `$pixelKey`
     pub fn template_channels(
         &self,
-    ) -> Option<&std::collections::HashMap<String, crate::schema::OflTemplateChannel>> {
-        self.inner.template_channels.as_ref()
+    ) -> &std::collections::HashMap<String, crate::schema::OflChannel> {
+        &self.inner.template_channels
     }
 
     /// Get matrix configuration if any
     pub fn matrix(&self) -> Option<&crate::schema::OflMatrix> {
         self.inner.matrix.as_ref()
+    }
+
+    /// Returns a mode's channel list with every `matrixChannels` insert block expanded,
+    /// one entry per DMX slot and `None` for unused slots.
+    ///
+    /// An insert repeats its template channels for each pixel or pixel group it names,
+    /// either all channels of one pixel at a time (`perPixel`) or one channel for every
+    /// pixel at a time (`perChannel`), replacing `$pixelKey` with the pixel's key.
+    pub fn mode_channel_keys(&self, mode: &OflMode) -> Vec<Option<String>> {
+        let mut keys = Vec::with_capacity(mode.channels.len());
+        for channel in &mode.channels {
+            match channel {
+                OflModeChannel::Unused => keys.push(None),
+                OflModeChannel::Key(key) => keys.push(Some(key.clone())),
+                OflModeChannel::Insert(insert) => {
+                    let pixel_keys = self
+                        .matrix()
+                        .map(|matrix| matrix.repeat_for_keys(&insert.repeat_for))
+                        .unwrap_or_default();
+                    let resolve = |template: &Option<String>, pixel_key: &str| {
+                        template
+                            .as_ref()
+                            .map(|template| template.replace("$pixelKey", pixel_key))
+                    };
+                    match insert.channel_order {
+                        OflChannelOrder::PerPixel => {
+                            for pixel_key in &pixel_keys {
+                                for template in &insert.template_channels {
+                                    keys.push(resolve(template, pixel_key));
+                                }
+                            }
+                        }
+                        OflChannelOrder::PerChannel => {
+                            for template in &insert.template_channels {
+                                for pixel_key in &pixel_keys {
+                                    keys.push(resolve(template, pixel_key));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        keys
     }
 }
 
@@ -157,3 +201,6 @@ fn manufacturer_key_to_name(key: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
+
+#[cfg(test)]
+mod tests;

@@ -22,7 +22,7 @@ use web_time::Instant;
 
 use crate::output_frames::ChannelWindow;
 use crate::prelude::*;
-use crate::wire_layout::split_dmx_value;
+use crate::wire_layout::{DmxBytes, split_dmx_value};
 
 /// Default timeout before an input universe is treated as stale.
 pub const DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS: u32 = 2000;
@@ -128,19 +128,6 @@ impl InputDmxUniverses {
             .and_then(|by_universe| by_universe.get(&universe_id))
     }
 
-    /// Returns a mutable universe buffer, creating it if absent.
-    pub fn get_universe_mut(
-        &mut self,
-        transport: RouteTransport,
-        universe_id: u16,
-    ) -> &mut [ChannelDmxValue; MAX_CHANNELS_PER_UNIVERSE] {
-        self.universes
-            .entry(transport)
-            .or_default()
-            .entry(universe_id)
-            .or_insert([0; MAX_CHANNELS_PER_UNIVERSE])
-    }
-
     /// Returns age in milliseconds for the latest frame of a transport + universe.
     pub fn frame_age_ms(
         &self,
@@ -192,8 +179,6 @@ pub enum ConsoleChannelOrigin {
     },
     /// Channel written by explicit manual command.
     ManualCommand,
-    /// Channel written by system-level clear/release behavior.
-    System,
 }
 
 /// DMX universe state owned by the console, including source metadata.
@@ -498,6 +483,42 @@ impl ConsoleDmxUniverses {
         universe.origins[index] = Some(origin);
     }
 
+    /// Writes one parameter's bytes to its console addresses as output-route values.
+    ///
+    /// Channels a manual command owns keep their value until released. The universe is looked
+    /// up once for all bytes, since this runs for every patched parameter each frame. Addresses
+    /// are 1-indexed (DMX convention); invalid ones are skipped.
+    pub fn write_output_route_values(
+        &mut self,
+        universe_id: u16,
+        addresses: &[u16],
+        values: &[ChannelDmxValue],
+    ) {
+        let writes = addresses.iter().zip(values);
+        for (address, _) in writes
+            .clone()
+            .filter(|(address, _)| !is_valid_address(**address))
+        {
+            tracing::warn!(universe_id, address, "Address is invalid, skipping");
+        }
+        // Only create the universe when at least one byte will land in it.
+        if !writes
+            .clone()
+            .any(|(address, _)| is_valid_address(*address))
+        {
+            return;
+        }
+        let universe = self.universes.entry(universe_id).or_default();
+        for (address, value) in writes.filter(|(address, _)| is_valid_address(**address)) {
+            let index = (*address - 1) as usize;
+            if universe.origins[index] == Some(ConsoleChannelOrigin::ManualCommand) {
+                continue;
+            }
+            universe.values[index] = *value;
+            universe.origins[index] = Some(ConsoleChannelOrigin::OutputRoute);
+        }
+    }
+
     /// Frees a console DMX channel so nothing owns it, zeroing its value.
     ///
     /// A console universe left without any owned channel is removed so routes stop
@@ -593,7 +614,12 @@ impl ConsoleDmxUniverses {
         self.held_wire_channels_dirty = false;
     }
 
-    /// Clears channels currently owned by stale input transport sources.
+    /// Frees channels owned by stale input transport sources, zeroing them with no owner.
+    ///
+    /// A source is stale once its last frame is at least `timeout` old, or when no frame was
+    /// ever seen for it. Console universes left without any owned channel are removed so
+    /// routes stop overlaying them, matching [`Self::release_value`]. Returns how many
+    /// channels were freed.
     pub fn clear_stale_input_channels(
         &mut self,
         input_universes: &InputDmxUniverses,
@@ -620,9 +646,14 @@ impl ConsoleDmxUniverses {
                 }
 
                 universe.values[idx] = 0;
-                universe.origins[idx] = Some(ConsoleChannelOrigin::System);
+                universe.origins[idx] = None;
                 cleared += 1;
             }
+        }
+
+        if cleared > 0 {
+            self.universes
+                .retain(|_, universe| universe.origins.iter().any(Option::is_some));
         }
 
         cleared
@@ -635,7 +666,7 @@ pub fn parameter_to_dmx_value(parameter: &Parameter) -> u32 {
 }
 
 /// Encodes a parameter's current value as its DMX channel bytes, most significant first.
-pub(crate) fn parameter_dmx_bytes(parameter: &Parameter) -> Vec<ChannelDmxValue> {
+pub(crate) fn parameter_dmx_bytes(parameter: &Parameter) -> DmxBytes {
     split_dmx_value(
         parameter_to_dmx_value(parameter),
         parameter.metadata.resolution,
@@ -668,20 +699,11 @@ pub fn dmx_universes(
         let bytes = parameter_dmx_bytes(&parameter);
 
         if let Some(console_address) = console_address {
-            for (address, byte) in console_address.addresses.iter().zip(&bytes) {
-                // A manual write keeps owning its console slot until it is released.
-                if universes.get_origin(console_address.universe, *address)
-                    == Some(ConsoleChannelOrigin::ManualCommand)
-                {
-                    continue;
-                }
-                universes.set_value(
-                    console_address.universe,
-                    *address,
-                    *byte,
-                    ConsoleChannelOrigin::OutputRoute,
-                );
-            }
+            universes.write_output_route_values(
+                console_address.universe,
+                &console_address.addresses,
+                &bytes,
+            );
         }
 
         for destination in destinations {
@@ -693,7 +715,7 @@ pub fn dmx_universes(
                 );
             }
 
-            for (address, byte) in destination.addresses.iter().zip(&bytes) {
+            for (address, byte) in destination.addresses.iter().zip(bytes.iter()) {
                 universes.set_output_values(
                     &destination.transport,
                     destination.universe,
@@ -741,6 +763,33 @@ mod tests {
         assert!(!universes.has_output_universe(&sacn, 3));
     }
 
+    /// Output-route writes skip manually held and invalid channels, and an all-invalid write
+    /// leaves no universe behind.
+    #[test]
+    fn write_output_route_values_keeps_manual_channels() {
+        let mut universes = ConsoleDmxUniverses::default();
+        universes.set_value(1, 2, 99, ConsoleChannelOrigin::ManualCommand);
+
+        universes.write_output_route_values(1, &[1, 2, 0, 3], &[10, 20, 30, 40]);
+
+        assert_eq!(universes.get_value(1, 1), Some(10));
+        assert_eq!(
+            universes.get_origin(1, 1),
+            Some(ConsoleChannelOrigin::OutputRoute)
+        );
+        assert_eq!(universes.get_value(1, 2), Some(99));
+        assert_eq!(
+            universes.get_origin(1, 2),
+            Some(ConsoleChannelOrigin::ManualCommand)
+        );
+        assert_eq!(universes.get_value(1, 3), Some(40));
+
+        universes.write_output_route_values(4, &[0, 600], &[1, 2]);
+        assert!(!universes.has_universe(4));
+    }
+
+    /// Verifies a stale input source frees its only console slot and the emptied console
+    /// universe is removed.
     #[test]
     fn console_input_owner_clears_when_source_stale() {
         let mut universes = ConsoleDmxUniverses::default();
@@ -764,10 +813,42 @@ mod tests {
         let cleared =
             universes.clear_stale_input_channels(&input_universes, now, Duration::from_millis(500));
         assert_eq!(cleared, 1);
+        assert!(!universes.has_universe(2));
+        assert_eq!(universes.get_value(2, 1), None);
+    }
+
+    /// Verifies a stale input slot is freed (zero, no owner) while the universe stays alive
+    /// for the channels other owners still hold.
+    #[test]
+    fn console_input_owner_frees_slot_but_keeps_universe_with_other_owners() {
+        let mut universes = ConsoleDmxUniverses::default();
+        let mut input_universes = InputDmxUniverses::default();
+
+        let source = (RouteTransport::Sacn, 1);
+        let now = Instant::now();
+        let past = now - Duration::from_millis(1500);
+
+        universes.set_value(
+            2,
+            1,
+            42,
+            ConsoleChannelOrigin::InputTransport {
+                transport: source.0,
+                universe: source.1,
+            },
+        );
+        universes.set_value(2, 2, 99, ConsoleChannelOrigin::ManualCommand);
+        input_universes.set_universe(source.0, source.1, [0; MAX_CHANNELS_PER_UNIVERSE], past);
+
+        let cleared =
+            universes.clear_stale_input_channels(&input_universes, now, Duration::from_millis(500));
+        assert_eq!(cleared, 1);
         assert_eq!(universes.get_value(2, 1), Some(0));
+        assert_eq!(universes.get_origin(2, 1), None);
+        assert_eq!(universes.get_value(2, 2), Some(99));
         assert_eq!(
-            universes.get_origin(2, 1),
-            Some(ConsoleChannelOrigin::System)
+            universes.get_origin(2, 2),
+            Some(ConsoleChannelOrigin::ManualCommand)
         );
     }
 
@@ -819,24 +900,6 @@ mod tests {
             .frame_age_ms(RouteTransport::Sacn, 1, now)
             .unwrap();
         assert!(age_ms >= 250);
-    }
-
-    #[test]
-    fn input_universe_mut_insert_does_not_mark_received_frame() {
-        let mut input_universes = InputDmxUniverses::default();
-        let now = Instant::now();
-
-        let target = input_universes.get_universe_mut(RouteTransport::ArtNet, 7);
-        target[0] = 123;
-
-        assert_eq!(
-            input_universes.frame_age_ms(RouteTransport::ArtNet, 7, now),
-            None
-        );
-        assert_eq!(
-            input_universes.is_self_frame(RouteTransport::ArtNet, 7),
-            None
-        );
     }
 
     #[test]

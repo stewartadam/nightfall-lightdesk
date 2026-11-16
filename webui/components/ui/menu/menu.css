@@ -96,6 +96,13 @@
   color: #9ca3af;
   font-size: 11px;
 }
+.nf-menu-external {
+  display: flex;
+}
+.nf-menu-external > svg {
+  width: 14px;
+  height: 14px;
+}
 .nf-menu-separator {
   margin: 3px 0;
   border: 0;

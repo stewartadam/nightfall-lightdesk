@@ -927,7 +927,7 @@ test("toast catalog emits and dismisses typed notifications", async ({
   for (const level of ["info", "success", "warning", "error"])
     await page
       .locator(`[data-component="Toast"][data-level="${level}"]`)
-      .getByRole("button", { name: "Close", exact: true })
+      .getByRole("button", { name: "Dismiss notification", exact: true })
       .click();
   await expect(page.locator('[data-component="Toast"]')).toHaveCount(0);
   await panel

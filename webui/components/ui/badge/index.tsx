@@ -92,16 +92,28 @@ export interface CountBadgeProps
   tone?: BadgeTone;
   /** Largest number shown before collapsing to `{max}+`. Unlimited by default. */
   max?: number;
+  /**
+   * `corner` (the default) overlays the bubble on the decorated control's top-right corner;
+   * `inline` places it in the text flow, beside a label too short to carry an overlay.
+   */
+  placement?: "corner" | "inline";
 }
 
 /**
- * Overlays a solid count bubble on the top-right corner of the nearest
- * positioned ancestor, so changing counts never resize or reflow the control
- * it decorates. The bubble ignores pointer events, leaving clicks to the
- * control underneath, and renders nothing for zero or missing counts.
+ * Shows a solid count bubble. By default it overlays the top-right corner of
+ * the nearest positioned ancestor, so changing counts never resize or reflow
+ * the control it decorates; `placement="inline"` sets it beside a label
+ * instead. The bubble ignores pointer events, leaving clicks to the control
+ * underneath, and renders nothing for zero or missing counts.
  */
 export function CountBadge(props: CountBadgeProps) {
-  const [local, rest] = splitProps(props, ["count", "tone", "max", "class"]);
+  const [local, rest] = splitProps(props, [
+    "count",
+    "tone",
+    "max",
+    "placement",
+    "class",
+  ]);
   /** Formats the count, collapsing values above `max` to a `max+` label. */
   const label = () => {
     const count = local.count ?? 0;
@@ -115,6 +127,7 @@ export function CountBadge(props: CountBadgeProps) {
         class={`nf-count-badge ${local.class ?? ""}`.trim()}
         data-component="CountBadge"
         data-tone={local.tone ?? "info"}
+        data-placement={local.placement ?? "corner"}
         {...rest}
       >
         {label()}

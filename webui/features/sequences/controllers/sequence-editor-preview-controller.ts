@@ -66,7 +66,7 @@ export function createSequenceEditorPreviewController(
 
   const activePreviewCue = createMemo(() => {
     const cueUid = activePreviewCueUid();
-    return cueUid ? source.cueMap()[cueUid] : undefined;
+    return cueUid ? source.cue(cueUid) : undefined;
   });
 
   const activePreviewPlayback = createMemo(() => {

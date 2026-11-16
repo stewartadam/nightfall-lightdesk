@@ -23,8 +23,11 @@ import { usePanelCapabilityRegistry } from "../../../components/providers/panel-
 import { focusTrackedComponent } from "../../../lib/componentFocusContext";
 import { getLogger } from "../../../lib/logger";
 import { REVEAL_OBJECT_CAPABILITY } from "../../../lib/panel-capabilities";
-import { openOrFocusPanel } from "../../../lib/panel-open-command";
-import { durationToMs, pixelsToMs } from "../../../lib/utils";
+import {
+  focusOrAddPanel,
+  openOrFocusPanel,
+} from "../../../lib/panel-open-command";
+import { durationToMs } from "../../../lib/utils";
 import { dockApi } from "../../../state/appStores";
 import * as types from "../../../types";
 import { useTimelineContext } from "../context/timeline-context";
@@ -43,7 +46,7 @@ import {
   resolveActionDisplayLabel,
   resolveActionEditorTarget,
 } from "../model/action-targets";
-import { msPerBeat, type SnapConfig } from "../model/grid-utils";
+import { type SnapConfig, timelineSnapConfig } from "../model/grid-utils";
 import type { TimelineActionKind } from "../model/timeline-action-kind";
 
 const log = getLogger(import.meta.url);
@@ -91,13 +94,15 @@ type DragSessionAction = {
   sourceTrackId: string;
   actionId: string;
   originalTrackIndex: number;
-  originalPositionPx: number;
+  originalPositionMs: number;
   action: types.Action;
 };
 
 type DragSession = {
   anchorOriginalTrackIndex: number;
-  anchorPositionPx: number;
+  anchorPositionMs: number;
+  /** Snap settings captured when the drag starts, so pointer moves don't rebuild them. */
+  snapConfig: SnapConfig;
   actions: DragSessionAction[];
   canceled: boolean;
 };
@@ -211,41 +216,9 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     return lane ? { trackId, lane } : undefined;
   };
 
-  const getSnapConfig = (): SnapConfig => {
-    if (ctx.useBeatgrid()) {
-      const beatgridMarkerTimes =
-        ctx.beatgrid()?.markers.map((marker) => durationToMs(marker.time)) ??
-        [];
-      const beatgridMarkers =
-        beatgridMarkerTimes.length > 1 ? beatgridMarkerTimes : undefined;
-      const anchorMs = beatgridMarkerTimes[0] ?? 0;
-
-      // When using BPM, set interval to the beat duration
-      const beatDuration = msPerBeat(ctx.bpm());
-      return {
-        enabled: ctx.snapEnabled(),
-        interval: beatDuration,
-        threshold: 15,
-        isBeat: true,
-        beatsPerBar: ctx.beatsPerBar(), // Provide beats per bar for alignment
-        markers: beatgridMarkers,
-        anchorMs,
-      };
-    }
-
-    return {
-      enabled: ctx.snapEnabled(),
-      interval: 1000,
-      threshold: 10,
-      isBeat: false,
-      beatsPerBar: 4,
-    };
-  };
-
   createEffect(() => {
     const offsetPx =
-      props.leftOverridePx ??
-      (props.position - ctx.start()) * (ctx.zoom() / 1000);
+      props.leftOverridePx ?? props.position * (ctx.zoom() / 1000);
     setLeft(offsetPx);
   });
 
@@ -273,14 +246,10 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     const position = actionDragPositionFromPointer({
       clientX: event.clientX,
       laneLeft: target.lane.getBoundingClientRect().left,
-      initialPositionPx: dragSession?.anchorPositionPx ?? left(),
-      originalSnapPositionsPx:
-        dragSession?.anchorPositionPx !== undefined
-          ? [dragSession.anchorPositionPx]
-          : undefined,
-      timelineStartMs: ctx.start(),
+      originalSnapPositionsMs:
+        dragSession !== undefined ? [dragSession.anchorPositionMs] : undefined,
       zoom: ctx.zoom(),
-      snapConfig: getSnapConfig(),
+      snapConfig: dragSession?.snapConfig ?? timelineSnapConfig(ctx),
     });
     return { ...position, trackId: target.trackId };
   };
@@ -291,7 +260,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
 
   /** Converts milliseconds into the current timeline lane pixel coordinate. */
   const positionMsToPx = (positionMs: number) =>
-    (positionMs - ctx.start()) * (ctx.zoom() / 1000);
+    positionMs * (ctx.zoom() / 1000);
 
   /** Builds the source action set that should move with the active drag. */
   const createDragSession = (): DragSession | undefined => {
@@ -319,7 +288,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
           sourceTrackId: selection.trackId,
           actionId: action.id,
           originalTrackIndex,
-          originalPositionPx: positionMsToPx(durationToMs(action.position)),
+          originalPositionMs: durationToMs(action.position),
           action,
         },
       ];
@@ -334,7 +303,8 @@ export const Action = (props: ActionProps & { trackId: string }) => {
 
     return {
       anchorOriginalTrackIndex: anchorItem.originalTrackIndex,
-      anchorPositionPx: anchorItem.originalPositionPx,
+      anchorPositionMs: anchorItem.originalPositionMs,
+      snapConfig: timelineSnapConfig(ctx),
       actions,
       canceled: false,
     };
@@ -357,8 +327,8 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     if (targetTrackIndex === -1) return undefined;
 
     const trackOffset = targetTrackIndex - session.anchorOriginalTrackIndex;
-    const positionOffsetPx =
-      anchorPosition.positionPx - session.anchorPositionPx;
+    const positionOffsetMs =
+      anchorPosition.positionMs - session.anchorPositionMs;
 
     return {
       targetTrackId: anchorPosition.trackId,
@@ -367,16 +337,16 @@ export const Action = (props: ActionProps & { trackId: string }) => {
           action.originalTrackIndex + trackOffset,
           tracks,
         );
-        const positionPx = Math.max(
+        const positionMs = Math.max(
           0,
-          action.originalPositionPx + positionOffsetPx,
+          action.originalPositionMs + positionOffsetMs,
         );
         return {
           sourceTrackId: action.sourceTrackId,
           actionId: action.actionId,
           trackId: tracks[trackIndex]?.id ?? anchorPosition.trackId,
-          positionPx,
-          positionMs: ctx.start() + pixelsToMs(positionPx, ctx.zoom()),
+          positionPx: positionMsToPx(positionMs),
+          positionMs,
           action: action.action,
         };
       }),
@@ -521,12 +491,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     const api = $dockApi();
     const target = resolveEditorTarget();
     if (!api || !target) return;
-    const panel = api.getPanel(target.panelId);
-    if (panel) {
-      panel.focus();
-      return;
-    }
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: target.panelId,
       component: target.component,
       title: target.title,

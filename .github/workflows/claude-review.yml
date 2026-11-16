@@ -1,0 +1,521 @@
+name: Claude mergeability review
+
+# Claude reviews ready PRs against .github/claude-review.md and clears small, low-risk ones for
+# auto-merge, which then merges only after the required checks pass. pull_request_target runs this
+# file, the rubric and the policy script from the default branch, so a PR cannot change the rules
+# it is judged by. PR code is only ever read as data: Claude gets read-only file tools and no shell.
+# Maintainers can also rerun the review by commenting `/review` on a PR, or `/review skip-policy`
+# to waive the size and path check for the commit it reviews.
+# See "Claude mergeability review" in .github/workflows/README.md.
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] runs default-branch code; PR code is data only
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  issue_comment: # zizmor: ignore[dangerous-triggers] default-branch code, write-access commenters only
+    types: [created]
+
+permissions: {}
+
+# A maintainer's /review comment shares its PR's group, so the newest request or push wins. Every
+# other comment gets a group of its own, so it never cancels a review.
+concurrency:
+  group: >-
+    claude-review-${{ github.event.pull_request.number || (
+    github.event.issue.pull_request && startsWith(github.event.comment.body, '/review') &&
+    contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+    github.event.issue.number) || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  command:
+    name: Accept a /review comment
+    if: >-
+      github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/review') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      checks: write
+      issues: write
+      pull-requests: write
+      statuses: read
+    outputs:
+      number: ${{ steps.start.outputs.number }}
+      sha: ${{ steps.start.outputs.sha }}
+      skip-policy: ${{ steps.start.outputs.skip-policy }}
+      check-run: ${{ steps.start.outputs.check-run }}
+    steps:
+      # Refuses commenters without write access, drafts and fork PRs, and reacts on the comment.
+      - uses: github/command@v2.0.3
+        id: command
+        with:
+          command: /review
+          skip_ci: true
+          skip_reviews: true
+      # A maintainer asked, so the author checks of the automatic review do not apply; the PR must
+      # still come from this repository without no-auto-merge and target develop, directly or
+      # through the PRs below it in a stack. A PR higher in a stack is reviewed on its own diff but
+      # never auto-merges, so there is no size and path check to waive on it.
+      - id: start
+        name: Check the PR and open a check run
+        if: steps.command.outputs.continue == 'true'
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.command.outputs.issue_number }}
+          COMMENT: ${{ github.event.comment.body }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # Explains on the PR why the request was refused, then fails the job.
+          refuse() {
+            echo "::error::$1"
+            gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+              -f body="Cannot run the Claude review: $1" > /dev/null
+            exit 1
+          }
+          # Only the first line is the command; anything below it is a note for people.
+          request="$(head -n 1 <<< "$COMMENT" | tr -d '\r' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+          case "$request" in
+            '/review') skip_policy=false ;;
+            '/review skip-policy') skip_policy=true ;;
+            *) refuse "use \`/review\`, or \`/review skip-policy\` to waive the size and path check." ;;
+          esac
+          pr="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER")"
+          # A PR higher in a stack targets the branch of the PR below it; the stack's base says
+          # where the whole stack lands.
+          why="$(jq -r --arg repo "$GH_REPO" --argjson skip "$skip_policy" '
+            (.stack != null and .stack.base.ref != .base.ref) as $higher
+            | (if $higher then .stack.base.ref else .base.ref end) as $target
+            | if $target != "develop" then "it targets \($target), not develop."
+            elif .head.repo.full_name != $repo then "it comes from a fork."
+            elif any(.labels[]; .name == "no-auto-merge") then "it has the no-auto-merge label."
+            elif $skip and $higher then
+              "it builds on other PRs in a stack, so it never auto-merges and there is no size and path check to waive; use `/review`."
+            else empty end' <<< "$pr")"
+          [[ -z "$why" ]] || refuse "$why"
+          sha="$(jq -r .head.sha <<< "$pr")"
+          check_run="$(gh api --method POST "repos/$GH_REPO/check-runs" \
+            -f name='Claude review' -f head_sha="$sha" -f status=in_progress -f details_url="$RUN_URL" \
+            -f 'output[title]=Reviewing on request' \
+            -f "output[summary]=Requested by @$GITHUB_ACTOR with \`$request\`." --jq .id)"
+          {
+            echo "number=$PR_NUMBER"
+            echo "sha=$sha"
+            echo "skip-policy=$skip_policy"
+            echo "check-run=$check_run"
+          } >> "$GITHUB_OUTPUT"
+
+  revoke:
+    name: Withdraw a stale auto-merge
+    # A push, reopen or return to draft invalidates an earlier clearance before CI can merge it, and
+    # a requested review replaces it.
+    needs: command
+    if: >-
+      !cancelled() && (
+        (contains(github.event.pull_request.labels.*.name, 'low-risk') &&
+        contains(fromJSON('["synchronize","reopened","converted_to_draft"]'), github.event.action)) ||
+        (contains(github.event.issue.labels.*.name, 'low-risk') && needs.command.outputs.number != '')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Disable auto-merge and remove the label
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          MERGE_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || needs.command.outputs.number }}
+        run: |
+          if [[ "$(gh pr view "$PR_NUMBER" --json autoMergeRequest --jq '.autoMergeRequest != null')" == true ]]; then
+            GH_TOKEN="${MERGE_TOKEN:-$GH_TOKEN}" gh pr merge "$PR_NUMBER" --disable-auto
+          fi
+          # An overlapping run may have removed it already.
+          gh api --method DELETE "repos/$GH_REPO/issues/$PR_NUMBER/labels/low-risk" > /dev/null || true
+          marker='<!-- claude-mergeability-review -->'
+          comment="$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" \
+            | head -n 1)"
+          if [[ -n "$comment" ]]; then
+            if [[ "$GITHUB_EVENT_NAME" == issue_comment ]]; then
+              why='Auto-merge is off while Claude reviews this PR again on request.'
+            else
+              why='The PR changed after it was cleared, so auto-merge is off. A ready PR is reviewed again.'
+            fi
+            body="$(printf '%s\n%s\n\n%s' "$marker" '### Claude review: auto-merge withdrawn' "$why")"
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$comment" -f body="$body" > /dev/null
+          fi
+
+  metadata:
+    name: Acquire PR metadata and review policy
+    # Only ready, unstacked, same-repository PRs into develop from people with write access. Bots
+    # (Dependabot cannot read the token anyway) and PRs labelled no-auto-merge are skipped. An
+    # accepted /review comment has already checked its PR.
+    needs: command
+    if: >-
+      !cancelled() && (needs.command.outputs.sha != '' || (
+        github.event_name == 'pull_request_target' &&
+        github.event.action != 'converted_to_draft' &&
+        !github.event.pull_request.draft &&
+        github.event.pull_request.stack == null &&
+        github.event.pull_request.base.ref == 'develop' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.type == 'User' &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) &&
+        !contains(github.event.pull_request.labels.*.name, 'no-auto-merge')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      diff: ${{ steps.snapshot.outputs.diff }}
+      number: ${{ github.event.pull_request.number || needs.command.outputs.number }}
+      sha: ${{ github.event.pull_request.head.sha || needs.command.outputs.sha }}
+    steps:
+      # Acquire the default branch's policy script as data; it runs only on the next runner.
+      - uses: actions/checkout@v5.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/merge-policy.mjs
+          sparse-checkout-cone-mode: false
+      - id: snapshot
+        name: Snapshot the PR as data
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || needs.command.outputs.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || needs.command.outputs.sha }}
+        run: |
+          dir="$RUNNER_TEMP/claude-review"
+          mkdir "$dir"
+          test -f scripts/merge-policy.mjs && test ! -L scripts/merge-policy.mjs
+          cp scripts/merge-policy.mjs "$dir/"
+          gh api "repos/$GH_REPO/pulls/$PR_NUMBER" \
+            --jq '{number, title, body, draft, user: .user.login, base: .base.ref, head: .head.ref, head_sha: .head.sha,
+              stack: (if .stack != null and .stack.base.ref != .base.ref
+                then {position: .stack.position, size: .stack.size, target: .stack.base.ref} else null end)}' \
+            > "$dir/pr.json"
+          # The snapshot must describe the commit the review checks out; a newer push has its own run.
+          if [[ "$(jq -r .head_sha "$dir/pr.json")" != "$HEAD_SHA" ]]; then
+            echo "::error::The PR moved past $HEAD_SHA before its snapshot."
+            exit 1
+          fi
+          gh api --paginate "repos/$GH_REPO/pulls/$PR_NUMBER/files" \
+            --jq '.[] | {filename, previous_filename, status, additions, deletions} | tojson' \
+            > "$dir/files.jsonl"
+          # The API refuses diffs far beyond the policy's size limit; Claude skips any PR whose diff
+          # it cannot fetch.
+          if gh api "repos/$GH_REPO/pulls/$PR_NUMBER" -H 'Accept: application/vnd.github.diff' \
+            > "$dir/pr.diff"; then
+            echo 'diff=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'The diff is too large for the GitHub API.' > "$dir/pr.diff"
+            echo 'diff=false' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: claude-review-${{ github.event.pull_request.head.sha || needs.command.outputs.sha }}
+          path: ${{ runner.temp }}/claude-review/
+          if-no-files-found: error
+          retention-days: 1
+
+  policy:
+    name: Check size and risky paths
+    needs: metadata
+    # Status checks run implicitly against every ancestor, including the skipped command job.
+    if: ${{ !cancelled() && needs.metadata.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      assessment: ${{ steps.assess.outputs.assessment }}
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: claude-review-${{ needs.metadata.outputs.sha }}
+      - id: assess
+        name: Assess the changed files
+        run: node merge-policy.mjs files.jsonl policy.json
+
+  review:
+    name: Claude review
+    # PRs the policy rejects are still reviewed, so the verdict reports every check, not only the
+    # policy's reasons. The policy result alone still forces needs-human.
+    needs: [metadata, policy]
+    # Status checks run implicitly against every ancestor, including the skipped command job.
+    if: >-
+      !cancelled() && needs.policy.result == 'success' && needs.metadata.outputs.diff == 'true' &&
+      fromJSON(needs.policy.outputs.assessment).files > 0
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      conclusion: ${{ steps.claude.outputs.conclusion }}
+      verdict: ${{ steps.claude.outputs.structured_output }}
+    steps:
+      # The default branch sits at the workspace root, so CLAUDE.md, .claude/ and the rubric are the
+      # trusted copies. The PR head goes in a subdirectory, to be read and never executed.
+      - uses: actions/checkout@v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v5.1.0
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
+          path: pr-head
+          persist-credentials: false
+      # A symlink in the PR could point the file tools outside the workspace.
+      - name: Drop symlinks from the PR head
+        run: find pr-head -type l -delete
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: claude-review-${{ needs.metadata.outputs.sha }}
+          path: .pr-review
+      - name: Share the size and path check with Claude
+        env:
+          ASSESSMENT: ${{ needs.policy.outputs.assessment }}
+        run: printf '%s\n' "$ASSESSMENT" > .pr-review/policy.json
+      # Read rules also bound Glob and Grep. Reads stay inside the workspace, and the process
+      # environment, which holds the tokens, is off limits. Agent context comes only from the
+      # default branch: Claude Code would otherwise load CLAUDE.md, AGENTS.md and rules files it
+      # finds under pr-head/ as instructions, and skills from any .claude/skills/ there, so
+      # claudeMdExcludes skips them and the Skill tool is denied.
+      - id: claude
+        uses: anthropics/claude-code-action@v1.0.268
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          settings: '{"claudeMdExcludes": ["**/pr-head/**"]}'
+          prompt: |
+            Decide whether pull request #${{ needs.metadata.outputs.number }} in
+            ${{ github.repository }} can merge without a human review.
+
+            Read `.github/claude-review.md` first and follow it exactly. The PR metadata and diff
+            are in `.pr-review/`, and the PR's files are in `pr-head/`. Return the structured
+            verdict it describes.
+          claude_args: >-
+            --max-turns 80
+            --allowedTools 'Read(./**)'
+            --disallowedTools 'Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Task,Skill,Read(//proc/**),Read(//sys/**)'
+            --json-schema '{"type":"object","additionalProperties":false,
+            "required":["verdict","summary","checks","findings"],"properties":{
+            "verdict":{"type":"string","enum":["auto-merge","needs-human"]},
+            "summary":{"type":"string"},
+            "checks":{"type":"array","items":{"type":"object","additionalProperties":false,
+            "required":["check","passed","note"],"properties":{
+            "check":{"type":"string","enum":["bugs","risk","tests","showfile","docs",
+            "description","release-notes","conventions"]},
+            "passed":{"type":"boolean"},"note":{"type":"string"}}}},
+            "findings":{"type":"array","items":{"type":"object","additionalProperties":false,
+            "required":["path","line","severity","description"],"properties":{
+            "path":{"type":"string"},"line":{"type":"integer"},
+            "severity":{"type":"string","enum":["bug","risk","convention"]},
+            "description":{"type":"string"}}}}}}'
+
+  apply:
+    name: Post the verdict
+    needs: [command, revoke, metadata, policy, review]
+    if: ${{ !cancelled() && needs.metadata.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    outputs:
+      conclusion: ${{ steps.decide.outputs.conclusion }}
+      title: ${{ steps.decide.outputs.title }}
+    steps:
+      - id: decide
+        name: Decide, enable auto-merge and comment
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          MERGE_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN }}
+          PR_NUMBER: ${{ needs.metadata.outputs.number }}
+          HEAD_SHA: ${{ needs.metadata.outputs.sha }}
+          SKIP_POLICY: ${{ needs.command.outputs.skip-policy }}
+          REVOKE_RESULT: ${{ needs.revoke.result }}
+          POLICY_RESULT: ${{ needs.policy.result }}
+          ASSESSMENT: ${{ needs.policy.outputs.assessment }}
+          REVIEW_RESULT: ${{ needs.review.result }}
+          REVIEW_CONCLUSION: ${{ needs.review.outputs.conclusion }}
+          VERDICT: ${{ needs.review.outputs.verdict }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          marker='<!-- claude-mergeability-review -->'
+          # A newer push has its own run; never label or merge a head this run did not review.
+          pr="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER")"
+          state="$(jq -r '"\(.head.sha) \(.state) \(.draft)"' <<< "$pr")"
+          if [[ "$state" != "$HEAD_SHA open false" ]]; then
+            echo "::notice::PR moved on since this review ($state); leaving it to the newer run."
+            printf '%s\n' 'conclusion=skipped' 'title=The PR changed during the review' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$REVOKE_RESULT" == failure ]]; then
+            echo "::error::Could not withdraw the earlier auto-merge; not posting a new verdict."
+            exit 1
+          fi
+          # Merging a PR higher in a stack would also land the unmerged PRs below it, so it never
+          # auto-merges and no waiver applies. Read live: a retarget does not change the head.
+          if [[ -n "$ASSESSMENT" ]] &&
+            jq -e '.stack != null and .stack.base.ref != .base.ref' <<< "$pr" > /dev/null; then
+            ASSESSMENT="$(jq '.eligible = false
+              | .reasons = ["It builds on other PRs in a stack, so it merges with the stack by hand."] + .reasons' \
+              <<< "$ASSESSMENT")"
+            SKIP_POLICY=false
+          fi
+
+          # Every path that is not a successful policy pass plus a successful auto-merge verdict
+          # ends in needs-human with the reasons that apply.
+          if [[ "$POLICY_RESULT" != success || -z "$ASSESSMENT" ]]; then
+            verdict="$(jq -n --arg url "$RUN_URL" '{verdict: "needs-human",
+              summary: "The mergeability check could not read this PR.",
+              reasons: ["See the [workflow run](\($url)) for the error."], findings: []}')"
+          elif [[ "$REVIEW_RESULT" != success || "$REVIEW_CONCLUSION" != success || -z "$VERDICT" ]] ||
+            ! jq -e '.verdict | IN("auto-merge", "needs-human")' <<< "$VERDICT" > /dev/null; then
+            if [[ "$REVIEW_RESULT" == skipped ]]; then
+              summary="Claude did not review this PR."
+              why="The GitHub API did not return its diff; see the [workflow run]($RUN_URL)."
+            else
+              summary="The Claude review did not finish."
+              why="See the [workflow run]($RUN_URL) for the error."
+            fi
+            verdict="$(jq --arg summary "$summary" --arg why "$why" '{verdict: "needs-human",
+              summary: $summary, reasons: (.reasons + [$why]), findings: []}' <<< "$ASSESSMENT")"
+          elif jq -e '.verdict == "auto-merge" and any(.findings[]; .severity == "bug")' \
+            <<< "$VERDICT" > /dev/null; then
+            # A reported bug always blocks, even if the verdict says otherwise.
+            verdict="$(jq '.verdict = "needs-human"
+              | .checks = [.checks[] | select(.check != "bugs")]
+              | .checks = [{check: "bugs", passed: false,
+                  note: "The review reported a likely bug; see the findings."}] + .checks' \
+              <<< "$VERDICT")"
+          elif jq -e '.verdict == "auto-merge" and any(.checks[]; .passed | not)' \
+            <<< "$VERDICT" > /dev/null; then
+            # Every check must pass for auto-merge, whatever the verdict says.
+            verdict="$(jq '.verdict = "needs-human"' <<< "$VERDICT")"
+          else
+            verdict="$VERDICT"
+          fi
+          # A PR the policy rejects never auto-merges; its reasons lead the checks Claude reported.
+          # A maintainer's `/review skip-policy` waives the block for this head and says so.
+          if jq -e 'has("checks")' <<< "$verdict" > /dev/null &&
+            [[ "$(jq -r .eligible <<< "$ASSESSMENT")" != true ]]; then
+            if [[ "$SKIP_POLICY" == true ]]; then
+              verdict="$(jq --argjson assessment "$ASSESSMENT" --arg actor "$GITHUB_ACTOR" '
+                .checks = [{check: "scope", passed: true,
+                  note: "Waived by @\($actor) with `/review skip-policy`. \($assessment.reasons | join(" "))"}]
+                  + .checks' <<< "$verdict")"
+            else
+              verdict="$(jq --argjson assessment "$ASSESSMENT" '.verdict = "needs-human"
+                | .checks = [{check: "scope", passed: false, note: ($assessment.reasons | join(" "))}]
+                  + .checks' <<< "$verdict")"
+            fi
+          fi
+
+          status=""
+          if [[ "$(jq -r .verdict <<< "$verdict")" == auto-merge ]]; then
+            if [[ -z "$MERGE_TOKEN" ]]; then
+              status="Auto-merge is not set up: add the \`AUTO_MERGE_TOKEN\` secret to turn it on."
+            else
+              gh label create low-risk --color 0E8A16 \
+                --description 'Cleared by the Claude mergeability review for auto-merge' \
+                2> /dev/null || true
+              gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/labels" -f 'labels[]=low-risk' > /dev/null
+              # --match-head-commit refuses if a push landed since the review.
+              if GH_TOKEN="$MERGE_TOKEN" gh pr merge "$PR_NUMBER" --auto --merge \
+                --match-head-commit "$HEAD_SHA"; then
+                status="Auto-merge is on: this PR merges once the required checks pass. Push a commit, convert it to draft or disable auto-merge to stop it."
+              else
+                gh api --method DELETE "repos/$GH_REPO/issues/$PR_NUMBER/labels/low-risk" > /dev/null
+                status="Enabling auto-merge failed; see the [workflow run]($RUN_URL)."
+                failed=1
+              fi
+            fi
+          fi
+
+          # Workflow-made verdicts carry plain reasons. Claude verdicts carry one entry per check,
+          # listed with failed checks first.
+          body="$(jq -r --arg marker "$marker" --arg sha "${HEAD_SHA:0:7}" --arg status "$status" '
+            (if .verdict == "auto-merge" then "### Claude review: ready to auto-merge"
+             else "### Claude review: needs a human" end) as $title
+            | {scope: "Auto-merge scope", bugs: "Bugs", risk: "Risk", tests: "Tests",
+               showfile: "Showfile compatibility", docs: "Docs", description: "Description", "release-notes": "Release notes",
+               conventions: "Conventions"} as $names
+            | (if has("checks") then
+                 [.checks | sort_by(.passed)[]
+                  | "- \(if .passed then "✅" else "❌" end) **\($names[.check] // .check)**: \(.note)"]
+               else [.reasons[] | "- \(.)"] end | join("\n")) as $reasons
+            | ([.findings[] | "- `\(.path):\(.line)` (\(.severity)): \(.description)"] | join("\n")) as $findings
+            | [$marker, $title, "", .summary, "", (if has("checks") then "**Checks**" else "**Why**" end), "", $reasons]
+              + (if $findings == "" then [] else ["", "**Findings**", "", $findings] end)
+              + (if $status == "" then [] else ["", $status] end)
+              + ["", "<sub>Reviewed \($sha) against `.github/claude-review.md`.</sub>"]
+            | join("\n")' <<< "$verdict")"
+
+          comment="$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" \
+            | head -n 1)"
+          if [[ -n "$comment" ]]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$comment" -f body="$body" > /dev/null
+          else
+            gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -f body="$body" > /dev/null
+          fi
+          jq -r '"Verdict: \(.verdict)"' <<< "$verdict" >> "$GITHUB_STEP_SUMMARY"
+          jq -r 'if .verdict == "auto-merge" then "conclusion=success\ntitle=Ready to auto-merge"
+            else "conclusion=neutral\ntitle=Needs a human" end' <<< "$verdict" >> "$GITHUB_OUTPUT"
+          exit "${failed:-0}"
+
+  finish:
+    name: Complete the requested review check
+    # Runs even when a newer request or push cancels this run, so the check never stays pending.
+    needs: [command, apply]
+    if: always() && needs.command.outputs.check-run != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      checks: write
+    steps:
+      - name: Report the outcome on the check run
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          CHECK_RUN: ${{ needs.command.outputs.check-run }}
+          PR_NUMBER: ${{ needs.command.outputs.number }}
+          APPLY_RESULT: ${{ needs.apply.result }}
+          CONCLUSION: ${{ needs.apply.outputs.conclusion }}
+          TITLE: ${{ needs.apply.outputs.title }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # A needs-human verdict is neutral rather than failed: the review itself worked.
+          case "$APPLY_RESULT" in
+            success)
+              conclusion="$CONCLUSION"
+              if [[ "$conclusion" == skipped ]]; then
+                summary="A newer commit landed before the verdict, so none was posted for this one."
+              else
+                summary="The verdict is in the Claude review comment on #$PR_NUMBER."
+              fi
+              ;;
+            # apply skips itself once the run is cancelled.
+            cancelled | skipped)
+              conclusion=cancelled
+              TITLE='Replaced by a newer review'
+              summary="A newer \`/review\` or push cancelled this review."
+              ;;
+            *)
+              conclusion=failure
+              # apply fails after a ready verdict only when it cannot turn on auto-merge.
+              if [[ "$CONCLUSION" == success ]]; then
+                TITLE='Enabling auto-merge failed'
+              else
+                TITLE='The review did not finish'
+              fi
+              summary="See the [workflow run]($RUN_URL) for the error."
+              ;;
+          esac
+          gh api --method PATCH "repos/$GH_REPO/check-runs/$CHECK_RUN" \
+            -f status=completed -f conclusion="$conclusion" \
+            -f "output[title]=$TITLE" -f "output[summary]=$summary" > /dev/null

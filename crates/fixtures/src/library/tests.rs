@@ -10,21 +10,21 @@
 
 use std::collections::HashSet;
 
-use bevy_ecs::message::Messages;
 use bevy_ecs::prelude::*;
 use bevy_ecs::world::CommandQueue;
 use nightfall_dmx::DmxValueResolution;
 use nightfall_dmx::prelude::{Attribute, ParameterUnit, ParameterValue};
-use nightfall_engine::prelude::{CommandEnvelope, CommandError, CommandId, CommandTracker, UndoId};
+use nightfall_engine::prelude::CommandError;
 use nightfall_fixture_model::prelude::PhysicalUnit;
 
 use super::catalog::{
     BUILTIN_SOURCE_FORMAT, builtin_fixture_profiles, find_builtin_fixture_profile,
+    retired_builtin_models,
 };
-use super::commands::{
-    FixtureLibraryCommand, LibraryFixtureInstance, deserialize_fixture_library_command,
+use super::commands::{LibraryFixtureInstance, LibraryFixtureModeUpdate};
+use super::instantiate::{
+    LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixtures, update_library_fixtures,
 };
-use super::instantiate::{LibraryFixtureRequest, LibraryFixtureTemplate, create_library_fixtures};
 use super::{create_fixture_from_library, moving_heads, normalize_fixture_profile, strobes};
 use crate::prelude::{Fixture, FixtureDataProviderExt, Parameter};
 
@@ -163,7 +163,7 @@ fn grb_pixel_tape_profile_matches_120_channel_order() {
 /// Verifies that the strobe matrix element order and non-virtual footprint match the fixture profile.
 #[test]
 fn strobe_matrix_profile_matches_308_channel_order() {
-    let fixture = strobes::create_strobe(1, "Generic", "Strobe Matrix 308ch", 16);
+    let fixture = strobes::create_strobe_matrix_308(1, "Generic", "Strobe Matrix");
 
     assert_eq!(fixture.elements.len(), 115);
     assert_eq!(footprint(&fixture), 308);
@@ -184,13 +184,29 @@ fn strobe_matrix_profile_matches_308_channel_order() {
     );
 }
 
-/// Verifies the 312-channel variant inserts four white segments before the RGB pixels.
+/// Verifies the 312-channel variant has 20 white segments and no firmware strobe channels.
 #[test]
 fn strobe_matrix_profile_matches_312_channel_order() {
-    let fixture = strobes::create_strobe(1, "Generic", "Strobe Matrix 312ch", 20);
+    let fixture = strobes::create_strobe_matrix_312(1, "Generic", "Strobe Matrix");
 
     assert_eq!(fixture.elements.len(), 119);
     assert_eq!(footprint(&fixture), 312);
+    assert_eq!(fixture.elements[3].label, "Strobe Dimmer 1");
+    assert_eq!(fixture.elements[22].label, "Strobe Dimmer 20");
+    assert_eq!(fixture.elements[23].label, "RGB Pixel 1");
+    assert_eq!(fixture.elements[118].label, "RGB Pixel 96");
+}
+
+/// Verifies the 316-channel variant has 20 white segments and ends with the firmware strobes.
+///
+/// After the stock 312-channel map, slots 313-316 must be white strobe, white duration,
+/// RGB strobe, and RGB duration in that order, matching the patched firmware.
+#[test]
+fn strobe_matrix_profile_matches_316_channel_order() {
+    let fixture = strobes::create_strobe_matrix_316(1, "Generic", "Strobe Matrix");
+
+    assert_eq!(fixture.elements.len(), 123);
+    assert_eq!(footprint(&fixture), 316);
     assert_eq!(fixture.elements[0].label, "Tilt Axis");
     assert_eq!(fixture.elements[1].label, "Rotation Speed");
     assert_eq!(fixture.elements[2].label, "Reset");
@@ -198,6 +214,32 @@ fn strobe_matrix_profile_matches_312_channel_order() {
     assert_eq!(fixture.elements[22].label, "Strobe Dimmer 20");
     assert_eq!(fixture.elements[23].label, "RGB Pixel 1");
     assert_eq!(fixture.elements[118].label, "RGB Pixel 96");
+    assert_eq!(fixture.elements[119].label, "White Strobe");
+    assert_eq!(fixture.elements[120].label, "White Strobe Duration");
+    assert_eq!(fixture.elements[121].label, "RGB Strobe");
+    assert_eq!(fixture.elements[122].label, "RGB Strobe Duration");
+    let strobe_attributes = fixture.elements[119..]
+        .iter()
+        .flat_map(|element| {
+            element
+                .parameters
+                .iter()
+                .map(|parameter| &parameter.attribute)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        strobe_attributes,
+        vec![
+            &Attribute::StrobeRate,
+            &Attribute::Custom {
+                label: "Strobe Duration".to_owned()
+            },
+            &Attribute::StrobeRate,
+            &Attribute::Custom {
+                label: "Strobe Duration".to_owned()
+            },
+        ]
+    );
 }
 
 /// Verifies the Generic RGB strobe bar preserves its segment layout and DMX footprint.
@@ -465,7 +507,7 @@ fn moving_spot_profile_matches_16_channel_order() {
 #[test]
 fn generic_tilt_fixtures_share_270_degree_tilt_range() {
     let spot = moving_heads::create_moving_spot_16ch(1, "Generic", "Moving Head Spot 16ch");
-    let strobe = strobes::create_strobe(2, "Generic", "Strobe Matrix 308ch", 16);
+    let strobe = strobes::create_strobe_matrix_308(2, "Generic", "Strobe Matrix");
     let wash =
         moving_heads::create_rotating_wash_beam_194(3, "Generic", "12-segment Rotating Wash Beam");
 
@@ -494,7 +536,7 @@ fn generic_tilt_fixtures_share_270_degree_tilt_range() {
 #[test]
 fn builtin_catalog_profiles_instantiate_in_their_advertised_mode() {
     let profiles = builtin_fixture_profiles();
-    assert_eq!(profiles.len(), 12);
+    assert_eq!(profiles.len(), 11);
     let keys = profiles
         .iter()
         .map(|profile| (profile.make, profile.model))
@@ -547,6 +589,46 @@ fn rgbw_bar_offers_segments_and_single_modes() {
     assert!(create_fixture_from_library(3, "Generic", "12-segment RGBW Bar", "RGBW").is_none());
 }
 
+/// Verifies the retired 308ch and 312ch strobe models still create fixtures, as the matching
+/// Strobe Matrix mode with the same footprint they had, and only in their old `Strobe` mode.
+#[test]
+fn retired_strobe_models_resolve_to_strobe_matrix_modes() {
+    for (model, mode, channels) in [
+        ("Strobe Matrix 308ch", "308ch", 308),
+        ("Strobe Matrix 312ch", "312ch", 312),
+    ] {
+        for requested_mode in ["Strobe", ""] {
+            let fixture = create_fixture_from_library(5, "Generic", model, requested_mode)
+                .unwrap_or_else(|| panic!("{model} {requested_mode:?} should resolve"));
+            assert_eq!(fixture.model, "Strobe Matrix");
+            assert_eq!(fixture.mode, mode);
+            assert_eq!(footprint(&fixture), channels);
+        }
+        assert!(create_fixture_from_library(5, "Generic", model, "316ch").is_none());
+        assert!(create_fixture_from_library(5, "Other", model, "Strobe").is_none());
+    }
+}
+
+/// Verifies every retired built-in names a replacement mode its replacement profile offers,
+/// and that no retired name shadows a current catalog entry.
+#[test]
+fn retired_builtin_models_point_at_offered_modes() {
+    for retired in retired_builtin_models() {
+        assert!(find_builtin_fixture_profile(retired.make, retired.model).is_none());
+        let replacement = find_builtin_fixture_profile(retired.make, retired.replacement_model)
+            .unwrap_or_else(|| panic!("{} replacement should be cataloged", retired.model));
+        assert!(
+            replacement
+                .mode_names()
+                .iter()
+                .any(|mode| mode == retired.replacement_mode),
+            "{} should map to an offered mode",
+            retired.model
+        );
+        assert_ne!(retired.asset_etag, replacement.asset_etag);
+    }
+}
+
 /// Verifies a built-in profile refuses modes it never advertised.
 #[test]
 fn builtin_profile_rejects_unadvertised_mode() {
@@ -591,10 +673,17 @@ fn create_in_world(
     let mut resolutions = 0;
     let result = {
         let mut commands = Commands::new(&mut queue, world);
-        create_library_fixtures(&mut commands, fixtures, request, || {
-            resolutions += 1;
-            moving_head_template()
-        })
+        create_library_fixtures(
+            &mut commands,
+            fixtures,
+            |_| None,
+            request,
+            || {
+                resolutions += 1;
+                moving_head_template()
+            },
+        )
+        .map(drop)
     };
     queue.apply(world);
     (result, resolutions)
@@ -760,31 +849,162 @@ fn create_library_fixtures_rejects_empty_request() {
     assert_eq!(resolutions, 0);
 }
 
-/// Verifies semantic deserialization preserves command and undo identities.
-#[test]
-fn deserialize_fixture_library_command_writes_semantic_envelope() {
-    let mut world = World::new();
-    world.insert_resource(Messages::<CommandEnvelope<FixtureLibraryCommand>>::default());
-    world.init_resource::<CommandTracker>();
-    let command_id = CommandId::new();
-    let undo_id = UndoId::new();
-    deserialize_fixture_library_command(
-        &mut world,
-        serde_json::json!({ "type": "RefreshLibrary" }),
-        command_id,
-        undo_id,
-    )
-    .expect("fixture-library command should deserialize");
+/// Runs one revision update against a standalone store and applies its spawns.
+///
+/// The template resolves to the moving-head built-in under `revision`, whatever mode is
+/// asked for. Returns the error, if any, and the modes resolved, in order.
+fn update_in_world(
+    world: &mut World,
+    fixtures: &mut FixtureDataProviderExt,
+    updates: &[LibraryFixtureModeUpdate],
+    revision: &str,
+) -> (Result<(), CommandError>, Vec<String>) {
+    let mut queue = CommandQueue::default();
+    let mut resolved = Vec::new();
+    let result = {
+        let mut commands = Commands::new(&mut queue, world);
+        update_library_fixtures(
+            &mut commands,
+            fixtures,
+            |_| None,
+            updates,
+            |mode| {
+                resolved.push(mode.to_string());
+                let mut template = moving_head_template()?;
+                template.asset_etag = revision.to_string();
+                Ok(template)
+            },
+        )
+        .map(drop)
+    };
+    queue.apply(world);
+    (result, resolved)
+}
 
-    let messages = world
-        .resource_mut::<Messages<CommandEnvelope<FixtureLibraryCommand>>>()
-        .drain()
-        .collect::<Vec<_>>();
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].command_id, command_id);
-    assert_eq!(messages[0].undo_id, undo_id);
-    assert!(matches!(
-        messages[0].command,
-        FixtureLibraryCommand::RefreshLibrary
-    ));
+/// Builds revision updates that rebuild each fixture from the named mode.
+fn mode_updates(updates: &[(u32, &str)]) -> Vec<LibraryFixtureModeUpdate> {
+    updates
+        .iter()
+        .map(|(id, mode)| LibraryFixtureModeUpdate {
+            id: *id,
+            mode: (*mode).to_string(),
+        })
+        .collect()
+}
+
+/// Verifies a revision update keeps each fixture's identity and placement, records the
+/// new revision, and resolves each distinct mode once.
+#[test]
+fn update_library_fixtures_keeps_identity_and_resolves_each_mode_once() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    create_in_world(&mut world, &mut fixtures, &batch_request(&[10, 11, 12]))
+        .0
+        .expect("creation should succeed");
+    let before = fixtures.inner.from_id(10).unwrap().clone();
+
+    let (result, resolved) = update_in_world(
+        &mut world,
+        &mut fixtures,
+        &mode_updates(&[(10, "Spot"), (11, "Spot"), (12, "Spot")]),
+        "revision-2",
+    );
+
+    result.expect("update should succeed");
+    assert_eq!(resolved, vec!["Spot".to_string()]);
+    let after = fixtures.inner.from_id(10).unwrap().clone();
+    assert_eq!(after.identifiers, before.identifiers);
+    assert_eq!(after.placement, before.placement);
+    assert_eq!(after.library_asset_etag.as_deref(), Some("revision-2"));
+}
+
+/// Verifies an update can move some fixtures of a mode to a new revision while the others
+/// keep their own, since a show may hold several revisions of one mode.
+#[test]
+fn update_library_fixtures_can_leave_a_mode_on_two_revisions() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    create_in_world(&mut world, &mut fixtures, &batch_request(&[10, 11]))
+        .0
+        .expect("creation should succeed");
+
+    let (result, _) = update_in_world(
+        &mut world,
+        &mut fixtures,
+        &mode_updates(&[(10, "Spot")]),
+        "revision-2",
+    );
+
+    result.expect("partial update should succeed");
+    let revision = |id| {
+        fixtures
+            .inner
+            .from_id(id)
+            .unwrap()
+            .library_asset_etag
+            .clone()
+    };
+    assert_eq!(revision(10).as_deref(), Some("revision-2"));
+    assert_eq!(
+        revision(11).as_deref(),
+        Some("builtin:generic-moving-head-spot-16ch:v1")
+    );
+}
+
+/// Verifies an update refuses to rebuild a fixture from another make or model's revision and
+/// leaves the fixture as it was.
+#[test]
+fn update_library_fixtures_rejects_another_model() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    create_in_world(&mut world, &mut fixtures, &batch_request(&[10]))
+        .0
+        .expect("creation should succeed");
+
+    let mut queue = CommandQueue::default();
+    let result = update_library_fixtures(
+        &mut Commands::new(&mut queue, &world),
+        &mut fixtures,
+        |_| None,
+        &mode_updates(&[(10, "Spot")]),
+        |_| {
+            let mut template = moving_head_template()?;
+            template.fixture.model = "Other Model".to_string();
+            template.asset_etag = "revision-2".to_string();
+            Ok(template)
+        },
+    );
+
+    assert_eq!(
+        result.expect_err("another model should be rejected").code,
+        "fixture_library.different_model"
+    );
+    assert_eq!(
+        fixtures
+            .inner
+            .from_id(10)
+            .unwrap()
+            .library_asset_etag
+            .as_deref(),
+        Some("builtin:generic-moving-head-spot-16ch:v1")
+    );
+}
+
+/// Verifies a missing update target is rejected before any mode is resolved.
+#[test]
+fn update_library_fixtures_rejects_missing_fixture() {
+    let mut world = World::new();
+    let mut fixtures = FixtureDataProviderExt::default();
+    let (result, resolved) = update_in_world(
+        &mut world,
+        &mut fixtures,
+        &mode_updates(&[(404, "Spot")]),
+        "revision-2",
+    );
+
+    assert_eq!(
+        result.expect_err("missing fixture should be rejected").code,
+        "fixture_library.fixture_not_found"
+    );
+    assert!(resolved.is_empty());
 }

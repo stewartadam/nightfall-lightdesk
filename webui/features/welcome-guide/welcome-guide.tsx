@@ -21,7 +21,10 @@ import {
 import { Portal } from "solid-js/web";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useUiAction } from "../../components/providers/command-registry";
-import { overlayHost } from "../../components/ui/modal/dialog-stack";
+import {
+  overlayHost,
+  watchOverlayHost,
+} from "../../components/ui/modal/dialog-stack";
 import { Button } from "../../components/ui/visual-language/button";
 import { hasDiskStorage } from "../../lib/disk-storage";
 import { getLogger } from "../../lib/logger";
@@ -34,20 +37,8 @@ import {
   openOrFocusPanelDefinition,
   type PanelOpenTarget,
 } from "../../lib/panel-open-command";
-import {
-  activeInstances,
-  clips,
-  cues,
-  fixtures,
-  fx,
-  programmerSelection,
-  programmerState,
-  pushToast,
-  runtimeCapabilities,
-  sequences,
-  timecodes,
-  timelines,
-} from "../../state/appStores";
+import { testHooksEnabled } from "../../lib/test-mode";
+import { pushToast, runtimeCapabilities } from "../../state/appStores";
 import { activeLayoutId, whenLayoutSettled } from "../../state/layout-switcher";
 import { patchPanelActiveTab, revealPatchFixtures } from "../patch";
 import { normalizeTimelineUid } from "../timeline";
@@ -88,31 +79,60 @@ import {
   startGuideLesson,
 } from "./state";
 import { useFloatingGuide } from "./use-floating-guide";
-import { useGuideProgress, useGuideSnapshot } from "./use-guide-progress";
+import {
+  useGuideProgress,
+  useGuideShowState,
+  useGuideSnapshot,
+} from "./use-guide-progress";
 import "./welcome-guide.css";
 
 const log = getLogger(import.meta.url);
 
-/** Offers an unobtrusive invitation to the guide until the user opens or dismisses it. */
-export function GuideInvitation() {
-  const dismissed = useStore(guideDismissed);
-  const opened = useStore(guideOpen);
+/**
+ * Whether an end-to-end test asked to leave out the invitation. Most specs clear browser storage,
+ * which would otherwise bring the notification back over the workspace they are testing.
+ */
+function guideInvitationSkippedByTest(): boolean {
   return (
-    <Show when={!dismissed() && !opened()}>
-      <aside class="nf-guide-invitation" aria-label="Welcome to Nightfall">
-        <div>
-          <strong>New to Nightfall?</strong>
-          <p>Take a short orientation, then make your first lights.</p>
-        </div>
-        <Button size="compact" variant="primary" onClick={openWelcomeGuide}>
-          Take the tour
-        </Button>
-        <Button size="compact" onClick={closeWelcomeGuide}>
-          Explore on my own
-        </Button>
-      </aside>
-    </Show>
+    testHooksEnabled() &&
+    (window as { __nightfallSkipGuideInvitation?: boolean })
+      .__nightfallSkipGuideInvitation === true
   );
+}
+
+/**
+ * Invites a first-time user to the guide with a notification that has no close button, so it
+ * stays until they pick "Take the tour" or "Explore on my own". Either choice, or opening the
+ * guide from a menu, records the invitation as answered and withdraws it.
+ */
+export function GuideInvitation() {
+  if (guideInvitationSkippedByTest()) return null;
+  const dismissed = useStore(guideDismissed);
+  let invited = false;
+  let closeInvitation: (() => void) | undefined;
+
+  /** Shows the invitation once per page load while it is unanswered, and withdraws it once answered. */
+  createEffect(() => {
+    if (dismissed()) {
+      closeInvitation?.();
+      closeInvitation = undefined;
+      return;
+    }
+    if (invited) return;
+    invited = true;
+    closeInvitation = pushToast(
+      "info",
+      "Take a short orientation, then make your first lights.",
+      0,
+      [
+        { label: "Take the tour", onClick: openWelcomeGuide },
+        { label: "Explore on my own", onClick: closeWelcomeGuide },
+      ],
+      { title: "New to Nightfall?", closable: false },
+    );
+  });
+
+  return null;
 }
 
 /** The header command input, which steps teaching typed commands point at. */
@@ -132,16 +152,19 @@ export default function WelcomeGuide() {
   const index = useStore(guideStepIndex);
   const completed = useStore(guideCompleted);
   const capabilities = useStore(runtimeCapabilities);
-  const timelineMap = useStore(timelines);
-  const clipMap = useStore(clips);
-  const sequenceMap = useStore(sequences);
-  const cueMap = useStore(cues);
-  const fixtureMap = useStore(fixtures);
-  const fxMap = useStore(fx);
-  const instanceMap = useStore(activeInstances);
-  const clockMap = useStore(timecodes);
-  const programmerSelectionList = useStore(programmerSelection);
-  const programmerRows = useStore(programmerState);
+  const show = useGuideShowState(opened);
+  const {
+    timelines: timelineMap,
+    clips: clipMap,
+    sequences: sequenceMap,
+    cues: cueMap,
+    fixtures: fixtureMap,
+    fx: fxMap,
+    instances: instanceMap,
+    timecodes: clockMap,
+    selection: programmerSelectionList,
+    programmer: programmerRows,
+  } = show;
   /** Finds the generated sample timeline without relying on its session-specific UID. */
   const sampleTimeline = createMemo(() =>
     Object.values(timelineMap()).find((entry) => entry.identifiers.id === 1),
@@ -367,7 +390,7 @@ export default function WelcomeGuide() {
     }
     return undefined;
   });
-  const guideSnapshot = useGuideSnapshot(workspace);
+  const guideSnapshot = useGuideSnapshot(workspace, show);
   /**
    * Finds the part of a multi-part step the user is on, starting from `from`: the first part whose
    * `until` doesn't hold yet, or the last part.
@@ -762,13 +785,7 @@ export default function WelcomeGuide() {
       if (next !== untrack(cardHost)) setCardHost(next);
     };
     update();
-    const observer = new MutationObserver(update);
-    observer.observe(document.body, {
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["open"],
-    });
-    onCleanup(() => observer.disconnect());
+    onCleanup(watchOverlayHost(update));
   });
   /** The card itself, docked beside the app for the lesson library and floating during lessons. */
   const cardView = () => (

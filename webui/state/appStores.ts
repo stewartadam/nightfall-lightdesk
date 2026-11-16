@@ -18,6 +18,7 @@ import {
   createImmediateErrorConsoleScrollbackEntry,
   createPendingConsoleScrollbackEntry,
   DEFAULT_CONSOLE_SCROLLBACK_LIMIT,
+  markPendingConsoleScrollbackEntriesUnknown,
   resolveConsoleScrollbackEntryByCorrelation,
   upsertPendingConsoleScrollbackEntry,
 } from "../lib/console-scrollback";
@@ -39,44 +40,36 @@ import {
 import {
   $availableNetworkInterfaces,
   $availableUsbDmxDevices,
+  $backupState,
   $externalControlState,
-  $ioSettings,
   $networkInterfaceStatus,
   $settings,
   $telemetryState,
 } from "./settings";
 
-// Local type definitions for types not yet exported from backend
-// TODO: Move these to typeshare once backend implements them
-export interface EngineMetrics {
-  fps?: number;
-  frame_time_ms?: number;
-  entity_count?: number;
-  framepace_time_ms?: number;
-  framepace_oversleep_ms?: number;
-  framepace_overrun_ms?: number;
-  active_layers: number;
-  active_universes: number;
-  artnet_send_time_ms?: number;
-  artnet_universe_count: number;
-  sacn_send_time_ms?: number;
-  sacn_universe_count: number;
-  parameter_state_build_ms?: number;
-  parameter_state_broadcast_ms?: number;
-  layer_stack_build_ms?: number;
-  layer_stack_transition_build_ms?: number;
-  layer_stack_broadcast_ms?: number;
-  timeline_layer_generation_ms?: number;
-  timeline_update_ms?: number;
-  timeline_audio_ms?: number;
-  timeline_lookahead_sources_ms?: number;
-  timeline_lookahead_assertions_ms?: number;
-  timeline_lookahead_layers_ms?: number;
-  timeline_actions_ms?: number;
-  timeline_parameters_ms?: number;
-  timeline_seek_ms?: number;
-  network_output_send_failures: types.NetworkOutputSendFailure[];
-}
+/** Smoothed backend diagnostic values keyed by diagnostic path; see `METRIC_PATHS`. */
+export type EngineMetrics = Record<string, number>;
+
+/** Diagnostic paths the backend records for the values the UI presents. */
+export const METRIC_PATHS = {
+  fps: "fps",
+  frameTimeMs: "frame_time",
+  entityCount: "entity_count",
+  framepaceTimeMs: "framepace/frame_time_ms",
+  framepaceOversleepMs: "framepace/oversleep_ms",
+  framepaceOverrunMs: "framepace/overrun_ms",
+  activeLayers: "compositor/layers",
+  activeUniverses: "fixtures/output_universes",
+  artnetSendTimeMs: "output_artnet/send_ms",
+  artnetUniverseCount: "output_artnet/universes",
+  sacnSendTimeMs: "output_sacn/send_ms",
+  sacnUniverseCount: "output_sacn/universes",
+  parameterStateBuildMs: "fixtures/parameter_state/build_ms",
+  parameterStateBroadcastMs: "fixtures/parameter_state/broadcast_ms",
+  layerStackBuildMs: "fixtures/layer_stack/build_ms",
+  layerStackTransitionBuildMs: "fixtures/layer_stack/transition_build_ms",
+  layerStackBroadcastMs: "fixtures/layer_stack/broadcast_ms",
+} as const;
 
 export interface UndoState {
   can_undo: boolean;
@@ -328,6 +321,8 @@ export const boardStates = atom<BoardStatusMap>({});
 export const macros = atom<MacroMap>({});
 /** Macro bodies running right now, with the statement each one is on. */
 export const macroRuns = atom<types.MacroRunStatus[]>([]);
+/** Parameters held at a fixed value over all playback, ordered by fixture, element and attribute. */
+export const parkedParameters = atom<types.ParkedParameter[]>([]);
 export const fx = deepMap<FxMap>({});
 export const stepFx = deepMap<StepFxMap>({});
 export const fxModules = deepMap<FxModuleMap>({});
@@ -392,6 +387,7 @@ export const routes = atom<types.RoutesSnapshot>({
   input: [],
   output: [],
   disabled: [],
+  overlap: { input: [], output: [], disabled: [], universes: [] },
 });
 export const routeValidationSettings = atom<types.RouteValidationSettings>({
   mode: "Strict" as types.RouteValidationMode,
@@ -454,6 +450,12 @@ export const activeInstances = deepMap<ActiveInstancesMap>({});
 /** Backend-owned fader bank snapshots, ordered by fader index. */
 export const faders = atom<FaderState[]>([]);
 export const engineMetrics = atom<EngineMetrics | null>(null);
+/** Network outputs whose last sends failed, one entry per physical output. */
+export const networkOutputSendFailures = atom<types.NetworkOutputSendFailure[]>(
+  [],
+);
+/** Clock anchors of the running Step FX editor previews. */
+export const stepFxPreviews = atom<types.StepFxPreviewPlaybackStatus[]>([]);
 
 // Bindable action catalog published by backend domains
 export const actionCatalog = atom<types.ActionCatalogEntry[]>([]);
@@ -572,6 +574,22 @@ export interface SmoothedEngineMetrics {
   layerStackBroadcastMs: number;
 }
 
+/** Diagnostic path each smoothed metric follows. */
+const SMOOTHED_METRIC_PATHS: Record<keyof SmoothedEngineMetrics, string> = {
+  fps: METRIC_PATHS.fps,
+  frameTimeMs: METRIC_PATHS.frameTimeMs,
+  framepaceTimeMs: METRIC_PATHS.framepaceTimeMs,
+  framepaceOversleepMs: METRIC_PATHS.framepaceOversleepMs,
+  framepaceOverrunMs: METRIC_PATHS.framepaceOverrunMs,
+  artnetSendTimeMs: METRIC_PATHS.artnetSendTimeMs,
+  sacnSendTimeMs: METRIC_PATHS.sacnSendTimeMs,
+  parameterStateBuildMs: METRIC_PATHS.parameterStateBuildMs,
+  parameterStateBroadcastMs: METRIC_PATHS.parameterStateBroadcastMs,
+  layerStackBuildMs: METRIC_PATHS.layerStackBuildMs,
+  layerStackTransitionBuildMs: METRIC_PATHS.layerStackTransitionBuildMs,
+  layerStackBroadcastMs: METRIC_PATHS.layerStackBroadcastMs,
+};
+
 const EMA_ALPHA = 0.05; // ~20 samples to stabilize at 44Hz = ~0.5s response time
 let smoothedValues: SmoothedEngineMetrics = {
   fps: 0,
@@ -604,50 +622,14 @@ engineMetrics.subscribe((raw) => {
     return EMA_ALPHA * newVal + (1 - EMA_ALPHA) * current;
   };
 
-  smoothedValues = {
-    fps: applyEma(smoothedValues.fps, raw.fps),
-    frameTimeMs: applyEma(smoothedValues.frameTimeMs, raw.frame_time_ms),
-    framepaceTimeMs: applyEma(
-      smoothedValues.framepaceTimeMs,
-      raw.framepace_time_ms,
+  smoothedValues = Object.fromEntries(
+    (Object.keys(SMOOTHED_METRIC_PATHS) as (keyof SmoothedEngineMetrics)[]).map(
+      (key) => [
+        key,
+        applyEma(smoothedValues[key], raw[SMOOTHED_METRIC_PATHS[key]]),
+      ],
     ),
-    framepaceOversleepMs: applyEma(
-      smoothedValues.framepaceOversleepMs,
-      raw.framepace_oversleep_ms,
-    ),
-    framepaceOverrunMs: applyEma(
-      smoothedValues.framepaceOverrunMs,
-      raw.framepace_overrun_ms,
-    ),
-    artnetSendTimeMs: applyEma(
-      smoothedValues.artnetSendTimeMs,
-      raw.artnet_send_time_ms,
-    ),
-    sacnSendTimeMs: applyEma(
-      smoothedValues.sacnSendTimeMs,
-      raw.sacn_send_time_ms,
-    ),
-    parameterStateBuildMs: applyEma(
-      smoothedValues.parameterStateBuildMs,
-      raw.parameter_state_build_ms,
-    ),
-    parameterStateBroadcastMs: applyEma(
-      smoothedValues.parameterStateBroadcastMs,
-      raw.parameter_state_broadcast_ms,
-    ),
-    layerStackBuildMs: applyEma(
-      smoothedValues.layerStackBuildMs,
-      raw.layer_stack_build_ms,
-    ),
-    layerStackTransitionBuildMs: applyEma(
-      smoothedValues.layerStackTransitionBuildMs,
-      raw.layer_stack_transition_build_ms,
-    ),
-    layerStackBroadcastMs: applyEma(
-      smoothedValues.layerStackBroadcastMs,
-      raw.layer_stack_broadcast_ms,
-    ),
-  };
+  ) as unknown as SmoothedEngineMetrics;
 
   setStoreAction(
     smoothedEngineMetrics,
@@ -868,6 +850,26 @@ export function applyConsoleCommandResult(
       consoleScrollback.get(),
       correlationId,
       outcome,
+    ),
+  );
+}
+
+/**
+ * Flags every scrollback entry still waiting on a result with a warning, for when the client
+ * dropped incoming messages and those results may never arrive. A result that does arrive later
+ * still settles its entry. The entry for `keepPendingCorrelationId` stays pending.
+ */
+export function markPendingConsoleCommandsUnknown(
+  warningMessage: string,
+  keepPendingCorrelationId?: string,
+): void {
+  setStoreAction(
+    consoleScrollback,
+    "Mark Pending Console Commands Unknown",
+    markPendingConsoleScrollbackEntriesUnknown(
+      consoleScrollback.get(),
+      warningMessage,
+      keepPendingCorrelationId,
     ),
   );
 }
@@ -1101,9 +1103,9 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
   window.appStores = {
     dockApi,
     settings: $settings,
-    ioSettings: $ioSettings,
     availableNetworkInterfaces: $availableNetworkInterfaces,
     externalControlState: $externalControlState,
+    backupState: $backupState,
     telemetryState: $telemetryState,
     availableUsbDmxDevices: $availableUsbDmxDevices,
     networkInterfaceStatus: $networkInterfaceStatus,
@@ -1137,6 +1139,7 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     boardStates,
     macros,
     macroRuns,
+    parkedParameters,
     fx,
     stepFx,
     fxModules,
@@ -1190,6 +1193,8 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     showTempo,
     undoState,
     engineMetrics,
+    networkOutputSendFailures,
+    stepFxPreviews,
     smoothedEngineMetrics,
     wsStats,
     frameStats,
@@ -1228,6 +1233,11 @@ if (typeof window !== "undefined" && testHooksEnabled()) {
     send: async (data: object) => {
       const { engineRuntime } = await import("../lib/engine-runtime");
       engineRuntime.sendCommand(data);
+    },
+    /** Send an untracked update, such as a fader move, to the backend via WebSocket. */
+    sendUpdate: async (module: string, update: object) => {
+      const { engineRuntime } = await import("../lib/engine-runtime");
+      engineRuntime.sendUpdate(module, update);
     },
     /** Send a command to the backend and wait for its CommandResult response. */
     sendAndAwait: async (data: object) => {

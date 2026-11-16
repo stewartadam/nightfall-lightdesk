@@ -6,18 +6,18 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! Desk command routing for showfile lifecycle operations.
+//! Showfile command routing for showfile lifecycle operations.
 
 use super::*;
 
 /// Resolves the showfile name targeted by a save command.
 pub(super) fn effective_save_showfile_name(
-    command: &DeskCommand,
+    command: &ShowfileCommand,
     current_showfile: &CurrentShowfile,
 ) -> Result<Option<String>, String> {
     match command {
-        DeskCommand::SaveNamedShowfile(name) => current_showfile_name(Some(name)),
-        DeskCommand::SaveShowfile => Ok(current_showfile.name().map(str::to_string)),
+        ShowfileCommand::SaveNamedShowfile(name) => current_showfile_name(Some(name)),
+        ShowfileCommand::SaveShowfile => Ok(current_showfile.name().map(str::to_string)),
         _ => Ok(None),
     }
 }
@@ -28,18 +28,20 @@ pub fn handle_events(
     mut pending_world_swap_request: Option<ResMut<crate::PendingWorldSwapRequest>>,
     mut current_showfile: ResMut<CurrentShowfile>,
     mut clean_snapshot_hash: ResMut<ShowfileCleanSnapshotHash>,
+    mut draft_save_status: ResMut<DraftSaveStatus>,
+    settings_registry: Option<Res<SettingsRegistry>>,
     mut commands: Commands,
-    mut events: MessageReader<CommandEnvelope<DeskCommand>>,
+    mut events: MessageReader<CommandEnvelope<ShowfileCommand>>,
     mut responder: CommandResponder,
     mut ui_notifications: MessageWriter<UiNotification>,
 ) {
     for event in events.read() {
         match &event.command {
-            DeskCommand::NewShowfile | DeskCommand::NewNamedShowfile(_) => {
+            ShowfileCommand::NewShowfile | ShowfileCommand::NewNamedShowfile(_) => {
                 if let Some(pending_world_swap_request) = pending_world_swap_request.as_deref_mut()
                 {
                     let (showfile_name, include_sample_data) = match &event.command {
-                        DeskCommand::NewNamedShowfile(options) => {
+                        ShowfileCommand::NewNamedShowfile(options) => {
                             (Some(options.name.as_str()), options.include_sample_data)
                         }
                         _ => (None, false),
@@ -59,7 +61,7 @@ pub fn handle_events(
                 );
             }
 
-            DeskCommand::SaveShowfile | DeskCommand::SaveNamedShowfile(_) => {
+            ShowfileCommand::SaveShowfile | ShowfileCommand::SaveNamedShowfile(_) => {
                 let showfile_name =
                     match effective_save_showfile_name(&event.command, &current_showfile) {
                         Ok(showfile_name) => showfile_name,
@@ -68,14 +70,24 @@ pub fn handle_events(
                             continue;
                         }
                     };
+                // Saving a failover pair's show under a new name makes it one of this
+                // computer's own showfiles.
+                let leaves_failover_storage = nightfall::show_storage_is_failover()
+                    && showfile_name.as_deref() != current_showfile.name();
+                if leaves_failover_storage {
+                    select_library_show_storage();
+                }
                 let mut showfile_save_state = showfile_state.p0();
                 match save_showfile(&mut showfile_save_state, showfile_name.as_deref()) {
                     Err(error) => {
+                        if leaves_failover_storage {
+                            nightfall::set_show_storage_failover(true);
+                        }
                         tracing::error!("Failed to save showfile: {}", error);
                         fail_showfile_command(&mut responder, event.command_id, error);
                     }
                     Ok(snapshot) => {
-                        if matches!(&event.command, DeskCommand::SaveNamedShowfile(_)) {
+                        if matches!(&event.command, ShowfileCommand::SaveNamedShowfile(_)) {
                             ui_notifications.write(UiNotification::current_showfile_renamed(
                                 showfile_name.clone(),
                                 current_showfile.name(),
@@ -87,15 +99,18 @@ pub fn handle_events(
                         {
                             tracing::warn!("Failed to update clean showfile hash: {}", error);
                         }
+                        clear_draft_save_failure(&mut draft_save_status);
                         write_showfile_saved_feedback(event, &mut responder, &mut ui_notifications);
                     }
                 }
             }
 
-            DeskCommand::SaveDraftShowfile | DeskCommand::SaveNamedDraftShowfile(_) => {
+            ShowfileCommand::SaveDraftShowfile | ShowfileCommand::SaveNamedDraftShowfile(_) => {
                 let showfile_name = match &event.command {
-                    DeskCommand::SaveNamedDraftShowfile(name) => current_showfile_name(Some(name)),
-                    DeskCommand::SaveDraftShowfile => {
+                    ShowfileCommand::SaveNamedDraftShowfile(name) => {
+                        current_showfile_name(Some(name))
+                    }
+                    ShowfileCommand::SaveDraftShowfile => {
                         Ok(current_showfile.name().map(str::to_string))
                     }
                     _ => Ok(None),
@@ -108,11 +123,13 @@ pub fn handle_events(
                     }
                 };
                 let mut showfile_save_state = showfile_state.p0();
-                match save_draft_showfile_if_dirty(
+                let result = save_draft_showfile_if_dirty(
                     &mut showfile_save_state,
                     showfile_name.as_deref(),
                     &mut clean_snapshot_hash,
-                ) {
+                );
+                record_draft_save_result(&mut draft_save_status, &result);
+                match result {
                     Ok(_) => {
                         succeed_showfile_command(&mut responder, event.command_id);
                     }
@@ -123,21 +140,24 @@ pub fn handle_events(
                 }
             }
 
-            DeskCommand::LoadShowfile
-            | DeskCommand::LoadNamedShowfile(_)
-            | DeskCommand::LoadDraftShowfile(_)
-            | DeskCommand::LoadShowfileRevision(_) => {
+            ShowfileCommand::LoadShowfile
+            | ShowfileCommand::LoadNamedShowfile(_)
+            | ShowfileCommand::LoadDraftShowfile(_)
+            | ShowfileCommand::LoadShowfileRevision(_) => {
                 let selection = match &event.command {
-                    DeskCommand::LoadShowfile => showfile_dir_path(None).map(|path| (None, path)),
-                    DeskCommand::LoadNamedShowfile(name) => current_showfile_name(Some(name))
+                    ShowfileCommand::LoadShowfile => {
+                        library_showfile_dir_path(None).map(|path| (None, path))
+                    }
+                    ShowfileCommand::LoadNamedShowfile(name) => current_showfile_name(Some(name))
                         .and_then(|name| {
-                            showfile_dir_path(name.as_deref()).map(|path| (name, path))
+                            library_showfile_dir_path(name.as_deref()).map(|path| (name, path))
                         }),
-                    DeskCommand::LoadDraftShowfile(name) => current_showfile_name(Some(name))
+                    ShowfileCommand::LoadDraftShowfile(name) => current_showfile_name(Some(name))
                         .and_then(|name| {
-                            showfile_draft_dir_path(name.as_deref()).map(|path| (name, path))
+                            library_showfile_draft_dir_path(name.as_deref())
+                                .map(|path| (name, path))
                         }),
-                    DeskCommand::LoadShowfileRevision(selection) => {
+                    ShowfileCommand::LoadShowfileRevision(selection) => {
                         current_showfile_name(Some(&selection.showfile_name)).and_then(|name| {
                             revision::resolve_showfile_revision_directory(selection)
                                 .map(|path| (name, path))
@@ -160,13 +180,19 @@ pub fn handle_events(
                     );
                     continue;
                 }
-                let snapshot = match prepare_showfile_session(&source, showfile_name.as_deref()) {
+                let mut snapshot = match prepare_showfile_session(&source, showfile_name.as_deref())
+                {
                     Ok(snapshot) => snapshot,
                     Err(error) => {
                         fail_showfile_command(&mut responder, event.command_id, error);
                         continue;
                     }
                 };
+                // The clean hash compares against snapshots of the world, where every settings
+                // section is complete.
+                if let Some(registry) = settings_registry.as_deref() {
+                    snapshot.settings = registry.canonical_saved(&snapshot.settings);
+                }
                 let mut showfile_load_state = showfile_state.p1();
                 if let Err(error) = load_showfile_snapshot_from_state(
                     snapshot.clone(),
@@ -188,6 +214,7 @@ pub fn handle_events(
                             update_clean_snapshot_hash_from_saved_show(
                                 &mut clean_snapshot_hash,
                                 showfile_name.as_deref(),
+                                settings_registry.as_deref(),
                             )
                         }
                     });
@@ -201,7 +228,7 @@ pub fn handle_events(
                 );
             }
 
-            DeskCommand::DiscardDraftShowfile(name) => {
+            ShowfileCommand::DiscardDraftShowfile(name) => {
                 match current_showfile_name(Some(name))
                     .and_then(|showfile_name| remove_draft_showfile(showfile_name.as_deref()))
                 {
@@ -214,7 +241,7 @@ pub fn handle_events(
                 }
             }
 
-            DeskCommand::DeleteShowfile(name) => {
+            ShowfileCommand::DeleteShowfile(name) => {
                 let result = current_showfile_name(Some(name)).and_then(|showfile_name| {
                     if showfile_name.as_deref() == current_showfile.name() {
                         return Err(format!(
@@ -223,7 +250,7 @@ pub fn handle_events(
                         ));
                     }
                     trash_showfile_in_root(
-                        &showfile_root_dir_path()?,
+                        &showfile_library_root_path()?,
                         showfile_name.as_deref(),
                         trash::now_ms(),
                     )
@@ -234,8 +261,8 @@ pub fn handle_events(
                 }
             }
 
-            DeskCommand::RestoreDeletedShowfile(entry_id) => {
-                match showfile_root_dir_path()
+            ShowfileCommand::RestoreDeletedShowfile(entry_id) => {
+                match showfile_library_root_path()
                     .and_then(|root| restore_trashed_showfile_in_root(&root, entry_id))
                 {
                     Ok(_) => succeed_showfile_command(&mut responder, event.command_id),
@@ -243,15 +270,16 @@ pub fn handle_events(
                 }
             }
 
-            DeskCommand::EmptyShowfileTrash => {
-                match showfile_root_dir_path().and_then(|root| empty_showfile_trash_in_root(&root))
+            ShowfileCommand::EmptyShowfileTrash => {
+                match showfile_library_root_path()
+                    .and_then(|root| empty_showfile_trash_in_root(&root))
                 {
                     Ok(()) => succeed_showfile_command(&mut responder, event.command_id),
                     Err(error) => fail_showfile_command(&mut responder, event.command_id, error),
                 }
             }
 
-            DeskCommand::ImportShowfile(options) => {
+            ShowfileCommand::ImportShowfile(options) => {
                 let import_path = match import_showfile_path(options) {
                     Ok(path) => path,
                     Err(error) => {
@@ -311,8 +339,6 @@ pub fn handle_events(
                 }
                 write_showfile_imported_feedback(event, &mut responder, &mut ui_notifications);
             }
-
-            _ => {}
         }
     }
 }

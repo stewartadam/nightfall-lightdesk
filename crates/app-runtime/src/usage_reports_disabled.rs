@@ -9,9 +9,9 @@
 //! Usage reports for builds without the `telemetry` feature: every entry point does nothing.
 
 use bevy::prelude::App;
-use nightfall_desk::prelude::TelemetryState;
 
 use crate::HostShell;
+use crate::telemetry::TelemetryState;
 
 /// Stands in for the usage report service; holds nothing.
 pub struct UsageReportsGuard;

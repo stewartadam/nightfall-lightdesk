@@ -6,19 +6,39 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use bevy::ecs::system::RunSystemOnce;
 use nightfall_clips::Clip;
+use nightfall_controls::prelude::*;
+use nightfall_cues::prelude::*;
 use nightfall_dmx::prelude::Attribute;
+use nightfall_engine::prelude::{
+    PanelLayouts, UiPreferences, register_settings_section, sync_settings_values,
+};
 use nightfall_fixture_model::prelude::*;
+use nightfall_fixtures::prelude::ParameterStreamSettings;
+use nightfall_flow::prelude::*;
+use nightfall_fx::prelude::*;
+#[cfg(feature = "midi")]
+use nightfall_input_midi::prelude::*;
+#[cfg(feature = "osc")]
+use nightfall_input_osc::prelude::*;
+use nightfall_io::IO_SETTINGS_SECTION;
 use nightfall_io::RouteTransport;
 use nightfall_io::{InputSignalLossPolicy, IoRuntimeSettings, TransportRuntimePolicy};
 #[cfg(feature = "object-library")]
 use nightfall_object_library::manager::{decode_object_path, encode_showfile_object_path};
 #[cfg(feature = "object-library")]
 use nightfall_object_library::showfile::{SHOWFILE_OBJECT_SNAPSHOTS_DIR, scene_object_model_path};
-use nightfall_showfile::{CURRENT_SHOWFILE_VERSION, parse_showfile_snapshot_json};
+use nightfall_programming::prelude::{ProgrammingSettings, SelectionFlattenPolicy};
+use nightfall_scene_objects::prelude::*;
+use nightfall_showfile::{
+    CURRENT_SHOWFILE_VERSION, ShowfileSettings, parse_showfile_snapshot_json,
+};
+use nightfall_showfile::{ShowfileImportOptions, ShowfileImportPolicy};
+use nightfall_timecode::prelude::*;
+use nightfall_timeline::prelude::*;
 use uuid::Uuid;
 
 use super::*;
@@ -26,6 +46,17 @@ use crate::systems::showfile_events::listing::{
     AvailableShowfileValidationStatus, available_showfile_draft_for_name_in_root,
     list_available_showfiles_in_root,
 };
+
+/// Registers the settings sections a full app saves with the show, so test worlds save and load
+/// them the same way.
+fn register_show_settings(world: &mut World) {
+    register_settings_section(world, UiPreferences::SECTION);
+    register_settings_section(world, PanelLayouts::SECTION);
+    register_settings_section(world, ProgrammingSettings::SECTION);
+    register_settings_section(world, ParameterStreamSettings::SECTION);
+    register_settings_section(world, ShowfileSettings::SECTION);
+    register_settings_section(world, IO_SETTINGS_SECTION);
+}
 
 fn identifiers(id: u32, label: &str) -> Identifiers {
     Identifiers {
@@ -61,9 +92,8 @@ fn setup_world() -> World {
     world.insert_resource(MidiMappings::default());
     #[cfg(feature = "osc")]
     world.insert_resource(OscMappings::default());
-    world.insert_resource(DeskSettings::default());
+    register_show_settings(&mut world);
     world.insert_resource(Faders::default());
-    world.insert_resource(IoRuntimeSettings::default());
     world.insert_resource(GlobalVariables::default());
     world.insert_resource(PendingCommandBuffer::default());
     world.insert_resource(Messages::<UiNotification>::default());
@@ -74,6 +104,7 @@ fn setup_world() -> World {
     world.insert_resource(CommandTracker::default());
     world.insert_resource(CurrentShowfile::default());
     world.insert_resource(ShowfileCleanSnapshotHash::default());
+    world.insert_resource(DraftSaveStatus::default());
     world
 }
 
@@ -88,7 +119,7 @@ fn write_test_showfile_manifest(
 }
 
 /// Registers and queues one showfile command for handler tests.
-fn submit_showfile_command(world: &mut World, command: DeskCommand) -> CommandId {
+fn submit_showfile_command(world: &mut World, command: ShowfileCommand) -> CommandId {
     let command_id = CommandId::new();
     world
         .resource_mut::<CommandTracker>()
@@ -100,7 +131,7 @@ fn submit_showfile_command(world: &mut World, command: DeskCommand) -> CommandId
         )
         .expect("showfile command should register");
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             command_id,
             command_id.into(),
@@ -589,13 +620,13 @@ fn effective_save_showfile_name_uses_current_loaded_showfile() {
     };
 
     assert_eq!(
-        effective_save_showfile_name(&DeskCommand::SaveShowfile, &current_showfile)
+        effective_save_showfile_name(&ShowfileCommand::SaveShowfile, &current_showfile)
             .expect("resolve save target"),
         Some("sample".to_string())
     );
     assert_eq!(
         effective_save_showfile_name(
-            &DeskCommand::SaveNamedShowfile("other.nightfall-show".to_string()),
+            &ShowfileCommand::SaveNamedShowfile("other.nightfall-show".to_string()),
             &current_showfile,
         )
         .expect("resolve named save target"),
@@ -634,6 +665,48 @@ fn prepare_showfile_session_loads_arbitrary_directory_and_resumes_working_storag
         "keep working assets"
     );
     assert!(!showfile_dir_path(Some("destination")).unwrap().exists());
+    nightfall::clear_active_show_data_dir();
+    nightfall::set_nightfall_data_dir(None);
+}
+
+/// A show opened from the failover folder keeps its saved copy, draft and saves there, leaving
+/// this computer's own showfiles and drafts untouched, until one of its own shows opens again.
+#[test]
+fn failover_show_is_stored_apart_from_local_showfiles() {
+    let _guard = crate::process_config_lock()
+        .lock()
+        .expect("process config lock");
+    let root = tempfile::tempdir().expect("create showfile root");
+    nightfall::set_nightfall_data_dir(Some(root.path().to_path_buf()));
+    nightfall::clear_active_show_data_dir();
+    let failover = nightfall::failover_data_dir().unwrap();
+    let mirrored = failover.join("Tour.nightfall-show");
+    std::fs::create_dir_all(&mirrored).unwrap();
+    let snapshot = collect_snapshot(&mut setup_world());
+    let json = serialize_showfile_snapshot_json(&snapshot).expect("serialize snapshot");
+    std::fs::write(mirrored.join(SHOWFILE_SNAPSHOT_FILENAME), &json).unwrap();
+
+    prepare_showfile_session(&mirrored, Some("Tour")).expect("open the failover show");
+    assert!(nightfall::show_storage_is_failover());
+    let draft = failover.join("drafts").join("Tour.nightfall-show");
+    assert_eq!(nightfall::active_show_data_dir(), Some(draft.clone()));
+    assert_eq!(showfile_dir_path(Some("Tour")).unwrap(), mirrored);
+    assert!(!root.path().join("drafts").exists());
+    assert!(!root.path().join("Tour.nightfall-show").exists());
+    assert_eq!(
+        library_showfile_draft_dir_path(Some("Tour")).unwrap(),
+        root.path().join("drafts").join("Tour.nightfall-show")
+    );
+    assert!(validate_new_showfile_name(Some("Tour")).is_ok());
+
+    let local = tempfile::tempdir().expect("create a local source");
+    std::fs::write(local.path().join(SHOWFILE_SNAPSHOT_FILENAME), &json).unwrap();
+    prepare_showfile_session(local.path(), Some("Local")).expect("open a local show");
+    assert!(!nightfall::show_storage_is_failover());
+    assert_eq!(
+        nightfall::active_show_data_dir(),
+        Some(root.path().join("drafts").join("Local.nightfall-show"))
+    );
     nightfall::clear_active_show_data_dir();
     nightfall::set_nightfall_data_dir(None);
 }
@@ -1364,11 +1437,11 @@ fn merge_showfile_snapshots_skip_groups_retargets_fx_selection_by_id() {
         attributes: HashMap::new(),
         timebase: Default::default(),
     }];
-    incoming.sequences[0].setup_cue.instructions = vec![BoundCueInstruction {
+    incoming.sequences[0].setup_cue.instructions = vec![BoundAssertionSet {
         selection: SpatialSelection::identity(SelectionExpr::Group(GroupRefExpr::ByUid {
             uid: incoming_group_uid,
         })),
-        cue_instruction: CueInstruction::default(),
+        assertions: AssertionSet::default(),
     }];
 
     let options = ShowfileImportOptions {
@@ -1413,13 +1486,13 @@ fn merge_showfile_snapshots_skip_blueprints_retargets_cue_references_by_id() {
         },
         ..current_blueprint
     }];
-    incoming.cues[0].instructions = vec![BoundCueInstruction {
+    incoming.cues[0].instructions = vec![BoundAssertionSet {
         selection: SpatialSelection::default(),
-        cue_instruction: CueInstruction {
-            blueprint_application: Some(BlueprintApplication {
-                blueprint_uid: incoming_blueprint_uid,
-                selector: BlueprintSelector::Category(Attribute::Red.category()),
-            }),
+        assertions: AssertionSet {
+            blueprint_application: Some(BlueprintApplication::new(
+                incoming_blueprint_uid,
+                BlueprintSelector::Category(Attribute::Red.category()),
+            )),
             ..Default::default()
         },
     }];
@@ -1436,7 +1509,7 @@ fn merge_showfile_snapshots_skip_blueprints_retargets_cue_references_by_id() {
 
     assert_eq!(
         merged.cues[0].instructions[0]
-            .cue_instruction
+            .assertions
             .blueprint_application
             .as_ref()
             .map(|application| application.blueprint_uid),
@@ -1771,7 +1844,7 @@ fn save_showfile_event_emits_success_result_and_toast() {
         correlation_id.into(),
         CommandOrigin::WebUi,
         ReplyTarget::Detached,
-        DeskCommand::SaveShowfile,
+        ShowfileCommand::SaveShowfile,
     );
     app.world_mut()
         .resource_mut::<CommandTracker>()
@@ -1829,17 +1902,17 @@ fn save_showfile_event_emits_success_result_and_toast() {
 fn new_showfile_event_is_deferred_when_swap_request_resource_exists() {
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
 
     let correlation_id = Uuid::new_v4();
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             correlation_id.into(),
             correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::NewShowfile,
+            ShowfileCommand::NewShowfile,
         ));
 
     world
@@ -1864,17 +1937,17 @@ fn new_showfile_event_is_deferred_when_swap_request_resource_exists() {
 fn named_new_showfile_event_is_deferred_when_swap_request_resource_exists() {
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
 
     let correlation_id = Uuid::new_v4();
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             correlation_id.into(),
             correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::NewNamedShowfile(nightfall_desk::desk_command::NewShowfileOptions {
+            ShowfileCommand::NewNamedShowfile(nightfall_showfile::NewShowfileOptions {
                 name: "demo".to_string(),
                 include_sample_data: true,
             }),
@@ -1905,17 +1978,17 @@ fn load_showfile_event_is_deferred_when_swap_request_resource_exists() {
         .expect("process config lock");
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
 
     let correlation_id = Uuid::new_v4();
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             correlation_id.into(),
             correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::LoadNamedShowfile("demo".to_string()),
+            ShowfileCommand::LoadNamedShowfile("demo".to_string()),
         ));
 
     world
@@ -1943,17 +2016,17 @@ fn load_draft_showfile_event_is_deferred_when_swap_request_resource_exists() {
         .expect("process config lock");
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
 
     let correlation_id = Uuid::new_v4();
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             correlation_id.into(),
             correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::LoadDraftShowfile("demo".to_string()),
+            ShowfileCommand::LoadDraftShowfile("demo".to_string()),
         ));
 
     world
@@ -1995,10 +2068,10 @@ fn load_showfile_event_emits_success_result_after_direct_load() {
         .expect("block saved manifest repair with a directory");
 
     let mut world = setup_world();
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
     let command_id = submit_showfile_command(
         &mut world,
-        DeskCommand::LoadNamedShowfile("tour".to_string()),
+        ShowfileCommand::LoadNamedShowfile("tour".to_string()),
     );
 
     world
@@ -2071,10 +2144,10 @@ fn load_showfile_revision_event_preserves_saved_showfile_until_save() {
     .expect("write revision snapshot");
 
     let mut world = setup_world();
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
     let command_id = submit_showfile_command(
         &mut world,
-        DeskCommand::LoadShowfileRevision(
+        ShowfileCommand::LoadShowfileRevision(
             ShowfileRevisionSelection::from_revision_name("default-20260707-151450")
                 .expect("parse revision selection"),
         ),
@@ -2123,7 +2196,7 @@ fn load_showfile_revision_event_preserves_saved_showfile_until_save() {
         "revision variable should retain its loaded string value"
     );
 
-    let save_command_id = submit_showfile_command(&mut world, DeskCommand::SaveShowfile);
+    let save_command_id = submit_showfile_command(&mut world, ShowfileCommand::SaveShowfile);
     world
         .run_system_once(handle_events)
         .expect("run explicit save handler");
@@ -2159,27 +2232,27 @@ fn mixed_world_swap_events_preserve_original_order() {
         .expect("process config lock");
     let mut world = setup_world();
     world.insert_resource(crate::PendingWorldSwapRequest::default());
-    world.insert_resource(Messages::<CommandEnvelope<DeskCommand>>::default());
+    world.insert_resource(Messages::<CommandEnvelope<ShowfileCommand>>::default());
 
     let load_correlation_id = Uuid::new_v4();
     let new_correlation_id = Uuid::new_v4();
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             load_correlation_id.into(),
             load_correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::LoadShowfile,
+            ShowfileCommand::LoadShowfile,
         ));
     world
-        .resource_mut::<Messages<CommandEnvelope<DeskCommand>>>()
+        .resource_mut::<Messages<CommandEnvelope<ShowfileCommand>>>()
         .write(CommandEnvelope::with_context(
             new_correlation_id.into(),
             new_correlation_id.into(),
             CommandOrigin::WebUi,
             ReplyTarget::Detached,
-            DeskCommand::NewShowfile,
+            ShowfileCommand::NewShowfile,
         ));
 
     world
@@ -2394,12 +2467,15 @@ fn seed_world(world: &mut World) {
         }]);
 
     {
-        let mut desk_settings = world.resource_mut::<DeskSettings>();
-        desk_settings.programmer_auto_select = true;
-        desk_settings.audio_device = Some("Built-in Output".to_string());
-        desk_settings.selection_flatten_policy = SelectionFlattenPolicy::Prompt;
-        desk_settings.default_panel_layout_id = Some("operator-layout".to_string());
-        desk_settings.panel_layouts = vec![StoredPanelLayout {
+        let mut programming = world.resource_mut::<ProgrammingSettings>();
+        programming.auto_select = true;
+        programming.selection_flatten_policy = SelectionFlattenPolicy::Prompt;
+    }
+    world.resource_mut::<ShowfileSettings>().backup_retention = 5;
+    {
+        let mut panel_layouts = world.resource_mut::<PanelLayouts>();
+        panel_layouts.default_layout_id = Some("operator-layout".to_string());
+        panel_layouts.layouts = vec![StoredPanelLayout {
             shown_in_switcher: true,
             id: "operator-layout".to_string(),
             name: "Operator".to_string(),
@@ -2428,6 +2504,7 @@ fn seed_world(world: &mut World) {
 }
 
 fn collect_snapshot(world: &mut World) -> ShowfileSnapshot {
+    sync_settings_values(world);
     world
         .run_system_once(|showfile_save_state: ShowfileSaveState| {
             snapshot_from_save_state(&showfile_save_state)
@@ -2441,64 +2518,7 @@ fn apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) {
         .run_system_once(
             move |mut showfile_load_state: ShowfileLoadState, mut commands: Commands| {
                 let snapshot = snapshot.take().expect("snapshot should be available");
-                let ShowfileLoadState {
-                    fixture_data_provider,
-                    scene_object_provider,
-                    cue_data_provider,
-                    seq_data_provider,
-                    group_data_provider,
-                    master_data_provider,
-                    blueprint_data_provider,
-                    color_path_data_provider,
-                    fx_data_provider,
-                    fx_module_data_provider,
-                    flow_data_provider,
-                    timecode_data_provider,
-                    timeline_data_provider,
-                    board_data_provider,
-                    macro_data_provider,
-                    active_fx_module_ids: _,
-                    input_routes,
-                    output_routes,
-                    disabled_routes,
-                    #[cfg(feature = "midi")]
-                    midi_mappings,
-                    #[cfg(feature = "osc")]
-                    osc_mappings,
-                    global_variables,
-                    desk_settings,
-                    io_settings,
-                    ..
-                } = &mut showfile_load_state;
-                apply_showfile_snapshot(
-                    snapshot,
-                    fixture_data_provider.as_mut(),
-                    scene_object_provider.as_mut(),
-                    cue_data_provider.as_mut(),
-                    seq_data_provider.as_mut(),
-                    group_data_provider.as_mut(),
-                    master_data_provider.as_mut(),
-                    blueprint_data_provider.as_mut(),
-                    color_path_data_provider.as_mut(),
-                    fx_data_provider.as_mut(),
-                    fx_module_data_provider.as_mut(),
-                    flow_data_provider.as_mut(),
-                    timecode_data_provider.as_mut(),
-                    timeline_data_provider.as_mut(),
-                    board_data_provider.as_mut(),
-                    macro_data_provider.as_mut(),
-                    input_routes.as_mut(),
-                    output_routes.as_mut(),
-                    disabled_routes.as_mut(),
-                    #[cfg(feature = "midi")]
-                    midi_mappings.as_mut(),
-                    #[cfg(feature = "osc")]
-                    osc_mappings.as_mut(),
-                    desk_settings.as_mut(),
-                    io_settings.as_mut(),
-                    &mut commands,
-                    global_variables.as_ref(),
-                )
+                apply_showfile_snapshot(snapshot, &mut showfile_load_state.apply, &mut commands)
             },
         )
         .expect("apply snapshot system should run")
@@ -2511,64 +2531,7 @@ fn try_apply_snapshot(world: &mut World, snapshot: ShowfileSnapshot) -> Result<(
         .run_system_once(
             move |mut showfile_load_state: ShowfileLoadState, mut commands: Commands| {
                 let snapshot = snapshot.take().expect("snapshot should be available");
-                let ShowfileLoadState {
-                    fixture_data_provider,
-                    scene_object_provider,
-                    cue_data_provider,
-                    seq_data_provider,
-                    group_data_provider,
-                    master_data_provider,
-                    blueprint_data_provider,
-                    color_path_data_provider,
-                    fx_data_provider,
-                    fx_module_data_provider,
-                    flow_data_provider,
-                    timecode_data_provider,
-                    timeline_data_provider,
-                    board_data_provider,
-                    macro_data_provider,
-                    active_fx_module_ids: _,
-                    input_routes,
-                    output_routes,
-                    disabled_routes,
-                    #[cfg(feature = "midi")]
-                    midi_mappings,
-                    #[cfg(feature = "osc")]
-                    osc_mappings,
-                    global_variables,
-                    desk_settings,
-                    io_settings,
-                    ..
-                } = &mut showfile_load_state;
-                apply_showfile_snapshot(
-                    snapshot,
-                    fixture_data_provider.as_mut(),
-                    scene_object_provider.as_mut(),
-                    cue_data_provider.as_mut(),
-                    seq_data_provider.as_mut(),
-                    group_data_provider.as_mut(),
-                    master_data_provider.as_mut(),
-                    blueprint_data_provider.as_mut(),
-                    color_path_data_provider.as_mut(),
-                    fx_data_provider.as_mut(),
-                    fx_module_data_provider.as_mut(),
-                    flow_data_provider.as_mut(),
-                    timecode_data_provider.as_mut(),
-                    timeline_data_provider.as_mut(),
-                    board_data_provider.as_mut(),
-                    macro_data_provider.as_mut(),
-                    input_routes.as_mut(),
-                    output_routes.as_mut(),
-                    disabled_routes.as_mut(),
-                    #[cfg(feature = "midi")]
-                    midi_mappings.as_mut(),
-                    #[cfg(feature = "osc")]
-                    osc_mappings.as_mut(),
-                    desk_settings.as_mut(),
-                    io_settings.as_mut(),
-                    &mut commands,
-                    global_variables.as_ref(),
-                )
+                apply_showfile_snapshot(snapshot, &mut showfile_load_state.apply, &mut commands)
             },
         )
         .expect("apply snapshot system should run")
@@ -2647,91 +2610,7 @@ fn try_load_snapshot_in_place(world: &mut World, snapshot: ShowfileSnapshot) -> 
         .run_system_once(
             move |mut showfile_load_state: ShowfileLoadState, mut commands: Commands| {
                 let snapshot = snapshot.take().expect("snapshot should be available");
-                let ShowfileLoadState {
-                    fixture_data_provider,
-                    scene_object_provider,
-                    cue_data_provider,
-                    seq_data_provider,
-                    group_data_provider,
-                    master_data_provider,
-                    blueprint_data_provider,
-                    color_path_data_provider,
-                    fx_data_provider,
-                    fx_module_data_provider,
-                    flow_data_provider,
-                    timecode_data_provider,
-                    timeline_data_provider,
-                    board_data_provider,
-                    macro_data_provider,
-                    active_fx_module_ids,
-                    input_routes,
-                    output_routes,
-                    disabled_routes,
-                    #[cfg(feature = "midi")]
-                    midi_mappings,
-                    #[cfg(feature = "osc")]
-                    osc_mappings,
-                    all_entities,
-                    resolved_input_routes,
-                    console_dmx_addresses,
-                    console_dmx_universes,
-                    input_dmx_universes,
-                    output_routing,
-                    instance_index,
-                    final_layer_attributed_assertions,
-                    pending_commands,
-                    scheduled_commands,
-                    undo_manager,
-                    programmer,
-                    global_variables,
-                    desk_settings,
-                    io_settings,
-                    controller_mapping_mode: _,
-                    macro_runs: _,
-                } = &mut showfile_load_state;
-
-                load_showfile_in_place(
-                    snapshot,
-                    fixture_data_provider.as_mut(),
-                    scene_object_provider.as_mut(),
-                    cue_data_provider.as_mut(),
-                    seq_data_provider.as_mut(),
-                    group_data_provider.as_mut(),
-                    master_data_provider.as_mut(),
-                    blueprint_data_provider.as_mut(),
-                    color_path_data_provider.as_mut(),
-                    fx_data_provider.as_mut(),
-                    fx_module_data_provider.as_mut(),
-                    flow_data_provider.as_mut(),
-                    timecode_data_provider.as_mut(),
-                    timeline_data_provider.as_mut(),
-                    board_data_provider.as_mut(),
-                    macro_data_provider.as_mut(),
-                    active_fx_module_ids.as_deref_mut(),
-                    input_routes.as_mut(),
-                    output_routes.as_mut(),
-                    disabled_routes.as_mut(),
-                    #[cfg(feature = "midi")]
-                    midi_mappings.as_mut(),
-                    #[cfg(feature = "osc")]
-                    osc_mappings.as_mut(),
-                    &*all_entities,
-                    resolved_input_routes.as_deref_mut(),
-                    console_dmx_addresses.as_deref_mut(),
-                    console_dmx_universes.as_deref_mut(),
-                    input_dmx_universes.as_deref_mut(),
-                    output_routing.as_deref_mut(),
-                    instance_index.as_deref_mut(),
-                    final_layer_attributed_assertions.as_deref_mut(),
-                    pending_commands.as_mut(),
-                    scheduled_commands.as_deref_mut(),
-                    undo_manager.as_deref_mut(),
-                    programmer.as_deref_mut(),
-                    global_variables.as_ref(),
-                    desk_settings.as_mut(),
-                    io_settings.as_mut(),
-                    &mut commands,
-                )
+                load_showfile_in_place(snapshot, &mut showfile_load_state, &mut commands)
             },
         )
         .expect("in-place load system should run")
@@ -2767,6 +2646,45 @@ fn loading_a_show_ends_controller_mapping_mode() {
     let mode = world.resource::<nightfall_actions::ControllerMappingMode>();
     assert!(!mode.is_active());
     assert_ne!(mode.state().show_generation, generation);
+}
+
+/// Verifies loading a show drops clip launches still waiting for their beat, so they cannot
+/// fire on whichever clip has the same ID in the new show, and keeps their commands for
+/// reporting as failed.
+#[test]
+fn loading_a_show_drops_armed_launches() {
+    let mut source_world = setup_world();
+    seed_world(&mut source_world);
+    let snapshot = collect_snapshot(&mut source_world);
+
+    let mut world = setup_world();
+    let command_id = CommandId::new();
+    let mut armed = nightfall_clips::launch_quantize::ArmedLaunches::default();
+    armed.arm(
+        4.0,
+        EngineOperationEnvelope::with_context(
+            OperationId::new(),
+            Some(command_id),
+            None,
+            nightfall_clips::ClipOperation::Start(nightfall::prelude::IdExpr::Single(3)),
+        ),
+        false,
+    );
+    world.insert_resource(armed);
+
+    world
+        .run_system_once(
+            move |mut state: ShowfileLoadState, mut commands: Commands| {
+                load_showfile_snapshot_from_state(snapshot.clone(), &mut state, &mut commands)
+            },
+        )
+        .expect("load system should run")
+        .expect("load should succeed");
+
+    let mut armed = world.resource_mut::<nightfall_clips::launch_quantize::ArmedLaunches>();
+    assert!(armed.is_empty());
+    assert!(armed.take_due(f64::INFINITY).is_empty());
+    assert_eq!(armed.take_dropped(), vec![Some(command_id)]);
 }
 
 #[test]
@@ -2817,9 +2735,9 @@ fn load_into_fresh_world_stabilizes_authored_group_ids() {
     let group_id = source_snapshot.groups[0].identifiers.id;
     source_snapshot.fx[0].selection =
         SpatialSelection::identity(SelectionExpr::Group(GroupRefExpr::ById(group_id)));
-    source_snapshot.sequences[0].release_cue.instructions = vec![BoundCueInstruction {
+    source_snapshot.sequences[0].release_cue.instructions = vec![BoundAssertionSet {
         selection: SpatialSelection::identity(SelectionExpr::Group(GroupRefExpr::ById(group_id))),
-        cue_instruction: CueInstruction::default(),
+        assertions: AssertionSet::default(),
     }];
 
     let mut restored_world = setup_world();
@@ -2915,13 +2833,13 @@ fn roundtrip_preserves_blueprint_applications() {
     seed_world(&mut source_world);
     let mut source_snapshot = collect_snapshot(&mut source_world);
     let blueprint_uid = source_snapshot.blueprints[0].identifiers.uid;
-    source_snapshot.cues[0].instructions = vec![BoundCueInstruction {
+    source_snapshot.cues[0].instructions = vec![BoundAssertionSet {
         selection: SpatialSelection::default(),
-        cue_instruction: CueInstruction {
-            blueprint_application: Some(BlueprintApplication {
+        assertions: AssertionSet {
+            blueprint_application: Some(BlueprintApplication::new(
                 blueprint_uid,
-                selector: BlueprintSelector::Category(Attribute::Red.category()),
-            }),
+                BlueprintSelector::Category(Attribute::Red.category()),
+            )),
             ..Default::default()
         },
     }];
@@ -2941,10 +2859,10 @@ fn roundtrip_preserves_blueprint_applications() {
     );
     assert_eq!(
         restored.cues[0].instructions[0]
-            .cue_instruction
+            .assertions
             .blueprint_application,
         source_snapshot.cues[0].instructions[0]
-            .cue_instruction
+            .assertions
             .blueprint_application,
     );
 }
@@ -2959,37 +2877,30 @@ fn roundtrip_preserves_desk_settings() {
     apply_snapshot(&mut restored_world, source_snapshot.clone());
     let restored_snapshot = collect_snapshot(&mut restored_world);
 
+    assert_eq!(restored_snapshot.settings, source_snapshot.settings);
+    let programming = restored_snapshot.settings_section(&ProgrammingSettings::SECTION);
+    assert!(programming.auto_select);
     assert_eq!(
-        restored_snapshot.settings.programmer_auto_select,
-        source_snapshot.settings.programmer_auto_select
+        programming.selection_flatten_policy,
+        SelectionFlattenPolicy::Prompt
+    );
+    let io_settings = restored_snapshot.settings_section(&IO_SETTINGS_SECTION);
+    assert_eq!(io_settings.network_interface.as_deref(), Some("en0"));
+    assert_eq!(
+        io_settings.input_signal_loss_policy,
+        InputSignalLossPolicy::ClearAfterTimeout {}
     );
     assert_eq!(
-        restored_snapshot.io_settings.network_interface,
-        source_snapshot.io_settings.network_interface
+        restored_snapshot
+            .settings_section(&ShowfileSettings::SECTION)
+            .backup_retention,
+        5
     );
+    let panel_layouts = restored_snapshot.settings_section(&PanelLayouts::SECTION);
+    assert_eq!(panel_layouts.layouts.len(), 1);
     assert_eq!(
-        restored_snapshot.settings.audio_device,
-        source_snapshot.settings.audio_device
-    );
-    assert_eq!(
-        restored_snapshot.io_settings.input_signal_loss_policy,
-        source_snapshot.io_settings.input_signal_loss_policy
-    );
-    assert_eq!(
-        restored_snapshot.settings.selection_flatten_policy,
-        source_snapshot.settings.selection_flatten_policy
-    );
-    assert_eq!(
-        restored_snapshot.settings.showfile_backup_retention,
-        source_snapshot.settings.showfile_backup_retention
-    );
-    assert_eq!(
-        restored_snapshot.settings.panel_layouts,
-        source_snapshot.settings.panel_layouts
-    );
-    assert_eq!(
-        restored_snapshot.settings.default_panel_layout_id,
-        source_snapshot.settings.default_panel_layout_id
+        panel_layouts.default_layout_id.as_deref(),
+        Some("operator-layout")
     );
 }
 
@@ -3081,8 +2992,8 @@ fn roundtrip_preserves_desk_state_contributor_slice() {
 
     let mut restored_world = setup_world();
     {
-        let mut stale_settings = restored_world.resource_mut::<DeskSettings>();
-        stale_settings.programmer_auto_select = false;
+        let mut stale_settings = restored_world.resource_mut::<ProgrammingSettings>();
+        stale_settings.auto_select = false;
     }
     {
         let mut stale_settings = restored_world.resource_mut::<IoRuntimeSettings>();
@@ -3196,6 +3107,7 @@ fn roundtrip_preserves_custom_scene_object_model_properties() {
                 color_override: Some("#336699".to_string()),
                 library_object_name: None,
                 library_object_version: None,
+                keep_model_origin: false,
             },
         ))
         .expect("custom scene object should be added");
@@ -3224,8 +3136,10 @@ fn roundtrip_preserves_custom_scene_object_model_properties() {
     }
 }
 
+/// A show may patch fixtures of one make, model and mode from different library revisions;
+/// each fixture keeps the revision it was created from.
 #[test]
-fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
+fn showfile_import_keeps_fixtures_on_different_revisions_of_one_mode() {
     let mut world = setup_world();
 
     let fixture_a = Fixture {
@@ -3244,6 +3158,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
         }],
         layout: None,
         library_asset_etag: Some("v1".to_string()),
+        rig_source: None,
         ..Default::default()
     };
 
@@ -3263,6 +3178,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
         }],
         layout: None,
         library_asset_etag: Some("v2".to_string()),
+        rig_source: None,
         ..Default::default()
     };
 
@@ -3272,7 +3188,7 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
             faders: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture_a, fixture_b],
-            variables: HashMap::new(),
+            variables: BTreeMap::new(),
             routes: RoutesSnapshot {
                 input: vec![],
                 output: vec![],
@@ -3301,15 +3217,20 @@ fn showfile_import_rejects_multiple_fixture_versions_for_same_asset_key() {
             clips: vec![],
             boards: vec![],
             macros: vec![],
-            settings: DeskSettings::default(),
-            io_settings: IoRuntimeSettings::default(),
+            parked: vec![],
+            settings: Default::default(),
             tempo: Default::default(),
         },
     );
 
-    assert!(result.is_err());
-    let error = result.expect_err("expected fixture version validation error");
-    assert!(error.contains("multiple versions of fixture asset"));
+    result.expect("fixtures on different revisions of one mode load");
+    let mut revisions: Vec<_> = collect_snapshot(&mut world)
+        .fixtures
+        .into_iter()
+        .map(|fixture| fixture.library_asset_etag)
+        .collect();
+    revisions.sort();
+    assert_eq!(revisions, [Some("v1".to_string()), Some("v2".to_string())]);
 }
 
 #[test]
@@ -3355,7 +3276,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             faders: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture_a, fixture_b],
-            variables: HashMap::new(),
+            variables: BTreeMap::new(),
             routes: RoutesSnapshot {
                 input: vec![],
                 output: vec![],
@@ -3384,8 +3305,8 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             clips: vec![],
             boards: vec![],
             macros: vec![],
-            settings: DeskSettings::default(),
-            io_settings: IoRuntimeSettings::default(),
+            parked: vec![],
+            settings: Default::default(),
             tempo: Default::default(),
         },
     );
@@ -3406,6 +3327,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             color_override: None,
             library_object_name: Some("Road Case".to_string()),
             library_object_version: Some("v1".to_string()),
+            keep_model_origin: false,
         },
     );
     let scene_object_b = SceneObject::new_custom(
@@ -3417,6 +3339,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             color_override: None,
             library_object_name: Some("Road Case".to_string()),
             library_object_version: Some("v2".to_string()),
+            keep_model_origin: false,
         },
     );
 
@@ -3426,7 +3349,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             faders: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![],
-            variables: HashMap::new(),
+            variables: BTreeMap::new(),
             routes: RoutesSnapshot {
                 input: vec![],
                 output: vec![],
@@ -3455,8 +3378,8 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             clips: vec![],
             boards: vec![],
             macros: vec![],
-            settings: DeskSettings::default(),
-            io_settings: IoRuntimeSettings::default(),
+            parked: vec![],
+            settings: Default::default(),
             tempo: Default::default(),
         },
     );
@@ -3493,6 +3416,7 @@ fn copy_imported_scene_object_assets_copies_showfile_bundle() {
             color_override: None,
             library_object_name: None,
             library_object_version: None,
+            keep_model_origin: false,
         },
     )];
 
@@ -3546,6 +3470,7 @@ fn remove_orphaned_showfile_object_snapshots_keeps_only_referenced_showfile_asse
             color_override: None,
             library_object_name: None,
             library_object_version: None,
+            keep_model_origin: false,
         },
     )];
 
@@ -4117,9 +4042,8 @@ fn load_in_place_replaces_stale_world_state() {
         .add(stale_blueprint)
         .expect("stale blueprint should be added");
     {
-        let mut stale_settings = target_world.resource_mut::<DeskSettings>();
-        stale_settings.programmer_auto_select = false;
-        stale_settings.audio_device = Some("stale-speaker".to_string());
+        let mut stale_settings = target_world.resource_mut::<ProgrammingSettings>();
+        stale_settings.auto_select = false;
         stale_settings.selection_flatten_policy = SelectionFlattenPolicy::Silent;
     }
     {
@@ -4138,26 +4062,21 @@ fn load_in_place_replaces_stale_world_state() {
     assert_eq!(restored_snapshot.clips[0].identifiers.id, 11);
     assert_eq!(restored_snapshot.blueprints[0].identifiers.id, 6);
     assert!(!restored_snapshot.variables.contains_key("stale-only"));
-    assert!(restored_snapshot.settings.programmer_auto_select);
+    let programming = restored_snapshot.settings_section(&ProgrammingSettings::SECTION);
+    assert!(programming.auto_select);
     assert_eq!(
-        restored_snapshot.io_settings.network_interface.as_deref(),
-        Some("en0")
+        programming.selection_flatten_policy,
+        SelectionFlattenPolicy::Prompt
     );
+    let io_settings = restored_snapshot.settings_section(&IO_SETTINGS_SECTION);
+    assert_eq!(io_settings.network_interface.as_deref(), Some("en0"));
     assert_eq!(
-        restored_snapshot.settings.audio_device.as_deref(),
-        Some("Built-in Output")
-    );
-    assert_eq!(
-        restored_snapshot.io_settings.input_signal_loss_policy,
+        io_settings.input_signal_loss_policy,
         InputSignalLossPolicy::ClearAfterTimeout {}
     );
     assert_eq!(
-        restored_snapshot.io_settings.input_signal_loss_timeout,
+        io_settings.input_signal_loss_timeout,
         std::time::Duration::from_millis(777)
-    );
-    assert_eq!(
-        restored_snapshot.settings.selection_flatten_policy,
-        SelectionFlattenPolicy::Prompt
     );
 
     let mut transport_layer_query = target_world.query_filtered::<(), With<TransportInputLayer>>();
@@ -4172,48 +4091,26 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
     seed_world(&mut target_world);
     let baseline_snapshot = collect_snapshot(&mut target_world);
 
-    let fixture_a = Fixture {
-        identifiers: identifiers(401, "fixture-a"),
-        make: "Acme".to_string(),
-        model: "Beam 200".to_string(),
-        mode: "16ch".to_string(),
-        elements: vec![FixtureElement {
-            label: "Element A".to_string(),
-            parameters: vec![ParameterMetadata {
-                attribute: Attribute::Red,
-                native_unit: Attribute::Red.native_unit(),
-                value_polarity: Attribute::Red.value_polarity(),
-                ..Default::default()
-            }],
-        }],
-        layout: None,
-        library_asset_etag: Some("v1".to_string()),
-        ..Default::default()
-    };
-    let fixture_b = Fixture {
-        identifiers: identifiers(402, "fixture-b"),
-        make: "Acme".to_string(),
-        model: "Beam 200".to_string(),
-        mode: "16ch".to_string(),
-        elements: vec![FixtureElement {
-            label: "Element B".to_string(),
-            parameters: vec![ParameterMetadata {
-                attribute: Attribute::Blue,
-                native_unit: Attribute::Blue.native_unit(),
-                value_polarity: Attribute::Blue.value_polarity(),
-                ..Default::default()
-            }],
-        }],
-        layout: None,
-        library_asset_etag: Some("v2".to_string()),
-        ..Default::default()
+    let road_case = |id: u32, version: &str| {
+        SceneObject::new_custom(
+            id,
+            "Road Case",
+            CustomProperties {
+                model_path: format!("show-{version}"),
+                scale: 1.0,
+                color_override: None,
+                library_object_name: Some("Road Case".to_string()),
+                library_object_version: Some(version.to_string()),
+                keep_model_origin: false,
+            },
+        )
     };
 
     let invalid_snapshot = ShowfileSnapshot {
         faders: Vec::new(),
         metadata: ShowfileMetadata::default(),
-        fixtures: vec![fixture_a, fixture_b],
-        variables: HashMap::new(),
+        fixtures: vec![],
+        variables: BTreeMap::new(),
         routes: RoutesSnapshot {
             input: vec![],
             output: vec![],
@@ -4225,7 +4122,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         midi_feedback_devices: vec![],
         #[cfg(feature = "osc")]
         osc_mappings: vec![],
-        scene_objects: vec![],
+        scene_objects: vec![road_case(401, "v1"), road_case(402, "v2")],
         cues: vec![],
         sequences: vec![],
         groups: vec![],
@@ -4242,15 +4139,15 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         clips: vec![],
         boards: vec![],
         macros: vec![],
-        settings: DeskSettings::default(),
-        io_settings: IoRuntimeSettings::default(),
+        parked: vec![],
+        settings: Default::default(),
         tempo: Default::default(),
     };
 
     let result = try_load_snapshot_in_place(&mut target_world, invalid_snapshot);
     assert!(result.is_err(), "invalid snapshot should fail validation");
-    let error = result.expect_err("expected fixture version validation error");
-    assert!(error.contains("multiple versions of fixture asset"));
+    let error = result.expect_err("expected scene object version validation error");
+    assert!(error.contains("multiple versions of scene object asset"));
 
     let after_snapshot = collect_snapshot(&mut target_world);
     let baseline_value = serde_json::to_value(baseline_snapshot).expect("snapshot to value");
@@ -4297,9 +4194,8 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             faders: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![fixture],
-            variables: HashMap::new(),
-            settings: DeskSettings::default(),
-            io_settings: IoRuntimeSettings::default(),
+            variables: BTreeMap::new(),
+            settings: Default::default(),
             tempo: Default::default(),
             routes: RoutesSnapshot {
                 input: vec![],
@@ -4329,6 +4225,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             clips: vec![],
             boards: vec![],
             macros: vec![],
+            parked: vec![],
         },
     );
 
@@ -4397,9 +4294,8 @@ fn load_materializes_timecodes_and_timelines() {
             faders: Vec::new(),
             metadata: ShowfileMetadata::default(),
             fixtures: vec![],
-            variables: HashMap::new(),
-            settings: DeskSettings::default(),
-            io_settings: IoRuntimeSettings::default(),
+            variables: BTreeMap::new(),
+            settings: Default::default(),
             tempo: Default::default(),
             routes: RoutesSnapshot {
                 input: vec![],
@@ -4429,6 +4325,7 @@ fn load_materializes_timecodes_and_timelines() {
             clips: vec![],
             boards: vec![],
             macros: vec![],
+            parked: vec![],
         },
     );
 

@@ -17,7 +17,7 @@ export default definePanel({
   panelId: "panel-TimelinesPanel",
   componentName: "TimelinesPanel",
   title: "Timelines",
-  minWidth: 515,
+  minWidth: 360,
   minHeight: 160,
   icon: MusicNoteIcon,
   loadComponent: () => import("./timeline-list"),

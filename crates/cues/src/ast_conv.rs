@@ -123,7 +123,7 @@ impl AstConvert for CueAstConverter {
                 ast::GeneralCommandAst::ListColorPaths(_) => {
                     Ok(vec![Box::new(CueCommand::ListColorPaths)])
                 }
-                // Generic delete command for sequences and blueprints
+                // Generic delete command for sequences and color paths
                 ast::GeneralCommandAst::Delete(delete_ast) => match delete_ast.object_type {
                     ast::ObjectTypeAst::Sequence => {
                         let id = conv::simple_identifier_ast_to_single_id(&delete_ast.id)
@@ -131,13 +131,6 @@ impl AstConvert for CueAstConverter {
                                 DispatchError::ConversionFailed("invalid sequence ID".to_string())
                             })?;
                         Ok(vec![Box::new(CueCommand::DeleteSequence(id))])
-                    }
-                    ast::ObjectTypeAst::Blueprint => {
-                        let id = conv::simple_identifier_ast_to_single_id(&delete_ast.id)
-                            .ok_or_else(|| {
-                                DispatchError::ConversionFailed("invalid blueprint ID".to_string())
-                            })?;
-                        Ok(vec![Box::new(BlueprintCommand::DeleteBlueprint(id))])
                     }
                     ast::ObjectTypeAst::ColorPath => {
                         Ok(color_path_id_expression_to_ids(&delete_ast.id)?
@@ -147,7 +140,7 @@ impl AstConvert for CueAstConverter {
                     }
                     _ => Err(DispatchError::NotApplicable),
                 },
-                // Generic rename command for sequences and blueprints
+                // Generic rename command for sequences and color paths
                 ast::GeneralCommandAst::Rename(rename_ast) => match rename_ast.object_type {
                     ast::ObjectTypeAst::Sequence => {
                         let id = conv::simple_identifier_ast_to_single_id(&rename_ast.from)
@@ -159,20 +152,6 @@ impl AstConvert for CueAstConverter {
                                 DispatchError::ConversionFailed("invalid sequence ID".to_string())
                             })?;
                         Ok(vec![Box::new(CueCommand::RenameSequence { id, new_id })])
-                    }
-                    ast::ObjectTypeAst::Blueprint => {
-                        let id = conv::simple_identifier_ast_to_single_id(&rename_ast.from)
-                            .ok_or_else(|| {
-                                DispatchError::ConversionFailed("invalid blueprint ID".to_string())
-                            })?;
-                        let new_id = conv::simple_identifier_ast_to_single_id(&rename_ast.to)
-                            .ok_or_else(|| {
-                                DispatchError::ConversionFailed("invalid blueprint ID".to_string())
-                            })?;
-                        Ok(vec![Box::new(BlueprintCommand::RenameBlueprint {
-                            id,
-                            new_id,
-                        })])
                     }
                     ast::ObjectTypeAst::ColorPath => {
                         let id = color_path_id_expression_to_single_id(&rename_ast.from)?;

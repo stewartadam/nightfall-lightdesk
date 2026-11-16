@@ -13,6 +13,7 @@
 
 use std::path::Path;
 
+use nightfall_fixtures::library::commands::GdtfRevisionNote;
 use serde::{Deserialize, Serialize};
 
 use crate::gdtf_repair::{open_gdtf, open_gdtf_description};
@@ -31,6 +32,25 @@ pub struct GdtfMetadata {
     /// the archive leaves it nil.
     #[serde(default)]
     pub fixture_type_id: Option<String>,
+    /// Text of the archive's latest `Revision` entry, which GDTF Share lists as the
+    /// revision's name; `None` when the archive records no revision text.
+    #[serde(default)]
+    pub revision: Option<String>,
+    /// Date of the archive's latest `Revision` entry as the archive writes it, such as
+    /// `2024-03-01T12:00:00`; `None` when it records no revision or leaves the date empty.
+    #[serde(default)]
+    pub revision_date: Option<String>,
+    /// The GDTF specification version the description is written against, such as `1.2`.
+    #[serde(default)]
+    pub data_version: Option<String>,
+    /// Every `Revision` entry with text, oldest first, so an update can show what changed.
+    #[serde(default)]
+    pub revision_notes: Vec<GdtfRevisionNote>,
+    /// Whether any of the fixture type's models has a 3D mesh in the archive. Without one the
+    /// visualizer can only draw the models' primitive shapes, or a placeholder when they
+    /// define none.
+    #[serde(default = "has_models_by_default")]
+    pub has_models: bool,
     /// File path for on-demand re-parsing
     pub file_path: std::path::PathBuf,
 }
@@ -52,6 +72,11 @@ impl GdtfMetadata {
             model,
             modes,
             fixture_type_id: extract_fixture_type_id(&gdtf_file),
+            revision: extract_revision(&gdtf_file),
+            revision_date: extract_revision_date(&gdtf_file),
+            data_version: Some(gdtf_file.description.data_version.to_string()),
+            revision_notes: extract_revision_notes(&gdtf_file),
+            has_models: has_model_meshes(&gdtf_file, path),
             file_path: path.to_path_buf(),
         })
     }
@@ -96,6 +121,82 @@ fn extract_fixture_type_id(gdtf: &gdtf::GdtfFile) -> Option<String> {
         .map(|id| id.to_string())
 }
 
+/// Extracts the text of the last `Revision` entry, the one written by whoever last edited
+/// or uploaded the archive, so a library copy can be matched to the GDTF Share revision
+/// it came from.
+fn extract_revision(gdtf: &gdtf::GdtfFile) -> Option<String> {
+    gdtf.description
+        .fixture_types
+        .first()?
+        .revisions
+        .last()
+        .map(|revision| revision.text.trim().to_string())
+        .filter(|text| !text.is_empty())
+}
+
+/// Extracts the date of the last `Revision` entry, so users can tell revisions of one
+/// fixture type apart by when they were made.
+fn extract_revision_date(gdtf: &gdtf::GdtfFile) -> Option<String> {
+    gdtf.description
+        .fixture_types
+        .first()?
+        .revisions
+        .last()
+        .map(|revision| revision.date.trim().to_string())
+        .filter(|date| !date.is_empty())
+}
+
+/// Extracts every `Revision` entry that has text, oldest first, trimmed, with the date the
+/// archive records for it.
+fn extract_revision_notes(gdtf: &gdtf::GdtfFile) -> Vec<GdtfRevisionNote> {
+    let Some(fixture_type) = gdtf.description.fixture_types.first() else {
+        return Vec::new();
+    };
+    fixture_type
+        .revisions
+        .iter()
+        .filter(|revision| !revision.text.trim().is_empty())
+        .map(|revision| GdtfRevisionNote {
+            text: revision.text.trim().to_string(),
+            date: revision.date.trim().to_string(),
+        })
+        .collect()
+}
+
+/// Metadata saved before the 3D model check existed is assumed to have models, so it is not
+/// flagged until the file is scanned again.
+fn has_models_by_default() -> bool {
+    true
+}
+
+/// Whether any model of the fixture type names a non-empty mesh in the archive at `path`, as
+/// glTF or 3DS, the formats the visualizer draws. Reads the original archive's entry list
+/// rather than the parsed one, which holds only the description when the file needed repair.
+/// Nothing is decompressed.
+fn has_model_meshes(gdtf: &gdtf::GdtfFile, path: &Path) -> bool {
+    let Some(fixture_type) = gdtf.description.fixture_types.first() else {
+        return false;
+    };
+    let Some(mut archive) = std::fs::File::open(path)
+        .ok()
+        .and_then(|file| zip::ZipArchive::new(file).ok())
+    else {
+        return false;
+    };
+    fixture_type
+        .models
+        .iter()
+        .filter_map(|model| model.file.as_deref())
+        .any(|file| {
+            [
+                format!("models/gltf/{file}.glb"),
+                format!("models/3ds/{file}.3ds"),
+            ]
+            .iter()
+            .any(|entry| archive.by_name(entry).is_ok_and(|mesh| mesh.size() > 0))
+        })
+}
+
 /// Extract DMX mode names from GDTF file
 fn extract_mode_names(gdtf: &gdtf::GdtfFile) -> Vec<String> {
     if let Some(fixture_type) = gdtf.description.fixture_types.first() {
@@ -111,6 +212,7 @@ fn extract_mode_names(gdtf: &gdtf::GdtfFile) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::GdtfRevisionNote;
     use crate::testing::{GdtfBuilder, GeometrySpec, ModeSpec};
 
     /// Verifies an empty `LongName` falls back to the fixture type's `Name`.
@@ -125,6 +227,35 @@ mod tests {
         assert_eq!(metadata.model, "Pixel Line");
     }
 
+    /// A fixture type has models only when one of its models names a mesh the archive holds;
+    /// primitive-only models and empty mesh files do not count.
+    #[test]
+    fn detects_model_meshes() {
+        let dir = tempfile::tempdir().unwrap();
+        let primitive_only = GdtfBuilder::new("Test", "Box")
+            .model("Body", "Cube", [0.3, 0.3, 0.3])
+            .geometry(GeometrySpec::generic("Body").with_model("Body"))
+            .mode(ModeSpec::new("Mode", "Body"))
+            .write_metadata(dir.path());
+        assert!(!primitive_only.has_models);
+
+        let meshed = GdtfBuilder::new("Test", "Meshed")
+            .model("Body", "Cube", [0.3, 0.3, 0.3])
+            .mesh("body", b"glTF")
+            .geometry(GeometrySpec::generic("Body").with_model("Body"))
+            .mode(ModeSpec::new("Mode", "Body"))
+            .write_metadata(dir.path());
+        assert!(meshed.has_models);
+
+        let empty_mesh = GdtfBuilder::new("Test", "Empty Mesh")
+            .model("Body", "Cube", [0.3, 0.3, 0.3])
+            .mesh("body", b"")
+            .geometry(GeometrySpec::generic("Body").with_model("Body"))
+            .mode(ModeSpec::new("Mode", "Body"))
+            .write_metadata(dir.path());
+        assert!(!empty_mesh.has_models);
+    }
+
     /// Reads the archive's `FixtureTypeID`, which GDTF Share lists for the same fixture type.
     #[test]
     fn reads_the_fixture_type_id() {
@@ -136,6 +267,51 @@ mod tests {
         assert_eq!(
             metadata.fixture_type_id.as_deref(),
             Some("00000000-0000-0000-0000-000000000001")
+        );
+    }
+
+    /// Reports the last revision's text, which GDTF Share lists as the revision name, and its
+    /// date, nothing for an archive without revisions, and the GDTF data version either way.
+    #[test]
+    fn reads_the_latest_revision_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let builder = GdtfBuilder::new("Test", "Spot")
+            .geometry(GeometrySpec::generic("Body"))
+            .mode(ModeSpec::new("Mode", "Body"));
+        let bare = builder.write_metadata(dir.path());
+        assert_eq!(bare.revision, None);
+        assert_eq!(bare.revision_date, None);
+        let metadata = builder
+            .revision("Created")
+            .revision("  added white channel ")
+            .write_metadata(dir.path());
+        assert_eq!(metadata.revision.as_deref(), Some("added white channel"));
+        assert_eq!(
+            metadata.revision_date.as_deref(),
+            Some("2024-01-01T00:00:00")
+        );
+        assert!(metadata.data_version.is_some());
+    }
+
+    /// Lists every revision with text, oldest first and trimmed, with its recorded date,
+    /// skipping entries whose text is blank.
+    #[test]
+    fn lists_revision_notes_oldest_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = GdtfBuilder::new("Test", "Spot")
+            .geometry(GeometrySpec::generic("Body"))
+            .mode(ModeSpec::new("Mode", "Body"))
+            .revision("Created")
+            .revision("   ")
+            .revision(" added white channel ")
+            .write_metadata(dir.path());
+        let note = |text: &str| GdtfRevisionNote {
+            text: text.to_string(),
+            date: "2024-01-01T00:00:00".to_string(),
+        };
+        assert_eq!(
+            metadata.revision_notes,
+            vec![note("Created"), note("added white channel")]
         );
     }
 }

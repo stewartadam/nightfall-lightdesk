@@ -52,7 +52,7 @@ test("cluster capacity preserves non-point lighting and resets overflow on remov
   node.setLights([points[2], ambient]);
   assert.deepEqual(node.clusteredLights, [points[2]]);
   assert.equal(node.omittedPointLights, 0);
-  node.disposeApertures();
+  node.dispose();
 });
 
 /** Creates a positioned point source with current world matrices. */
@@ -66,15 +66,9 @@ function pointSource(intensity: number, z = -5): PointLight {
 /** Prepares a cluster node with allocated textures and a camera facing the sources. */
 function clusterNode(maxLights: number, maxPerCluster: number) {
   const node = new OpticalClusteredLightsNode(maxLights, maxPerCluster);
-  node.setSize(64, 64);
   const camera = new PerspectiveCamera(60, 1, 0.1, 100);
   camera.updateMatrixWorld();
   return { node, camera };
-}
-
-/** Reads the depth-sorted order the addon uses to index cluster lights. */
-function sortOrder(node: OpticalClusteredLightsNode): number[] {
-  return (node as unknown as { _lightSortOrder: number[] })._lightSortOrder;
 }
 
 /** Exposes the node's private optical buffers for inspection. */
@@ -94,7 +88,7 @@ test("optical textures own GPU storage before any material binds them", () => {
   // upload keep sampling while change-only uploads never bump the version again.
   assert.ok(internals(node).apertureTexture.version > 0);
   assert.ok(internals(node).priorityTexture.version > 0);
-  node.disposeApertures();
+  node.dispose();
 });
 
 /** Unchanged optical parameters must not re-upload the aperture texture every frame. */
@@ -129,12 +123,12 @@ test("aperture texture uploads only when optical data changes", () => {
   const profileKey = (light: PointLight) =>
     data[
       stride * 3 +
-        sortOrder(node).indexOf(node.clusteredLights.indexOf(light)) * 4 +
+        node.sortOrder.indexOf(node.clusteredLights.indexOf(light)) * 4 +
         3
     ];
   assert.equal(profileKey(optical), 3);
   assert.equal(profileKey(plain), -1);
-  node.disposeApertures();
+  node.dispose();
 });
 
 /** Overflowing clusters evaluate a bounded list of the strongest sources rather than every light. */
@@ -151,7 +145,7 @@ test("full-cluster fallback lists at most the brightest bounded sources", () => 
   assert.equal(listed.length, FULL_CLUSTER_PRIORITY_LIGHTS);
   assert.ok(listed.every((index) => index > 0));
   const intensities = listed
-    .map((index) => node.clusteredLights[sortOrder(node)[index - 1]].intensity)
+    .map((index) => node.clusteredLights[node.sortOrder[index - 1]].intensity)
     .sort((a, b) => a - b);
   assert.deepEqual(
     intensities,
@@ -170,12 +164,12 @@ test("full-cluster fallback lists at most the brightest bounded sources", () => 
     (_, i) => internals(fresh.node).priorityData[i * 4],
   ).sort((a, b) => a - b);
   assert.equal(tied[0], equal.length - FULL_CLUSTER_PRIORITY_LIGHTS + 1);
-  fresh.node.disposeApertures();
+  fresh.node.dispose();
   node.setLights(lights.slice(0, 3));
   node.updateLightsTexture(camera);
   assert.ok(
     Array.from(internals(node).priorityData).every((value) => value === 0),
     "lists that cannot overflow need no fallback",
   );
-  node.disposeApertures();
+  node.dispose();
 });

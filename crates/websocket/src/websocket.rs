@@ -505,7 +505,7 @@ pub(crate) fn create_axum_task(
                 .filter_map(|listener| listener.local_addr().ok())
                 .map(|address| address.to_string())
                 .collect();
-            status.send_replace(nightfall_io::ExternalControlState {
+            status.send_replace(crate::ExternalControlState {
                 available: true,
                 settings: request.settings,
                 listening_addresses,
@@ -691,9 +691,8 @@ mod tests {
     /// Exercises live wildcard/local rebinding and fallback after a selected address fails.
     #[tokio::test]
     async fn listener_rebinds_and_recovers_local_access() {
-        use nightfall_io::{ExternalControlSettings, ExternalControlState};
-
         use crate::external_control::ListenerRequest;
+        use crate::{ExternalControlSettings, ExternalControlState};
         let reservation = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let port = reservation.local_addr().unwrap().port();
         drop(reservation);

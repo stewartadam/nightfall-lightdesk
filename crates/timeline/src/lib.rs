@@ -37,6 +37,7 @@ mod beatgrid_detection;
 mod browser_audio;
 mod components;
 mod diagnostics;
+mod edit;
 #[cfg(feature = "http")]
 mod http_routes;
 /// Deterministic, ECS-free timeline playback planning.
@@ -59,7 +60,14 @@ pub mod prelude {
     pub use crate::TimelinePlugin;
     pub use crate::beatgrid_detection::{BeatgridDetector, DetectedBeat, DetectedBeatgrid};
     pub use crate::browser_audio::{TimelineAudioDirective, TimelineAudioLoopRange};
-    pub use crate::components::{MaterializedTimeline, SpawnedEntityType, TimelineActionCursor};
+    pub use crate::components::{
+        ActionRangeStart, MaterializedTimeline, SpawnedEntityType, TimecodeTransport,
+        TimelineActionCursor,
+    };
+    pub use crate::edit::{
+        ActionTime, MarkerTime, RegionSpan, TimelineActionMove, TimelineActionRef, TimelineEdit,
+        TimelineSetting, TrackAction, TrackSetting,
+    };
     pub use crate::recording::{
         TimelineRecordingPreview, TimelineRecordingState, TimelineRecordingStates,
     };
@@ -140,15 +148,11 @@ impl Plugin for TimelinePlugin {
         }
         #[cfg(not(feature = "http"))]
         let _ = self.http_enabled;
-        register_ingress_command::<TimelineCommand>(app);
+        register_client_command::<TimelineCommand>(app, Undo::Captured);
         register_engine_operation::<TimelineOperation>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::TimelineAstConverter,
         >();
-        register_command_deserializer::<TimelineCommand>(
-            app,
-            websocket::deserialize_timeline_command,
-        );
 
         app.init_resource::<DataProvider<Timeline>>();
         app.insert_resource(beatgrid_detection::BeatgridDetectionRuntime::new(
@@ -168,6 +172,7 @@ impl Plugin for TimelinePlugin {
         diagnostics::register_timeline_diagnostics(app);
         app.add_message::<DomainInstanceReconstructionRequest>();
         app.add_message::<timeline_events::TimelineActionsChanged>();
+        app.add_message::<timeline_events::TimelinePlayheadJumped>();
 
         // Register undoable commands
         app.world_mut()
@@ -188,6 +193,7 @@ impl Plugin for TimelinePlugin {
         }
         audio_integration::add_event_handling_systems(app);
         if self.browser_audio_enabled {
+            app.init_resource::<browser_audio::BrowserTimelineAudio>();
             app.add_systems(
                 Render,
                 browser_audio::emit_browser_audio_directives
@@ -208,12 +214,12 @@ impl Plugin for TimelinePlugin {
                 recording::clear_timeline_command_origins,
             )
                 .chain()
-                .after(EventHandling),
+                .after(CommandApplication),
         );
 
         transport::register_timeline_actions(app);
         app.add_systems(
-            Update,
+            ApplyCommands,
             transport::expand_timeline_transport_commands
                 .after(DeskEventSet::EvalExpansion)
                 .in_set(PendingCommandExpansion),
@@ -224,25 +230,15 @@ impl Plugin for TimelinePlugin {
             PostUpdate,
             websocket::forward_timeline_commands.in_set(ClientFeedback),
         );
-        app.add_systems(
-            Render,
-            (
-                websocket::send_timelines_on_change,
-                websocket::send_timeline_recording_states_on_change,
-                websocket::send_timeline_recording_previews_on_change,
-                websocket::send_timeline_lookahead_item_statuses_on_change,
-                websocket::send_timeline_planned_cues_on_change,
-            )
-                .in_set(ClientOutput),
-        );
+        app.add_client_feed::<websocket::TimelinesFeed>()
+            .on_change(resource_changed::<DataProvider<Timeline>>);
+        app.add_resource_feed::<recording::TimelineRecordingStates>();
+        app.add_resource_feed::<recording::TimelineRecordingSessions>();
+        app.add_resource_feed::<timeline::TimelineLookaheadActionStatuses>();
+        app.add_resource_feed::<timeline::TimelinePlannedCuesByAction>();
         app.add_systems(
             Update,
-            systems::update_timeline_planned_cues_system.after(EventHandling),
-        );
-
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
+            systems::update_timeline_planned_cues_system.after(CommandApplication),
         );
     }
 }
@@ -361,14 +357,13 @@ pub enum TimelineCommand {
         actions: Vec<Action>,
     },
 
-    /// Delete recorded timeline actions by ID.
-    DeleteRecordedActions {
-        /// ID of the timeline to update.
+    /// Apply one granular edit to a timeline's tracks, actions, automation lanes or settings,
+    /// leaving the rest of the timeline as stored.
+    EditTimeline {
+        /// ID of the timeline to edit.
         timeline_id: u32,
-        /// Track ID to delete from.
-        track_id: String,
-        /// Action IDs to delete.
-        action_ids: Vec<String>,
+        /// The change to apply.
+        edit: TimelineEdit,
     },
 
     /// Nudge selected timeline objects by a signed millisecond delta.
@@ -455,9 +450,10 @@ pub enum TimelineOperation {
 
 impl EngineOperation for TimelineOperation {}
 
-/// Registers the desk and timeline actions that timeline tests resolve stored references with.
+/// Registers the eval, clip, and timeline actions that timeline tests resolve stored references with.
 #[cfg(test)]
 pub(crate) fn install_timeline_test_actions(app: &mut App) {
-    nightfall_desk::automation_actions::register_desk_actions(app);
+    nightfall_actions::register_eval_action(app);
+    nightfall_clips::register_clip_actions(app);
     transport::register_timeline_actions(app);
 }

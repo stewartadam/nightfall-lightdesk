@@ -94,7 +94,9 @@ test("parameter lane controls persist additions and deletions", async ({
   await expect(remove).toBeVisible();
   await remove.click();
   await expect(remove).not.toBeVisible();
-  await page.getByRole("button", { name: /Undo: Store Timeline/ }).click();
+  await page
+    .getByRole("button", { name: /Undo: Delete Automation Lane/ })
+    .click();
   await expect(remove).toBeVisible();
   await remove.click();
   await expect(remove).not.toBeVisible();
@@ -202,6 +204,95 @@ test("clip speed lane control points persist after backend publication", async (
   await page.screenshot({
     path: testInfo.outputPath("clip-speed-control-points.png"),
   });
+});
+
+/**
+ * Verifies a plain click on an automation point does not leave it following the cursor: moving
+ * the mouse and clicking elsewhere afterwards must not move or re-store the point.
+ */
+test("a single click on an automation point does not start a drag", async ({
+  page,
+}, testInfo) => {
+  await openFirstTimeline(page);
+  /** Reads the base track's lane points as delivered by the backend. */
+  const readPoints = () =>
+    page.evaluate(
+      (uid) =>
+        (window as any).appStores.timelines
+          .get()
+          [uid].tracks[0].automation_lanes.find(
+            (lane: any) => lane.name === "Owned Operator Curve",
+          ).points,
+      TIMELINE_UID,
+    );
+  const lane = page.locator('[data-timeline-automation-lane="true"]').first();
+  const initialCount = (await readPoints()).length;
+  await lane.click({ position: { x: 120, y: 30 } });
+  await expect
+    .poll(async () => (await readPoints()).length)
+    .toBe(initialCount + 1);
+  const pointsBefore = await readPoints();
+  const point = lane.locator(".automation-point").last();
+  await expect(point).toBeVisible();
+  // Points are editable only on the record target track; the first click makes it the target.
+  await point.click();
+  await page.waitForTimeout(400);
+  expect(await readPoints()).toEqual(pointsBefore);
+
+  await point.click();
+  // Wait out the double-click window, then move away and click elsewhere on the page.
+  await page.waitForTimeout(400);
+  const laneBox = (await lane.boundingBox())!;
+  await page.mouse.move(laneBox.x + 300, laneBox.y + 50);
+  await expect(point).not.toHaveAttribute("style", /transform: translate/);
+  await page.mouse.click(laneBox.x + 300, laneBox.y + laneBox.height + 200);
+  await page.waitForTimeout(300);
+
+  expect(await readPoints()).toEqual(pointsBefore);
+  await page.screenshot({
+    path: testInfo.outputPath("automation-point-after-click.png"),
+  });
+});
+
+/**
+ * Verifies the lane's line follows the first point while it is dragged, starting at the
+ * pointer instead of drawing an extra leg from where the point was.
+ */
+test("dragging the first automation point moves the start of its line", async ({
+  page,
+}, testInfo) => {
+  await openFirstTimeline(page);
+  const lane = page.locator('[data-timeline-automation-lane="true"]').first();
+  const points = lane.locator(".automation-point");
+  // Points are editable only on the record target track; the first click makes it the target.
+  await points.first().click();
+  const first = (await points.first().boundingBox())!;
+  const laneBox = (await lane.boundingBox())!;
+  const path = lane.locator("svg path").first();
+  const pathBefore = await path.getAttribute("d");
+
+  await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
+  await page.mouse.down();
+  // Wait out the click-versus-drag delay before moving.
+  await page.waitForTimeout(400);
+  const target = { x: first.x + 10, y: laneBox.y + laneBox.height / 2 };
+  await page.mouse.move(target.x, target.y, { steps: 5 });
+  await expect(path).not.toHaveAttribute("d", pathBefore ?? "");
+  const [startX, startY] = ((await path.getAttribute("d")) ?? "")
+    .split(" ")
+    .slice(1, 3)
+    .map(Number);
+  expect(Math.abs(startX - (target.x - laneBox.x))).toBeLessThan(2);
+  expect(Math.abs(startY - (target.y - laneBox.y))).toBeLessThan(2);
+  // One "M" and one "L" per remaining point: no extra leg back to the old position.
+  const vertexCount = ((await path.getAttribute("d")) ?? "").split(
+    /[ML]/,
+  ).length;
+  expect(vertexCount - 1).toBe(await points.count());
+  await page.screenshot({
+    path: testInfo.outputPath("automation-first-point-drag.png"),
+  });
+  await page.mouse.up();
 });
 
 /** Verifies a clip speed lane changes rendered Step FX output through the shared speed property. */
@@ -2897,6 +2988,11 @@ test("timeline actions can be dragged between tracks", async ({
             automation_lanes: [],
           },
         ],
+      });
+      // Send the seeded tracks to the engine too, since timeline edits name tracks it stores.
+      void stores.sendAndAwait({
+        module: "TimelineCommand",
+        command: { type: "StoreTimeline", data: stores.timelines.get()[uid] },
       });
 
       return { sourceTrackId, targetTrackId, actionId };

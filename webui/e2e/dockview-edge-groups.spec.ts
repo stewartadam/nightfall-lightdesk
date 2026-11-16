@@ -8,7 +8,11 @@
 
 import type { Locator } from "@playwright/test";
 import { expect, type Page, test } from "./playwright-fixtures";
-import { resetToDefaultLayout, waitForDockviewApp } from "./showfile-startup";
+import {
+  resetToDefaultLayout,
+  waitForDockviewApp,
+  waitForToastsToClear,
+} from "./showfile-startup";
 
 const EDGE_DROP_HOLD_DELAY_MS = 500;
 const LAYOUT_STORAGE_KEY = "nightfall-ui-layouts";
@@ -26,6 +30,7 @@ async function dragToVerticalTab(
   const sourceBox = await source.boundingBox();
   const targetBox = await target.boundingBox();
   if (!sourceBox || !targetBox) throw new Error("Missing drag tab bounds");
+  await waitForToastsToClear(page);
   await page.mouse.move(
     sourceBox.x + sourceBox.width / 2,
     sourceBox.y + sourceBox.height / 2,

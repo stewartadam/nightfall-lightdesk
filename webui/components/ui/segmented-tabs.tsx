@@ -89,11 +89,16 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
   let viewport!: HTMLDivElement;
   const [indicator, setIndicator] = createSignal<JSX.CSSProperties>();
 
-  /** Slides the associated content into place after a selection change has rendered. */
+  /**
+   * Slides the associated content into place after a selection change has rendered. A value
+   * accessor can re-run without the selection changing (for example when it is derived from
+   * the options), and that must not replay the entrance.
+   */
   createEffect(
     on(
       () => props.value,
       (value, previous) => {
+        if (value === previous) return;
         const nextIndex = props.options.findIndex(
           (option) => option.key === value,
         );

@@ -109,9 +109,12 @@ test("settings network interface list shows friendly names", async ({
           current_interface_mode: "SelectedInterface",
           selected_interface_missing: false,
         });
-        stores.ioSettings.set({
-          ...stores.ioSettings.get(),
-          network_interface: "en7",
+        stores.settings.set({
+          ...stores.settings.get(),
+          io: {
+            ...stores.settings.get().io,
+            network_interface: "en7",
+          },
         });
         await new Promise<void>((resolve) =>
           requestAnimationFrame(() => resolve()),
@@ -162,9 +165,12 @@ test("settings network interface keeps a disconnected selection", async ({
           current_interface_mode: "SelectedInterface",
           selected_interface_missing: true,
         });
-        stores.ioSettings.set({
-          ...stores.ioSettings.get(),
-          network_interface: "en7",
+        stores.settings.set({
+          ...stores.settings.get(),
+          io: {
+            ...stores.settings.get().io,
+            network_interface: "en7",
+          },
         });
       });
       return select.inputValue();
@@ -184,14 +190,17 @@ test("settings stale input timeout remains visible for hold policy", async ({
 
   await expect(page.locator("main#app")).toBeVisible();
   await page.waitForFunction(() =>
-    Boolean((window as any).appStores?.ioSettings),
+    Boolean((window as any).appStores?.settings),
   );
   await page.evaluate(() => {
     const stores = (window as any).appStores;
-    stores.ioSettings.set({
-      ...stores.ioSettings.get(),
-      input_signal_loss_policy: { type: "Hold" },
-      input_signal_loss_timeout: { secs: 3, nanos: 0 },
+    stores.settings.set({
+      ...stores.settings.get(),
+      io: {
+        ...stores.settings.get().io,
+        input_signal_loss_policy: { type: "Hold" },
+        input_signal_loss_timeout: { secs: 3, nanos: 0 },
+      },
     });
   });
 
@@ -212,7 +221,7 @@ test("settings stale input timeout remains visible for hold policy", async ({
     .poll(async () => {
       const inputValue = await timeoutInput.inputValue();
       const storeValue = await page.evaluate(() => {
-        const timeout = (window as any).appStores.ioSettings.get()
+        const timeout = (window as any).appStores.settings.get().io
           .input_signal_loss_timeout;
         return String(timeout.secs * 1000 + timeout.nanos / 1_000_000);
       });

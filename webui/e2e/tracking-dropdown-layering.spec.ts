@@ -138,7 +138,7 @@ async function openCueTrackingProperties(page: Page): Promise<void> {
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Intensity: {
                   type: "Inline",

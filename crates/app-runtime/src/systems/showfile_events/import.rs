@@ -7,16 +7,18 @@
  */
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::{Component, Path, PathBuf},
 };
 
 use nightfall::prelude::*;
+use nightfall_controls::prelude::*;
 use nightfall_cues::prelude::*;
-use nightfall_desk::prelude::*;
+use nightfall_engine::prelude::BoundAssertionSet;
 use nightfall_fixtures::prelude::*;
 use nightfall_flow::prelude::*;
 use nightfall_fx::prelude::*;
+use nightfall_showfile::{ShowfileImportOptions, ShowfileImportPolicy};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -44,8 +46,10 @@ pub(super) fn import_showfile_path(options: &ShowfileImportOptions) -> Result<Pa
         .map(str::trim)
         .filter(|path| !path.is_empty())
     {
-        Some(path) => resolve_import_showfile_path(Path::new(path), &showfile_root_dir_path()?),
-        None => showfile_path(None),
+        Some(path) => resolve_import_showfile_path(Path::new(path), &showfile_library_root_path()?),
+        None => Ok(showfile_snapshot_path_in_dir(&library_showfile_dir_path(
+            None,
+        )?)),
     }
 }
 
@@ -113,7 +117,6 @@ pub(super) fn merge_showfile_snapshots(
         variables: merge_variables(current.variables, incoming.variables, options.variables),
         faders: merge_single(current.faders, incoming.faders, options.settings),
         settings: merge_single(current.settings, incoming.settings, options.settings),
-        io_settings: merge_single(current.io_settings, incoming.io_settings, options.settings),
         tempo: merge_single(current.tempo, incoming.tempo, options.settings),
         routes: merge_routes(current.routes, incoming.routes, options.routes)?,
         #[cfg(feature = "midi")]
@@ -194,6 +197,8 @@ pub(super) fn merge_showfile_snapshots(
         clips: merge_identified_vec("clips", current.clips, incoming.clips, options.clips)?,
         boards: merge_identified_vec("boards", current.boards, incoming.boards, options.boards)?,
         macros: merge_identified_vec("macros", current.macros, incoming.macros, options.macros)?,
+        // Park is live rig state of the open show, so an import keeps what is parked now.
+        parked: current.parked,
     };
     for warning in stabilize_showfile_group_refs(&mut merged) {
         tracing::warn!("{}", warning);
@@ -383,7 +388,7 @@ fn retarget_cue_blueprint_refs(cue: &mut Cue, remap: &HashMap<Uuid, Uuid>) {
             .iter_mut()
             .flat_map(|part| part.instructions.iter_mut()),
     ) {
-        let Some(application) = &mut instruction.cue_instruction.blueprint_application else {
+        let Some(application) = &mut instruction.assertions.blueprint_application else {
             continue;
         };
         if let Some(current_uid) = remap.get(&application.blueprint_uid).copied() {
@@ -434,11 +439,11 @@ fn fixture_uid_remap_by_id(
 /// Retarget all fixture references stored directly on a cue.
 fn retarget_cue_fixture_refs(cue: &mut Cue, remap: &HashMap<Uuid, Uuid>) {
     for instruction in &mut cue.instructions {
-        retarget_bound_cue_instruction(instruction, remap);
+        retarget_bound_assertion_set(instruction, remap);
     }
     for part in &mut cue.parts {
         for instruction in &mut part.instructions {
-            retarget_bound_cue_instruction(instruction, remap);
+            retarget_bound_assertion_set(instruction, remap);
         }
     }
 }
@@ -456,12 +461,9 @@ fn retarget_cue_group_refs(cue: &mut Cue, remap: &HashMap<Uuid, Uuid>) {
 }
 
 /// Retarget a cue instruction selection and its per-fixture transition overrides.
-fn retarget_bound_cue_instruction(
-    instruction: &mut BoundCueInstruction,
-    remap: &HashMap<Uuid, Uuid>,
-) {
+fn retarget_bound_assertion_set(instruction: &mut BoundAssertionSet, remap: &HashMap<Uuid, Uuid>) {
     retarget_spatial_selection(&mut instruction.selection, remap);
-    for fixture_transition in &mut instruction.cue_instruction.transitions_by_fixture_attribute {
+    for fixture_transition in &mut instruction.assertions.transitions_by_fixture_attribute {
         retarget_fixture_ref(&mut fixture_transition.fixture, remap);
     }
 }
@@ -564,6 +566,7 @@ fn retarget_group_ref_expr(group_ref_expr: &mut GroupRefExpr, remap: &HashMap<Uu
         | GroupRefExpr::ByLabel(_)
         | GroupRefExpr::RangeById { .. }
         | GroupRefExpr::MissingById(_)
+        | GroupRefExpr::MissingRangeById { .. }
         | GroupRefExpr::MissingByLabel(_) => {}
     }
 }
@@ -633,6 +636,9 @@ where
 }
 
 /// Merge patch-scoped color path defaults by fixture reference.
+///
+/// Merge keeps one entry per fixture in first-seen order, with later entries (incoming over
+/// current) replacing earlier ones, so the result never depends on hash iteration order.
 fn merge_color_path_defaults(
     current: Vec<ColorPathDefault>,
     incoming: Vec<ColorPathDefault>,
@@ -642,14 +648,18 @@ fn merge_color_path_defaults(
         ShowfileImportPolicy::Skip => current,
         ShowfileImportPolicy::Overwrite | ShowfileImportPolicy::Replace => incoming,
         ShowfileImportPolicy::Merge => {
-            let mut by_fixture = current
-                .into_iter()
-                .map(|default| (default.fixture.clone(), default))
-                .collect::<HashMap<_, _>>();
-            for default in incoming {
-                by_fixture.insert(default.fixture.clone(), default);
+            let mut merged = Vec::<ColorPathDefault>::with_capacity(current.len());
+            let mut index_by_fixture = HashMap::new();
+            for default in current.into_iter().chain(incoming) {
+                match index_by_fixture.get(&default.fixture) {
+                    Some(&index) => merged[index] = default,
+                    None => {
+                        index_by_fixture.insert(default.fixture.clone(), merged.len());
+                        merged.push(default);
+                    }
+                }
             }
-            by_fixture.into_values().collect()
+            merged
         }
     }
 }
@@ -700,14 +710,14 @@ fn prune_invalid_cue_color_path_assignments(
 
 /// Clears invalid color path assignments from a list of cue instructions.
 fn prune_invalid_instruction_color_path_assignments(
-    instructions: &mut [BoundCueInstruction],
+    instructions: &mut [BoundAssertionSet],
     valid_path_ids: &HashSet<u32>,
 ) {
     for instruction in instructions {
-        if let Some(color_path_id) = instruction.cue_instruction.color_path_id
+        if let Some(color_path_id) = instruction.assertions.color_path_id
             && !valid_path_ids.contains(&color_path_id.0)
         {
-            instruction.cue_instruction.color_path_id = None;
+            instruction.assertions.color_path_id = None;
         }
     }
 }
@@ -877,10 +887,10 @@ fn merge_single<T>(current: T, incoming: T, policy: ShowfileImportPolicy) -> T {
 
 /// Merge global variables by name according to the requested import policy.
 fn merge_variables(
-    current: HashMap<String, VariableValue>,
-    incoming: HashMap<String, VariableValue>,
+    current: BTreeMap<String, VariableValue>,
+    incoming: BTreeMap<String, VariableValue>,
     policy: ShowfileImportPolicy,
-) -> HashMap<String, VariableValue> {
+) -> BTreeMap<String, VariableValue> {
     match policy {
         ShowfileImportPolicy::Skip => current,
         ShowfileImportPolicy::Overwrite => incoming,
@@ -998,5 +1008,59 @@ mod blueprint_step_fx_tests {
         assert_eq!(steps[0].blueprint_uid, Some(current_uid));
         assert_eq!(steps[1].blueprint_uid, None);
         assert_eq!(steps[1].target, ParameterValue::Absolute { value: 25.0 });
+    }
+}
+
+#[cfg(test)]
+mod color_path_default_merge_tests {
+    use super::*;
+
+    /// Build a whole-fixture default pointing at the given color path.
+    fn default_for(fixture_uid: Uuid, color_path: u32) -> ColorPathDefault {
+        ColorPathDefault {
+            fixture: FixtureRef {
+                fixture_uid,
+                index: None,
+            },
+            color_path_id: ColorPathId(color_path),
+        }
+    }
+
+    /// Merging keeps existing defaults in place, collapses duplicate fixtures, replaces matching
+    /// fixtures and appends new ones, so the merged list is the same on every run and the show's
+    /// saved hash is stable.
+    #[test]
+    fn merge_keeps_current_order_and_appends_new_fixtures() {
+        let fixtures = (0..8).map(|_| Uuid::new_v4()).collect::<Vec<_>>();
+        let mut current = fixtures[..6]
+            .iter()
+            .map(|uid| default_for(*uid, 1))
+            .collect::<Vec<_>>();
+        current.push(default_for(fixtures[0], 3));
+        let incoming = vec![
+            default_for(fixtures[7], 2),
+            default_for(fixtures[2], 2),
+            default_for(fixtures[6], 2),
+        ];
+
+        let merged = merge_color_path_defaults(current, incoming, ShowfileImportPolicy::Merge);
+
+        let order = merged
+            .iter()
+            .map(|default| (default.fixture.fixture_uid, default.color_path_id.0))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            order,
+            vec![
+                (fixtures[0], 3),
+                (fixtures[1], 1),
+                (fixtures[2], 2),
+                (fixtures[3], 1),
+                (fixtures[4], 1),
+                (fixtures[5], 1),
+                (fixtures[7], 2),
+                (fixtures[6], 2),
+            ]
+        );
     }
 }

@@ -27,6 +27,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use bevy_diagnostic::{DiagnosticPath, Diagnostics};
 use bevy_ecs::prelude::*;
 use nightfall_dmx::prelude::*;
 use nightfall_io::{ArtNetDelivery, OutputTransport, RouteTransport, SacnDelivery};
@@ -253,6 +254,10 @@ fn compose_frame(
     has_data.then_some(channels)
 }
 
+/// Number of DMX wire frames composed each engine frame: one per concrete transport and wire
+/// universe.
+pub const OUTPUT_UNIVERSES: DiagnosticPath = DiagnosticPath::const_new("fixtures/output_universes");
+
 /// Composes every routed wire frame, plus frames carrying only held channels, for this
 /// engine frame.
 pub fn compose_output_frames(
@@ -287,6 +292,12 @@ pub fn compose_output_frames(
         })
         .collect();
     frames.set(composed);
+}
+
+/// Records how many wire frames were composed this engine frame.
+pub(crate) fn record_output_universes(frames: Res<OutputDmxFrames>, mut diagnostics: Diagnostics) {
+    let universes = frames.len() as f64;
+    diagnostics.add_measurement(&OUTPUT_UNIVERSES, || universes);
 }
 
 /// Rebuilds input passthrough feeds when resolved input routes change.
@@ -334,7 +345,7 @@ fn output_transport_sort_key(transport: &OutputTransport) -> (u8, String) {
     match transport {
         OutputTransport::Sacn { mode } => (0, format!("{mode:?}")),
         OutputTransport::ArtNet { mode } => (1, format!("{mode:?}")),
-        OutputTransport::Udmx { device } => (2, device.clone()),
+        OutputTransport::Usb { device } => (2, device.clone()),
         OutputTransport::Disabled => (3, String::new()),
     }
 }
@@ -357,12 +368,12 @@ pub fn output_transport_label(transport: &OutputTransport) -> String {
         OutputTransport::ArtNet {
             mode: ArtNetDelivery::Unicast { ip },
         } => format!("Art-Net → {ip}"),
-        OutputTransport::Udmx { device }
+        OutputTransport::Usb { device }
             if device == nightfall_io::DEFAULT_USB_DMX_DEVICE_SELECTOR =>
         {
             "USB".to_string()
         }
-        OutputTransport::Udmx { device } => format!("USB ({device})"),
+        OutputTransport::Usb { device } => format!("USB ({device})"),
         OutputTransport::Disabled => "Disabled".to_string(),
     }
 }
@@ -432,7 +443,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -473,7 +483,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -524,7 +533,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 1,
                     address: 1,
@@ -618,7 +626,6 @@ mod tests {
             destination: ResolvedInputDestination::Transport {
                 target: ResolvedTransportTarget {
                     target: "sacn".to_string(),
-                    protocol: RouteTransport::Sacn,
                     transport: sacn(),
                     universe: 5,
                     address: 1,

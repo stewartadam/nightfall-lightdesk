@@ -113,11 +113,25 @@ test("timeline operator lane uses the shared context menu", async ({
     )
     .locator('[data-timeline-operator-lane="true"]');
   await expect(lane).toBeVisible();
-  // The demo's regions cover the lane, so clear them locally to reach empty lane space.
-  await page.evaluate((uid) => {
+  // The demo's regions cover the lane, so delete them in the engine to reach empty lane space.
+  // A local-only clear is undone when the engine republishes the timeline after "Add region".
+  await page.evaluate(async (uid) => {
     const stores = (window as any).appStores;
     const timeline = stores.timelines.get()[uid];
-    stores.timelines.setKey(uid, { ...timeline, regions: [] });
+    // Copy the uids first: Solid's `useStore` reconciles the previous snapshot in place.
+    const regionUids = timeline.regions.map((region: any) => region.uid);
+    for (const regionUid of regionUids) {
+      const result = await stores.sendAndAwait({
+        module: "TimelineCommand",
+        command: {
+          type: "DeleteTimelineRegion",
+          data: { timeline_id: timeline.identifiers.id, region_uid: regionUid },
+        },
+      });
+      if (result.outcome.type !== "Succeeded") {
+        throw new Error(`Region delete failed: ${JSON.stringify(result)}`);
+      }
+    }
   }, timelineUid);
   await expect(page.locator('[data-timeline-region="true"]')).toHaveCount(0);
   const regionsBefore = 0;
@@ -249,8 +263,7 @@ test("mapping popover is built from shared menu components", async ({
   await expect(page.locator("[data-mapping-mode-banner]")).toBeVisible();
   // The demo has no MIDI input, so arm a pad press through the shared module the app uses.
   await page.evaluate(async () => {
-    const modulePath = "/features/io/model/mapping-mode.ts";
-    const mappingMode = await import(/* @vite-ignore */ modulePath);
+    const { mappingMode } = await window.__nightfallHarness.load("app");
     mappingMode.armMidiSource({
       device: "Demo pad",
       channel: 0x90,

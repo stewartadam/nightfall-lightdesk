@@ -4,7 +4,7 @@ name: PR commands
 # issue_comment runs this file from the default branch, never from the PR, and
 # github/command only proceeds for commenters with write or admin access.
 on:
-  issue_comment:
+  issue_comment: # zizmor: ignore[dangerous-triggers] default-branch code, write-access commenters only
     types: [created]
 
 permissions: {}
@@ -21,7 +21,7 @@ jobs:
       pull-requests: write
       statuses: read
     steps:
-      - uses: github/command@3442f3fa1efe01bdb024b157083c337902d17372 # v2.0.3
+      - uses: github/command@v2.0.3
         id: command
         with:
           command: /recheck-cla
@@ -66,7 +66,7 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - uses: github/command@3442f3fa1efe01bdb024b157083c337902d17372 # v2.0.3
+      - uses: github/command@v2.0.3
         id: command
         with:
           command: /republish

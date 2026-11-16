@@ -161,6 +161,8 @@ pub struct ModelSpec {
     pub primitive_type: String,
     /// Length, width and height in metres.
     pub dimensions: [f64; 3],
+    /// Mesh file name the model's `File` attribute names, without folder or extension.
+    pub file: Option<String>,
 }
 
 /// A `<Slot>` on a wheel.
@@ -515,6 +517,7 @@ pub struct GdtfBuilder {
     extra_files: Vec<(String, Vec<u8>)>,
     emitters: Vec<(String, [f64; 3])>,
     dmx_profiles: Vec<(String, Vec<[f64; 5]>)>,
+    revisions: Vec<String>,
 }
 
 impl GdtfBuilder {
@@ -531,7 +534,14 @@ impl GdtfBuilder {
             extra_files: Vec::new(),
             emitters: Vec::new(),
             dmx_profiles: Vec::new(),
+            revisions: Vec::new(),
         }
+    }
+
+    /// Appends a `Revision` entry with `text`, oldest first.
+    pub fn revision(mut self, text: &str) -> Self {
+        self.revisions.push(text.to_string());
+        self
     }
 
     /// Adds a DMX profile whose points are `[DMXPercentage, CFC0, CFC1, CFC2, CFC3]`.
@@ -558,8 +568,18 @@ impl GdtfBuilder {
             name: name.to_string(),
             primitive_type: primitive_type.to_string(),
             dimensions,
+            file: None,
         });
         self
+    }
+
+    /// Gives the most recently added model a glTF mesh: sets its `File` attribute and adds
+    /// `bytes` to the archive as `models/gltf/{file}.glb`.
+    pub fn mesh(mut self, file: &str, bytes: &[u8]) -> Self {
+        if let Some(model) = self.models.last_mut() {
+            model.file = Some(file.to_string());
+        }
+        self.file(&format!("models/gltf/{file}.glb"), bytes)
     }
 
     /// Adds a top-level geometry.
@@ -622,12 +642,17 @@ impl GdtfBuilder {
         for model in &self.models {
             let _ = writeln!(
                 xml,
-                "<Model Name=\"{}\" Length=\"{}\" Width=\"{}\" Height=\"{}\" PrimitiveType=\"{}\"/>",
+                "<Model Name=\"{}\" Length=\"{}\" Width=\"{}\" Height=\"{}\" PrimitiveType=\"{}\"{}/>",
                 escape(&model.name),
                 model.dimensions[0],
                 model.dimensions[1],
                 model.dimensions[2],
                 escape(&model.primitive_type),
+                model
+                    .file
+                    .as_ref()
+                    .map(|file| format!(" File=\"{}\"", escape(file)))
+                    .unwrap_or_default(),
             );
         }
         xml.push_str("</Models>\n<Geometries>\n");
@@ -638,7 +663,19 @@ impl GdtfBuilder {
         for mode in &self.modes {
             write_mode(&mut xml, mode);
         }
-        xml.push_str("</DMXModes>\n</FixtureType>\n</GDTF>\n");
+        xml.push_str("</DMXModes>\n");
+        if !self.revisions.is_empty() {
+            xml.push_str("<Revisions>\n");
+            for text in &self.revisions {
+                let _ = writeln!(
+                    xml,
+                    "<Revision Text=\"{}\" Date=\"2024-01-01T00:00:00\" UserID=\"0\"/>",
+                    escape(text)
+                );
+            }
+            xml.push_str("</Revisions>\n");
+        }
+        xml.push_str("</FixtureType>\n</GDTF>\n");
         xml
     }
 

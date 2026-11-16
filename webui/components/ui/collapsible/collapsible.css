@@ -71,8 +71,11 @@
    * region's own padding, margin and border from `contentClass` must collapse too.
    */
   .nf-collapsible-content[hidden="until-found"] {
+    /* biome-ignore lint/complexity/noImportantStyles: utilities from `contentClass` sit in a later layer and would win otherwise. */
     margin: 0 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: utilities from `contentClass` sit in a later layer and would win otherwise. */
     padding: 0 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: utilities from `contentClass` sit in a later layer and would win otherwise. */
     border: 0 !important;
   }
 

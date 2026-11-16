@@ -30,12 +30,10 @@ function immediateTransitions(): types.PartialTransition {
 /**
  * Removes all instruction-specific transition delays while still overriding parent cue timing.
  */
-function makeInstructionImmediate(
-  instruction: types.BoundCueInstruction,
-): void {
-  instruction.cue_instruction.transitions = immediateTransitions();
-  instruction.cue_instruction.transitions_by_attribute = {};
-  instruction.cue_instruction.transitions_by_fixture_attribute = [];
+function makeInstructionImmediate(instruction: types.BoundAssertionSet): void {
+  instruction.assertions.transitions = immediateTransitions();
+  instruction.assertions.transitions_by_attribute = {};
+  instruction.assertions.transitions_by_fixture_attribute = [];
 }
 
 /**

@@ -246,7 +246,7 @@ test("resolves usb dmx target ids to output transports", () => {
   );
 
   assert.deepEqual(transport, {
-    type: "Udmx",
+    type: "Usb",
     data: { device: "usb-serial-1" },
   });
 });
@@ -260,7 +260,7 @@ test("resolves built-in udmx target through usb outputs", () => {
   );
 
   assert.deepEqual(transport, {
-    type: "Udmx",
+    type: "Usb",
     data: { device: "default" },
   });
 });

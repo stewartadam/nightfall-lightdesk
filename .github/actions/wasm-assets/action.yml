@@ -37,7 +37,7 @@ runs:
     # never feed the build, so changing one alone reuses the cached packages.
     - name: Restore generated WASM packages
       id: cache
-      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+      uses: actions/cache/restore@v5.1.0 # zizmor: ignore[unpinned-uses] locked by .github/workflows/actions.lock
       with:
         path: webui/assets/${{ steps.compiler.outputs.directory }}/
         key: wasm-assets-v2-${{ inputs.package }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.profile }}-${{ steps.compiler.outputs.hash }}-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain*', '.cargo/**', 'crates/**', 'config/**', 'test-fixtures/**', 'scripts/**', '!scripts/*.node.test.mjs', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'LICENSE', '.github/workflows/**', '.github/actions/wasm-assets/**') }}
@@ -68,7 +68,7 @@ runs:
     # Save immediately after a successful build, even if a later unrelated check fails.
     - name: Save generated WASM packages
       if: steps.cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+      uses: actions/cache/save@v5.1.0 # zizmor: ignore[unpinned-uses] locked by .github/workflows/actions.lock
       with:
         path: webui/assets/${{ steps.compiler.outputs.directory }}/
         key: ${{ steps.cache.outputs.cache-primary-key }}

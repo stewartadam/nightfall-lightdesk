@@ -32,6 +32,15 @@ repos:
       files: ^\.github/workflows/[^/]+\.ya?ml$
       stages: [pre-commit]
 
+# Security lints for workflows, composite actions and Dependabot. Offline, so the hook does not
+# depend on network access or token scopes; the Workflow lockfile CI job checks action provenance.
+- repo: https://github.com/zizmorcore/zizmor-pre-commit
+  rev: 06a39750ec31860bb44f2acf67182c40016cd1e7 # v1.32.0
+  hooks:
+    - id: zizmor
+      args: [--offline]
+      stages: [pre-commit]
+
 - repo: local
   hooks:
     # code style and lints

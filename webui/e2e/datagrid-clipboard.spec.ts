@@ -266,8 +266,8 @@ test("patch fixture grid persists row-selection edits across selected rows", asy
   await grid.getByRole("checkbox", { name: "Select row 1" }).click();
   await grid.getByRole("checkbox", { name: "Select row 2" }).click();
 
-  const firstY = grid.locator("#tanstack-cell-7-0");
-  const secondY = grid.locator("#tanstack-cell-7-1");
+  const firstY = grid.locator("#tanstack-cell-8-0");
+  const secondY = grid.locator("#tanstack-cell-8-1");
   await firstY.dblclick();
   const editor = firstY.locator("input");
   await expect(editor).toBeVisible();
@@ -288,21 +288,21 @@ test("patch fixture grid pastes tabular clipboard values into concrete cells", a
   await page.evaluate(() =>
     navigator.clipboard.writeText("101\t102\n201\t202"),
   );
-  await grid.locator("#tanstack-cell-6-0").click();
+  await grid.locator("#tanstack-cell-7-0").click();
   await page.keyboard.press("ControlOrMeta+V");
 
-  await expect(grid.locator("#tanstack-cell-6-0")).toHaveText(/^101/);
-  await expect(grid.locator("#tanstack-cell-7-0")).toHaveText(/^102/);
-  await expect(grid.locator("#tanstack-cell-6-1")).toHaveText(/^201/);
-  await expect(grid.locator("#tanstack-cell-7-1")).toHaveText(/^202/);
+  await expect(grid.locator("#tanstack-cell-7-0")).toHaveText(/^101/);
+  await expect(grid.locator("#tanstack-cell-8-0")).toHaveText(/^102/);
+  await expect(grid.locator("#tanstack-cell-7-1")).toHaveText(/^201/);
+  await expect(grid.locator("#tanstack-cell-8-1")).toHaveText(/^202/);
 });
 
 /** Verifies placement coordinate cells use persistent axis color borders. */
 test("patch fixture grid color-codes coordinate cells", async ({ page }) => {
   const grid = await openSeededPatchGrid(page);
-  const posXCell = grid.locator("#tanstack-cell-6-0");
-  const posYCell = grid.locator("#tanstack-cell-7-0");
-  const posZCell = grid.locator("#tanstack-cell-8-0");
+  const posXCell = grid.locator("#tanstack-cell-7-0");
+  const posYCell = grid.locator("#tanstack-cell-8-0");
+  const posZCell = grid.locator("#tanstack-cell-9-0");
 
   await expectCoordinateAxisBorder(posXCell, "x");
   await expectCoordinateAxisBorder(posYCell, "y");
@@ -325,9 +325,9 @@ test("patch fixture grid color-codes coordinate cells", async ({ page }) => {
 test("patch fixture grid supports Mod+G fixture ID seek", async ({ page }) => {
   const grid = await openSeededPatchGrid(page, 50);
   const firstIdCell = grid.locator("#tanstack-cell-0-0");
-  const startingCell = grid.locator("#tanstack-cell-6-0");
+  const startingCell = grid.locator("#tanstack-cell-7-0");
   const targetIdCell = grid.locator("#tanstack-cell-0-39");
-  const targetOriginalColumnCell = grid.locator("#tanstack-cell-6-39");
+  const targetOriginalColumnCell = grid.locator("#tanstack-cell-7-39");
   const seekInput = grid.getByLabel("Fixture ID seek");
 
   const modifier = process.platform === "darwin" ? "Meta" : "Control";
@@ -358,8 +358,8 @@ test("patch fixture grid supports Mod+G fixture ID seek", async ({ page }) => {
 /** Verifies Escape cancels fixture ID seek. */
 test("patch fixture grid cancels Mod+G fixture ID seek", async ({ page }) => {
   const grid = await openSeededPatchGrid(page, 50);
-  const startingCell = grid.locator("#tanstack-cell-6-0");
-  const targetOriginalColumnCell = grid.locator("#tanstack-cell-6-39");
+  const startingCell = grid.locator("#tanstack-cell-7-0");
+  const targetOriginalColumnCell = grid.locator("#tanstack-cell-7-39");
 
   const modifier = process.platform === "darwin" ? "Meta" : "Control";
 
@@ -382,7 +382,7 @@ test("patch fixture grid starts numeric editing from printable keys", async ({
   page,
 }) => {
   const grid = await openSeededPatchGrid(page);
-  const editableCell = grid.locator("#tanstack-cell-6-0");
+  const editableCell = grid.locator("#tanstack-cell-7-0");
 
   await editableCell.click();
   await page.keyboard.type("1");
@@ -416,15 +416,15 @@ test("patch fixture grid uses Tab and Shift+Tab for horizontal navigation", asyn
 }) => {
   const grid = await openSeededPatchGrid(page);
 
-  await grid.locator("#tanstack-cell-6-0").click();
+  await grid.locator("#tanstack-cell-7-0").click();
   await page.keyboard.press("Tab");
-  await expect(grid.locator("#tanstack-cell-7-0")).toHaveAttribute(
+  await expect(grid.locator("#tanstack-cell-8-0")).toHaveAttribute(
     "aria-selected",
     "true",
   );
 
   await page.keyboard.press("Shift+Tab");
-  await expect(grid.locator("#tanstack-cell-6-0")).toHaveAttribute(
+  await expect(grid.locator("#tanstack-cell-7-0")).toHaveAttribute(
     "aria-selected",
     "true",
   );
@@ -479,7 +479,7 @@ test("patch and scene object panels clear edit highlights on close", async ({
   await addPatchPanel(page);
   const patchGrid = patchFixtureGrid(page);
   await expect(patchGrid).toBeVisible();
-  await patchGrid.locator("#tanstack-cell-6-0").click({ force: true });
+  await patchGrid.locator("#tanstack-cell-7-0").click({ force: true });
   await expect
     .poll(() =>
       page.evaluate(() =>

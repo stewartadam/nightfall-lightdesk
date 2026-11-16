@@ -25,6 +25,7 @@ import {
   MenuSurface,
 } from "../../../components/ui/menu";
 import { Popover } from "../../../components/ui/popover";
+import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import {
   actionCatalog,
   midiMappings,
@@ -130,10 +131,12 @@ export function Mappable(props: MappableProps): JSX.Element {
     "class",
   ]);
   const $mode = useStore($mappingMode);
-  const $midiMappings = useStore(midiMappings);
-  const $oscMappings = useStore(oscMappings);
-  const $backendCatalog = useStore(actionCatalog);
-  const $catalog = useBindableActionCatalog();
+  /** Whether mapping mode is on; outside it the wrapper is inert and tracks nothing else. */
+  const mapping = () => $mode().active;
+  const $midiMappings = useConditionalShallowStore(midiMappings, mapping);
+  const $oscMappings = useConditionalShallowStore(oscMappings, mapping);
+  const $backendCatalog = useConditionalShallowStore(actionCatalog, mapping);
+  const $catalog = useBindableActionCatalog(mapping);
   const targetNames = useActionTargetNames();
   const [open, setOpen] = createSignal(false);
   let overlay: HTMLButtonElement | undefined;

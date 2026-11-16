@@ -19,7 +19,9 @@
 //! Values are logical parameter values as the console holds them, before
 //! calibration offset and inversion. A relation keeps its follower inside the
 //! active function's DMX range: `Multiply` scales the follower's position in
-//! the function by the master's level, and `Override` replaces it. The
+//! the function by the master's output level, and `Override` replaces it.
+//! Masters are read by the DMX they output, after their calibration offset
+//! and inversion, as the fixture sees them. The
 //! follower's active function is the first whose DMX range contains its DMX
 //! value and whose mode master condition holds, judged by the mode master's
 //! value after the relations it follows itself.
@@ -399,7 +401,7 @@ impl Resolution<'_> {
                 let Some(master_value) = self.value(master, depth + 1) else {
                     continue;
                 };
-                let level = model.parameters[master].level(master_value);
+                let level = model.parameters[master].output_level(master_value);
                 value = match kind {
                     RelationKind::Multiply => from + (value - from) * level,
                     RelationKind::Override => from + (to - from) * level,

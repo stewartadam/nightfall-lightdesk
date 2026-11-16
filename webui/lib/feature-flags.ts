@@ -58,6 +58,37 @@ let startupDraftRecoveryUrlOverride: boolean | undefined;
 let visualizerDefaultPanelUrlOverride: boolean | undefined;
 let visualizerInspectorUrlOverride = false;
 let visualizerFramePacingUrlOverride = false;
+let visualizerSimulatedFailureUrlOverride: VisualizerSimulatedFailure | null =
+  null;
+
+/**
+ * A renderer failure to fake for testing recovery: `render` and `device-lost`
+ * break every renderer, `render-worker` breaks only worker renderers.
+ */
+export type VisualizerSimulatedFailure =
+  | "render"
+  | "render-worker"
+  | "device-lost";
+
+/** Parses the `visualizer:simulateFailure` value; unknown values disable it. */
+function parseVisualizerSimulatedFailure(
+  value: string,
+): VisualizerSimulatedFailure | null {
+  return value === "render" ||
+    value === "render-worker" ||
+    value === "device-lost"
+    ? value
+    : null;
+}
+
+/**
+ * Returns the renderer failure this session fakes, chosen with the
+ * `visualizer:simulateFailure` URL flag, so tests and manual checks can walk
+ * the visualizer's recovery path without a broken GPU or browser.
+ */
+export function getVisualizerSimulatedFailure(): VisualizerSimulatedFailure | null {
+  return visualizerSimulatedFailureUrlOverride;
+}
 
 /**
  * Returns whether this session opted into visualizer diagnostics with the
@@ -165,6 +196,13 @@ function parseFeatureFlagUrlParams(): boolean {
       changed = true;
     }
 
+    const simulateFailure = params.get("visualizer:simulateFailure");
+    if (simulateFailure !== null) {
+      visualizerSimulatedFailureUrlOverride =
+        parseVisualizerSimulatedFailure(simulateFailure);
+      changed = true;
+    }
+
     const offscreenCanvas = params.get("visualizer:offscreenCanvas");
     if (offscreenCanvas !== null) {
       const value = parseVisualizerOffscreenCanvas(offscreenCanvas);
@@ -221,6 +259,7 @@ function cleanFeatureFlagUrlParams(): void {
     params.delete("visualizer:defaultPanel");
     params.delete("visualizer:inspector");
     params.delete("visualizer:framePacing");
+    params.delete("visualizer:simulateFailure");
     params.delete("startup:draftRecovery");
 
     const nextUrl =

@@ -50,6 +50,11 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
   const shiftDragOwnerId = `timeline-ruler-${Math.random().toString(36).slice(2)}`;
   const SHIFT_OWNER_KEY = "__timelineBeatgridShiftOwner";
   const ctx = useTimelineContext();
+  /**
+   * Ruler ticks span the timeline from its start (timeline time 0) to its end, and at least
+   * one minute so an empty timeline still shows a scale.
+   */
+  const rulerEndMs = () => Math.max(ctx.end(), 60_000);
   const $timelineBeatgridPreview = useStore(timelineBeatgridPreview);
   const $timelines = useShallowStore(timelines);
   const [majorTicks, setMajorTicks] = createSignal<
@@ -244,8 +249,8 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
 
   createEffect(() => {
     const preview = shiftPreview();
-    const start = ctx.start();
-    const end = Math.max(ctx.end(), start + 60000);
+    const start = 0;
+    const end = rulerEndMs();
 
     if (!preview || preview.markers.length === 0) {
       setPreviewMajorTicks([]);
@@ -273,8 +278,8 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
     const majorInterval = props.majorInterval || 5000;
     const minorInterval = props.minorInterval || 1000;
 
-    const start = ctx.start();
-    const end = Math.max(ctx.end(), start + 60000);
+    const start = 0;
+    const end = rulerEndMs();
 
     for (
       let i = Math.floor(start / majorInterval) * majorInterval;
@@ -303,8 +308,8 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
 
   /** Generate BPM ticks. */
   const generateBpmTicks = () => {
-    const start = ctx.start();
-    const end = Math.max(ctx.end(), start + 60000);
+    const start = 0;
+    const end = rulerEndMs();
     const beatgrid = ctx.beatgrid();
 
     if (beatgrid?.markers && beatgrid.markers.length > 1) {
@@ -346,7 +351,6 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
     const x = clientX - rect.left;
     const seekPosition = seekPositionFromTimelineX({
       x,
-      start: ctx.start(),
       zoom: ctx.zoom(),
       snapEnabled: ctx.snapEnabled(),
       useBeatgrid: ctx.useBeatgrid() || isPreviewingShift(),
@@ -445,10 +449,11 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
 
     const shiftedMarkers = shiftDragStartMarkers.map((marker) => {
       const markerMs = durationToMs(marker.time);
-      const markerPx = msToPixels(markerMs - ctx.start(), ctx.zoom());
-      const shiftedMs =
-        ctx.start() +
-        pixelsToMs(Math.trunc(markerPx + shiftDragDeltaPx), ctx.zoom());
+      const markerPx = msToPixels(markerMs, ctx.zoom());
+      const shiftedMs = pixelsToMs(
+        Math.trunc(markerPx + shiftDragDeltaPx),
+        ctx.zoom(),
+      );
       return {
         ...marker,
         time: msToDuration(Math.max(0, shiftedMs)),
@@ -536,7 +541,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
-      style={{ width: `${msToPixels(ctx.end() - ctx.start(), ctx.zoom())}px` }}
+      style={{ width: `${msToPixels(ctx.end(), ctx.zoom())}px` }}
     >
       {/* Existing major ticks */}
       <For each={majorTicks()}>
@@ -544,7 +549,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
           <div
             class={`absolute h-full border-l flex items-end pb-1 ${isPreviewingShift() ? "border-gray-600/40" : "border-gray-600"}`}
             style={{
-              left: `${msToPixels(tick.time - ctx.start(), ctx.zoom())}px`,
+              left: `${msToPixels(tick.time, ctx.zoom())}px`,
             }}
           >
             <Show when={!ctx.useBeatgrid()}>
@@ -561,7 +566,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
         {(tick) => (
           <div
             class={`absolute h-1/2 bottom-0 border-l ${isPreviewingShift() ? "border-gray-700/40" : "border-gray-700"}`}
-            style={{ left: `${msToPixels(tick - ctx.start(), ctx.zoom())}px` }}
+            style={{ left: `${msToPixels(tick, ctx.zoom())}px` }}
           />
         )}
       </For>
@@ -573,7 +578,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
             <div
               class="absolute top-0 flex items-start justify-center h-full"
               style={{
-                left: `${msToPixels(bar.time - ctx.start(), ctx.zoom())}px`,
+                left: `${msToPixels(bar.time, ctx.zoom())}px`,
               }}
             >
               <div
@@ -596,7 +601,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
             <div
               class="absolute h-full border-l border-amber-400/90 flex items-end pb-1"
               style={{
-                left: `${msToPixels(tick.time - ctx.start(), ctx.zoom())}px`,
+                left: `${msToPixels(tick.time, ctx.zoom())}px`,
               }}
             />
           )}
@@ -607,7 +612,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
             <div
               class="absolute h-1/2 bottom-0 border-l border-amber-500/70"
               style={{
-                left: `${msToPixels(tick - ctx.start(), ctx.zoom())}px`,
+                left: `${msToPixels(tick, ctx.zoom())}px`,
               }}
             />
           )}
@@ -618,7 +623,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
             <div
               class="absolute top-0 flex items-start justify-center h-full"
               style={{
-                left: `${msToPixels(bar.time - ctx.start(), ctx.zoom())}px`,
+                left: `${msToPixels(bar.time, ctx.zoom())}px`,
               }}
             >
               <div class="absolute top-0 left-0 h-full border-l-2 border-amber-400" />

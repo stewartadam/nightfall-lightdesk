@@ -16,6 +16,7 @@ import {
 } from "solid-js";
 import { commandClient } from "../../../lib/engine-commands";
 import { setStoreAction } from "../../../lib/nanostore-action";
+import { visualizerSceneObjectSelection } from "../../../state/appStores";
 import type * as types from "../../../types";
 import type { VisualizerInteractionMode } from "../rendering/renderers/renderer-api";
 import {
@@ -101,6 +102,8 @@ export type VisualizerContextType = {
   setShowEmitters: (enabled: boolean) => void;
   showGrid: Accessor<boolean>;
   setShowGrid: (enabled: boolean) => void;
+  showSceneObjects: Accessor<boolean>;
+  setShowSceneObjects: (visible: boolean) => void;
   showLabels: Accessor<boolean>;
   setShowLabels: (enabled: boolean) => void;
   toggleShowLabels: () => void;
@@ -141,6 +144,21 @@ export function createVisualizerContextValue(
     options.initialShowEmitters ?? false,
   );
   const [showGrid, setShowGrid] = createSignal(options.initialShowGrid ?? true);
+  const [showSceneObjects, setSceneObjectsShown] = createSignal(true);
+  /**
+   * Shows or hides scene objects. Hiding also drops them from the selection, so a move or
+   * rotate never carries along an object the user cannot see.
+   */
+  const setShowSceneObjects = (visible: boolean) => {
+    if (!visible && visualizerSceneObjectSelection.get().length > 0) {
+      setStoreAction(
+        visualizerSceneObjectSelection,
+        "Deselect Hidden Scene Objects",
+        [],
+      );
+    }
+    setSceneObjectsShown(visible);
+  };
   const $showLabels = useStore(visualizerSnapPointsEnabled);
 
   const setShowLabels = (enabled: boolean) => {
@@ -184,6 +202,8 @@ export function createVisualizerContextValue(
     setShowEmitters,
     showGrid,
     setShowGrid,
+    showSceneObjects,
+    setShowSceneObjects,
     showLabels: () => $showLabels(),
     setShowLabels,
     toggleShowLabels,

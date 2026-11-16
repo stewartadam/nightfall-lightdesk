@@ -168,22 +168,6 @@
 .nf-guide-command button {
   flex-shrink: 0;
 }
-.nf-guide-invitation {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  background: var(--accent-soft);
-  border-bottom: 1px solid var(--line);
-  font-size: 12px;
-}
-.nf-guide-invitation p {
-  color: var(--muted);
-}
-.nf-guide-invitation > div {
-  margin-right: auto;
-}
 @media (max-width: 760px) {
   .nf-welcome-guide {
     width: 100%;

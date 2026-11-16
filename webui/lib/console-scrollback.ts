@@ -10,7 +10,11 @@ import type * as types from "../types";
 
 export const DEFAULT_CONSOLE_SCROLLBACK_LIMIT = 500;
 
-type ConsoleCommandStatus = "pending" | "success" | "error";
+/**
+ * Lifecycle of one scrollback row. `unknown` marks a command whose result was lost, so whether it
+ * ran is not known; a result that still arrives later replaces it.
+ */
+type ConsoleCommandStatus = "pending" | "success" | "error" | "unknown";
 
 export interface ConsoleScrollbackEntry {
   id: string;
@@ -22,6 +26,7 @@ export interface ConsoleScrollbackEntry {
   status: ConsoleCommandStatus;
   errorMessage?: string;
   resultMessage?: string;
+  warningMessage?: string;
 }
 
 /**
@@ -179,6 +184,7 @@ export function resolveConsoleScrollbackEntryByCorrelation(
           completedAt,
           errorMessage: outcome.data.message,
           resultMessage: undefined,
+          warningMessage: undefined,
         };
       }
 
@@ -187,6 +193,7 @@ export function resolveConsoleScrollbackEntryByCorrelation(
         status: "success",
         completedAt,
         errorMessage: undefined,
+        warningMessage: undefined,
         resultMessage:
           typeof outcome.data.output?.value === "string"
             ? outcome.data.output.value
@@ -195,5 +202,34 @@ export function resolveConsoleScrollbackEntryByCorrelation(
     },
   );
 
+  return didChange ? nextEntries : entries;
+}
+
+/**
+ * Marks every row still waiting on a result as `unknown` with the given warning, for when the
+ * client lost results it can no longer match to their commands. Settled rows are left alone, and
+ * so is the row for `keepPendingCorrelationId`, whose result is known but awaits the user. The
+ * original array is returned when nothing changed.
+ */
+export function markPendingConsoleScrollbackEntriesUnknown(
+  entries: ConsoleScrollbackEntry[],
+  warningMessage: string,
+  keepPendingCorrelationId?: string,
+  completedAt = Date.now(),
+): ConsoleScrollbackEntry[] {
+  const keptCorrelationId = keepPendingCorrelationId
+    ? normalizeCorrelationId(keepPendingCorrelationId)
+    : undefined;
+  let didChange = false;
+  const nextEntries = entries.map((entry): ConsoleScrollbackEntry => {
+    if (
+      entry.status !== "pending" ||
+      entry.correlationId === keptCorrelationId
+    ) {
+      return entry;
+    }
+    didChange = true;
+    return { ...entry, status: "unknown", completedAt, warningMessage };
+  });
   return didChange ? nextEntries : entries;
 }

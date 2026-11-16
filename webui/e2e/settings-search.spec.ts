@@ -38,24 +38,24 @@ test("settings search filters rows across every tab", async ({
   await expect(search).toBeFocused();
   await page.screenshot({ path: testInfo.outputPath("01-settings-open.png") });
 
-  await search.fill("timeline");
+  await search.fill("selection");
   await expect(tabs).toBeHidden();
   const results = dialog.getByRole("region", { name: "Search results" });
-  // "Timeline" names a section in Editors and appears in the Audio row's description in General.
-  await expect(
-    results.getByRole("heading", { name: "Editors", exact: true }),
-  ).toBeVisible();
+  // "Selection" appears in programmer rows in General and in a row label in Visualizer.
   await expect(
     results.getByRole("heading", { name: "General", exact: true }),
   ).toBeVisible();
-  await expect(results.getByText("Insert and paste position")).toBeVisible();
-  await expect(results.getByText("Output Device")).toBeVisible();
-  await expect(results.getByText("Auto-select on attribute set")).toBeHidden();
   await expect(
-    results.getByRole("heading", { name: "Visualizer", exact: true }),
+    results.getByRole("heading", { name: "Visualizer", exact: true, level: 2 }),
+  ).toBeVisible();
+  await expect(results.getByText("Selection flatten behavior")).toBeVisible();
+  await expect(results.getByText("Highlight selection")).toBeVisible();
+  await expect(results.getByText("Insert and paste position")).toBeHidden();
+  await expect(
+    results.getByRole("heading", { name: "Network", exact: true }),
   ).toBeHidden();
   await page.screenshot({
-    path: testInfo.outputPath("02-search-timeline.png"),
+    path: testInfo.outputPath("02-search-selection.png"),
   });
 
   await search.fill("dmx rate");

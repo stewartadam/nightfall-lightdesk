@@ -6,36 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { AvailableObjectInfo, Fixture, SceneObject } from "../types";
-
-/**
- * Find fixture version conflict IDs.
- */
-export function findFixtureVersionConflictIds(
-  fixtureMap: Record<string, Fixture>,
-  libraryFixture: Pick<Fixture, "make" | "model" | "mode">,
-  libraryAssetVersion: string,
-): number[] {
-  const conflicts: number[] = [];
-
-  for (const fixture of Object.values(fixtureMap)) {
-    const sameAssetKey =
-      fixture.make === libraryFixture.make &&
-      fixture.model === libraryFixture.model &&
-      fixture.mode === libraryFixture.mode;
-    if (!sameAssetKey) continue;
-
-    if (
-      fixture.library_asset_etag &&
-      fixture.library_asset_etag !== libraryAssetVersion
-    ) {
-      conflicts.push(fixture.identifiers.id);
-    }
-  }
-
-  conflicts.sort((a, b) => a - b);
-  return conflicts;
-}
+import type { AvailableObjectInfo, SceneObject } from "../types";
 
 export function objectLibraryVersionMap(
   objects: AvailableObjectInfo[],

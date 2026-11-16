@@ -101,7 +101,7 @@ async function seedSingleElementCue(page: Page): Promise<string[]> {
                   },
                   clauses: [],
                 },
-                cue_instruction: {
+                assertions: {
                   values: {
                     Intensity: inline(220),
                     Red: inline(25),
@@ -209,8 +209,8 @@ async function verifySingleElementValues(
             )
             .map((instruction: any) => ({
               refs: instruction.selection.source.data,
-              red: instruction.cue_instruction.values.Red,
-              blue: instruction.cue_instruction.values.Blue,
+              red: instruction.assertions.values.Red,
+              blue: instruction.assertions.values.Blue,
             }));
         },
         { cueUid, fixtureUid: fixtureUids[0] },
@@ -268,6 +268,28 @@ async function verifySingleElementValues(
       .toBe(Number.parseFloat(value));
     await expect(cell).toContainText("%");
   }
+  // Both quick edits must reach the engine; a reply to the first must not undo the second.
+  await expect
+    .poll(() =>
+      page.evaluate((cueUid) => {
+        const values = (window as any).appStores.cues.get()[cueUid]
+          .instructions[0].assertions.values;
+        return {
+          intensity: values.Intensity?.data?.values?.[0],
+          blue: values.Blue?.data?.values?.[5],
+        };
+      }, cueUid),
+    )
+    .toEqual({
+      intensity: {
+        type: "AbsolutePercent",
+        data: { value: expect.closeTo(0.6, 5) },
+      },
+      blue: {
+        type: "AbsolutePercent",
+        data: { value: expect.closeTo(0.8, 5) },
+      },
+    });
   await panel.screenshot({
     path: testInfo.outputPath("single-element-edited.png"),
   });

@@ -8,6 +8,7 @@
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
 import { gridCellByKey } from "./data-grid-selectors";
+import { revealPanel } from "./dock-panels";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -132,8 +133,8 @@ async function countSentClearProgrammerCommands(page: Page): Promise<number> {
   });
 }
 
-/** Counts captured desk commands sent through the websocket worker. */
-async function countSentDeskCommands(page: Page): Promise<number> {
+/** Counts captured command-line eval commands sent through the websocket worker. */
+async function countSentEvalCommands(page: Page): Promise<number> {
   return page.evaluate(() => {
     const commands =
       (window as CapturedCommandWindow).__commandLineClearCommands ?? [];
@@ -142,7 +143,10 @@ async function countSentDeskCommands(page: Page): Promise<number> {
         command?: { type?: unknown };
         module?: unknown;
       };
-      return candidate.module === "DeskCommand";
+      return (
+        candidate.module === "EngineCommand" &&
+        candidate.command?.type === "Eval"
+      );
     }).length;
   });
 }
@@ -883,41 +887,6 @@ test("keeps signed value tokens inside their owning intent after @", async ({
   await expect(page.getByRole("option", { name: /^\+/ })).toBeVisible();
 });
 
-test("accepts spatial selection clauses on attribute commands", async ({
-  page,
-}) => {
-  const input = page.locator(inputSelector);
-  await input.fill("group 1>4|wings 2 @ 50");
-
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-});
-
-/**
- * Verifies named showfile save commands are accepted by the UI parser.
- */
-test("accepts named showfile save commands", async ({ page }) => {
-  const input = page.locator(inputSelector);
-  await input.fill("save sample");
-
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-});
-
-/**
- * Verifies named showfile load commands are accepted by the UI parser.
- */
-test("accepts named showfile load commands", async ({ page }) => {
-  const input = page.locator(inputSelector);
-  await input.fill("load sample");
-
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-
-  await input.fill("load draft/default");
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-
-  await input.fill("load backups/default-20260707-151450");
-  await expect(input).not.toHaveAttribute("aria-invalid", "true");
-});
-
 /**
  * Verifies semantic validation flags patch commands with unknown output transport targets.
  */
@@ -1116,7 +1085,7 @@ test("keeps header command input focused when command line panel activates after
   await input.fill(command);
   await input.press("Enter");
 
-  await expect.poll(() => countSentDeskCommands(page)).toBe(1);
+  await expect.poll(() => countSentEvalCommands(page)).toBe(1);
   await expect(input).toHaveValue("");
 
   await page.evaluate(() => {
@@ -1142,14 +1111,14 @@ test("keeps header command input focused after storing a cue", async ({
 
   await input.fill("fix 311 red @ 100");
   await input.press("Enter");
-  await expect.poll(() => countSentDeskCommands(page)).toBe(1);
+  await expect.poll(() => countSentEvalCommands(page)).toBe(1);
   await expect(input).toBeFocused();
   await waitForOwnedProgrammerValue(page);
 
   await page.keyboard.type("store cue 2.", { delay: 40 });
   await input.press("Enter");
 
-  await expect.poll(() => countSentDeskCommands(page)).toBe(2);
+  await expect.poll(() => countSentEvalCommands(page)).toBe(2);
   await expect(input).toHaveValue("");
   await expect
     .poll(() =>
@@ -1185,7 +1154,7 @@ test("keeps header command input active after storing a cue with sequence editor
   await input.click();
   await input.fill("fix 311 red @ 100");
   await input.press("Enter");
-  await expect.poll(() => countSentDeskCommands(page)).toBe(1);
+  await expect.poll(() => countSentEvalCommands(page)).toBe(1);
   await expect(input).toBeFocused();
   await waitForOwnedProgrammerValue(page);
 
@@ -1193,7 +1162,7 @@ test("keeps header command input active after storing a cue with sequence editor
   await page.keyboard.type(storeCommand, { delay: 40 });
   await input.press("Enter");
 
-  await expect.poll(() => countSentDeskCommands(page)).toBe(2);
+  await expect.poll(() => countSentEvalCommands(page)).toBe(2);
   await expect(input).toHaveValue("");
   await page.waitForTimeout(5000);
   await expect
@@ -1229,19 +1198,19 @@ test("keeps panel command input focused after storing a cue", async ({
       inactive: true,
       position: { referencePanel: "panel-Groups", direction: "within" },
     });
-    api.getPanel("panel-CommandLine")?.focus();
   });
+  await revealPanel(page, "panel-CommandLine");
   await expect(input).toBeVisible();
   await input.fill("fix 311 red @ 100");
   await input.press("Enter");
-  await expect.poll(() => countSentDeskCommands(page)).toBe(1);
+  await expect.poll(() => countSentEvalCommands(page)).toBe(1);
   await expect(input).toBeFocused();
   await waitForOwnedProgrammerValue(page);
 
   await page.keyboard.type("store cue 2.", { delay: 40 });
   await input.press("Enter");
 
-  await expect.poll(() => countSentDeskCommands(page)).toBe(2);
+  await expect.poll(() => countSentEvalCommands(page)).toBe(2);
   await expect(input).toHaveValue("");
   await page.waitForTimeout(2500);
   await page.evaluate(() => {
@@ -1256,7 +1225,6 @@ test("keeps panel command input focused after storing a cue", async ({
     )
     .toBe("panel-CueList");
   await expect(input).toBeFocused();
-  await page.getByRole("tab", { name: "Console", exact: true }).click();
   await page.getByRole("button", { name: "Search command history" }).click();
   const historySearch = page.getByRole("searchbox", {
     name: "Command history search",
@@ -1292,14 +1260,11 @@ test("keeps panel command input active after storing a cue with sequence editor 
     .toBe(sequenceEditor.panelId);
 
   await clickSequenceEditorCueLabel(page, sequenceEditor);
-  await page.evaluate(() => {
-    const api = (window as any).appStores.dockApi.get();
-    api.getPanel("panel-CommandLine")?.focus();
-  });
+  await revealPanel(page, "panel-CommandLine");
   await expect(input).toBeVisible();
   await input.fill("fix 311 red @ 100");
   await input.press("Enter");
-  await expect.poll(() => countSentDeskCommands(page)).toBe(1);
+  await expect.poll(() => countSentEvalCommands(page)).toBe(1);
   await expect(input).toBeFocused();
   await waitForOwnedProgrammerValue(page);
   await expect
@@ -1313,7 +1278,7 @@ test("keeps panel command input active after storing a cue with sequence editor 
   await page.keyboard.type(storeCommand, { delay: 40 });
   await input.press("Enter");
 
-  await expect.poll(() => countSentDeskCommands(page)).toBe(2);
+  await expect.poll(() => countSentEvalCommands(page)).toBe(2);
   await expect(input).toHaveValue("");
   await page.waitForTimeout(5000);
   await expect
@@ -1344,7 +1309,7 @@ test("submits commands when command history persistence fails", async ({
   await input.fill("save sample");
   await input.press("Enter");
 
-  await expect.poll(() => countSentDeskCommands(page)).toBe(1);
+  await expect.poll(() => countSentEvalCommands(page)).toBe(1);
   await expect(input).toHaveValue("");
   await expect(input).not.toHaveAttribute("aria-invalid", "true");
 

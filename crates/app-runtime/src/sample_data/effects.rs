@@ -53,8 +53,8 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
     let waveform = FxWaveform {
         params: FxWaveformParams {
             kind: WaveformKind::Sin,
-            min: 0.0,
-            max: 255.0,
+            min: Percentage::from(0.0),
+            max: Percentage::from(1.0),
             duty_cycle: 1.0,
         },
         phase_range: (0.0, 2.0 * std::f32::consts::PI),
@@ -110,8 +110,8 @@ pub(super) fn add_bstrip_fx(world: &mut World) {
     let waveform = FxWaveform {
         params: FxWaveformParams {
             kind: WaveformKind::Sin,
-            min: 10.0,
-            max: 70.0,
+            min: Percentage::from(0.04),
+            max: Percentage::from(0.275),
             duty_cycle: 1.0,
         },
         phase_range: (0.0, 2.0 * std::f32::consts::PI),

@@ -16,6 +16,17 @@ Read-only metadata jobs fetch PR/release API responses; permissionless jobs use
 those snapshots to validate descriptions and generate changelogs.
 Keep these boundaries intact when adding checks, tools, caches, or release steps.
 
+Actions are locked in `actions.lock`: after adding a workflow or changing a `uses:`,
+run `gh actions-lock` (install it with `gh extension install github/gh-actions-lock`)
+and commit the lockfile. Composite actions in `.github/actions/` use the locked tags too:
+GitHub rejects a raw commit there that the lockfile does not list. Give each such line a
+`# zizmor: ignore[unpinned-uses]` comment, since zizmor does not credit the lockfile for
+composite actions yet. Call this
+repository's composite actions as `$/.github/actions/...`; reusable workflow calls keep
+`./.github/workflows/...` so actionlint checks their inputs. The **Workflow lockfile** job verifies the
+lockfile against upstream with a pinned extension release (`GH_ACTIONS_LOCK_VERSION`
+in `ci.yml`), which Dependabot does not bump.
+
 ## Native checks
 
 The application is split into `app-runtime` (shared native runtime and the
@@ -37,14 +48,14 @@ selection can tell external dependency changes from workspace rewiring.
 | --- | --- | --- | --- |
 | Runtime implementation, runtime tests, ordinary UI changes | No | No | No |
 | Desktop shell or shared startup, shutdown, diagnostics interfaces | Yes | No | No |
-| Desktop crate manifest, build script, configuration, capabilities, icons | Yes | Yes | No |
-| Desktop installer tooling | No (packaging compiles only) | Yes | No |
+| Desktop crate manifest, build script, configuration, capabilities, icons | Yes | No | No |
+| Desktop installer tooling | No | No | No |
 | Browser runtime or browser packaging tooling | No | No | Yes |
-| Shared distribution inputs, root manifests, lockfiles | No (packaging compiles only) | Yes | Yes |
+| Shared distribution inputs, root manifests, lockfiles | No | No | Yes |
 | `Cargo.lock` changes that only rewire workspace crates, without any crate reaching a different set of external crates | No | No | No |
 | Draft PR (any changes) | No | No | No |
 | Main push | No | No | Yes |
-| Develop push | No | No | No |
+| Develop push | No (packaging compiles only) | Yes | No |
 | Release tag | No (packaging compiles only) | Yes | No |
 | Manual dispatch | No (packaging compiles only) | Selectable | Selectable |
 
@@ -75,20 +86,22 @@ The native test job runs
 `cargo test -p app-tauri --all-targets` on Linux after nextest, reusing most of the
 runtime units it just built. Desktop checks run the same command on macOS and
 Windows, without release optimization, frontend generation, or installer creation.
-Packaging only compiles `app-tauri`, so a desktop code change selects the check even
-when it also selects packaging. A check-only Tauri
+PRs never build desktop installers, so the check is the only desktop
+validation a PR gets. A check-only Tauri
 configuration clears frontendDist and omits bundled resources, so checks need no
 webui/dist output even without a development URL. Packaging validates the actual
 frontend and resources using the normal configuration.
 The check and release packaging caches are separate.
 
 Desktop checks link test binaries but do not validate the release build or
-installers. Release-tag builds remain the cross-platform packaging backstop. Main
-pushes skip desktop packaging: the release tag points at the main merge commit, so
-packaging both would build the same installers twice. Use manual dispatch with
-`desktop`, `browser`, or `all` when an artifact is needed before merging or tagging.
-Lockfile selection remains conservative; an ordinary lockfile update selects
-both distributions. Release-note-only changes do not select packaging.
+installers. Installers take long enough on every platform that PRs never build
+them: develop pushes package them after merge, so installer, Tauri configuration
+and dependency breakage shows up on develop before a release, and release-tag
+builds produce the installers that ship. Main pushes skip desktop packaging: the
+release tag points at the main merge commit, so packaging both would build the
+same installers twice. Use manual dispatch with `desktop`, `browser`, or `all`
+when an artifact is needed before merging or tagging. An ordinary lockfile update
+selects the browser distribution. Release-note-only changes do not select packaging.
 
 PRs that touch `docs/` (or the CI scope policy and workflow) also run the
 **Documentation** job, which builds every mdBook under `docs/` with the mdBook
@@ -158,10 +171,75 @@ or 👎 when it finishes.
 | --- | --- |
 | `/recheck-cla` | Asks cla-assistant.io to revalidate the PR, then waits up to two minutes for the `license/cla` status. Use it when the check is stuck on "Waiting for status to be reported". Works on fork PRs. |
 | `/republish` | On a draft PR, reruns the preview job of an earlier preview-only run for the same commit (from opening the draft or an earlier `/republish`), or else starts a manual CI run that builds and deploys only the preview from the PR branch. On a ready PR, reruns the **Browser preview** job of the PR's latest CI run. If that run's demo artifact expired, it reruns the whole run; if a failed job skipped the preview, it reruns the failed jobs. When CI is still running or never selected a preview, it explains why in a comment instead. |
+| `/review` | Reruns the [Claude mergeability review](#claude-mergeability-review) for the PR's current commit. `/review skip-policy` also waives the size and path check for that commit. Runs from `claude-review.yml`. |
 
-Both run from the default branch's copy of the workflow, never the PR's, and
-neither checks out PR code. The steps are gated by
+They run from the default branch's copy of their workflow, never the PR's, and
+none executes PR code. The steps are gated by
 [github/command](https://github.com/github/command), pinned to a commit.
+
+## Claude mergeability review
+
+`claude-review.yml` lets small, low-risk PRs merge without waiting for a maintainer. When a
+same-repository PR into `develop` from someone with write access is opened ready or marked ready
+for review, or gets new commits while ready, and is not part of a stack:
+
+1. A size and path check (`scripts/merge-policy.mjs`) blocks auto-merge for PRs over 20 files or
+   800 changed lines, PRs changing binary files, and PRs touching risky areas: CI, build and test
+   tooling (which the required checks run from the PR itself), dependencies and toolchain,
+   licensing, agent instructions (any `CLAUDE.md`) and Git attributes. A blocked PR always needs a human, and
+   the check's reasons lead the verdict as a failed "Auto-merge scope" check, or as plain reasons
+   when Claude could not review it.
+2. Claude reviews every PR whose diff the GitHub API returns, blocked or not, against the rubric
+   in `.github/claude-review.md`, so a finished review reports every check. It judges
+   risk by blast radius, reversibility, user impact and test coverage rather than by which code
+   changed, and checks for likely bugs, tests for behavior changes (browser tests for UI behavior
+   fixes), a showfile migration when saved data changes shape, docs that still match the app, a
+   description that matches the diff, release notes that follow the guide, and the written
+   conventions in `CLAUDE.md`. It can only read files: the default branch at the workspace root
+   and the PR head in `pr-head/`. Its instructions come only from the default branch:
+   `claudeMdExcludes` keeps it from loading `CLAUDE.md`, `AGENTS.md` or rules files from
+   `pr-head/`, and the Skill tool is denied, so agent files in the PR are only data.
+3. The verdict is posted as one comment that later runs update, listing each check as passed or
+   failed with a note. On "ready to auto-merge", the PR gets the `low-risk` label and GitHub
+   auto-merge, so it merges only once the required checks pass. A reported bug or a failed check
+   overrides an auto-merge verdict.
+
+Pushing to a cleared PR, reopening it or converting it to draft disables its auto-merge, removes
+the label and marks the comment as withdrawn before any new review starts. This keys off the label:
+removing the label by hand leaves auto-merge on, so disable auto-merge itself to stop a merge. To keep a PR out of the review entirely, add the
+`no-auto-merge` label before marking it ready. Drafts, stacked PRs and bot PRs are never reviewed
+on their own.
+
+A maintainer can comment `/review` on a ready PR to review its current commit again, for example
+after the rubric changed or a review failed. The request shows on the PR as a **Claude review**
+check that links to the run and ends with the verdict, while the verdict comment updates as usual.
+`/review skip-policy` waives the size and path check for that commit: the "Auto-merge scope" check
+passes with a note naming who waived it, so a PR Claude clears gets auto-merge. The waiver lasts
+until the next push, whose automatic review applies the check again. Requested reviews work on bot
+PRs and on PRs in a stack on `develop` too, but never on drafts, fork PRs, PRs into other branches
+or PRs labelled `no-auto-merge`; the workflow says why in a comment instead. A PR higher in a stack
+is reviewed on its own diff against the PR below it and never auto-merges, because merging it
+would also land the unmerged PRs it builds on: its "Auto-merge scope" check fails with that reason,
+and `/review skip-policy` is refused on it. The lowest PR of a stack targets `develop` and is
+reviewed like any other PR. A request on a cleared PR first
+withdraws its auto-merge, and a newer request or push cancels a running one.
+
+The workflow runs on `pull_request_target`, so the workflow, the rubric and the policy script
+always come from `develop`: a PR cannot loosen the rules it is judged by, and changes to them take
+effect only after they merge. PR code is never executed. Reviews use the maintainer's Claude
+subscription and count against its usage limits, including reviews of PRs the size and path check
+blocks.
+
+One-time setup:
+
+1. Run `claude setup-token` and store the token as the repository **secret**
+   `CLAUDE_CODE_OAUTH_TOKEN` (a variable is not read).
+2. Create a fine-grained personal access token for this repository with **Contents** and **Pull
+   requests** read and write, and store it as the secret `AUTO_MERGE_TOKEN`. GitHub does not start
+   workflows for merges made by the built-in workflow token, so without it merged PRs would skip
+   the `develop` push CI. Until it is set, reviews still post verdicts but never enable auto-merge.
+3. Keep **Allow auto-merge** on, and make sure the branch ruleset for `develop` requires every
+   check a merge must wait for, including **Release notes**.
 
 ## Native execution and caching
 

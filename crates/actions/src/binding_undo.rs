@@ -18,7 +18,7 @@
 use std::fmt::{self, Debug};
 use std::marker::PhantomData;
 
-use bevy_app::{App, Update};
+use bevy_app::App;
 use bevy_ecs::component::Mutable;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
@@ -250,7 +250,10 @@ where
         registry.register_operation::<RestoreBindings<S>>();
     }
     register_engine_operation::<RestoreBindings<S>>(app);
-    app.add_systems(Update, apply_binding_restores::<S>.in_set(EventHandling));
+    app.add_systems(
+        ApplyCommands,
+        apply_binding_restores::<S>.in_set(EventHandling),
+    );
 }
 
 /// Applies undo and redo restores to a binding store and completes their commands.

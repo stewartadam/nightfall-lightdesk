@@ -50,7 +50,9 @@ fn reanchored_step_fx_clock(
     }
     let old_seconds = old_duration.as_secs_f64();
     let normalized = (clock.position.as_secs_f64() * speed / old_seconds).rem_euclid(1.0);
-    let new_position = Duration::from_secs_f64(normalized * new_duration.as_secs_f64() / speed);
+    let new_position = nightfall::playback_speed::saturating_duration_from_secs_f64(
+        normalized * new_duration.as_secs_f64() / speed,
+    );
     clock.seek_to(new_position);
     clock.discontinuity = InstanceClockDiscontinuity::Continuous;
     clock

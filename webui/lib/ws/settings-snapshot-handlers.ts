@@ -13,10 +13,10 @@ import {
   applyAvailableAudioDevicesSnapshot,
   applyAvailableNetworkInterfacesSnapshot,
   applyAvailableUsbDmxDevicesSnapshot,
+  applyBackupStateSnapshot,
   applyClientActionInvocation,
   applyControllerMappingModeSnapshot,
   applyExternalControlStateSnapshot,
-  applyIoSettingsSnapshot,
   applyMidiControlTouched,
   applyMidiDeviceDetected,
   applyMidiDeviceListSnapshot,
@@ -53,8 +53,8 @@ export function registerSettingsSnapshotHandlers(
     applyTelemetryStateSnapshot(message.data);
   });
 
-  registry.register("IoSettings", (message) => {
-    applyIoSettingsSnapshot(message.data);
+  registry.register("BackupState", (message) => {
+    applyBackupStateSnapshot(message.data);
   });
 
   registry.register("AvailableNetworkInterfaces", (message) => {

@@ -47,6 +47,7 @@ import {
   normalizedShowfileName,
 } from "../../../lib/showfile-loading";
 import { pushToast } from "../../../state/appStores";
+import { FollowPrimarySection } from "../../io";
 import {
   type AvailableShowfile,
   type AvailableShowfilesResponse,
@@ -70,6 +71,8 @@ interface OpenShowfileModalProps {
   open: boolean;
   onClose: () => void;
   onOpen: (selection: OpenShowfileSelection) => Promise<void> | void;
+  /** Called once this computer follows a primary chosen in the dialog. */
+  onFollowed?: () => void;
 }
 
 /** Renders a copyable explanation that a discovered snapshot cannot be loaded. */
@@ -563,6 +566,8 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
               </For>
             </div>
           </Show>
+
+          <FollowPrimarySection onFollowed={props.onFollowed} />
 
           <Show when={!isLoading() && !error() && trash().length > 0}>
             <section

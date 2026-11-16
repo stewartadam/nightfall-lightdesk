@@ -129,7 +129,7 @@ test("clip tiles keep uniform geometry with mixed badges", async ({
     .screenshot({ path: testInfo.outputPath("uniform-clip-tiles.png") });
 
   // Widen the viewport and the column spanned by Timelines so the docked
-  // Clips group can grow beyond its 515px-minimum neighbours during reflow.
+  // Clips group can grow beyond its neighbours during reflow.
   await page.setViewportSize({ width: 1800, height: 900 });
   await dockFixturesInMainGrid(page);
   await page.evaluate(() => {
@@ -143,21 +143,22 @@ test("clip tiles keep uniform geometry with mixed badges", async ({
   const cards = page
     .locator(".nf-crud-card")
     .filter({ has: page.getByRole("button", { name: /Inspect clip/ }) });
-  // Clips declares a 515px minimum width, so reflow is checked between
-  // widths that fit four and three fixed-size tiles per row.
+  // Reflow is checked between widths that fit four and three fixed-size
+  // tiles per row, both above the Clips minimum width.
   const firstRowCountByWidth = new Map([
     [700, 4],
     [520, 3],
   ]);
   for (const [width, firstRowCount] of firstRowCountByWidth) {
-    await page.evaluate((width) => {
-      (window as any).appStores.dockApi
-        .get()
-        .getPanel("panel-ClipList")
-        .api.setSize({ width });
-    }, width);
     await expect
       .poll(async () => {
+        // Resize on every attempt: the dock may still be settling the move.
+        await page.evaluate((width) => {
+          (window as any).appStores.dockApi
+            .get()
+            .getPanel("panel-ClipList")
+            .api.setSize({ width });
+        }, width);
         const boxes = await cards.evaluateAll((elements) =>
           elements.map((element) => {
             const rect = element.getBoundingClientRect();

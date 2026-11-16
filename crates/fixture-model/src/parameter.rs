@@ -363,7 +363,7 @@ pub struct ParameterFunction {
 }
 
 /// Metadata for a parameter.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct ParameterMetadata {
     /// Where this parameter's bytes are placed in the fixture footprint.
@@ -496,6 +496,18 @@ impl ParameterMetadata {
         }
     }
 
+    /// Converts a DMX integer at this parameter's resolution to the value that outputs it,
+    /// the exact inverse of [`Self::dmx_value`]: range, inversion and calibration offset are
+    /// all undone, so asserting the result writes `dmx` back to the wire.
+    ///
+    /// DMX values that only a clamped offset could reach map to the edge of the range.
+    pub fn value_from_dmx(&self, dmx: u32) -> ParameterDmxValue {
+        let min = self.logical_min();
+        let max = self.logical_max();
+        let offset = self.offset.resolve_as_dmx_offset(min, max);
+        (self.logical_value_from_dmx(dmx) - offset).clamp(min, max)
+    }
+
     /// Returns the value operators see for a logical `value`: clamped to the
     /// logical range and inverted when configured, without calibration offset.
     ///
@@ -529,23 +541,21 @@ impl ParameterMetadata {
     /// Returns the DMX integer at this parameter's resolution that a logical
     /// `value` outputs, the forward mapping of [`Self::logical_value_from_dmx`].
     pub fn dmx_value(&self, value: ParameterDmxValue) -> u32 {
+        (self.output_level(value) * self.resolution.dmx_max() as ParameterDmxValue).round() as u32
+    }
+
+    /// Returns the 0-1 level a logical `value` outputs, before rounding to a
+    /// DMX integer: its position in the logical range after calibration
+    /// offset and inversion, so an inverted channel at its logical maximum
+    /// outputs level 0.
+    pub fn output_level(&self, value: ParameterDmxValue) -> ParameterDmxValue {
         let min = self.logical_min();
         let range = self.logical_max() - min;
-        let normalized = if range > 0.0 {
+        if range > 0.0 {
             ((self.raw_value(value) - min) / range).clamp(0.0, 1.0)
         } else {
             0.0
-        };
-        (normalized * self.resolution.dmx_max() as ParameterDmxValue).round() as u32
-    }
-
-    /// Returns a logical value as a 0-1 level of this parameter's logical range.
-    pub fn level(&self, value: ParameterDmxValue) -> ParameterDmxValue {
-        let range = self.logical_range();
-        if range <= 0.0 {
-            return 0.0;
         }
-        ((value - self.logical_min()) / range).clamp(0.0, 1.0)
     }
 
     /// Returns the minimum logical value operators should use for this parameter.
@@ -714,6 +724,29 @@ mod tests {
                     metadata.dmx_value(metadata.logical_value_from_dmx(dmx)),
                     dmx,
                     "inverted={is_inverted} range={min}..{max}"
+                );
+            }
+        }
+    }
+
+    /// Verifies the DMX-to-value inverse undoes the calibration offset as well as inversion, so
+    /// the value it returns writes the same DMX back.
+    #[test]
+    fn value_from_dmx_round_trips_through_offset_and_inversion() {
+        for (is_inverted, offset) in [(false, 10.0), (true, 0.0), (true, -20.0)] {
+            let metadata = ParameterMetadata {
+                attribute: Attribute::Pan,
+                resolution: DmxValueResolution::Coarse,
+                max: 255.0,
+                offset: ParameterValue::Absolute { value: offset },
+                is_inverted,
+                ..Default::default()
+            };
+            for dmx in [40u32, 128, 200] {
+                assert_eq!(
+                    metadata.dmx_value(metadata.value_from_dmx(dmx)),
+                    dmx,
+                    "inverted={is_inverted} offset={offset}"
                 );
             }
         }

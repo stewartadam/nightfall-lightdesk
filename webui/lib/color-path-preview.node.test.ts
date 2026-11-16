@@ -7,7 +7,7 @@
  */
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { before, test } from "node:test";
 import type * as types from "../types";
 import { ColorInterpolationSpace, FadeCurve, HueDirection } from "../types";
 import {
@@ -16,15 +16,19 @@ import {
   ciePreviewPointInsideSpectralLocus,
   ciePreviewPointToE154Rgb,
   cieSpectralLocusPreviewPoints,
-  colorPathRoutePoints,
-  colorPathSamples,
   E154_RGB_PRIMARIES,
   e154RgbToCieChromaticity,
   e154RgbTrianglePreviewPoints,
   rgbToCieChromaticity,
   rgbToHex,
-  sampleColorPath,
 } from "./color-path-preview";
+import {
+  colorPathRoutePoints,
+  colorPathSamples,
+  loadColorPathSampling,
+} from "./color-path-sampling";
+
+before(() => loadColorPathSampling());
 
 /** Builds a minimal color path for sampler tests. */
 function testPath(
@@ -56,23 +60,25 @@ function assertClose(
   );
 }
 
-test("sampleColorPath interpolates RGB midpoints directly", () => {
-  const midpoint = sampleColorPath(
+/** Verifies an RGB path's middle sample is the straight channel average of its anchors. */
+test("colorPathSamples interpolates RGB midpoints directly", () => {
+  const [, midpoint] = colorPathSamples(
     testPath(ColorInterpolationSpace.Rgb),
     { red: 1, green: 0, blue: 0 },
     { red: 0, green: 0, blue: 1 },
-    0.5,
+    3,
   );
 
   assert.equal(rgbToHex(midpoint), "#800080");
 });
 
-test("sampleColorPath takes the short HSV route through magenta", () => {
-  const midpoint = sampleColorPath(
+/** Verifies an HSV path from red to blue takes the shorter hue route through magenta. */
+test("colorPathSamples takes the short HSV route through magenta", () => {
+  const [, midpoint] = colorPathSamples(
     testPath(ColorInterpolationSpace.Hsv),
     { red: 1, green: 0, blue: 0 },
     { red: 0, green: 0, blue: 1 },
-    0.5,
+    3,
   );
 
   assert.ok(midpoint.red > 0.9);

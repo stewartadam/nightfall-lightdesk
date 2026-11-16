@@ -6,6 +6,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { getLogger } from "./logger";
+import { loadedWasmBridge, loadWasmBridge } from "./wasm-module";
+
+const log = getLogger(import.meta.url);
+
+// Load the bridge up front so fanned edits resolve synchronously by the time anyone types one.
+loadWasmBridge().catch((error: unknown) => {
+  log.error("Failed to load the WASM bridge for fan edits", { error });
+});
+
 /** Matches a plain signed decimal number, optionally in exponent notation. */
 const DECIMAL_NUMBER = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/iu;
 
@@ -43,48 +53,51 @@ export function parseNumericFanInput(input: string): number[] | null {
 }
 
 /**
- * Resolves the value at `offset` of `total` evenly spaced targets along fan
- * waypoints. The first target receives the first waypoint, the last target the
- * last waypoint, and targets in between are linearly interpolated through each
- * waypoint segment.
+ * Spreads fan waypoints across `total` evenly spaced targets with the engine's
+ * fan rules, so a fanned cell edit lands on the values a command-line fan
+ * would. Returns null while the WASM bridge is still loading.
  */
-export function resolveFanNumber(
+export function fanNumbers(
   waypoints: readonly number[],
-  offset: number,
   total: number,
-): number {
-  const first = waypoints[0] ?? 0;
-  if (waypoints.length <= 1 || total <= 1) return first;
-
-  const t = offset / Math.max(1, total - 1);
-  const maxSegment = waypoints.length - 1;
-  const segmentPosition = t * maxSegment;
-  const segmentIndex = Math.min(Math.floor(segmentPosition), maxSegment - 1);
-  const segmentT = segmentPosition - segmentIndex;
-  const start = waypoints[segmentIndex] ?? first;
-  const end = waypoints[segmentIndex + 1] ?? first;
-  return Number((start + segmentT * (end - start)).toPrecision(FAN_PRECISION));
+): number[] | null {
+  const wasm = loadedWasmBridge();
+  if (!wasm) {
+    log.warn("Fan edit ignored because the WASM bridge has not loaded yet");
+    return null;
+  }
+  return Array.from(
+    wasm.fan_numbers(Float64Array.from(waypoints), Math.max(0, total)),
+    (value) => Number(value.toPrecision(FAN_PRECISION)),
+  );
 }
 
 /**
  * Spreads fan waypoints across target cells, giving each cell its value in the
  * returned array. Cells are fanned per column in the order given, so a range
  * covering several columns fans each column from the first to the last
- * waypoint independently.
+ * waypoint independently. Returns null while the WASM bridge is still loading.
  */
 export function fanNumbersByColumn(
   cells: readonly (readonly [col: number, row: number])[],
   waypoints: readonly number[],
-): number[] {
+): number[] | null {
   const columnCounts = new Map<number, number>();
   for (const [col] of cells) {
     columnCounts.set(col, (columnCounts.get(col) ?? 0) + 1);
+  }
+
+  const valuesByColumn = new Map<number, number[]>();
+  for (const [col, count] of columnCounts) {
+    const values = fanNumbers(waypoints, count);
+    if (!values) return null;
+    valuesByColumn.set(col, values);
   }
 
   const columnOffsets = new Map<number, number>();
   return cells.map(([col]) => {
     const offset = columnOffsets.get(col) ?? 0;
     columnOffsets.set(col, offset + 1);
-    return resolveFanNumber(waypoints, offset, columnCounts.get(col) ?? 1);
+    return valuesByColumn.get(col)?.[offset] ?? waypoints[0] ?? 0;
   });
 }

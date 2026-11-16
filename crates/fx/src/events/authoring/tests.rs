@@ -171,6 +171,7 @@ fn store_step_fx_stabilizes_group_selection() {
             },
             selection: SpatialSelection::default(),
             description: String::new(),
+            rig_source: None,
         })
         .expect("group should store");
     let step_fx = valid_step_fx(

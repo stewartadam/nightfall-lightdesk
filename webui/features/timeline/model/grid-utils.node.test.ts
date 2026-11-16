@@ -8,14 +8,50 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { msToDuration } from "../../../lib/utils";
+import { durationToMs, msToDuration } from "../../../lib/utils";
+import type * as types from "../../../types";
 import {
+  getBeatInfo,
   msPerBars,
+  msPerBeat,
   quantizeSeekPositionMs,
   seekPositionByBars,
   seekPositionFromTimelineX,
-  snapToGrid,
+  snapPositionMs,
+  timelineSnapConfig,
 } from "./grid-utils";
+
+/**
+ * Verifies beat length keeps its fractional milliseconds, so bar 100 at 128 BPM starts where
+ * the engine puts it rather than ~300 ms early.
+ */
+test("msPerBeat keeps fractional beat lengths", () => {
+  assert.equal(msPerBeat(128), 468.75);
+  const bar100StartMs = 99 * 4 * msPerBeat(128);
+  assert.equal(bar100StartMs, 185_625);
+  assert.deepEqual(getBeatInfo(bar100StartMs, 128), {
+    beat: 396,
+    bar: 100,
+    beatInBar: 0,
+  });
+});
+
+/**
+ * Verifies a fractional beat's start counts as that beat both exactly and when rounded to the
+ * whole millisecond a timeline position stores.
+ */
+test("getBeatInfo counts exact and rounded fractional beat starts as the new beat", () => {
+  const beatMs = msPerBeat(130);
+  for (let beat = 1; beat < 2000; beat++) {
+    assert.equal(getBeatInfo(beat * beatMs, 130).beat, beat);
+    assert.equal(getBeatInfo(Math.round(beat * beatMs), 130).beat, beat);
+  }
+});
+
+/** Verifies bar jumps use the exact bar length rather than one rounded to whole milliseconds. */
+test("msPerBars keeps fractional bar lengths", () => {
+  assert.equal(msPerBars(130, 4, 99), 99 * 4 * msPerBeat(130));
+});
 
 /** Verifies bar jump duration scales by BPM, meter, and jump count. */
 test("msPerBars calculates whole-bar jump durations", () => {
@@ -116,20 +152,18 @@ test("seekPositionByBars falls back to anchored BPM with one downbeat marker", (
 test("seekPositionFromTimelineX returns exact position in time mode", () => {
   const position = seekPositionFromTimelineX({
     x: 175,
-    start: 2_000,
     zoom: 100,
     useBeatgrid: false,
     snapEnabled: false,
     bpm: 120,
   });
 
-  assert.equal(position, 3_750);
+  assert.equal(position, 1_750);
 });
 
 test("seekPositionFromTimelineX snaps to nearest beat in beatgrid mode when snapping is enabled", () => {
   const position = seekPositionFromTimelineX({
     x: 173,
-    start: 0,
     zoom: 100,
     useBeatgrid: true,
     snapEnabled: true,
@@ -143,7 +177,6 @@ test("seekPositionFromTimelineX snaps to nearest beat in beatgrid mode when snap
 test("seekPositionFromTimelineX does not snap in beatgrid mode when snapping is disabled", () => {
   const position = seekPositionFromTimelineX({
     x: 173,
-    start: 0,
     zoom: 100,
     useBeatgrid: true,
     snapEnabled: false,
@@ -153,23 +186,9 @@ test("seekPositionFromTimelineX does not snap in beatgrid mode when snapping is 
   assert.equal(position, 1_730);
 });
 
-test("seekPositionFromTimelineX applies beat snapping with non-zero timeline start", () => {
-  const position = seekPositionFromTimelineX({
-    x: 63,
-    start: 5_000,
-    zoom: 100,
-    useBeatgrid: true,
-    snapEnabled: true,
-    bpm: 120,
-  });
-
-  assert.equal(position, 5_500);
-});
-
 test("seekPositionFromTimelineX snaps from a shifted beatgrid marker anchor", () => {
   const position = seekPositionFromTimelineX({
     x: 173,
-    start: 0,
     zoom: 100,
     useBeatgrid: true,
     snapEnabled: true,
@@ -234,8 +253,9 @@ test("beatgrid mode quantizes seek positions to bpm beats when snap is enabled",
   assert.equal(quantized, 1500);
 });
 
+/** Verifies snapping past the last detected marker continues the grid from the markers. */
 test("beatgrid snapping extrapolates past the final detected marker", () => {
-  const snappedPx = snapToGrid(260, 100, 0, {
+  const snappedMs = snapPositionMs(2600, 100, {
     enabled: true,
     interval: 500,
     threshold: 15,
@@ -245,5 +265,107 @@ test("beatgrid snapping extrapolates past the final detected marker", () => {
     anchorMs: 1000,
   });
 
-  assert.equal(snappedPx, 250);
+  assert.equal(snappedMs, 2500);
+});
+
+/**
+ * Verifies beat snapping returns the exact beat time at every zoom level, including zoomed
+ * out where one pixel spans 25 ms.
+ */
+test("beat snapping returns exact beat times at any zoom", () => {
+  const config = {
+    enabled: true,
+    interval: 60000 / 128,
+    threshold: 15,
+    isBeat: true,
+    beatsPerBar: 4,
+  };
+
+  assert.equal(snapPositionMs(470, 100, config), 468.75);
+  assert.equal(snapPositionMs(930, 40, config), 937.5);
+});
+
+/**
+ * Verifies the shared snap config anchors beats on the detected beatgrid, so inserting and
+ * dragging actions snap to the beats the ruler draws rather than a grid starting at 0 ms.
+ */
+test("timelineSnapConfig anchors beat snapping on the detected beatgrid", () => {
+  const markers = [237, 737].map((ms, index) => ({
+    time: msToDuration(ms),
+    beat_index: index,
+    is_downbeat: index === 0,
+  }));
+  const config = timelineSnapConfig({
+    snapEnabled: () => true,
+    useBeatgrid: () => true,
+    bpm: () => 120,
+    beatsPerBar: () => 4,
+    beatgrid: () => ({ markers }) as unknown as types.BeatgridData,
+  });
+
+  assert.equal(config.anchorMs, 237);
+  assert.deepEqual(config.markers, [237, 737]);
+  assert.equal(snapPositionMs(1720, 100, config), 1737);
+});
+
+/**
+ * Verifies bars past the detected markers count from the first downbeat, as the ruler draws
+ * them, when the first detected marker is not a downbeat.
+ */
+test("snapPositionMs counts bars from the first downbeat past the markers", () => {
+  const markers = [1000, 1500].map((ms, index) => ({
+    time: msToDuration(ms),
+    beat_index: index + 1,
+    is_downbeat: false,
+  }));
+  const config = timelineSnapConfig({
+    snapEnabled: () => true,
+    useBeatgrid: () => true,
+    bpm: () => 120,
+    beatsPerBar: () => 4,
+    beatgrid: () => ({ markers }) as unknown as types.BeatgridData,
+  });
+
+  assert.equal(config.anchorBeatIndex, 1);
+  assert.equal(snapPositionMs(2700, 20, config), 2500);
+});
+
+/** Verifies positions before the first beat stay put, since the ruler draws no beats there. */
+test("snapPositionMs does not snap to beats before the beatgrid starts", () => {
+  const config = timelineSnapConfig({
+    snapEnabled: () => true,
+    useBeatgrid: () => true,
+    bpm: () => 120,
+    beatsPerBar: () => 4,
+    beatgrid: () =>
+      ({
+        markers: [
+          { time: msToDuration(2000), beat_index: 0, is_downbeat: true },
+        ],
+      }) as unknown as types.BeatgridData,
+  });
+
+  assert.equal(snapPositionMs(1450, 100, config), 1450);
+  assert.equal(snapPositionMs(1950, 100, config), 2000);
+});
+
+/** Verifies a beat time stored as a duration reads back within half a nanosecond of the beat. */
+test("msToDuration stores a fractional beat time to the nearest nanosecond", () => {
+  const beatMs = msPerBeat(130);
+  const stored = durationToMs(msToDuration(beatMs));
+  assert.ok(Math.abs(stored - beatMs) <= 0.0000005);
+  assert.deepEqual(msToDuration(999.9999999), { secs: 1, nanos: 0 });
+});
+
+/** Verifies the shared snap config falls back to whole seconds outside beat mode. */
+test("timelineSnapConfig snaps to seconds without the beatgrid", () => {
+  const config = timelineSnapConfig({
+    snapEnabled: () => true,
+    useBeatgrid: () => false,
+    bpm: () => 120,
+    beatsPerBar: () => 4,
+    beatgrid: () => undefined,
+  });
+
+  assert.equal(snapPositionMs(2040, 100, config), 2000);
 });

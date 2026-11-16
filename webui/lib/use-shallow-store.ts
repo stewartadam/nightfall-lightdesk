@@ -6,7 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
+import {
+  type Accessor,
+  createComputed,
+  createSignal,
+  onCleanup,
+} from "solid-js";
 
 type ShallowStore<Value> = {
   get: () => Value;
@@ -31,6 +36,10 @@ export function useShallowStore<Value>(
 /**
  * Subscribes to a Nanostore only while enabled and refreshes from the current
  * snapshot before reattaching after a disabled interval.
+ *
+ * The refresh runs as a synchronous computation rather than an effect, so the
+ * effects that read the value never observe the snapshot left over from before
+ * the disabled interval once `enabled` turns true.
  */
 export function useConditionalShallowStore<Value>(
   store: ShallowStore<Value>,
@@ -39,7 +48,7 @@ export function useConditionalShallowStore<Value>(
   const [value, setValue] = createSignal<Value>(store.get());
 
   /** Owns the store listener for the current enabled interval. */
-  createEffect(() => {
+  createComputed(() => {
     if (!enabled()) return;
 
     setValue(() => store.get());

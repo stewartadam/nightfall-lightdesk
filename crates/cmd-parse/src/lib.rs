@@ -32,7 +32,8 @@ pub use phase_language::{format_phase_expression_degrees, parse_phase_expression
 pub use selection_language::parse_selection_expr;
 pub use selection_language::parse_spatial_selection_text;
 pub use statements::{
-    StatementRange, split_command_statements, statement_range_at, statement_ranges,
+    StatementRange, split_command_script, split_command_statements, statement_range_at,
+    statement_ranges,
 };
 
 /// Common re-exports for downstream crates using command parsing APIs.

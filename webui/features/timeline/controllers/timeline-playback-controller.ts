@@ -31,18 +31,32 @@ interface TimelinePlaybackControllerOptions {
   commands: InstanceCommandCallbacks;
 }
 
+/**
+ * Converts a timecode position into timeline time: the time since the timeline's
+ * `timecode_start`, held at 0 before the timeline starts.
+ */
+const timelinePositionAt = (timecodeMs: number, timecodeStartMs: number) =>
+  Math.max(0, timecodeMs - timecodeStartMs);
+
 interface TimelineTimecodeState {
   currentTime: types.Duration;
   isActive: boolean;
   triggerMode: types.TimelineTriggerMode;
 }
 
-/** Owns local playback state, interpolation, loop handling, and backend commands. */
+/**
+ * Owns local playback state, interpolation, loop handling, and backend commands.
+ *
+ * Every position it exposes or accepts is in timeline time, the coordinate space the engine
+ * stores action, automation, marker and loop positions in. The linked timecode runs in
+ * timecode time, offset by the timeline's `timecode_start`, so the conversion happens only
+ * where timecode positions enter (`syncTimecodeState`) or leave (`seek`).
+ */
 export const createTimelinePlaybackController = (
   options: TimelinePlaybackControllerOptions,
 ) => {
   const workspaceActive = useWorkspaceActivity();
-  const [start, setStart] = createSignal(0);
+  const [timecodeStart, setTimecodeStart] = createSignal(0);
   const [end, setEnd] = createSignal(60 * 1000);
   const [position, setPosition] = createSignal(0);
   const [paused, setPaused] = createSignal(true);
@@ -56,6 +70,8 @@ export const createTimelinePlaybackController = (
   let anchorTimeMs = 0;
   let lastFrameTimeMs = 0;
   let lastSnapshotPositionMs: number | undefined;
+  let lastTimecodeMs: number | undefined;
+  let lastTimecodeActive = false;
 
   /** Cancels the pending presentation update. */
   const clearPlaybackFrame = () => {
@@ -76,10 +92,29 @@ export const createTimelinePlaybackController = (
     setPosition(nextPosition);
   };
 
+  /**
+   * Applies the timeline's `timecode_start` offset. A changed offset moves the playhead to
+   * where the last known timecode position now falls on the timeline, since the timecode
+   * itself did not move and may not report again until it does.
+   */
+  const updateTimecodeStart = (nextTimecodeStartMs: number) => {
+    if (nextTimecodeStartMs === untrack(timecodeStart)) return;
+    setTimecodeStart(nextTimecodeStartMs);
+    if (lastTimecodeMs !== undefined) {
+      lastSnapshotPositionMs = undefined;
+      anchorPosition(timelinePositionAt(lastTimecodeMs, nextTimecodeStartMs));
+      setTimecodePlaybackActive(
+        lastTimecodeActive && lastTimecodeMs >= nextTimecodeStartMs,
+      );
+    }
+  };
+
   /** Resets local playback state when the selected timeline disappears. */
   const reset = () => {
     setEnd(60 * 1000);
-    setStart(0);
+    setTimecodeStart(0);
+    lastTimecodeMs = undefined;
+    lastTimecodeActive = false;
     anchorPosition(0);
     lastSnapshotPositionMs = undefined;
     setPaused(true);
@@ -108,11 +143,20 @@ export const createTimelinePlaybackController = (
       return;
     }
 
-    const snapshotPositionMs = durationToMs(state.currentTime);
+    lastTimecodeMs = durationToMs(state.currentTime);
+    lastTimecodeActive = state.isActive;
+    // Before the timeline starts (pre-roll), the engine holds playback at its start, so the
+    // playhead waits there instead of advancing with the timecode.
+    const snapshotPositionMs = timelinePositionAt(
+      lastTimecodeMs,
+      untrack(timecodeStart),
+    );
+    const advancing =
+      state.isActive && lastTimecodeMs >= untrack(timecodeStart);
     const receivedAtMs = monotonicNow();
     const predictedPositionMs = anchorPositionMs + receivedAtMs - anchorTimeMs;
     if (
-      !state.isActive ||
+      !advancing ||
       snapshotPositionMs >= untrack(end) ||
       !untrack(timecodePlaybackActive) ||
       (lastSnapshotPositionMs !== undefined &&
@@ -127,7 +171,7 @@ export const createTimelinePlaybackController = (
       anchorTimeMs = receivedAtMs;
     }
     lastSnapshotPositionMs = snapshotPositionMs;
-    setTimecodePlaybackActive(state.isActive);
+    setTimecodePlaybackActive(advancing);
     if (state.isActive) {
       setPlaybackStartPending(false);
       setPaused(false);
@@ -198,11 +242,14 @@ export const createTimelinePlaybackController = (
     options.commands.onPause(position());
   };
 
-  /** Moves the playhead immediately and notifies the backend. */
+  /**
+   * Moves the playhead to a timeline position immediately and seeks the linked timecode to
+   * the matching timecode position.
+   */
   const seek = (nextPosition: number) => {
     log.debug(`seeking to ${nextPosition}ms`);
     anchorPosition(nextPosition);
-    options.commands.onSeek(nextPosition);
+    options.commands.onSeek(nextPosition + untrack(timecodeStart));
   };
 
   /** Stops playback, returns to the timeline start, and clears interpolation. */
@@ -212,14 +259,13 @@ export const createTimelinePlaybackController = (
     setTimecodePlaybackActive(false);
     setManualTimelinePlaybackActive(false);
     setPaused(true);
-    anchorPosition(start());
+    anchorPosition(0);
     clearPlaybackFrame();
     options.commands.onStop(position());
   };
 
   return {
-    start,
-    setStart,
+    setTimecodeStart: updateTimecodeStart,
     end,
     setEnd,
     position,

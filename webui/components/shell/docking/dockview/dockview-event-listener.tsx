@@ -59,7 +59,12 @@ interface DockviewEventListenerProps {
   /** Saves the arrangement as the local session; false for views that only present it. */
   persist?: boolean;
   hasSessionLayout?: () => boolean;
-  onResetLayout?: () => void;
+  /**
+   * Gives the workspace its starting arrangement for a showfile this device has
+   * not arranged. Returns false when it leaves the workspace empty for a layout
+   * the showfile brings, which must not be saved as this device's arrangement.
+   */
+  onArrangeShowfile?: () => boolean;
 }
 
 interface Disposable {
@@ -80,15 +85,29 @@ function isEditableFocusTarget(target: Element | null): boolean {
   );
 }
 
-/** Focuses the docked command input only when activation would otherwise have no editor target. */
-function focusCommandLinePanelInputIfNeeded(): void {
-  if (isEditableFocusTarget(document.activeElement)) {
-    return;
-  }
+/** How long to retry command input focus while a dialog closes and an edge reveals the input. */
+const COMMAND_LINE_FOCUS_TIMEOUT_MS = 1000;
 
-  document
-    .querySelector<HTMLElement>('[data-workspace-active="true"] #cmdline')
-    ?.focus();
+/**
+ * Focuses the docked command input only when activation would otherwise have no editor target.
+ * Retries while the input cannot take focus: a modal dialog such as the command palette still
+ * holds it and makes the page inert, or Dockview has not yet shown a panel from a collapsed edge.
+ */
+function focusCommandLinePanelInputIfNeeded(api: DockviewApi): void {
+  const deadline = performance.now() + COMMAND_LINE_FOCUS_TIMEOUT_MS;
+  /** Attempts focus, then waits a frame unless the panel lost activation or an editor holds focus. */
+  const focusInput = () => {
+    if (api.activePanel?.id !== "panel-CommandLine") return;
+    if (!document.querySelector("dialog:modal")) {
+      if (isEditableFocusTarget(document.activeElement)) return;
+      document
+        .querySelector<HTMLElement>('[data-workspace-active="true"] #cmdline')
+        ?.focus();
+      if (isEditableFocusTarget(document.activeElement)) return;
+    }
+    if (performance.now() < deadline) requestAnimationFrame(focusInput);
+  };
+  focusInput();
 }
 
 /**
@@ -185,10 +204,9 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
 
   /**
    * Settles this device's arrangement once per loaded showfile. The device keeps
-   * its own arrangement when it already has one for this showfile; otherwise it
-   * starts from the built-in arrangement and the workspace opens the showfile's
-   * default named layout. Settings snapshots from other devices never rearrange
-   * this one.
+   * its own arrangement when it already has one for this showfile; otherwise the
+   * workspace starts it over and then opens the showfile's default named layout.
+   * Settings snapshots from other devices never rearrange this one.
    */
   createEffect(() => {
     const api = dockviewApi();
@@ -206,8 +224,7 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
       if (!keep) {
         isRestoringLayout = true;
         log.debug("No arrangement on this device for the showfile");
-        props.onResetLayout?.();
-        persistSession(api);
+        if (props.onArrangeShowfile?.() ?? false) persistSession(api);
         window.queueMicrotask(() => {
           isRestoringLayout = false;
         });
@@ -369,7 +386,7 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
     const disposeFocusChange = api.onDidActivePanelChange((event) => {
       // TODO: ideally we would pass on this notification to the underlying component
       if (event.panel?.id === "panel-CommandLine") {
-        focusCommandLinePanelInputIfNeeded();
+        focusCommandLinePanelInputIfNeeded(api);
       }
     });
     onCleanup(() => disposeFocusChange.dispose());

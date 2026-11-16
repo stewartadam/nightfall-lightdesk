@@ -48,6 +48,12 @@ pub(in crate::parser) fn slot_accepts_initial_fill(slot: SlotId, token: &LexerTo
             Some(TokenId::Channel | TokenId::Fixture | TokenId::Group | TokenId::Parameter)
         );
     }
+    if slot == SlotId::ParkTargetExpr {
+        return matches!(
+            token_id,
+            Some(TokenId::Fixture | TokenId::Group | TokenId::Parameter)
+        );
+    }
     if matches!(
         slot,
         SlotId::StoreObjectIdentifier

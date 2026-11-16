@@ -4,8 +4,9 @@
 For desktop artifact builds and the tagged-release procedure, see [Desktop builds and releases](docs/desktop-releases.md).
 
 Every PR must include user-facing `Notes:` in its description, or explicitly omit
-them with `Notes: none (specific reason)`. See [PR release notes](docs/contributing/release-notes.md)
-for examples and the required check. No changelog fragment files are needed.
+them with `Notes: none (specific reason)`. See [Writing release notes](docs/contributing/writing-release-notes.md)
+for what to write, and [PR release notes](docs/contributing/release-notes.md) for the syntax and the
+required check. No changelog fragment files are needed.
 
 Detailed contribution guides live in [`docs/contributing/`](docs/contributing/).
 
@@ -167,7 +168,7 @@ Production web and Tauri builds generate dependency notices with the pinned
 See [distribution notices](docs/internal/src/contributing/distribution-notices.md)
 for packaging and dependency-update requirements.
 
-Run `pnpm run setup:tools` first if you have not already installed the generator. `setup-env.mjs` creates the ignored `.env`; it chooses a backend port and configures the shared Playwright browser location. It overwrites that file, so run it once for a new checkout rather than over an environment you have customized.
+Run `pnpm run setup:tools` first if you have not already installed the generator. `setup-env.mjs` creates the ignored `.env`; it keeps the backend port the checkout's `.env` already has (3030 for a new clone, or `--port=<n>` to choose one) and configures the shared Playwright browser location. It overwrites that file, so run it once for a new checkout rather than over an environment you have customized.
 
 If you use [kache](https://github.com/kunobi-ninja/kache) as your `rustc` wrapper on macOS, set `cache_executables = false` under `[cache]` in `~/.config/kache/config.toml`. Each time kache stores a binary or test harness it runs `dsymutil`, which takes ~20s for each app-runtime executable, while relinking them on a cache hit takes a few seconds.
 
@@ -244,12 +245,37 @@ Then install the combined hooks:
 pnpm exec prek install -t pre-commit -t commit-msg -t pre-push -t post-merge -t post-rewrite
 ```
 
-If you wish to also use beads, ensure hooks are chained:
+If you wish to also use beads, ensure hooks are chained. Keep `bd` at the
+version pinned in `.claude/hooks/cloud-session-start.sh`:
 
 ```sh
-npm install -g @beads/bd
+npm install -g @beads/bd@1.3.4
 bd hooks install --chain
 ```
+
+Maintainers share the issue database through a separate Dolt remote, never
+this repository's, stored under the branch ref `refs/heads/claude/beads-data`
+so cloud sessions can push it. Cloud sessions read the remote from the
+`BEADS_SYNC_REMOTE` environment variable. bd cannot set a git ref, so point a
+local database at it with the dolt CLI (`brew install dolt`):
+
+```sh
+cd .beads/embeddeddolt/<database>
+dolt remote remove origin
+dolt remote add --ref refs/heads/claude/beads-data origin <remote>
+cd - && bd dolt pull
+```
+
+Claude Code sessions run `bd sync` on start through
+`.claude/hooks/beads-sync.sh`, which pulls other machines' changes and pushes
+anything left over, and push unpushed issue writes at the end of each turn
+through `.claude/hooks/beads-push.sh`, which needs the dolt CLI and `jq`.
+
+Outside Claude Code, run `bd dolt pull` and `bd dolt push` to sync by hand.
+Dolt records a commit for every issue write, so run `bd flatten` occasionally
+to drop history and keep the synced data small. Flattening rewrites history every other copy shares, so
+push it with `dolt push --force origin main` from the database directory and
+have other machines clone the database again.
 
 #### Optional tools
 
@@ -307,6 +333,13 @@ transports initially disabled. This keeps tests from mutating a developer
 session or inheriting backend world and undo state from another test. Owned
 services and disposable data are removed after each test and swept again when
 Playwright exits.
+
+`NIGHTFALL_PLAYWRIGHT_CHROMIUM_ARGS` adds whitespace-separated switches to every
+Chromium launch. On a machine without a GPU, Chromium renders WebGL with
+SwiftShader, and the visualizer drops to about 1 FPS. Installing Mesa's EGL
+libraries (`libegl1 libegl-mesa0 libgles2` on Debian and Ubuntu) and setting it to
+`--use-angle=gl-egl --ignore-gpu-blocklist` renders with Mesa's llvmpipe instead,
+about ten times faster. Claude Code cloud sessions set this up automatically.
 
 All workers share one web server per run. Native runs build the web UI once
 with `vite build --mode e2e` (while Cargo checks the backend) and serve that
@@ -387,34 +420,29 @@ pnpm run dashboard:ui
 ```
 
 The dashboard page is served at `/worktree-dashboard.html` and calls the API via Vite proxy (`/worktree-api`).
+The API refuses requests whose `Host` isn't this machine or whose `Origin` isn't a
+loopback address, so other web pages can't drive it. To open the dashboard page from
+another address, such as another device on your LAN, list that origin when you
+start the dashboard:
+
+```sh
+NIGHTFALL_WORKTREE_DASHBOARD_ALLOWED_ORIGINS=http://192.168.1.20:3031 pnpm run dashboard
+```
 The API discovers all worktrees from `git worktree list`, reads each `.env` (`NIGHTFALL_PORT`), and provides launch/recycle controls plus direct links to each Web UI.
 The `docs-user` service runs `mdbook serve docs` on `NIGHTFALL_PORT + 2` and the `docs-dev` service runs `mdbook serve docs/internal` on `NIGHTFALL_PORT + 3`, so each worktree previews its own copy of the user manual and the Developer Guide; both need `mdbook` on the dashboard's `PATH` (see [Building the documentation](#building-the-documentation)).
 
-To run the backend and Art-Net/sACN sender examples through a Cargo wrapper such
-as Mr Boxington, set `NIGHTFALL_CARGO_COMMAND=mbx` in the target worktree's `.env`.
-Each service launch reads that worktree's settings, including variable expansion,
-and applies them over the environment inherited when the dashboard started.
-An exported value provides a fallback for worktrees that do not configure it:
-
-```sh
-NIGHTFALL_CARGO_COMMAND=mbx pnpm run dashboard
-```
-
-The default is `cargo` (`cargo.exe` on Windows). The value must be one executable
-name on the dashboard's `PATH`, or an absolute executable path, without arguments
-or shell syntax. For example, `mbx` launches the backend with `mbx run`. Start and
-recycle use the same configured command, which is included in service logs;
-a missing executable produces a process error without falling back to Cargo.
-Start or recycle the worktree service after changing its `.env`; restarting the
-dashboard is unnecessary. The dashboard loads its own host and port settings from
-its startup directory's `.env`, but does not pass those dotenv values to other
-worktrees. UI and WASM builds still launch through pnpm with their worktree's
-environment.
+Each service launch reads that worktree's `.env`, including variable expansion,
+and applies it over the environment the dashboard was started with. Start or
+recycle the worktree service after changing its `.env`; restarting the dashboard
+is unnecessary. The dashboard doesn't load its own checkout's `.env` into its
+environment, so that checkout's settings never leak into other worktrees'
+services or into the `wt` commands it runs. Set dashboard options such as
+`NIGHTFALL_WORKTREE_DASHBOARD_PORT` in the shell that starts it.
 
 New worktrees seed their `.env` from the primary worktree's `.env`, preserving
-its settings and comments. Setup then appends the generated port (a random
-block of 10 ports between 3000 and 3999 that no other worktree's `.env` uses,
-so backend, web UI and docs ports never collide across worktrees) and shared
+its settings and comments. Setup then appends the generated port (a block of 10
+ports between 3000 and 3999 that no other worktree's `.env` uses, so backend,
+web UI and docs ports never collide across worktrees) and shared
 Playwright browser path, plus the isolated data directory and disabled network
 input/output settings for secondary worktrees. These generated values override
 the inherited settings. If the primary `.env` is missing, setup uses only the
@@ -522,6 +550,7 @@ through. Commands for the whole repository use a plain verb; the rest are named
 | `check:command-architecture`, `check:crate-boundaries`, `check:browser-demo-dependencies` | Architecture checks also run by the git hooks or CI. |
 | `test` | Run the script tests and the web UI Node tests. |
 | `test:scripts`, `test:webui-node` | Run either half of `test`. |
+| `test:packet-timing` | Run the sample show with timeline 1 playing and Art-Net and sACN routed from the console for ten seconds, and check each protocol's packets stay on the output tick grid. The test is ignored in normal runs, CI and the push hook because other load on the machine makes it fail, so run it on an otherwise idle machine after changing output scheduling or the engine frame loop. |
 | `test:webui-playwright` | Run Playwright specs through the wrapper. Pass `--headed`, `--ui`, `--target embedded-demo` or spec paths. |
 | `test:webui-smoke`, `test:webui-hmr` | Run the CI smoke specs, or the dev-server hot-reload specs. |
 | `playwright:install` | Install the Playwright browsers into the shared cache. |
@@ -534,6 +563,7 @@ through. Commands for the whole repository use a plain verb; the rest are named
 | `gdtf:fetch` | Download the pinned GDTF bench archives from GDTF Share. |
 | `gdtf:bench` | Check the pinned bench archives against their committed expectations. |
 | `gdtf:corpus` | Check that every GDTF file in `NIGHTFALL_GDTF_CORPUS_DIR` converts or is rejected cleanly. |
+| `mvr:samples` | Download the pinned real MVR exports (Capture, Vectorworks) and run the MVR reader tests against them; `mvr:samples fetch` only downloads. |
 | `fx-module:install` | Build an FX module and install it into the application data directory. |
 | `package:notices` | Generate dependency notices for a desktop target triple (defaults to the Rust host triple). |
 | `package:sample-audio` | Copy the sample tracks next to a standalone backend executable. |
@@ -593,6 +623,8 @@ pnpm run test:webui-playwright --headed webui/e2e/clip-go-button.spec.ts
 
 Use `--grep` to select a scenario and `--workers=1` to reduce concurrent load. Inspect screenshots and traces under `test-results/playwright/`; verify the visible result, not just command acknowledgements. Stop timeline playback at the end of a test that starts it. The wrapper disables timeline audio during its test runs.
 
+Tests tagged `@gpu` (`GPU_TAG` from `webui/e2e/gpu-gate.ts`) assert on pixels the app's 3D visualizer rasterized. They run on a GPU or on Mesa's llvmpipe/lavapipe, which GPU-less cloud containers can use for WebGL. They are skipped, with the WebGL renderer and WebGPU adapter in the report, when the visualizer would render through SwiftShader (Chromium's built-in fallback, as on a stock ubuntu CI runner) or Windows WARP, when it has neither a WebGPU adapter nor WebGL2, or when the probe fails. A missing WebGPU adapter alone does not skip them, since the visualizer then renders through WebGL2. Set `NIGHTFALL_PLAYWRIGHT_RUN_GPU_SPECS=1` to run them anyway, or pass `--grep-invert @gpu` to leave them out of a run entirely. Tag new app tests that read back visualizer pixels the same way; tests that inspect scene state through the visualizer API stay untagged. A gated test skips before `beforeEach` hooks run, but `afterEach` hooks still run and set up the fixtures they request, so return early from them when `testInfo.status` is `"skipped"`. The optics harness specs below gate on their backend themselves.
+
 #### Visualizer optics and performance tests
 
 The optics GPU specs render production visualizer components into `/e2e/fixtures/optics.html` without a backend, so run them with `--target embedded-demo`:
@@ -618,12 +650,19 @@ Performance specs are opt-in because their timings depend on the machine. `optic
   NIGHTFALL_VISUALIZER_PLAYBACK_PERF=1 pnpm run test:webui-playwright webui/e2e/visualizer-playback-perf.spec.ts
   ```
 
+- The wall-clock latency and jitter specs (`command-ack-latency`, `sequence-store-latency`, `timeline-playhead-jitter`, `perf-repro-observe` and `visualizer-beam-overlap-perf`) fail on fixed millisecond or FPS thresholds that depend on host load. They are skipped unless `NIGHTFALL_TIMING_PERF=1` is set:
+
+  ```sh
+  NIGHTFALL_TIMING_PERF=1 pnpm run test:webui-playwright webui/e2e/command-ack-latency.spec.ts
+  ```
+
 | Variable | Effect |
 | --- | --- |
 | `NIGHTFALL_OPTICS_ARTIFACTS=1` | Attach optics images and metrics for passing tests too. |
 | `NIGHTFALL_VISUALIZER_ANTIALIAS_SWEEP=1` | Run the full backend × DPR × quality matrix of the antialias motion test instead of DPR 2 with the Medium and High presets. |
 | `NIGHTFALL_GDTF_BENCH_DIR` | Directory holding the GDTF bench archives. `gdtf-bench-visual`, `gdtf-bench-evaluation` and `gdtf-bench-argo-perf` are skipped without it. |
 | `NIGHTFALL_GDTF_BENCH_SCREENSHOTS=1` | Compare the unlit `gdtf-bench-visual` captures with the reviewed per-platform baselines. |
+| `NIGHTFALL_TIMING_PERF=1` | Enable the wall-clock latency and jitter specs (`command-ack-latency`, `sequence-store-latency`, `timeline-playhead-jitter`, `perf-repro-observe`, `visualizer-beam-overlap-perf`). |
 | `NIGHTFALL_OPTICAL_PLAYBACK_PERF=1` | Enable `optical-playback-perf.spec.ts` (set by `pnpm run visualizer:perf`). |
 | `NIGHTFALL_VISUALIZER_PERF=1` | Enable `gdtf-bench-argo-perf.spec.ts`, together with `NIGHTFALL_GDTF_BENCH_DIR`. |
 | `NIGHTFALL_VISUALIZER_PLAYBACK_PERF=1` | Enable `visualizer-playback-perf.spec.ts`. |
@@ -741,15 +780,15 @@ components to catch performance regressions:
 | Component | Command | Size overrides |
 | --- | --- | --- |
 | Compositor | `cargo bench -p nightfall-fixtures --bench compositor` | `NIGHTFALL_COMPOSITOR_BENCH_LAYERS`, `NIGHTFALL_COMPOSITOR_BENCH_TRANSITIONS` (`none`, `all`) |
-| Clip lookup | `cargo bench -p nightfall-desk --bench clip_lookup` | `NIGHTFALL_CLIP_BENCH_DEFINED_COUNTS`, `NIGHTFALL_CLIP_BENCH_LOOKUP_COUNTS`, `NIGHTFALL_CLIP_BENCH_ACTIVE_COUNTS` |
+| Clip lookup | `cargo bench -p nightfall-clips --bench clip_lookup` | `NIGHTFALL_CLIP_BENCH_DEFINED_COUNTS`, `NIGHTFALL_CLIP_BENCH_LOOKUP_COUNTS`, `NIGHTFALL_CLIP_BENCH_ACTIVE_COUNTS` |
 | Timeline planning and plan evaluation | `cargo bench -p nightfall-timeline --bench planner` | `NIGHTFALL_TIMELINE_BENCH_ACTION_COUNTS` |
 | Sequence lookahead projection and duration summary | `cargo bench -p nightfall-lookahead-projection --bench projection` | `NIGHTFALL_LOOKAHEAD_BENCH_CUE_COUNTS`, `NIGHTFALL_LOOKAHEAD_BENCH_FIXTURE_COUNTS` |
 | Runtime timeline lookahead (full backend frames) | `cargo bench -p app-runtime --bench timeline_lookahead` | `NIGHTFALL_TIMELINE_LOOKAHEAD_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_TIMELINE_LOOKAHEAD_BENCH_START_COUNTS` |
 | Selection resolution (linear and spatial) | `cargo bench -p nightfall-selection --bench resolve` | `NIGHTFALL_SELECTION_BENCH_FIXTURE_COUNTS` |
 | Step FX sampling and full evaluation | `cargo bench -p nightfall-fx --bench step_fx` | `NIGHTFALL_STEP_FX_BENCH_SELECTION_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_LANE_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_STEP_FX_BENCH_FX_COUNTS` |
 | DMX universe packing, parameter-state broadcast and fixture parameter lookup | `cargo bench -p nightfall-fixtures --bench frame_output` | `NIGHTFALL_FRAME_OUTPUT_BENCH_FIXTURE_COUNTS` |
-| Layer-stack snapshot | `cargo bench -p nightfall-desk --bench layer_stack` | `NIGHTFALL_LAYER_STACK_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_LAYER_STACK_BENCH_LAYER_COUNTS` |
-| Virtual dimmer | `cargo bench -p nightfall-desk --bench vdim` | `NIGHTFALL_VDIM_BENCH_FIXTURE_COUNTS` |
+| Layer-stack snapshot | `cargo bench -p nightfall-fixtures --bench layer_stack` | `NIGHTFALL_LAYER_STACK_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_LAYER_STACK_BENCH_LAYER_COUNTS` |
+| Virtual dimmer | `cargo bench -p nightfall-fixtures --bench vdim` | `NIGHTFALL_VDIM_BENCH_FIXTURE_COUNTS` |
 | Standalone cue and sequence painting | `cargo bench -p nightfall-cues --bench painting` | `NIGHTFALL_PAINT_BENCH_FIXTURE_COUNTS`, `NIGHTFALL_PAINT_BENCH_PLAYBACK_COUNTS` |
 
 The runtime timeline lookahead suite times whole frames of the live backend
@@ -774,7 +813,7 @@ short; drop both for a full run before merging:
 
 ```sh
 NIGHTFALL_CLIP_BENCH_DEFINED_COUNTS=1000,5000 \
-cargo bench -p nightfall-desk --bench clip_lookup -- --quick clip_lookup_strategy
+cargo bench -p nightfall-clips --bench clip_lookup -- --quick clip_lookup_strategy
 ```
 
 Criterion compares each run with the previous one on the same machine. To

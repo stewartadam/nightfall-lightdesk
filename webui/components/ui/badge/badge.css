@@ -115,4 +115,9 @@
     text-align: center;
     pointer-events: none;
   }
+  .nf-count-badge[data-placement="inline"] {
+    position: static;
+    display: inline-block;
+    flex-shrink: 0;
+  }
 }

@@ -182,3 +182,83 @@ export function usbTargetDeviceLabel(
     ? usbDeviceFriendlyName(connectedDevice)
     : savedLabel?.trim() || undefined;
 }
+
+/** Builds the serial-only selector prefix shared by every selector of a device with a serial. */
+function usbDeviceSerialSelector(
+  device: types.UsbDmxDeviceInfo,
+): string | undefined {
+  const serial = device.serial_number?.trim();
+  if (!serial) return undefined;
+  return `id-${usbDeviceVendorProduct(device)},serial-${serial}`;
+}
+
+/**
+ * Resolves saved USB target selectors to attached devices, keyed by target id, following the
+ * backend's `resolve_usb_dmx_selectors` rules so the panel shows the device output goes to.
+ *
+ * A target first takes the device it names exactly, or for a serial-only selector the only
+ * attached device with that serial. Targets left over then fall back to an unclaimed device
+ * whose serial they name when it is the only attached device with that serial, so a device moved
+ * to another port keeps its target while clones sharing a serial stay on their own targets.
+ * The default selector then takes the first remaining uDMX interface; the backend picks in
+ * enumeration order, so with several uDMX attached the panel may name a different one.
+ */
+export function resolveUsbTargetDevices(
+  targets: types.UsbDmxOutputTarget[],
+  devices: types.UsbDmxDeviceInfo[],
+): Map<string, types.UsbDmxDeviceInfo> {
+  const serialSelectors = devices.map(usbDeviceSerialSelector);
+  const serialCounts = new Map<string, number>();
+  for (const serialSelector of serialSelectors) {
+    if (serialSelector === undefined) continue;
+    serialCounts.set(
+      serialSelector,
+      (serialCounts.get(serialSelector) ?? 0) + 1,
+    );
+  }
+  /** Returns whether no other attached device shares the device's serial number. */
+  const uniqueSerial = (index: number) => {
+    const serialSelector = serialSelectors[index];
+    return (
+      serialSelector !== undefined && serialCounts.get(serialSelector) === 1
+    );
+  };
+  const claimed = new Set<number>();
+  const resolved = new Map<string, types.UsbDmxDeviceInfo>();
+  /** Records that the target outputs to the device at `index`. */
+  const claim = (target: types.UsbDmxOutputTarget, index: number) => {
+    claimed.add(index);
+    resolved.set(target.id, devices[index]);
+  };
+
+  for (const target of targets) {
+    const selector = target.device.trim();
+    const index = devices.findIndex(
+      (device, index) =>
+        !claimed.has(index) &&
+        (device.id === selector ||
+          (serialSelectors[index] === selector && uniqueSerial(index))),
+    );
+    if (index >= 0) claim(target, index);
+  }
+  for (const target of targets) {
+    if (resolved.has(target.id)) continue;
+    const selector = target.device.trim();
+    const index = devices.findIndex(
+      (_, index) =>
+        !claimed.has(index) &&
+        uniqueSerial(index) &&
+        selector.startsWith(`${serialSelectors[index]},`),
+    );
+    if (index >= 0) claim(target, index);
+  }
+  for (const target of targets) {
+    if (target.device.trim() !== DEFAULT_USB_DEVICE_ID) continue;
+    const index = devices.findIndex(
+      (device, index) =>
+        !claimed.has(index) && usbDeviceVendorProduct(device) === "16c0:05dc",
+    );
+    if (index >= 0) claim(target, index);
+  }
+  return resolved;
+}

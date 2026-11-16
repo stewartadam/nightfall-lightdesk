@@ -15,7 +15,7 @@ use rustc_hash::FxHashSet;
 
 use crate::types::{
     ComputedLayer, Layer, LayerCompositingContext, ParameterCompositingContext, ParameterLookup,
-    ParameterRef,
+    ParameterRef, ParameterShard,
 };
 
 /// Assertions a layer leaves out of the current frame's output, such as those still waiting out
@@ -50,13 +50,14 @@ pub fn apply_transitions_with_compositing_context(
         parameters,
         is_releasing,
         context,
+        ParameterShard::ALL,
     );
     remove_skipped_assertions(layer, skipped);
     computed_layer
 }
 
-/// Evaluates a layer's transitions and delays against the composite below it without mutating
-/// the layer.
+/// Evaluates the assertions a layer makes on the parameters of `shard`, applying transitions and
+/// delays against the composite below it, without mutating the layer.
 ///
 /// Returns the computed layer and the assertions skipped this frame, which the caller must leave
 /// out of attribution.
@@ -66,137 +67,144 @@ pub fn evaluate_transitions_with_compositing_context(
     parameters: &impl ParameterLookup,
     is_releasing: bool,
     context: LayerCompositingContext,
+    shard: ParameterShard,
 ) -> (ComputedLayer, SkippedAssertions) {
-    let mut computed_layer =
-        ComputedLayer::with_capacity(layer.absolute.len(), layer.relative.len());
+    let mut computed_layer = ComputedLayer::with_capacity(
+        shard.share_of(layer.absolute.len()),
+        shard.share_of(layer.relative.len()),
+    );
     let mut skipped = SkippedAssertions::default();
     // Building a disabled span still costs more than the rest of a parameter's evaluation, so
     // per-parameter spans are only created while trace logging is enabled for this module.
     let trace_parameters = tracing::enabled!(tracing::Level::TRACE);
 
     // Process absolute values
-    for (param_ref, (value, transition)) in layer.absolute.iter() {
-        if !is_releasing {
-            if let (ParameterValue::Absolute { value }, None) = (value, transition.as_ref()) {
-                if parameters
-                    .parameter_compositing_context(param_ref)
-                    .is_some()
-                {
-                    computed_layer.absolute.insert(param_ref, *value);
+    layer
+        .absolute
+        .for_each_in_shard(shard, |param_ref, (value, transition)| {
+            if !is_releasing {
+                if let (ParameterValue::Absolute { value }, None) = (value, transition.as_ref()) {
+                    if parameters
+                        .parameter_compositing_context(param_ref)
+                        .is_some()
+                    {
+                        computed_layer.absolute.insert(param_ref, *value);
+                    }
+                    return;
                 }
-                continue;
-            }
-        }
-
-        if let Some(param) = parameters.parameter_compositing_context(param_ref) {
-            // We must start a span for each log because field filters can only be applied to spans.
-            // See: https://github.com/tokio-rs/tracing/issues/2843#issuecomment-1884545840
-            let _span = trace_parameters.then(|| parameter_span(parameters, param_ref));
-
-            let default_value = param.default_value;
-            let base_value = base.absolute.get(param_ref).unwrap_or(&default_value);
-            let asserted_value = param.resolve_value_with_current(value, *base_value);
-
-            let target = if is_releasing {
-                absolute_release_target(&param, param_ref, base)
-            } else {
-                asserted_value
-            };
-            if transition_should_skip_output(
-                &param,
-                transition.as_ref(),
-                *base_value,
-                asserted_value,
-                is_releasing,
-                context,
-            ) {
-                skipped.absolute.insert(param_ref);
-                continue;
             }
 
-            let new_value = if let Some(transition) = transition {
-                let transition_source = if is_releasing {
-                    transition_value_at_release_context(
+            if let Some(param) = parameters.parameter_compositing_context(param_ref) {
+                // We must start a span for each log because field filters can only be applied to spans.
+                // See: https://github.com/tokio-rs/tracing/issues/2843#issuecomment-1884545840
+                let _span = trace_parameters.then(|| parameter_span(parameters, param_ref));
+
+                let default_value = param.default_value;
+                let base_value = base.absolute.get(param_ref).unwrap_or(&default_value);
+                let asserted_value = param.resolve_value_with_current(value, *base_value);
+
+                let target = if is_releasing {
+                    absolute_release_target(&param, param_ref, base)
+                } else {
+                    asserted_value
+                };
+                if transition_should_skip_output(
+                    &param,
+                    transition.as_ref(),
+                    *base_value,
+                    asserted_value,
+                    is_releasing,
+                    context,
+                ) {
+                    skipped.absolute.insert(param_ref);
+                    return;
+                }
+
+                let new_value = if let Some(transition) = transition {
+                    let transition_source = if is_releasing {
+                        transition_value_at_release_context(
+                            &param,
+                            *base_value,
+                            asserted_value,
+                            transition,
+                            context,
+                        )
+                    } else {
+                        *base_value
+                    };
+                    process_transition_with_compositing_context(
                         &param,
-                        *base_value,
-                        asserted_value,
+                        transition_source,
+                        target,
                         transition,
+                        is_releasing,
                         context,
                     )
                 } else {
-                    *base_value
+                    target
                 };
-                process_transition_with_compositing_context(
-                    &param,
-                    transition_source,
-                    target,
-                    transition,
-                    is_releasing,
-                    context,
-                )
-            } else {
-                target
-            };
 
-            computed_layer.absolute.insert(param_ref, new_value);
-        }
-    }
+                computed_layer.absolute.insert(param_ref, new_value);
+            }
+        });
 
     // Process relative values
-    for (param_ref, (value, transition)) in layer.relative.iter() {
-        if let Some(param) = parameters.parameter_compositing_context(param_ref) {
-            let _span = trace_parameters.then(|| parameter_span(parameters, param_ref));
+    layer
+        .relative
+        .for_each_in_shard(shard, |param_ref, (value, transition)| {
+            if let Some(param) = parameters.parameter_compositing_context(param_ref) {
+                let _span = trace_parameters.then(|| parameter_span(parameters, param_ref));
 
-            // A layer outputs only its own offset, fading from and releasing to zero. The merge
-            // stage adds it to the offsets below, so resolving against them here would count
-            // them twice.
-            let base_value: ParameterDmxValue = 0.0;
-            let asserted_value = param.resolve_value_with_current(value, base_value);
+                // A layer outputs only its own offset, fading from and releasing to zero. The merge
+                // stage adds it to the offsets below, so resolving against them here would count
+                // them twice.
+                let base_value: ParameterDmxValue = 0.0;
+                let asserted_value = param.resolve_value_with_current(value, base_value);
 
-            let target = if is_releasing {
-                base_value
-            } else {
-                asserted_value
-            };
-            if transition_should_skip_output(
-                &param,
-                transition.as_ref(),
-                base_value,
-                asserted_value,
-                is_releasing,
-                context,
-            ) {
-                skipped.relative.insert(param_ref);
-                continue;
-            }
+                let target = if is_releasing {
+                    base_value
+                } else {
+                    asserted_value
+                };
+                if transition_should_skip_output(
+                    &param,
+                    transition.as_ref(),
+                    base_value,
+                    asserted_value,
+                    is_releasing,
+                    context,
+                ) {
+                    skipped.relative.insert(param_ref);
+                    return;
+                }
 
-            let new_value = if let Some(transition) = transition {
-                let transition_source = if is_releasing {
-                    transition_value_at_release_context(
+                let new_value = if let Some(transition) = transition {
+                    let transition_source = if is_releasing {
+                        transition_value_at_release_context(
+                            &param,
+                            base_value,
+                            asserted_value,
+                            transition,
+                            context,
+                        )
+                    } else {
+                        base_value
+                    };
+                    process_transition_with_compositing_context(
                         &param,
-                        base_value,
-                        asserted_value,
+                        transition_source,
+                        target,
                         transition,
+                        is_releasing,
                         context,
                     )
                 } else {
-                    base_value
+                    target
                 };
-                process_transition_with_compositing_context(
-                    &param,
-                    transition_source,
-                    target,
-                    transition,
-                    is_releasing,
-                    context,
-                )
-            } else {
-                target
-            };
 
-            computed_layer.relative.insert(param_ref, new_value);
-        }
-    }
+                computed_layer.relative.insert(param_ref, new_value);
+            }
+        });
 
     (computed_layer, skipped)
 }
@@ -685,6 +693,7 @@ mod tests {
                 position: Duration::from_millis(500),
                 released_at: None,
             },
+            ParameterShard::ALL,
         );
 
         assert_eq!(

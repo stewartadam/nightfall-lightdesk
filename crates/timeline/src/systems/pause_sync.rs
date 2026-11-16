@@ -254,7 +254,8 @@ pub fn sync_timeline_paused_instance_controls_system(
                     .unwrap_or(1.0),
                 _ => 1.0,
             };
-            let position = position.mul_f64(beat_scale);
+            let position =
+                nightfall::playback_speed::saturating_scale_duration(position, beat_scale);
             let speed = controls.effective_speed() * beat_scale;
             clock.set_speed(speed);
             if let Some(source_position) = playback_source_position {

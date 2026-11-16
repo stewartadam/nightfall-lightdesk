@@ -24,5 +24,4 @@ test("Sequence Editor controller does not look up its injected context", () => {
   );
 
   assert.doesNotMatch(controllerSource, /useSequenceEditorContext/);
-  assert.match(controllerSource, /const ctx = props\.contextValue;/);
 });

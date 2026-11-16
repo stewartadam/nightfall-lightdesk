@@ -136,8 +136,13 @@ export const CommandHistory = (props: CommandHistoryProps) => (
                             ? "text-green-400"
                             : "text-yellow-400"
                       }`}
+                      title={
+                        entry.status === "unknown"
+                          ? "Result unknown"
+                          : undefined
+                      }
                     >
-                      {entry.status === "error"
+                      {entry.status === "error" || entry.status === "unknown"
                         ? "⚠️"
                         : entry.status === "success"
                           ? "✅"
@@ -151,6 +156,13 @@ export const CommandHistory = (props: CommandHistoryProps) => (
                   <Show when={entry.status === "error" && entry.errorMessage}>
                     <div class="ml-20 pt-0.5 text-xs text-red-400 break-words">
                       {entry.errorMessage}
+                    </div>
+                  </Show>
+                  <Show
+                    when={entry.status === "unknown" && entry.warningMessage}
+                  >
+                    <div class="ml-20 pt-0.5 text-xs text-yellow-400 break-words">
+                      {entry.warningMessage}
                     </div>
                   </Show>
                   <Show

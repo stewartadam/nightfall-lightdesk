@@ -1,0 +1,37 @@
+[package]
+name = "nightfall-controls"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+moonshine-kind.workspace = true
+nightfall = { path = "../common" }
+nightfall-actions = { path = "../actions" }
+nightfall-clips = { path = "../clips" }
+nightfall-compositor = { path = "../compositor" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine = { path = "../engine" }
+nightfall-fixture-model = { path = "../fixture-model" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-instances = { path = "../instances" }
+nightfall-selection = { path = "../selection" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
+nightfall-undo = { path = "../undo" }
+serde.workspace = true
+serde_json.workspace = true
+smart-default.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+nightfall-fixtures = { path = "../fixtures", features = ["test-support"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[lints]
+workspace = true

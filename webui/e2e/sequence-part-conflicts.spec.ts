@@ -97,7 +97,7 @@ async function seedSequenceConflictScenario(
     /** Builds a red-writing cue instruction for one spatial selection. */
     const instruction = (selection: any, value: number) => ({
       selection,
-      cue_instruction: {
+      assertions: {
         values: { Red: percent(value) },
         transitions: {},
         transitions_by_attribute: {},

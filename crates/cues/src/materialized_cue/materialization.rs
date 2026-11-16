@@ -6,7 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::borrow::Cow;
+
 use nightfall_engine::prelude::DataProvider;
+use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 
 use super::*;
 
@@ -23,29 +26,46 @@ impl MaterializedCue {
             .max(profile.cue_entry_duration());
     }
 
-    /// Returns direct values or the current values selected by a live Blueprint application.
+    /// Returns an instruction's direct values, or the values its Blueprint application currently
+    /// selects, without logging.
+    ///
+    /// Direct values are borrowed. An application whose Blueprint can't be read yields the reason
+    /// as an error, so callers that run often (such as duration planning) can stay quiet while
+    /// materialization reports it.
+    pub(crate) fn applied_instruction_values<'a>(
+        instruction: &'a AssertionSet,
+        blueprint_data_provider: Option<&DataProvider<Blueprint>>,
+    ) -> Result<Cow<'a, HashMap<Attribute, ValueSource>>, &'static str> {
+        let Some(application) = &instruction.blueprint_application else {
+            return Ok(Cow::Borrowed(&instruction.values));
+        };
+        let provider = blueprint_data_provider
+            .ok_or("Blueprint application could not materialize without a Blueprint provider")?;
+        let blueprint = provider
+            .get(application.blueprint_uid)
+            .map_err(|_| "Blueprint application references a missing definition")?;
+        Ok(Cow::Owned(blueprint.applied_values(application)))
+    }
+
+    /// Returns direct values or the current values selected by a live Blueprint application,
+    /// warning and returning no values when the application's Blueprint can't be read.
     fn resolved_instruction_values(
-        instruction: &CueInstruction,
+        instruction: &AssertionSet,
         blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     ) -> HashMap<Attribute, ValueSource> {
-        let Some(application) = &instruction.blueprint_application else {
-            return instruction.values.clone();
-        };
-        let Some(provider) = blueprint_data_provider else {
-            tracing::warn!(
-                blueprint_uid = %application.blueprint_uid,
-                "Blueprint application could not materialize without a Blueprint provider"
-            );
-            return HashMap::new();
-        };
-        let Ok(blueprint) = provider.get(application.blueprint_uid) else {
-            tracing::warn!(
-                blueprint_uid = %application.blueprint_uid,
-                "Blueprint application references a missing definition"
-            );
-            return HashMap::new();
-        };
-        blueprint.selected_values(&application.selector)
+        match Self::applied_instruction_values(instruction, blueprint_data_provider) {
+            Ok(values) => values.into_owned(),
+            Err(reason) => {
+                tracing::warn!(
+                    blueprint_uid = ?instruction
+                        .blueprint_application
+                        .as_ref()
+                        .map(|application| application.blueprint_uid),
+                    "{reason}"
+                );
+                HashMap::new()
+            }
+        }
     }
 
     /// Resolves a single fixture reference into potentially multiple fixture references.
@@ -75,7 +95,7 @@ impl MaterializedCue {
     pub(crate) fn resolve_transition(
         transitions: &PartialTransition,
         transitions_by_attribute: &AttributeTransitions,
-        cue_instruction: &CueInstruction,
+        assertions: &AssertionSet,
         fixture_ref: &FixtureRef,
         attribute: &Attribute,
         concrete_attribute: &Attribute,
@@ -86,7 +106,7 @@ impl MaterializedCue {
         let transition = Self::resolve_transition_definition(
             transitions,
             transitions_by_attribute,
-            cue_instruction,
+            assertions,
             fixture_ref,
             attribute,
             concrete_attribute,
@@ -104,7 +124,7 @@ impl MaterializedCue {
     pub(crate) fn resolve_transition_definition(
         transitions: &PartialTransition,
         transitions_by_attribute: &AttributeTransitions,
-        cue_instruction: &CueInstruction,
+        assertions: &AssertionSet,
         fixture_ref: &FixtureRef,
         attribute: &Attribute,
         concrete_attribute: &Attribute,
@@ -112,7 +132,7 @@ impl MaterializedCue {
         let authored_transition = Self::resolve_partial_transition_definition(
             transitions,
             transitions_by_attribute,
-            cue_instruction,
+            assertions,
             fixture_ref,
             attribute,
             concrete_attribute,
@@ -143,7 +163,7 @@ impl MaterializedCue {
     fn resolve_partial_transition_definition(
         transitions: &PartialTransition,
         transitions_by_attribute: &AttributeTransitions,
-        cue_instruction: &CueInstruction,
+        assertions: &AssertionSet,
         fixture_ref: &FixtureRef,
         attribute: &Attribute,
         concrete_attribute: &Attribute,
@@ -155,12 +175,12 @@ impl MaterializedCue {
         );
 
         let cue_instruction_attribute_transition = Self::resolve_attribute_transition(
-            &cue_instruction.transitions_by_attribute,
+            &assertions.transitions_by_attribute,
             attribute,
             concrete_attribute,
         );
         let fixture_attribute_transition = Self::resolve_fixture_attribute_transition(
-            cue_instruction,
+            assertions,
             fixture_ref,
             attribute,
             concrete_attribute,
@@ -169,7 +189,7 @@ impl MaterializedCue {
         let mut transition = PartialTransition::default();
         transition.apply_some(transitions.clone());
         transition.apply_some(cue_attribute_transition);
-        transition.apply_some(cue_instruction.transitions.clone());
+        transition.apply_some(assertions.transitions.clone());
         transition.apply_some(cue_instruction_attribute_transition);
         transition.apply_some(fixture_attribute_transition);
         transition
@@ -193,14 +213,14 @@ impl MaterializedCue {
     }
 
     fn resolve_fixture_attribute_transition(
-        cue_instruction: &CueInstruction,
+        assertions: &AssertionSet,
         fixture_ref: &FixtureRef,
         attribute: &Attribute,
         concrete_attribute: &Attribute,
     ) -> PartialTransition {
         let mut transition = PartialTransition::default();
 
-        for entry in &cue_instruction.transitions_by_fixture_attribute {
+        for entry in &assertions.transitions_by_fixture_attribute {
             let matches_fixture_wide = entry.fixture.fixture_uid == fixture_ref.fixture_uid
                 && entry.fixture.index.is_none();
             if matches_fixture_wide {
@@ -212,7 +232,7 @@ impl MaterializedCue {
             }
         }
 
-        for entry in &cue_instruction.transitions_by_fixture_attribute {
+        for entry in &assertions.transitions_by_fixture_attribute {
             let matches_exact = entry.fixture == *fixture_ref;
             if !matches_exact {
                 continue;
@@ -238,13 +258,13 @@ impl MaterializedCue {
     pub(crate) fn release_timing_override_attributes(
         transitions: &PartialTransition,
         transitions_by_attribute: &AttributeTransitions,
-        cue_instruction: &CueInstruction,
+        assertions: &AssertionSet,
     ) -> Vec<Attribute> {
         let mut attributes = HashSet::new();
         if Self::partial_transition_has_release_fields(transitions)
-            || Self::partial_transition_has_release_fields(&cue_instruction.transitions)
+            || Self::partial_transition_has_release_fields(&assertions.transitions)
         {
-            attributes.extend(cue_instruction.values.keys().cloned());
+            attributes.extend(assertions.values.keys().cloned());
             attributes.insert(Attribute::Intensity);
         }
         attributes.extend(
@@ -255,12 +275,12 @@ impl MaterializedCue {
                         .then_some(attribute.clone())
                 }),
         );
-        attributes.extend(cue_instruction.transitions_by_attribute.iter().filter_map(
+        attributes.extend(assertions.transitions_by_attribute.iter().filter_map(
             |(attribute, transition)| {
                 Self::partial_transition_has_release_fields(transition).then_some(attribute.clone())
             },
         ));
-        for fixture_transition in &cue_instruction.transitions_by_fixture_attribute {
+        for fixture_transition in &assertions.transitions_by_fixture_attribute {
             attributes.extend(
                 fixture_transition
                     .transitions_by_attribute
@@ -284,7 +304,7 @@ impl MaterializedCue {
         &mut self,
         transitions: &PartialTransition,
         transitions_by_attribute: &AttributeTransitions,
-        cue_instruction: &CueInstruction,
+        assertions: &AssertionSet,
         fixture_ref: &FixtureRef,
         attribute: &Attribute,
         data_provider: &FixtureDataProviderExt,
@@ -313,7 +333,7 @@ impl MaterializedCue {
         let transition = Self::resolve_transition(
             transitions,
             transitions_by_attribute,
-            cue_instruction,
+            assertions,
             fixture_ref,
             attribute,
             &concrete_attribute,
@@ -325,83 +345,12 @@ impl MaterializedCue {
             .insert(parameter.instance(), transition);
     }
 
-    /// Resolves a fanned value for a specific fixture position.
-    /// Interpolates between waypoints based on fixture position in the selection.
-    pub(super) fn resolve_fanned_value(
-        values: &[ParameterValue],
-        fixture_index: usize,
-        total_fixtures: usize,
-    ) -> ParameterValue {
-        if values.is_empty() {
-            // Default to 0% absolute
-            return ParameterValue::AbsolutePercent { value: 0.0.into() };
-        }
-        if values.len() == 1 || total_fixtures <= 1 {
-            return values[0];
-        }
-
-        // Calculate the position in the range [0.0, 1.0]
-        if values.len() == total_fixtures {
-            return values[fixture_index];
-        }
-
-        let t = fixture_index as f32 / (total_fixtures - 1).max(1) as f32;
-
-        // Map t to a position in the values array
-        let max_segment = values.len() - 1;
-        let segment_position = t * max_segment as f32;
-        let segment_idx = (segment_position as usize).min(max_segment - 1);
-        let segment_t = segment_position - segment_idx as f32;
-
-        // Interpolate between values[segment_idx] and values[segment_idx + 1]
-        let start = &values[segment_idx];
-        let end = &values[segment_idx + 1];
-
-        // Extract percentages for interpolation
-        match (start, end) {
-            (
-                ParameterValue::AbsolutePercent { value: start_val },
-                ParameterValue::AbsolutePercent { value: end_val },
-            ) => {
-                // Use multiplication with 1.0f32 to extract the float value
-                let start_f = start_val.as_f32();
-                let end_f = end_val.as_f32();
-                let interpolated = start_f + segment_t * (end_f - start_f);
-                ParameterValue::AbsolutePercent {
-                    value: interpolated.into(),
-                }
-            }
-            (
-                ParameterValue::RelativePercent { offset: start_off },
-                ParameterValue::RelativePercent { offset: end_off },
-            ) => {
-                let start_f = start_off.as_f32();
-                let end_f = end_off.as_f32();
-                let interpolated = start_f + segment_t * (end_f - start_f);
-                ParameterValue::RelativePercent {
-                    offset: interpolated.into(),
-                }
-            }
-            (
-                ParameterValue::Absolute { value: start_val },
-                ParameterValue::Absolute { value: end_val },
-            ) => {
-                let interpolated = *start_val + segment_t * (*end_val - *start_val);
-                ParameterValue::Absolute {
-                    value: interpolated.round(),
-                }
-            }
-            // Mixed types: just use the start value
-            _ => *start,
-        }
-    }
-
     /// Processes a single value source and adds it to the materialized cue.
     fn process_values_for_fixture(
         &mut self,
         transitions: &PartialTransition,
         transitions_by_attribute: &AttributeTransitions,
-        cue_instruction: &CueInstruction,
+        assertions: &AssertionSet,
         selection: &ResolvedSelection,
         invert: bool,
         fixture_ref: &FixtureRef,
@@ -435,7 +384,7 @@ impl MaterializedCue {
                 let transition = Self::resolve_transition(
                     transitions,
                     transitions_by_attribute,
-                    cue_instruction,
+                    assertions,
                     fixture_ref,
                     attribute,
                     &concrete_attribute,
@@ -462,7 +411,9 @@ impl MaterializedCue {
 
         let parameter_value = match source {
             ValueSource::Inline(value) => *value,
-            ValueSource::Fanned { values } => Self::resolve_fanned_value(values, offset, total),
+            ValueSource::Fanned { values } => {
+                nightfall::fan::resolve_fanned_parameter_value(values, offset, total)
+            }
             ValueSource::Release | ValueSource::HoldPosition => {
                 return;
             }
@@ -480,7 +431,7 @@ impl MaterializedCue {
         let transition = Self::resolve_transition(
             transitions,
             transitions_by_attribute,
-            cue_instruction,
+            assertions,
             fixture_ref,
             attribute,
             &concrete_attribute,
@@ -560,7 +511,7 @@ impl MaterializedCue {
     /// Records implicit HTP assertion timing for a cue or cue part instruction list.
     fn record_implicit_htp_assertion_timing_for_instructions(
         &mut self,
-        instructions: &[BoundCueInstruction],
+        instructions: &[BoundAssertionSet],
         transitions: &PartialTransition,
         transitions_by_attribute: &AttributeTransitions,
         blueprint_data_provider: Option<&DataProvider<Blueprint>>,
@@ -583,7 +534,7 @@ impl MaterializedCue {
                     .collect();
 
                 let values = Self::resolved_instruction_values(
-                    &bound_instructions.cue_instruction,
+                    &bound_instructions.assertions,
                     blueprint_data_provider,
                 );
                 for (attribute, source) in &values {
@@ -594,7 +545,7 @@ impl MaterializedCue {
                         self.record_implicit_htp_assertion_timing_for_fixture(
                             transitions,
                             transitions_by_attribute,
-                            &bound_instructions.cue_instruction,
+                            &bound_instructions.assertions,
                             fixture_ref,
                             attribute,
                             data_provider,
@@ -611,7 +562,7 @@ impl MaterializedCue {
         &mut self,
         transitions: &PartialTransition,
         transitions_by_attribute: &AttributeTransitions,
-        cue_instruction: &CueInstruction,
+        assertions: &AssertionSet,
         fixture_ref: &FixtureRef,
         attribute: &Attribute,
         data_provider: &FixtureDataProviderExt,
@@ -631,7 +582,7 @@ impl MaterializedCue {
         let authored_transition = Self::resolve_partial_transition_definition(
             transitions,
             transitions_by_attribute,
-            cue_instruction,
+            assertions,
             fixture_ref,
             attribute,
             &concrete_attribute,
@@ -649,7 +600,7 @@ impl MaterializedCue {
     /// Materializes cue instructions into output values and timing-only release overrides.
     fn materialize_instructions(
         &mut self,
-        instructions: &[BoundCueInstruction],
+        instructions: &[BoundAssertionSet],
         transitions: &PartialTransition,
         transitions_by_attribute: &AttributeTransitions,
         color_path_data_provider: Option<&DataProvider<ColorPath>>,
@@ -678,7 +629,7 @@ impl MaterializedCue {
 
                 for fixture_ref in &fixture_refs {
                     self.materialize_color_path_group_for_fixture(
-                        &bound_instructions.cue_instruction,
+                        &bound_instructions.assertions,
                         fixture_ref,
                         color_path_data_provider,
                         data_provider,
@@ -687,7 +638,7 @@ impl MaterializedCue {
                 }
 
                 let values = Self::resolved_instruction_values(
-                    &bound_instructions.cue_instruction,
+                    &bound_instructions.assertions,
                     blueprint_data_provider,
                 );
                 for (attribute, source) in &values {
@@ -695,7 +646,7 @@ impl MaterializedCue {
                         self.process_values_for_fixture(
                             transitions,
                             transitions_by_attribute,
-                            &bound_instructions.cue_instruction,
+                            &bound_instructions.assertions,
                             &selection,
                             resolved_index.invert,
                             fixture_ref,
@@ -713,14 +664,14 @@ impl MaterializedCue {
                 let release_timing_attributes = Self::release_timing_override_attributes(
                     transitions,
                     transitions_by_attribute,
-                    &bound_instructions.cue_instruction,
+                    &bound_instructions.assertions,
                 );
                 for attribute in &release_timing_attributes {
                     for fixture_ref in &fixture_refs {
                         self.materialize_release_timing_for_fixture(
                             transitions,
                             transitions_by_attribute,
-                            &bound_instructions.cue_instruction,
+                            &bound_instructions.assertions,
                             fixture_ref,
                             attribute,
                             data_provider,
@@ -737,13 +688,13 @@ impl MaterializedCue {
     /// Materializes one color-vector path group for a fixture when the instruction has a color path.
     fn materialize_color_path_group_for_fixture(
         &mut self,
-        cue_instruction: &CueInstruction,
+        assertions: &AssertionSet,
         fixture_ref: &FixtureRef,
         color_path_data_provider: Option<&DataProvider<ColorPath>>,
         data_provider: &FixtureDataProviderExt,
         parameter_query: &Query<InstanceRef<Parameter>>,
     ) {
-        let Some(color_path_id) = cue_instruction
+        let Some(color_path_id) = assertions
             .color_path_id
             .or_else(|| data_provider.color_path_default_for_element(fixture_ref))
         else {
@@ -762,7 +713,7 @@ impl MaterializedCue {
             MaterializedColorPathModel::Cmy,
         ] {
             if let Some(group) = Self::materialized_color_path_group_for_model(
-                cue_instruction,
+                assertions,
                 fixture_ref,
                 path.clone(),
                 model,
@@ -775,7 +726,7 @@ impl MaterializedCue {
         }
 
         if let Some(group) = Self::materialized_scalar_color_path_group(
-            cue_instruction,
+            assertions,
             fixture_ref,
             path,
             data_provider,
@@ -787,7 +738,7 @@ impl MaterializedCue {
 
     /// Builds a materialized color path group for one supported color-vector model.
     fn materialized_color_path_group_for_model(
-        cue_instruction: &CueInstruction,
+        assertions: &AssertionSet,
         fixture_ref: &FixtureRef,
         path: ColorPath,
         model: MaterializedColorPathModel,
@@ -795,9 +746,9 @@ impl MaterializedCue {
         parameter_query: &Query<InstanceRef<Parameter>>,
     ) -> Option<MaterializedColorPathGroup> {
         let [first_attribute, second_attribute, third_attribute] = model.attributes();
-        if !cue_instruction.values.contains_key(&first_attribute)
-            || !cue_instruction.values.contains_key(&second_attribute)
-            || !cue_instruction.values.contains_key(&third_attribute)
+        if !assertions.values.contains_key(&first_attribute)
+            || !assertions.values.contains_key(&second_attribute)
+            || !assertions.values.contains_key(&third_attribute)
         {
             return None;
         }
@@ -817,7 +768,7 @@ impl MaterializedCue {
             .auxiliary_attributes()
             .into_iter()
             .filter_map(|attribute| {
-                if !cue_instruction.values.contains_key(&attribute) {
+                if !assertions.values.contains_key(&attribute) {
                     return None;
                 }
                 let parameter =
@@ -832,7 +783,7 @@ impl MaterializedCue {
             .decomposed_attributes()
             .iter()
             .filter_map(|attribute| {
-                if cue_instruction.values.contains_key(attribute) {
+                if assertions.values.contains_key(attribute) {
                     return None;
                 }
                 let parameter =
@@ -857,7 +808,7 @@ impl MaterializedCue {
 
     /// Builds a scalar color path group for color emitters that cannot form an RGB/CMY vector.
     fn materialized_scalar_color_path_group(
-        cue_instruction: &CueInstruction,
+        assertions: &AssertionSet,
         fixture_ref: &FixtureRef,
         path: ColorPath,
         data_provider: &FixtureDataProviderExt,
@@ -866,7 +817,7 @@ impl MaterializedCue {
         let emitters: Vec<_> = Self::scalar_color_path_attributes()
             .into_iter()
             .filter_map(|attribute| {
-                if !cue_instruction.values.contains_key(&attribute) {
+                if !assertions.values.contains_key(&attribute) {
                     return None;
                 }
                 let parameter =
@@ -956,7 +907,7 @@ impl MaterializedCue {
     /// Builds one ordered materialized cue part layer from an instruction list.
     fn materialize_part_layer(
         cue: &Cue,
-        instructions: &[BoundCueInstruction],
+        instructions: &[BoundAssertionSet],
         transitions: &PartialTransition,
         transitions_by_attribute: &AttributeTransitions,
         color_path_data_provider: Option<&DataProvider<ColorPath>>,

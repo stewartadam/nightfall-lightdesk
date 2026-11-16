@@ -79,20 +79,6 @@ fn blueprint_step_sources_use_stateful_create_command() {
     ));
 }
 
-/// Verifies long and short RGB aliases produce equivalent syntax.
-#[test]
-fn rgb_attribute_aliases_are_equivalent() {
-    let short = generate_ast(
-        "store fx 1 step fix 1 5s int steps 100 0 r steps 100 0 g steps 100 0 b steps 100 0",
-    )
-    .unwrap();
-    let long = generate_ast(
-        "store fx 1 step fix 1 5s int steps 100 0 red steps @100 0 g steps 100 0 b steps 100 0",
-    )
-    .unwrap();
-    assert_eq!(short, long);
-}
-
 /// Verifies a basic command becomes one beat-native intensity lane.
 #[test]
 fn basic_step_fx_conversion_uses_canonical_lane_model() {

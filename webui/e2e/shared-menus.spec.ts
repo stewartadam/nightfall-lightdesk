@@ -64,6 +64,17 @@ test("settings, tile and timeline menus share their visual treatment", async ({
     "Keyboard Shortcuts",
     "About",
   ]);
+  // Items that open a web page end with the external-link icon; in-app items do not.
+  for (const [name, external] of [
+    ["Welcome Guide", 0],
+    ["User Guide", 1],
+    ["Give Feedback", 1],
+  ] as const)
+    await expect(
+      dropdown
+        .getByRole("button", { name, exact: true })
+        .locator(".nf-menu-external svg"),
+    ).toHaveCount(external);
   const appearance = await menuAppearance(dropdown);
   const troubleshooting = dropdown.getByRole("button", {
     name: "Troubleshooting",
@@ -72,6 +83,11 @@ test("settings, tile and timeline menus share their visual treatment", async ({
   await troubleshooting.hover();
   const submenu = page.locator('[data-menu-kind="dropdown-submenu"]');
   await expect(submenu).toBeVisible();
+  await expect(
+    submenu
+      .getByRole("button", { name: "Report a Bug", exact: true })
+      .locator(".nf-menu-external svg"),
+  ).toHaveCount(1);
   expect(await menuAppearance(submenu)).toEqual(appearance);
   await expect(troubleshooting).toHaveCSS("font", appearance.font);
   await expect(troubleshooting).toHaveCSS("padding", appearance.rowPadding);

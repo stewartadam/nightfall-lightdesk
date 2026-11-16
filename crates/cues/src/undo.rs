@@ -15,7 +15,6 @@ use nightfall_engine::prelude::*;
 use nightfall_instances::InstanceId;
 use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::SequencePlaybackOperation;
 use crate::data_provider_ext::CueDataProviderExt;
@@ -23,24 +22,16 @@ use crate::materialized_sequence::MaterializedSequence;
 use crate::prelude::{Cue, CueCommand, CueOperation, Sequence};
 
 /// Capture the previous cue definition as an inverse store operation.
-fn inverse_for_store_cue(
-    cue: &Cue,
-    cues: &DataProvider<Cue>,
-    sequences: &DataProvider<Sequence>,
-) -> Option<Box<dyn Undoable>> {
+///
+/// A cue that did not exist yet is undone by removing its definition by UID. Sequence steps
+/// are left alone because storing a cue definition never changes them.
+fn inverse_for_store_cue(cue: &Cue, cues: &DataProvider<Cue>) -> Option<Box<dyn Undoable>> {
     match cues.get(cue.identifiers.uid) {
         Ok(existing) => {
             let old_cue: Cue = (*existing).clone();
             Some(Box::new(CueOperation::StoreCue(Box::new(old_cue))))
         }
-        Err(_) => {
-            let sequence_id = find_sequence_id_for_cue_uid(sequences, cue.identifiers.uid)
-                .unwrap_or(cue.identifiers.id);
-            Some(Box::new(CueCommand::DeleteCue {
-                sequence_id,
-                cue_id: cue.identifiers.id,
-            }))
-        }
+        Err(_) => Some(Box::new(CueOperation::RemoveCue(cue.identifiers.uid))),
     }
 }
 
@@ -70,19 +61,25 @@ impl Undoable for CueCommand {
         let color_paths = ctx.world.resource::<DataProvider<ColorPath>>();
 
         match self {
-            CueCommand::StoreCue(cue) => inverse_for_store_cue(cue, cues, sequences),
+            CueCommand::StoreCue(cue) => inverse_for_store_cue(cue, cues),
             CueCommand::StoreSequence(sequence) => inverse_for_store_sequence(sequence, sequences),
             CueCommand::DeleteCue {
                 sequence_id,
                 cue_id,
             } => {
-                // Capture full cue before deletion
-                cues.cue_by_sequence_id(sequences, *sequence_id, *cue_id)
-                    .ok()
-                    .map(|cue_ref| {
-                        let cue: Cue = (*cue_ref).clone();
-                        Box::new(CueOperation::StoreCue(Box::new(cue))) as Box<dyn Undoable>
-                    })
+                // Deleting a cue also drops its step from the sequence, so the inverse restores
+                // both, putting the cue back at its place in the sequence.
+                let cue = cues
+                    .cue_by_sequence_id(sequences, *sequence_id, *cue_id)
+                    .ok()?;
+                let sequence = sequences.from_id(*sequence_id).ok()?;
+                Some(Box::new(CueOperation::RestoreCueStoreState {
+                    sequence_id: *sequence_id,
+                    cue_uid: cue.identifiers.uid,
+                    previous_cue: Some(Box::new((*cue).clone())),
+                    previous_sequence: Some(Box::new((*sequence).clone())),
+                    undo_label: self.description(),
+                }))
             }
             CueCommand::RenameCue {
                 sequence_id,
@@ -262,11 +259,14 @@ impl Undoable for CueOperation {
         let sequences = ctx.world.resource::<DataProvider<Sequence>>();
 
         match self {
-            CueOperation::StoreCue(cue) => inverse_for_store_cue(cue, cues, sequences),
+            CueOperation::StoreCue(cue) => inverse_for_store_cue(cue, cues),
             CueOperation::StoreSequence(sequence) => {
                 inverse_for_store_sequence(sequence, sequences)
             }
             CueOperation::StoreCueInSequence { .. } => None,
+            CueOperation::RemoveCue(cue_uid) => cues.get(*cue_uid).ok().map(|cue_ref| {
+                Box::new(CueOperation::StoreCue(Box::new((*cue_ref).clone()))) as Box<dyn Undoable>
+            }),
             CueOperation::RestoreCueStoreState {
                 sequence_id,
                 cue_uid,
@@ -295,21 +295,11 @@ impl Undoable for CueOperation {
             CueOperation::StoreSequence(sequence) => {
                 format!("Store Sequence {}", sequence.identifiers.id)
             }
+            CueOperation::RemoveCue(cue_uid) => format!("Remove Cue {cue_uid}"),
             CueOperation::StoreCueInSequence { undo_label, .. }
             | CueOperation::RestoreCueStoreState { undo_label, .. } => undo_label.clone(),
         }
     }
-}
-
-fn find_sequence_id_for_cue_uid(sequences: &DataProvider<Sequence>, cue_uid: Uuid) -> Option<u32> {
-    sequences.iter().find_map(|entry| {
-        let sequence = entry.value();
-        let contains_cue = sequence.steps.iter().any(|step| {
-            let step_uid: Uuid = (*step).into();
-            step_uid == cue_uid
-        });
-        contains_cue.then_some(sequence.identifiers.id)
-    })
 }
 
 // ============================================================================

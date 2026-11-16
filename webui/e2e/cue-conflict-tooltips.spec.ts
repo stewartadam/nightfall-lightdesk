@@ -50,7 +50,7 @@ test("cue part conflict value cells show explanatory hover tooltip", async ({
         },
         clauses: [],
       },
-      cue_instruction: {
+      assertions: {
         values: { Red: percent(value) },
         transitions: {},
         transitions_by_attribute: {},

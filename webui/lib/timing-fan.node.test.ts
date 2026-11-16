@@ -7,9 +7,23 @@
  */
 
 import { strict as assert } from "node:assert";
-import test from "node:test";
+import test, { before } from "node:test";
 import { durationToMs } from "./duration";
-import { parseTimingFanInput, resolveTimingFanDuration } from "./timing-fan";
+import { fanTimingDurations, parseTimingFanInput } from "./timing-fan";
+import { loadWasmBridge } from "./wasm-module";
+
+/** Loads the WASM bridge that resolves timing fans before any fan is spread. */
+before(async () => {
+  await loadWasmBridge();
+});
+
+/** Resolves a timing fan across `total` targets as milliseconds per target. */
+function fanMs(
+  durations: Parameters<typeof fanTimingDurations>[0],
+  total: number,
+) {
+  return fanTimingDurations(durations, total)?.map(durationToMs);
+}
 
 /** Verifies timing fan parsing accepts command-line style duration ranges. */
 test("parseTimingFanInput parses duration waypoints", () => {
@@ -32,34 +46,26 @@ test("parseTimingFanInput rejects invalid fan syntax", () => {
 });
 
 /** Verifies two-point timing fans resolve fixed durations across target indexes. */
-test("resolveTimingFanDuration interpolates fixed target durations", () => {
+test("fanTimingDurations interpolates fixed target durations", () => {
   const durations = parseTimingFanInput("0>5s");
   assert.ok(durations);
 
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 0, 3)), 0);
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 1, 3)), 2500);
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 2, 3)), 5000);
+  assert.deepEqual(fanMs(durations, 3), [0, 2500, 5000]);
 });
 
 /** Verifies multi-point timing fans resolve through waypoint segments. */
-test("resolveTimingFanDuration interpolates manual waypoints", () => {
+test("fanTimingDurations interpolates manual waypoints", () => {
   const durations = parseTimingFanInput("0>5>0");
   assert.ok(durations);
 
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 0, 3)), 0);
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 1, 3)), 5000);
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 2, 3)), 0);
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 0, 5)), 0);
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 1, 5)), 2500);
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 2, 5)), 5000);
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 3, 5)), 2500);
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 4, 5)), 0);
+  assert.deepEqual(fanMs(durations, 3), [0, 5000, 0]);
+  assert.deepEqual(fanMs(durations, 5), [0, 2500, 5000, 2500, 0]);
 });
 
 /** Verifies single target fan application uses the first waypoint. */
-test("resolveTimingFanDuration uses first waypoint for a single target", () => {
+test("fanTimingDurations uses first waypoint for a single target", () => {
   const durations = parseTimingFanInput("2s>5s");
   assert.ok(durations);
 
-  assert.equal(durationToMs(resolveTimingFanDuration(durations, 0, 1)), 2000);
+  assert.deepEqual(fanMs(durations, 1), [2000]);
 });

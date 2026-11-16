@@ -35,6 +35,7 @@ export default function ShowfileDialogs() {
       <OpenShowfileModal
         open={isOpenShowfileModalVisible()}
         onClose={hideOpenShowfileModal}
+        onFollowed={hideOpenShowfileModal}
         onOpen={openShowfileSelection}
       />
       <ShowfileImportModal

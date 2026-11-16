@@ -18,7 +18,6 @@ use nightfall_compositor::prelude::*;
 use nightfall_dmx::prelude::Attribute;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 #[cfg(test)]
 use nightfall_instances::InstanceClockSource;
 use nightfall_instances::{
@@ -26,6 +25,7 @@ use nightfall_instances::{
     InstanceKind, InstanceMetadata, InstancePosition, InstanceStatus, reconcile_instance_options,
 };
 use nightfall_selection::filter_existing_selection;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -77,16 +77,41 @@ pub struct PreviewFxModuleRuntimeStates {
 /// Runtime handle for an FX module currently driving live output.
 struct ActiveFxModuleRuntime {
     definition: StoredFxModule,
+    launch: FxModuleLaunch,
     instance: FxModuleInstance<FixtureMetadataHost>,
     layer_entity: Entity,
     instance_id: InstanceId,
     last_render_position: Option<Duration>,
+    /// Set once the module was stopped for good. The instance is unusable, so it is never
+    /// rendered or torn down again, and a later activation builds a fresh runtime.
+    stopped: bool,
+    /// Set after a render overran its time limit. The instance is unusable; the next frame
+    /// replaces it with a fresh one from `launch`, keeping the rest of this runtime.
+    reload: bool,
+    /// Renders in a row that ran past the time limit, reset by a successful render.
+    consecutive_overruns: u32,
 }
 
+/// Renders in a row that may run past the time limit before a module is stopped.
+///
+/// A single overrun is often a stall of the engine thread rather than a stuck guest, so the
+/// module is reloaded with a fresh instance until it overruns this many times in a row.
+const MAX_CONSECUTIVE_OVERRUNS: u32 = 3;
+
 /// Runtime handle for an FX module running in preview mode.
+///
+/// `instance` is `None` once the module failed to start or was stopped after a trap. Unless
+/// `reload` is set, the entry is kept so the preview stays dark until its definition changes,
+/// rather than retrying (and paying the full time limit again for a stuck guest) every frame.
 struct PreviewFxModuleRuntime {
     definition: StoredFxModule,
-    instance: FxModuleInstance<FixtureMetadataHost>,
+    /// Compiled module used to reload after an overrun; `None` if it failed to load.
+    launch: Option<FxModuleLaunch>,
+    instance: Option<FxModuleInstance<FixtureMetadataHost>>,
+    /// Renders in a row that ran past the time limit, reset by a successful render.
+    consecutive_overruns: u32,
+    /// Build a fresh instance next frame after an overrun below [`MAX_CONSECUTIVE_OVERRUNS`].
+    reload: bool,
 }
 
 type ActivePreviewFxModuleQuery<'w, 's> = Query<
@@ -154,10 +179,42 @@ pub fn evaluate_fx_module(
             continue;
         };
 
+        if let Some(state) = runtime_states.states.get_mut(&fx_module_id)
+            && state.reload
+            && state.definition == definition
+        {
+            state.reload = false;
+            match state
+                .launch
+                .start(FixtureMetadataHost::snapshot(&fixture_data_provider))
+            {
+                Ok(instance) => state.instance = instance,
+                Err(error) => {
+                    warn!(
+                        fx_module_id,
+                        module_name = %definition.module_name,
+                        "Stopping fx module after a failed reload: {}",
+                        error
+                    );
+                    notifications.write(NotificationEnvelope::detached(
+                        FxModuleRuntimeNotification::Stopped {
+                            fx_module_id,
+                            module_name: definition.module_name.clone(),
+                            error: format!("reload failed: {error}"),
+                        },
+                    ));
+                    // As for any stop, cleanup releases the last layer through its fade-out.
+                    state.stopped = true;
+                    active_fx_module_ids.0.remove(&fx_module_id);
+                    continue;
+                }
+            }
+        }
+
         let should_recreate = runtime_states
             .states
             .get(&fx_module_id)
-            .map(|state| state.definition != definition)
+            .map(|state| state.stopped || state.reload || state.definition != definition)
             .unwrap_or(true);
         let mut recreated = false;
 
@@ -287,7 +344,46 @@ pub fn evaluate_fx_module(
         };
 
         let fx_module_layer = match state.instance.render(&render_input) {
-            Ok(layer) => layer,
+            Ok(layer) => {
+                state.consecutive_overruns = 0;
+                layer
+            }
+            Err(error)
+                if error.is_timeout()
+                    && state.consecutive_overruns + 1 < MAX_CONSECUTIVE_OVERRUNS =>
+            {
+                state.consecutive_overruns += 1;
+                warn!(
+                    fx_module_id,
+                    module_name = %definition.module_name,
+                    overruns = state.consecutive_overruns,
+                    "Reloading fx module: {}",
+                    error
+                );
+                // Keep last frame's layer; the next frame starts a fresh instance and renders.
+                state.reload = true;
+                continue;
+            }
+            Err(error) if error.is_fatal() => {
+                warn!(
+                    fx_module_id,
+                    module_name = %definition.module_name,
+                    "Stopping fx module: {}",
+                    error
+                );
+                notifications.write(NotificationEnvelope::detached(
+                    FxModuleRuntimeNotification::Stopped {
+                        fx_module_id,
+                        module_name: definition.module_name.clone(),
+                        error: error.to_string(),
+                    },
+                ));
+                // Keep last frame's layer: `cleanup_inactive_fx_module` drops the deactivated
+                // runtime and releases that layer through its configured fade-out.
+                state.stopped = true;
+                active_fx_module_ids.0.remove(&fx_module_id);
+                continue;
+            }
             Err(error) => {
                 warn!(
                     fx_module_id,
@@ -345,13 +441,42 @@ pub fn evaluate_preview_fx_module(
     fixture_data_provider: Res<FixtureDataProviderExt>,
     selection_resolver: SpatialSelectionResolver,
     mut runtime_states: NonSendMut<PreviewFxModuleRuntimeStates>,
+    mut notifications: MessageWriter<NotificationEnvelope<FxModuleRuntimeNotification>>,
 ) {
     for (entity, preview, existing_layer, clock) in previews.iter() {
         let definition = &preview.0;
+        if let Some(state) = runtime_states.states.get_mut(&entity)
+            && state.reload
+            && state.definition == *definition
+            && let Some(launch) = &state.launch
+        {
+            let restarted = launch.start(FixtureMetadataHost::snapshot(&fixture_data_provider));
+            state.reload = false;
+            match restarted {
+                Ok(instance) => state.instance = Some(instance),
+                Err(error) => {
+                    warn!(
+                        module_name = %definition.module_name,
+                        "Stopping preview fx module after a failed reload: {}",
+                        error
+                    );
+                    notifications.write(NotificationEnvelope::detached(
+                        FxModuleRuntimeNotification::Stopped {
+                            fx_module_id: definition.identifiers.id,
+                            module_name: definition.module_name.clone(),
+                            error: format!("reload failed: {error}"),
+                        },
+                    ));
+                    commands.entity(entity).remove::<Layer>();
+                    continue;
+                }
+            }
+        }
+
         let should_recreate = runtime_states
             .states
             .get(&entity)
-            .map(|state| state.definition != *definition)
+            .map(|state| state.reload || state.definition != *definition)
             .unwrap_or(true);
         let mut recreated = false;
 
@@ -363,10 +488,15 @@ pub fn evaluate_preview_fx_module(
                 let _ = teardown_preview_runtime_state(state);
             }
 
-            match instantiate_preview_runtime_state(definition, &fixture_data_provider) {
-                Ok(state) => {
-                    runtime_states.states.insert(entity, state);
+            let started = FxModuleLaunch::load(definition).and_then(|launch| {
+                let instance =
+                    launch.start(FixtureMetadataHost::snapshot(&fixture_data_provider))?;
+                Ok((launch, instance))
+            });
+            let (launch, instance) = match started {
+                Ok((launch, instance)) => {
                     recreated = true;
+                    (Some(launch), Some(instance))
                 }
                 Err(error) => {
                     warn!(
@@ -375,12 +505,35 @@ pub fn evaluate_preview_fx_module(
                         "Failed to instantiate preview fx module runtime: {}",
                         error
                     );
-                    continue;
+                    notifications.write(NotificationEnvelope::detached(
+                        FxModuleRuntimeNotification::InstantiationFailed {
+                            fx_module_id: definition.identifiers.id,
+                            module_name: definition.module_name.clone(),
+                            error: error.to_string(),
+                        },
+                    ));
+                    // Drop the previous definition's output so it does not stay frozen on
+                    // fixtures while this definition cannot run.
+                    commands.entity(entity).remove::<Layer>();
+                    (None, None)
                 }
-            }
+            };
+            runtime_states.states.insert(
+                entity,
+                PreviewFxModuleRuntime {
+                    definition: definition.clone(),
+                    launch,
+                    instance,
+                    consecutive_overruns: 0,
+                    reload: false,
+                },
+            );
         }
 
         let Some(state) = runtime_states.states.get_mut(&entity) else {
+            continue;
+        };
+        let Some(instance) = state.instance.as_mut() else {
             continue;
         };
 
@@ -406,8 +559,42 @@ pub fn evaluate_preview_fx_module(
             selection_grid: build_selected_grid(&resolved_selection, &fixture_data_provider),
         };
 
-        let fx_module_layer = match state.instance.render(&render_input) {
-            Ok(layer) => layer,
+        let fx_module_layer = match instance.render(&render_input) {
+            Ok(layer) => {
+                state.consecutive_overruns = 0;
+                layer
+            }
+            Err(error)
+                if error.is_timeout()
+                    && state.consecutive_overruns + 1 < MAX_CONSECUTIVE_OVERRUNS =>
+            {
+                state.consecutive_overruns += 1;
+                warn!(
+                    module_name = %definition.module_name,
+                    overruns = state.consecutive_overruns,
+                    "Reloading preview fx module: {}",
+                    error
+                );
+                state.instance = None;
+                state.reload = true;
+                continue;
+            }
+            Err(error) if error.is_fatal() => {
+                warn!(
+                    module_name = %definition.module_name,
+                    "Stopping preview fx module: {}",
+                    error
+                );
+                notifications.write(NotificationEnvelope::detached(
+                    FxModuleRuntimeNotification::Stopped {
+                        fx_module_id: definition.identifiers.id,
+                        module_name: definition.module_name.clone(),
+                        error: error.to_string(),
+                    },
+                ));
+                state.instance = None;
+                FxModuleLayer::default()
+            }
             Err(error) => {
                 warn!(
                     module_name = %definition.module_name,
@@ -532,29 +719,52 @@ pub fn cleanup_released_fx_module_layers(
     }
 }
 
+/// A compiled module plus the init input it was first started with.
+///
+/// Kept with a runtime so a module interrupted at its time limit can be reloaded without
+/// recompiling the component on the engine thread or changing its instance id and random seed.
+struct FxModuleLaunch {
+    component: FxModuleComponent,
+    init_input: FxModuleInitInput,
+}
+
+impl FxModuleLaunch {
+    /// Compiles the definition's module and picks the instance id and seed for this activation.
+    fn load(definition: &StoredFxModule) -> Result<Self, FxModuleRuntimeError> {
+        let component = FxModuleComponent::from_file(fx_module_path(&definition.module_name)?)?;
+        let config_json =
+            serde_json::to_string(&definition.config).unwrap_or_else(|_| "{}".to_string());
+        Ok(Self {
+            component,
+            init_input: FxModuleInitInput {
+                fx_instance_id: Uuid::new_v4(),
+                label: definition.identifiers.label.clone(),
+                config_json,
+                random_seed: Some(random_seed_for_activation(definition)),
+            },
+        })
+    }
+
+    /// Instantiates and initializes a fresh guest instance from the compiled component.
+    fn start(
+        &self,
+        host: FixtureMetadataHost,
+    ) -> Result<FxModuleInstance<FixtureMetadataHost>, FxModuleRuntimeError> {
+        let mut instance = self.component.instantiate(host)?;
+        instance.init(&self.init_input)?;
+        Ok(instance)
+    }
+}
+
+/// Loads and starts a module for live output, reusing the layer entity of a replaced runtime.
 fn instantiate_runtime_state(
     definition: &StoredFxModule,
     fixture_data_provider: &FixtureDataProviderExt,
     reusable_runtime: Option<(Entity, InstanceId)>,
     commands: &mut Commands,
 ) -> Result<ActiveFxModuleRuntime, FxModuleRuntimeError> {
-    let component = FxModuleComponent::from_file(fx_module_path(&definition.module_name)?)?;
-    let host = FixtureMetadataHost {
-        fixtures: fixture_data_provider
-            .inner
-            .iter()
-            .map(|entry| (entry.value().identifiers.uid, entry.value().clone()))
-            .collect(),
-    };
-    let mut instance = component.instantiate(host)?;
-    let config_json =
-        serde_json::to_string(&definition.config).unwrap_or_else(|_| "{}".to_string());
-    instance.init(&FxModuleInitInput {
-        fx_instance_id: Uuid::new_v4(),
-        label: definition.identifiers.label.clone(),
-        config_json,
-        random_seed: Some(random_seed_for_activation(definition)),
-    })?;
+    let launch = FxModuleLaunch::load(definition)?;
+    let instance = launch.start(FixtureMetadataHost::snapshot(fixture_data_provider))?;
 
     let instance_id = reusable_runtime
         .as_ref()
@@ -583,43 +793,35 @@ fn instantiate_runtime_state(
 
     Ok(ActiveFxModuleRuntime {
         definition: definition.clone(),
+        launch,
         instance,
         layer_entity,
         instance_id,
         last_render_position: None,
+        stopped: false,
+        reload: false,
+        consecutive_overruns: 0,
     })
 }
 
-fn instantiate_preview_runtime_state(
-    definition: &StoredFxModule,
-    fixture_data_provider: &FixtureDataProviderExt,
-) -> Result<PreviewFxModuleRuntime, FxModuleRuntimeError> {
-    let component = FxModuleComponent::from_file(fx_module_path(&definition.module_name)?)?;
-    let host = FixtureMetadataHost::snapshot(fixture_data_provider);
-    let mut instance = component.instantiate(host)?;
-    let config_json =
-        serde_json::to_string(&definition.config).unwrap_or_else(|_| "{}".to_string());
-    instance.init(&FxModuleInitInput {
-        fx_instance_id: Uuid::new_v4(),
-        label: definition.identifiers.label.clone(),
-        config_json,
-        random_seed: Some(random_seed_for_activation(definition)),
-    })?;
-
-    Ok(PreviewFxModuleRuntime {
-        definition: definition.clone(),
-        instance,
-    })
-}
-
+/// Runs the guest's `teardown` hook for an active runtime that is being dropped, skipping an
+/// instance that was interrupted or trapped and cannot be called again.
 fn teardown_runtime_state(mut state: ActiveFxModuleRuntime) -> Result<(), FxModuleRuntimeError> {
+    if state.stopped || state.reload {
+        return Ok(());
+    }
     state.instance.teardown()
 }
 
+/// Runs the guest's `teardown` hook for a preview runtime, skipping ones that never started or
+/// were already stopped.
 fn teardown_preview_runtime_state(
-    mut state: PreviewFxModuleRuntime,
+    state: PreviewFxModuleRuntime,
 ) -> Result<(), FxModuleRuntimeError> {
-    state.instance.teardown()
+    match state.instance {
+        Some(mut instance) => instance.teardown(),
+        None => Ok(()),
+    }
 }
 
 /// Compositor priority of FX module playback layers.
@@ -1949,6 +2151,156 @@ mod tests {
         });
     }
 
+    /// Builds a playback app whose active module spins forever in `render`.
+    fn infinite_loop_playback_app(module_name: &str) -> App {
+        let mut app = setup_playback_app(module_name);
+        let mut definition = app
+            .world()
+            .resource::<DataProvider<StoredFxModule>>()
+            .from_id(1)
+            .expect("stored fx module should exist")
+            .clone();
+        definition
+            .config
+            .insert("mode".to_string(), "infinite-loop".to_string());
+        app.world_mut()
+            .resource_mut::<DataProvider<StoredFxModule>>()
+            .add(definition)
+            .expect("fx module update should keep the same uid");
+        app
+    }
+
+    /// Drains and returns the runtime notifications written since the last drain.
+    fn drain_runtime_notifications(app: &mut App) -> Vec<FxModuleRuntimeNotification> {
+        app.world_mut()
+            .resource_mut::<Messages<NotificationEnvelope<FxModuleRuntimeNotification>>>()
+            .drain()
+            .map(|envelope| envelope.notification)
+            .collect()
+    }
+
+    /// Returns the reasons of every `Stopped` notification in `notifications`.
+    fn stopped_reasons(notifications: &[FxModuleRuntimeNotification]) -> Vec<String> {
+        notifications
+            .iter()
+            .filter_map(|notification| match notification {
+                FxModuleRuntimeNotification::Stopped { error, .. } => Some(error.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Verifies a module that overruns its render time limit is reloaded quietly and stays
+    /// active, and is only stopped, reported and released after overrunning several frames in a
+    /// row.
+    #[test]
+    fn runaway_render_reloads_then_stops_module_and_releases_layer() {
+        with_test_module_data_dir("runaway", |module_name| {
+            let mut app = infinite_loop_playback_app(module_name);
+
+            for _ in 1..MAX_CONSECUTIVE_OVERRUNS {
+                app.update();
+                assert!(
+                    drain_runtime_notifications(&mut app).is_empty(),
+                    "an overrun below the limit should reload without notifying"
+                );
+                assert!(
+                    app.world().resource::<ActiveFxModuleIds>().0.contains(&1),
+                    "a reloaded fx module should stay active"
+                );
+            }
+
+            app.update();
+            assert_eq!(
+                stopped_reasons(&drain_runtime_notifications(&mut app)),
+                vec!["render exceeded its 100 ms time limit".to_string()]
+            );
+            assert!(
+                !app.world().resource::<ActiveFxModuleIds>().0.contains(&1),
+                "stopped fx module should be deactivated"
+            );
+
+            app.update();
+
+            let mut released = app
+                .world_mut()
+                .query_filtered::<Entity, (With<ActiveFxModuleLayer>, With<ReleaseMarker>)>();
+            assert_eq!(released.iter(app.world()).count(), 1);
+            assert!(
+                drain_runtime_notifications(&mut app).is_empty(),
+                "a stopped module should not be rendered again"
+            );
+        });
+    }
+
+    /// Verifies reactivating a stopped module before cleanup builds a fresh instance with a fresh
+    /// overrun count, instead of calling the poisoned one or stopping on its first overrun.
+    #[test]
+    fn reactivating_stopped_module_builds_fresh_instance() {
+        with_test_module_data_dir("runaway-restart", |module_name| {
+            let mut app = infinite_loop_playback_app(module_name);
+            for _ in 0..MAX_CONSECUTIVE_OVERRUNS {
+                app.update();
+            }
+            drain_runtime_notifications(&mut app);
+
+            app.world_mut()
+                .resource_mut::<ActiveFxModuleIds>()
+                .0
+                .insert(1);
+            let mut reasons = Vec::new();
+            for _ in 0..MAX_CONSECUTIVE_OVERRUNS {
+                app.update();
+                reasons.extend(stopped_reasons(&drain_runtime_notifications(&mut app)));
+            }
+
+            assert_eq!(
+                reasons,
+                vec!["render exceeded its 100 ms time limit".to_string()]
+            );
+        });
+    }
+
+    /// Verifies a preview that keeps overrunning its render time limit is reloaded, then stopped
+    /// once and kept dark, instead of being re-instantiated and stalling the engine every frame.
+    #[test]
+    fn runaway_preview_is_stopped_and_not_retried() {
+        with_test_module_data_dir("runaway-preview", |module_name| {
+            let mut app = setup_preview_app();
+            app.world_mut()
+                .resource_mut::<Messages<crate::FxModulePreviewUpdate>>()
+                .write(crate::FxModulePreviewUpdate::StartPreview(
+                    preview_definition(
+                        module_name,
+                        HashMap::from([(String::from("mode"), String::from("infinite-loop"))]),
+                    ),
+                ));
+
+            let mut reasons = Vec::new();
+            for _ in 0..MAX_CONSECUTIVE_OVERRUNS {
+                app.update();
+                reasons.extend(stopped_reasons(&drain_runtime_notifications(&mut app)));
+            }
+
+            assert_eq!(
+                reasons,
+                vec!["render exceeded its 100 ms time limit".to_string()]
+            );
+            let entity = active_preview_entity(&mut app);
+            let layer = app
+                .world()
+                .get::<Layer>(entity)
+                .expect("stopped preview should keep an empty layer");
+            assert!(layer.absolute.is_empty());
+
+            app.update();
+            assert!(
+                drain_runtime_notifications(&mut app).is_empty(),
+                "a stopped preview should not be rendered or re-instantiated"
+            );
+        });
+    }
+
     #[test]
     fn stop_then_start_recreates_fx_module_instance_state() {
         with_test_module_data_dir("sparkle", |module_name| {
@@ -2196,6 +2548,7 @@ mod tests {
         app.insert_resource(DataProvider::<Group>::default());
         app.insert_non_send(PreviewFxModuleRuntimeStates::default());
         app.insert_resource(Messages::<crate::FxModulePreviewUpdate>::default());
+        app.add_message::<NotificationEnvelope<FxModuleRuntimeNotification>>();
         app.add_systems(
             Update,
             (

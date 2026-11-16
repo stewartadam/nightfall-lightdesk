@@ -57,7 +57,7 @@ interface SequenceEditorToolbarProps {
 export function SequenceEditorToolbar(props: SequenceEditorToolbarProps) {
   return (
     <PanelToolbar
-      class="sticky top-0 z-50"
+      frameClass="sticky top-0 z-50"
       data-sequence-editor-toolbar="true"
       left={
         <>

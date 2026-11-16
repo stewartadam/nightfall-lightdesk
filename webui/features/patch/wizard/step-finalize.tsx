@@ -19,10 +19,13 @@ import {
   formatConsolePatchSpan,
   layoutConsolePatch,
 } from "../model/console-patch-allocation";
+import { validConsolePatchStart } from "../model/patch-wizard-fields";
 import { usePatchWizard } from "./wizard-context";
 
 export function StepFinalize() {
-  const { state, baseFixtureId } = usePatchWizard();
+  const { state, baseFixtureId, fixtureQuantity } = usePatchWizard();
+  /** Fixture count under review; the configure step only lets a valid count through. */
+  const quantity = () => fixtureQuantity() ?? 0;
   const $fixtureLibrary = useStore(fixtureLibrary);
   const $fixtureProfile = useStore(fixtureProfile);
   /** Tracks when the review step is summarizing a fixture morph. */
@@ -46,7 +49,7 @@ export function StepFinalize() {
 
   const totalChannels = createMemo(() => {
     const count = channelCount();
-    return count !== null ? count * state().quantity : null;
+    return count !== null ? count * quantity() : null;
   });
 
   /**
@@ -54,15 +57,11 @@ export function StepFinalize() {
    * like the routes the wizard creates.
    */
   const patchSpan = createMemo(() => {
-    const { universeId, startAddress, quantity } = state();
-    if (universeId === null || startAddress === null) return null;
+    const start = validConsolePatchStart(state());
+    if (start === null) return null;
     const footprint = channelCount() ?? 1;
     return formatConsolePatchSpan(
-      layoutConsolePatch(
-        { universe: universeId, address: startAddress },
-        footprint,
-        quantity,
-      ),
+      layoutConsolePatch(start, footprint, quantity()),
       footprint,
       { qualified: true },
     );
@@ -92,12 +91,12 @@ export function StepFinalize() {
               {isMorphMode() ? "Existing Fixtures" : "Quantity"}
             </div>
             <div class="text-gray-100">
-              {state().quantity} fixture{state().quantity !== 1 ? "s" : ""}
+              {quantity()} fixture{quantity() !== 1 ? "s" : ""}
             </div>
             <Show when={!isMorphMode()}>
               <div class="text-sm text-gray-400 mt-1">
-                {state().quantity > 1
-                  ? `IDs ${baseFixtureId()}–${baseFixtureId() + state().quantity - 1}`
+                {quantity() > 1
+                  ? `IDs ${baseFixtureId()}–${baseFixtureId() + quantity() - 1}`
                   : `ID ${baseFixtureId()}`}
               </div>
             </Show>
@@ -128,8 +127,8 @@ export function StepFinalize() {
                   when={totalChannels() !== null && channelCount() !== null}
                 >
                   <div class="text-sm text-gray-400 mt-1">
-                    {state().quantity} fixture
-                    {state().quantity !== 1 ? "s" : ""} × {channelCount()} ch ={" "}
+                    {quantity()} fixture
+                    {quantity() !== 1 ? "s" : ""} × {channelCount()} ch ={" "}
                     {totalChannels()} channels
                   </div>
                 </Show>
@@ -153,9 +152,9 @@ export function StepFinalize() {
               fallback={
                 <>
                   Click <strong>Finish</strong> to add{" "}
-                  {state().quantity === 1
+                  {quantity() === 1
                     ? "this fixture"
-                    : `these ${state().quantity} fixtures`}{" "}
+                    : `these ${quantity()} fixtures`}{" "}
                   to your project.
                 </>
               }

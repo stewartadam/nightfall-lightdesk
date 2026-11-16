@@ -7,6 +7,7 @@
  */
 
 import { pushToast } from "../../state/appStores";
+import { applyDraftSaveStatusSnapshot } from "../../state/draft-save-status";
 import { toastActionButtons } from "../../state/toast-actions";
 import type * as types from "../../types";
 import { decodeCorrelationId } from "../console-scrollback";
@@ -22,22 +23,26 @@ import type { AnyWsMessage } from "./types";
 
 const log = getLogger(import.meta.url);
 
-/** Registers desk command echo and backend UI notification handlers. */
+/** Registers log command echo and backend UI notification handlers. */
 export function registerDeskHandlers(
   registry: WsMessageHandlerRegistry<AnyWsMessage>,
 ): void {
-  registry.register("DeskCommand", (message) => {
-    handleDeskCommand(message.data as unknown as types.DeskCommand);
+  registry.register("LogCommand", (message) => {
+    handleLogCommand(message.data as unknown as types.LogCommand);
   });
 
   registry.register("UiNotification", (message) => {
     handleUiNotification(message.data as unknown as types.UiNotification);
   });
+
+  registry.register("DraftSaveStatus", (message) => {
+    applyDraftSaveStatusSnapshot(message.data);
+  });
 }
 
-/** Keeps UI-side logging configuration synchronized with desk commands from the backend. */
-function handleDeskCommand(command: types.DeskCommand) {
-  log.trace("Handling DeskCommand:", command);
+/** Keeps UI-side logging configuration synchronized with log commands from the backend. */
+function handleLogCommand(command: types.LogCommand) {
+  log.trace("Handling LogCommand:", command);
 
   switch (command.type) {
     case "SetLogLevel": {
@@ -46,7 +51,7 @@ function handleDeskCommand(command: types.DeskCommand) {
       break;
     }
     default:
-      log.warn(`Unhandled DeskCommand: ${command.type}`);
+      log.warn(`Unhandled LogCommand: ${command.type}`);
   }
 }
 
@@ -64,8 +69,9 @@ function handleUiNotification(notification: types.UiNotification) {
           : "info";
       // A problem the operator can act on stays until dismissed so it isn't missed mid-show.
       const sticky =
-        actions.length > 0 &&
-        (toastLevel === "warning" || toastLevel === "error");
+        notification.data.sticky === true ||
+        (actions.length > 0 &&
+          (toastLevel === "warning" || toastLevel === "error"));
       pushToast(
         toastLevel,
         notification.data.message,

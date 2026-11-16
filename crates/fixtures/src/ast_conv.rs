@@ -29,6 +29,15 @@ impl AstConvert for FixtureAstConverter {
     fn convert(ast: &ast::CommandAst) -> Result<Vec<DynEnginePayload>, DispatchError> {
         match ast {
             ast::CommandAst::General(gen_ast) => match gen_ast {
+                ast::GeneralCommandAst::Log(ast::LogCommandsAst {
+                    command: ast::LogCommandAst::Fixture(fixture_ast),
+                    ..
+                }) => Ok(vec![Box::new(
+                    crate::trace::FixtureTraceCommand::TraceAttribute {
+                        fixture_ref: conv::singleid_to_unresolved(&fixture_ast.id),
+                        attribute: attribute_from_ast(&fixture_ast.attribute),
+                    },
+                )]),
                 ast::GeneralCommandAst::Delete(delete_ast) => {
                     if matches!(delete_ast.object_type, ast::ObjectTypeAst::Fixture) {
                         let id_expr = conv::simple_identifier_ast_to_idexpr(&delete_ast.id)
@@ -462,6 +471,7 @@ fn convert_position_axis_value(
     }
 }
 
+/// Resolves a parsed attribute name, keeping unknown names as custom attributes.
 fn attribute_from_ast(attr_ast: &ast::AttributeTypeAst) -> Attribute {
     match attr_ast {
         ast::AttributeTypeAst::Aliased(a) => {

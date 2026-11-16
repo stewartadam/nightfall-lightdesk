@@ -140,14 +140,26 @@ export function UpdateNotice() {
     );
   });
 
-  /** Shows the notice when an update becomes ready, and withdraws it once it is installing. */
+  /**
+   * Withdraws the ready notice and forgets what it announced, so the next time an update is ready
+   * it is announced again.
+   */
+  const withdrawNotice = () => {
+    closeNotice?.();
+    closeNotice = undefined;
+    announced = null;
+  };
+
+  /**
+   * Shows the notice while a downloaded update is ready, and withdraws it as soon as that update
+   * stops being the one ready to install: once it is installing, while a newer version replaces
+   * it, or when nothing is waiting any more. A routine check keeps it, because the downloaded
+   * update stays installable while the check runs. A different version replaces the notice.
+   */
   createEffect(() => {
     const current = update();
     if (current?.phase !== "ready" || !current.version) {
-      if (current?.phase === "installing") {
-        closeNotice?.();
-        closeNotice = undefined;
-      }
+      if (current?.phase !== "checking") withdrawNotice();
       return;
     }
     if (snoozed("ready", current.version)) {

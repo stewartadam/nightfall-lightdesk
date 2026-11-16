@@ -74,9 +74,21 @@ pub fn split_command_statements(input: &str) -> Vec<&str> {
         .collect()
 }
 
+/// Splits a multi-line command script into non-empty top-level statements.
+///
+/// Line breaks end a statement just like `;`, so piped input or a startup script with one
+/// command per line submits each line separately instead of gluing them into one statement.
+/// Quotes do not span lines.
+pub fn split_command_script(input: &str) -> Vec<&str> {
+    input.lines().flat_map(split_command_statements).collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{StatementRange, split_command_statements, statement_range_at, statement_ranges};
+    use super::{
+        StatementRange, split_command_script, split_command_statements, statement_range_at,
+        statement_ranges,
+    };
 
     /// Verifies quoted semicolons remain part of one command statement.
     #[test]
@@ -116,6 +128,16 @@ mod tests {
         assert_eq!(
             statement_range_at("clear; fix 1 \"red;blue\" @ 10", 12),
             StatementRange { start: 6, end: 28 }
+        );
+    }
+
+    /// Verifies line breaks separate script statements alongside semicolons, so piped
+    /// commands on consecutive lines are not joined into one statement.
+    #[test]
+    fn script_splits_on_lines_and_semicolons() {
+        assert_eq!(
+            split_command_script("fix 1 @ 10\r\nstore cue 1\n\n  clear; fix 2 \"a;b\" @ 5\n"),
+            vec!["fix 1 @ 10", "store cue 1", "clear", "fix 2 \"a;b\" @ 5"]
         );
     }
 }

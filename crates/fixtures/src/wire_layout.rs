@@ -125,12 +125,42 @@ impl<T> WireLayout<T> {
     }
 }
 
+/// The one to four bytes of a DMX integer, most significant first, kept inline so splitting
+/// every parameter each frame does not allocate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DmxBytes {
+    /// Big-endian bytes; only the first `len` are meaningful.
+    bytes: [u8; 4],
+    /// Number of bytes the resolution uses.
+    len: usize,
+}
+
+impl std::ops::Deref for DmxBytes {
+    type Target = [u8];
+
+    /// Returns the meaningful bytes.
+    fn deref(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+}
+
+impl IntoIterator for DmxBytes {
+    type Item = u8;
+    type IntoIter = std::iter::Take<std::array::IntoIter<u8, 4>>;
+
+    /// Iterates the meaningful bytes, most significant first.
+    fn into_iter(self) -> Self::IntoIter {
+        self.bytes.into_iter().take(self.len)
+    }
+}
+
 /// Splits a DMX integer into bytes, most significant first.
-pub fn split_dmx_value(value: u32, resolution: DmxValueResolution) -> Vec<u8> {
-    let width = resolution.channel_width();
-    (0..width)
-        .map(|byte| (value >> (8 * (width - 1 - byte))) as u8)
-        .collect()
+pub fn split_dmx_value(value: u32, resolution: DmxValueResolution) -> DmxBytes {
+    let len = resolution.channel_width() as usize;
+    debug_assert!(len <= 4, "DMX values are at most four bytes wide");
+    let mut bytes = [0; 4];
+    bytes[..len].copy_from_slice(&value.to_be_bytes()[4 - len..]);
+    DmxBytes { bytes, len }
 }
 
 /// Combines bytes, most significant first, into a DMX integer.

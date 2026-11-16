@@ -6,8 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { TIMING_SPECS_ENABLED, TIMING_SPECS_SKIP_REASON } from "./perf-budgets";
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
+
+test.skip(!TIMING_SPECS_ENABLED, TIMING_SPECS_SKIP_REASON);
 
 // Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
 test.use({ emptyStartupWorld: true });
@@ -60,7 +63,7 @@ test("timeline playhead advances smoothly", async ({ page }) => {
   await waitForAppStores(page);
   await page.evaluate(async () => {
     await (window as any).appStores.send({
-      module: "DeskCommand",
+      module: "EngineCommand",
       command: { type: "Eval", data: "fps 44" },
     });
   });

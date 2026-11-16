@@ -6,7 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { gridCellByRowIndex } from "./data-grid-selectors";
+import {
+  expectPatchConflictCellPresentation,
+  gridCellByRowIndex,
+} from "./data-grid-selectors";
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { prepareStoreSeededTestApp } from "./showfile-startup";
 
@@ -57,35 +60,6 @@ async function disconnectBackend(page: Page) {
     const { engineRuntime } = window.__nightfallTest.runtime;
     engineRuntime.stop();
   });
-}
-
-/**
- * Verifies a patch conflict cell uses conflict text and draws a warning decoration.
- */
-async function expectPatchConflictCellPresentation(cell: Locator) {
-  await expect(cell).toHaveCSS("color", "rgb(239, 68, 68)");
-  await expect
-    .poll(() =>
-      cell.locator("canvas").evaluate((canvasElement) => {
-        const canvas = canvasElement as HTMLCanvasElement;
-        const context = canvas.getContext("2d");
-        if (!context || canvas.width <= 0 || canvas.height <= 0) {
-          return false;
-        }
-
-        const pixels = context.getImageData(
-          0,
-          0,
-          canvas.width,
-          canvas.height,
-        ).data;
-        for (let index = 3; index < pixels.length; index += 4) {
-          if (pixels[index] !== 0) return true;
-        }
-        return false;
-      }),
-    )
-    .toBe(true);
 }
 
 /**
@@ -463,6 +437,37 @@ async function seedDmxRouteTableStores(page: Page) {
         },
       ],
       disabled: [],
+      overlap: {
+        input: [
+          {
+            universes: { universes: [1], all: false },
+            source_conflict: true,
+            target_conflict: false,
+          },
+          {
+            universes: { universes: [2], all: false },
+            source_conflict: true,
+            target_conflict: false,
+          },
+        ],
+        output: [
+          {
+            universes: { universes: [1], all: false },
+            source_conflict: false,
+            target_conflict: true,
+          },
+          {
+            universes: { universes: [1], all: false },
+            source_conflict: false,
+            target_conflict: true,
+          },
+        ],
+        disabled: [],
+        universes: [
+          { universe: 1, input_overlap: false, output_overlap: true },
+          { universe: 2, input_overlap: false, output_overlap: false },
+        ],
+      },
     });
   });
 }

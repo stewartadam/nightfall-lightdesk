@@ -8,6 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { RouteLists } from "../../../lib/route-utils";
 import * as types from "../../../types";
 import {
   findInputRouteIdForOutputChannel,
@@ -78,7 +79,7 @@ function consoleRoute(
  */
 test("follows the highest-priority console route driving a channel", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [consoleRoute(1, 1, 5), consoleRoute(1, 1, 0)],
@@ -88,7 +89,7 @@ test("follows the highest-priority console route driving a channel", () => {
     "output-0",
   );
 
-  const moved: types.RoutesSnapshot = {
+  const moved: RouteLists = {
     ...snapshot,
     output: [consoleRoute(1, 100, 5), consoleRoute(1, 1, 0)],
   };
@@ -113,7 +114,7 @@ test("follows direct fixture output over a higher-priority console route", () =>
     a: makeRgbFixture("a", 1),
     b: makeRgbFixture("b", 2),
   };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -159,7 +160,7 @@ test("follows direct fixture output over a higher-priority console route", () =>
  */
 test("follows only the parameters a filtered route writes", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -190,7 +191,7 @@ function singleUniverse(universe: number): types.DmxRange {
 /**
  * Builds a route snapshot from input routes for follow behavior tests.
  */
-function makeSnapshot(input: types.InputRoute[]): types.RoutesSnapshot {
+function makeSnapshot(input: types.InputRoute[]): RouteLists {
   return {
     input,
     output: [],

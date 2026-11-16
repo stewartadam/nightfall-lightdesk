@@ -531,7 +531,7 @@ pub fn finish_timeline_recording_sessions_system(
             }
             TimecodeEvent::Started(_)
             | TimecodeEvent::Seeked { .. }
-            | TimecodeEvent::Deleted(_) => {}
+            | TimecodeEvent::Deleted { .. } => {}
         }
     }
 
@@ -605,8 +605,9 @@ mod tests {
             TimecodeCommand::SeekTimecode { id, position } => {
                 TimecodeEvent::Seeked { id, position }
             }
-            TimecodeCommand::DeleteTimecode(id) => TimecodeEvent::Deleted(id),
-            TimecodeCommand::StoreTimecode(_) | TimecodeCommand::RenameTimecode { .. } => {
+            TimecodeCommand::DeleteTimecode(_)
+            | TimecodeCommand::StoreTimecode(_)
+            | TimecodeCommand::RenameTimecode { .. } => {
                 panic!("CRUD commands are not runtime timecode events")
             }
         }
@@ -1138,15 +1139,16 @@ mod tests {
             .as_any()
             .downcast_ref::<TimelineCommand>()
             .expect("inverse should be a timeline command");
-        let TimelineCommand::StoreTimeline(timeline) = inverse else {
-            panic!("expected store timeline inverse");
+        let TimelineCommand::EditTimeline {
+            timeline_id,
+            edit: crate::prelude::TimelineEdit::ChangeActions { store, delete },
+        } = inverse
+        else {
+            panic!("expected an inverse that deletes the recorded actions, got {inverse:?}");
         };
-        assert_eq!(timeline.identifiers.id, 46);
-        let track = timeline
-            .tracks
-            .iter()
-            .find(|track| track.id == "track-1")
-            .expect("original target track should be restored");
-        assert!(track.actions.is_empty());
+        assert_eq!(*timeline_id, 46);
+        assert!(store.is_empty());
+        assert!(!delete.is_empty());
+        assert!(delete.iter().all(|action| action.track_id == "track-1"));
     }
 }

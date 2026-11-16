@@ -17,6 +17,7 @@ import {
   buildFixturePatchMapFromRoutes,
   type FixturePatchEntry,
   type FixturePatchMap,
+  type RouteLists,
 } from "../../../lib/route-utils";
 import type * as types from "../../../types";
 
@@ -171,7 +172,7 @@ function routeProducesOutputChannel(
  * Finds the input route row that writes one output channel of the selected space.
  */
 export function findInputRouteIdForOutputChannel(
-  snapshot: types.RoutesSnapshot,
+  snapshot: RouteLists,
   selection: OutputSpaceSelection,
   selectedUniverse: number,
   outputAddress: number,
@@ -247,7 +248,7 @@ function patchLocationKeys(patchMap: FixturePatchMap): Set<string> {
  * never followed.
  */
 export function findOutputRouteIdForChannel(
-  snapshot: types.RoutesSnapshot,
+  snapshot: RouteLists,
   fixtures: Record<string, types.Fixture>,
   selection: OutputSpaceSelection,
   selectedUniverse: number,

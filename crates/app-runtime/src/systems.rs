@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+pub mod backup_mirror;
 pub mod deleted_object_instances;
 pub mod quit_event;
 pub mod showfile_events;

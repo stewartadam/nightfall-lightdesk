@@ -8,11 +8,11 @@
 
 //! Builds the `hw_profile` event and the request bodies OpenPanel's track API accepts.
 
-use nightfall_desk::prelude::GraphicsReport;
 use serde_json::{Map, Value, json};
 use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 
 use crate::HostShell;
+use crate::telemetry::GraphicsReport;
 
 /// Hardware and operating system details that do not change while the app runs.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

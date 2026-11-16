@@ -22,7 +22,7 @@ use crate::commands::UndoCommand;
 use crate::dispatcher::UndoRegistry;
 use crate::manager::UndoManager;
 
-mod blueprint;
+pub mod ast_conv;
 pub mod commands;
 pub mod context;
 pub mod dispatcher;
@@ -36,8 +36,8 @@ pub mod prelude {
     pub use crate::commands::UndoCommand;
     pub use crate::context::UndoContext;
     pub use crate::dispatcher::UndoRegistry;
-    pub use crate::manager::{UndoConfig, UndoEntry, UndoGroup, UndoManager};
-    pub use crate::traits::Undoable;
+    pub use crate::manager::{RedoGroup, UndoConfig, UndoEntry, UndoGroup, UndoManager};
+    pub use crate::traits::{UndoCoalesceKey, Undoable};
 }
 
 /// Plugin that enables undo/redo functionality across the console.
@@ -51,13 +51,13 @@ impl Plugin for UndoPlugin {
             "UndoPlugin requires EnginePlugin (provides CommandIngressRouter)"
         );
 
-        register_ingress_command::<UndoCommand>(app);
-
-        // Register WebSocket deserializer for UndoCommand
-        register_command_deserializer::<UndoCommand>(app, websocket::deserialize_undo_command);
+        register_client_command::<UndoCommand>(app, Undo::Captured);
+        nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::UndoAstConverter>(
+        );
 
         // Initialize resources
         app.init_resource::<UndoManager>();
+        app.init_resource::<systems::HistoryReplays>();
         app.init_resource::<PendingCommandBuffer>();
         app.init_resource::<PendingEngineOperationBuffer>();
 
@@ -66,7 +66,7 @@ impl Plugin for UndoPlugin {
 
         // Process pending commands (must run before EventHandling to capture inverses)
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 dispatcher::process_pending_commands,
                 dispatcher::process_pending_actions,
@@ -76,7 +76,11 @@ impl Plugin for UndoPlugin {
         );
 
         // Register handler systems
-        app.add_systems(Update, systems::handle_undo_commands.in_set(EventHandling));
+        app.add_systems(
+            ApplyCommands,
+            systems::handle_undo_commands.in_set(EventHandling),
+        );
+        app.add_resource_feed::<UndoManager>();
         app.add_systems(
             Last,
             (

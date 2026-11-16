@@ -13,12 +13,82 @@
 //! [`CommandDeserializerRegistry`]. Plugins handle their own event sending
 //! and undo capture.
 
+use std::collections::HashSet;
+
 use async_channel::Receiver;
 #[cfg(test)]
 use async_channel::Sender;
 use bevy_ecs::prelude::*;
 
 use crate::prelude::*;
+
+/// Error code of a client command refused because the engine is read-only.
+pub const READ_ONLY_COMMAND_ERROR: &str = "ingress.read_only";
+
+/// Decides which client commands and updates the engine accepts while it is read-only.
+///
+/// A backup that mirrors another engine sets a read-only reason, so its clients can watch the
+/// show but cannot change it. Commands and updates that only ask for state stay accepted; their
+/// owning domains mark them with [`allow_command_while_read_only`] and
+/// [`allow_update_while_read_only`].
+#[derive(Resource, Debug, Default)]
+pub struct ClientIngressGate {
+    read_only_reason: Option<String>,
+    query_commands: HashSet<(String, String)>,
+    query_updates: HashSet<String>,
+}
+
+impl ClientIngressGate {
+    /// Makes client ingress read-only with the reason clients see, or writable again with `None`.
+    pub fn set_read_only(&mut self, reason: Option<String>) {
+        self.read_only_reason = reason;
+    }
+
+    /// Returns why client ingress is read-only, or `None` while it accepts changes.
+    pub fn read_only_reason(&self) -> Option<&str> {
+        self.read_only_reason.as_deref()
+    }
+
+    /// Returns whether a client command is accepted, judged by its module and `type` tag.
+    pub fn admits_command(&self, module: &str, command: &serde_json::Value) -> bool {
+        if self.read_only_reason.is_none() {
+            return true;
+        }
+        let command_type = command
+            .get("type")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        self.query_commands
+            .contains(&(module.to_string(), command_type.to_string()))
+    }
+
+    /// Returns whether a client update from `module` is accepted.
+    pub fn admits_update(&self, module: &str) -> bool {
+        self.read_only_reason.is_none() || self.query_updates.contains(module)
+    }
+}
+
+/// Marks a command that only reads state, so clients may still send it while the engine is
+/// read-only.
+pub fn allow_command_while_read_only(
+    app: &mut bevy_app::App,
+    module: &'static str,
+    command_type: &'static str,
+) {
+    app.world_mut()
+        .get_resource_or_init::<ClientIngressGate>()
+        .query_commands
+        .insert((module.to_string(), command_type.to_string()));
+}
+
+/// Marks an update that only subscribes to or requests state, so clients may still send it while
+/// the engine is read-only.
+pub fn allow_update_while_read_only(app: &mut bevy_app::App, module: &'static str) {
+    app.world_mut()
+        .get_resource_or_init::<ClientIngressGate>()
+        .query_updates
+        .insert(module.to_string());
+}
 
 /// Wraps a channel receiver for command JSON envelopes.
 ///
@@ -55,14 +125,30 @@ pub fn process_update_json_envelopes(world: &mut World) {
             tracing::warn!(%module, "no_update_deserializer_registered");
             continue;
         }
-        world.resource_scope(|world, registry: Mut<UpdateDeserializerRegistry>| {
+        if world
+            .get_resource::<ClientIngressGate>()
+            .is_some_and(|gate| !gate.admits_update(&module))
+        {
+            tracing::trace!(%module, "read_only_update_dropped");
+            continue;
+        }
+        let forwarded =
+            crate::command_forwarding::forwards_update(world, &module).then(|| update.clone());
+        let applied = world.resource_scope(|world, registry: Mut<UpdateDeserializerRegistry>| {
             let Some(deserializer) = registry.get(&module) else {
-                return;
+                return false;
             };
-            if let Err(error) = deserializer(world, update, sender) {
-                tracing::warn!(%module, %error, "update_deserialize_failed");
+            match deserializer(world, update, sender) {
+                Ok(()) => true,
+                Err(error) => {
+                    tracing::warn!(%module, %error, "update_deserialize_failed");
+                    false
+                }
             }
         });
+        if applied && let Some(forwarded) = forwarded {
+            crate::command_forwarding::record_forwarded_update(world, module, forwarded);
+        }
     }
 }
 
@@ -115,6 +201,26 @@ pub fn process_json_envelopes(world: &mut World) {
                 error = %error,
                 "duplicate_command_rejected"
             );
+            continue;
+        }
+
+        let read_only_refusal = world
+            .get_resource::<ClientIngressGate>()
+            .filter(|gate| !gate.admits_command(&module, &command_json))
+            .and_then(|gate| gate.read_only_reason().map(str::to_string));
+        if let Some(reason) = read_only_refusal {
+            tracing::debug!(
+                command_id = %command_id,
+                module = %module,
+                command_type = ?command_json.get("type"),
+                "read_only_command_refused"
+            );
+            finish_command_in_world(
+                world,
+                command_id,
+                CommandOutcome::failed(CommandError::new(READ_ONLY_COMMAND_ERROR, reason)),
+            )
+            .expect("newly registered read-only command should finish once");
             continue;
         }
 
@@ -323,5 +429,115 @@ mod tests {
 
         assert!(drain_results(&mut world).is_empty());
         assert_eq!(world.resource::<CommandTracker>().active_count(), 1);
+    }
+
+    /// Verifies a read-only engine refuses changes with the gate's reason before any domain sees
+    /// them, still dispatches commands marked as queries, and accepts everything once writable.
+    #[test]
+    fn read_only_gate_refuses_changes_and_admits_queries() {
+        let (mut world, sender) = inbound_world();
+        world.init_resource::<Messages<TestUpdate>>();
+        world
+            .resource_mut::<CommandDeserializerRegistry>()
+            .register("ShowCommand", |world, json, _command_id, _undo_id| {
+                let value = json["data"].as_u64().unwrap_or_default() as u32;
+                world.write_message(TestUpdate(value, Audience::All));
+                Ok(())
+            });
+        let mut gate = ClientIngressGate::default();
+        gate.query_commands
+            .insert(("ShowCommand".to_string(), "Read".to_string()));
+        gate.set_read_only(Some("Tracking the primary".to_string()));
+        world.insert_resource(gate);
+
+        let change = envelope(
+            "ShowCommand",
+            serde_json::json!({ "type": "Change", "data": 1 }),
+        );
+        let change_id = change.command_id;
+        sender.try_send(change).unwrap();
+        sender
+            .try_send(envelope(
+                "ShowCommand",
+                serde_json::json!({ "type": "Read", "data": 2 }),
+            ))
+            .unwrap();
+        process_json_envelopes(&mut world);
+
+        let results = drain_results(&mut world);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].command_id, change_id);
+        assert!(matches!(
+            &results[0].outcome,
+            CommandOutcome::Failed(error)
+                if error.code == READ_ONLY_COMMAND_ERROR && error.message == "Tracking the primary"
+        ));
+        let dispatched = world
+            .resource_mut::<Messages<TestUpdate>>()
+            .drain()
+            .map(|update| update.0)
+            .collect::<Vec<_>>();
+        assert_eq!(dispatched, vec![2]);
+
+        world
+            .resource_mut::<ClientIngressGate>()
+            .set_read_only(None);
+        sender
+            .try_send(envelope(
+                "ShowCommand",
+                serde_json::json!({ "type": "Change", "data": 3 }),
+            ))
+            .unwrap();
+        process_json_envelopes(&mut world);
+        let dispatched = world
+            .resource_mut::<Messages<TestUpdate>>()
+            .drain()
+            .map(|update| update.0)
+            .collect::<Vec<_>>();
+        assert_eq!(dispatched, vec![3]);
+    }
+
+    /// Verifies a read-only engine drops updates that change state but still dispatches updates
+    /// marked as requests for state.
+    #[test]
+    fn read_only_gate_drops_changing_updates() {
+        let mut world = World::new();
+        world.init_resource::<UpdateDeserializerRegistry>();
+        world.init_resource::<Messages<TestUpdate>>();
+        for module in ["FaderMove", "Subscribe"] {
+            world.resource_mut::<UpdateDeserializerRegistry>().register(
+                module,
+                |world, value, sender| {
+                    let value =
+                        serde_json::from_value::<u32>(value).map_err(|error| error.to_string())?;
+                    world.write_message(TestUpdate(value, sender));
+                    Ok(())
+                },
+            );
+        }
+        let mut gate = ClientIngressGate::default();
+        gate.query_updates.insert("Subscribe".to_string());
+        gate.set_read_only(Some("Tracking the primary".to_string()));
+        world.insert_resource(gate);
+        let (sender, receiver) = async_channel::unbounded();
+        world.insert_resource(UpdateJsonEnvelopeReceiver(receiver));
+        for (module, value) in [("FaderMove", 1), ("Subscribe", 2)] {
+            sender
+                .try_send(UpdateJsonEnvelope {
+                    module: module.to_string(),
+                    update: serde_json::json!(value),
+                    sender: Audience::All,
+                })
+                .unwrap();
+        }
+
+        process_update_json_envelopes(&mut world);
+
+        let dispatched = world
+            .resource_mut::<Messages<TestUpdate>>()
+            .drain()
+            .map(|update| update.0)
+            .collect::<Vec<_>>();
+        assert_eq!(dispatched, vec![2]);
     }
 }

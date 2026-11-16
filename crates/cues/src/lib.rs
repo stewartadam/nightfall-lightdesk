@@ -16,10 +16,11 @@
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use bevy_ecs::schedule::ApplyDeferred;
-use nightfall::prelude::{ColorPath, ColorPathId, ObjectRef, builtin_color_paths};
+use bevy_ecs::schedule::{ApplyDeferred, SystemCondition};
+use nightfall::prelude::{Blueprint, ColorPath, ColorPathId, ObjectRef, builtin_color_paths};
+use nightfall_clips::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
 use nightfall_engine::prelude::*;
-use nightfall_instances::InstanceId;
+use nightfall_instances::{InstanceId, InstanceKind};
 use nightfall_playback_planner::PlaybackReconstructionTiming;
 use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -47,6 +48,7 @@ pub mod events;
 pub mod lookahead_projection;
 pub mod materialized_cue;
 pub mod materialized_sequence;
+pub mod release_cue_rows;
 pub mod sequence_planning;
 pub mod undo;
 pub mod websocket;
@@ -66,9 +68,7 @@ pub mod prelude {
     pub use crate::CueStoreTarget;
     pub use crate::SequencePlaybackOperation;
     pub use crate::cue::cue_flags::TrackingFlags;
-    pub use crate::cue::{
-        BoundCueInstruction, Cue, CueInstruction, CuePart, Sequence, TrackingMode,
-    };
+    pub use crate::cue::{Cue, CuePart, Sequence, TrackingMode};
     pub use crate::data_provider_ext::CueDataProviderExt;
     pub use crate::duration::{CueDurationProfile, CueDurationResolver};
     pub use crate::events::{
@@ -99,10 +99,22 @@ impl Plugin for CuePlugin {
         tracing::debug!("Registering CuePlugin");
         register_engine_operation::<CueOperation>(app);
         register_engine_operation::<CueLifecycleOperation>(app);
-        register_ingress_command::<CueCommand>(app);
+        // Sequence clips are played from clip operations directly, so the cue domain reports
+        // their outcomes and detaches their clip links itself.
+        app.register_clip_source(
+            ClipSourceKind::Sequence,
+            ClipSourceDomain {
+                playback_kind: InstanceKind::Sequence,
+                handles_clip_operations: true,
+                restarts_on_go: false,
+            },
+        );
+        register_client_command::<CueCommand>(app, Undo::Captured);
+        allow_command_while_read_only(app, CueCommand::COMMAND_MODULE, "ListColorPaths");
+        app.forward_commands_to_backup::<CueCommand>(&["ReleaseCue"]);
         register_engine_operation::<SequencePlaybackOperation>(app);
         register_engine_operation::<undo::RestoreSequencePosition>(app);
-        register_ingress_command::<events::CuePreviewCommand>(app);
+        register_client_command::<events::CuePreviewCommand>(app, Undo::Captured);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::CueAstConverter>();
 
         app.init_resource::<DataProvider<cue::Cue>>();
@@ -128,12 +140,6 @@ impl Plugin for CuePlugin {
             registry.register_operation::<undo::RestoreSequencePosition>();
         }
 
-        register_command_deserializer::<CueCommand>(app, crate::websocket::deserialize_cue_command);
-        register_command_deserializer::<events::CuePreviewCommand>(
-            app,
-            crate::websocket::deserialize_cue_preview_command,
-        );
-
         app.add_systems(
             PostUpdate,
             (
@@ -145,22 +151,28 @@ impl Plugin for CuePlugin {
         );
         app.add_systems(
             Render,
-            (
-                websocket::send_cues_on_change,
-                websocket::send_color_paths_on_change,
-                websocket::send_stale_sequence_lookahead_states,
-            )
-                .in_set(ClientOutput),
+            (websocket::send_stale_sequence_lookahead_states,).in_set(ClientOutput),
         );
-
+        app.add_client_feed::<websocket::CuesFeed>();
+        app.add_client_feed::<websocket::CueDurationProfilesFeed>()
+            .resync_after(resync_client_feed::<websocket::CuesFeed>)
+            .on_change(
+                resource_changed::<nightfall_fixtures::prelude::FixtureDataProviderExt>
+                    .or_eager(resource_exists_and_changed::<DataProvider<Blueprint>>),
+            );
+        app.add_client_feed::<websocket::SequencesFeed>()
+            .resync_after(resync_client_feed::<websocket::CueDurationProfilesFeed>);
+        app.add_client_feed::<websocket::ColorPathsFeed>()
+            .resync_after(resync_client_feed::<websocket::SequencesFeed>)
+            .on_change(resource_changed::<DataProvider<ColorPath>>);
         app.add_systems(
             Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
+            websocket::mark_sequence_lookahead_stale_on_resync.in_set(ResyncHandling),
         );
 
         events::register_event_systems(app);
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 (
                     materialized_cue::release_materialized_cues,
@@ -180,7 +192,7 @@ impl Plugin for CuePlugin {
         );
         app.add_systems(
             Update,
-            materialized_sequence::sync_sequence_instance_timebase.after(EventHandling),
+            materialized_sequence::sync_sequence_instance_timebase.after(CommandApplication),
         );
         app.add_systems(
             Render,
@@ -209,6 +221,9 @@ pub enum CueOperation {
     StoreCue(Box<cue::Cue>),
     /// Store a sequence payload prepared by a planner/runtime command handler.
     StoreSequence(Box<cue::Sequence>),
+    /// Remove a cue definition by UID, leaving sequence steps untouched. Undoes storing a cue
+    /// that did not exist before.
+    RemoveCue(uuid::Uuid),
     /// Store a cue into a sequence, resolving append targets at mutation time.
     StoreCueInSequence {
         /// Sequence ID that should contain the cue after storing.

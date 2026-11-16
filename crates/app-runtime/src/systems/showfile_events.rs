@@ -22,22 +22,11 @@ use bevy::prelude::*;
 use nightfall::prelude::*;
 use nightfall_clips::InstanceIndex;
 use nightfall_compositor::prelude::*;
-use nightfall_cues::prelude::*;
-use nightfall_desk::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
-use nightfall_flow::prelude::*;
-use nightfall_fx::prelude::*;
 use nightfall_fx_module::prelude::*;
-#[cfg(feature = "midi")]
-use nightfall_input_midi::prelude::*;
-#[cfg(feature = "osc")]
-use nightfall_input_osc::prelude::*;
-use nightfall_io::IoRuntimeSettings;
-use nightfall_programmer::prelude::*;
-use nightfall_scene_objects::prelude::*;
-use nightfall_timecode::prelude::*;
-use nightfall_timeline::prelude::*;
+use nightfall_programming::prelude::*;
+use nightfall_showfile::{ShowfileCommand, ShowfileRevisionSelection};
 use nightfall_undo::prelude::*;
 
 /// External resource staged with a newly created show before its draft is published.
@@ -53,6 +42,7 @@ mod assets;
 mod backup;
 mod commands;
 mod draft;
+mod draft_status;
 pub mod export;
 mod feedback;
 mod http_routes;
@@ -93,6 +83,11 @@ use draft::{
     prepare_showfile_session, prepare_working_draft_for_save, remove_draft_showfile,
     replace_working_draft_with_saved_snapshot, save_initial_draft_showfile_snapshot,
 };
+pub use draft_status::DraftSaveStatus;
+use draft_status::clear_draft_save_failure;
+pub use draft_status::draft_save_failure;
+pub(crate) use draft_status::mirror_draft_save_status;
+pub(crate) use draft_status::record_draft_save_result;
 use feedback::*;
 pub(crate) use http_routes::register_showfile_http_routes;
 #[cfg(test)]
@@ -108,12 +103,14 @@ use manifest::{read_current_showfile_manifest_from_dir, write_showfile_manifest_
 pub(crate) use nightfall_showfile::ShowfileSaveState;
 pub(crate) use nightfall_showfile::validate_showfile_snapshot_json;
 use nightfall_showfile::{
-    RoutesSnapshot, ShowfileMetadata, ShowfileSnapshot, apply_showfile_snapshot,
-    current_showfile_metadata, serialize_showfile_snapshot_json, snapshot_from_save_state,
-    snapshot_from_world, stabilize_showfile_group_refs, validate_showfile_asset_versions,
+    RoutesSnapshot, ShowfileApplyState, ShowfileMetadata, ShowfileSnapshot,
+    apply_showfile_snapshot, current_showfile_metadata, serialize_showfile_snapshot_json,
+    snapshot_from_save_state, snapshot_from_world, stabilize_showfile_group_refs,
+    validate_showfile_asset_versions,
 };
 #[cfg(test)]
 use nightfall_showfile::{ShowfileLoadDomain, ordered_showfile_load_domains};
+pub(crate) use paths::select_library_show_storage;
 use paths::*;
 pub(crate) use save::{
     persist_new_showfile_draft_from_world, refresh_clean_snapshot_hash_after_showfile_bootstrap,
@@ -121,12 +118,12 @@ pub(crate) use save::{
 };
 use save::{save_showfile, update_clean_snapshot_hash, update_clean_snapshot_hash_from_saved_show};
 pub use state::{CurrentShowfile, ShowfileCleanSnapshotHash};
-pub(crate) use storage::read_showfile_snapshot_from_path;
 use storage::{
     hash_showfile_snapshot_with_metadata, read_showfile_snapshot,
     repair_showfile_manifest_for_existing_snapshot_to_dir, replace_showfile_dir_with_temp,
     temporary_showfile_dir, write_showfile_snapshot_with_manifest_to_dir,
 };
+pub(crate) use storage::{live_showfile_revision, read_showfile_snapshot_from_path};
 use trash::{
     empty_showfile_trash_in_root, restore_trashed_showfile_in_root, trash_showfile_in_root,
 };

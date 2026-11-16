@@ -284,9 +284,9 @@ test("restores saved layouts without visibility metadata", async ({
   const result = await page.evaluate(async () => {
     const stores = (window as any).appStores;
     return stores.sendAndAwait({
-      module: "SettingsCommand",
+      module: "PanelLayoutCommand",
       command: {
-        type: "CreatePanelLayout",
+        type: "Create",
         data: {
           id: "older-layout",
           name: "Saved arrangement",
@@ -922,7 +922,7 @@ test("animates drag previews and layout changes with a reduced-motion fallback",
   const orderBefore = await page.evaluate(() =>
     (window as any).appStores.settings
       .get()
-      .panel_layouts.filter((layout: any) => layout.shownInSwitcher)
+      .panelLayouts.layouts.filter((layout: any) => layout.shownInSwitcher)
       .map((layout: any) => layout.id),
   );
   const first = page.getByRole("button", {
@@ -956,7 +956,7 @@ test("animates drag previews and layout changes with a reduced-motion fallback",
     await page.evaluate(() =>
       (window as any).appStores.settings
         .get()
-        .panel_layouts.filter((layout: any) => layout.shownInSwitcher)
+        .panelLayouts.layouts.filter((layout: any) => layout.shownInSwitcher)
         .map((layout: any) => layout.id),
     ),
   ).toEqual(orderBefore);
@@ -970,7 +970,7 @@ test("animates drag previews and layout changes with a reduced-motion fallback",
     await page.evaluate(() =>
       (window as any).appStores.settings
         .get()
-        .panel_layouts.filter((layout: any) => layout.shownInSwitcher)
+        .panelLayouts.layouts.filter((layout: any) => layout.shownInSwitcher)
         .map((layout: any) => layout.id),
     ),
   ).toEqual(orderBefore);
@@ -1589,9 +1589,13 @@ test("manager saves preserve rows and keep unrelated actions enabled", async ({
     engineRuntime.sendCommandAndAwait = async (
       ...args: Parameters<typeof original>
     ) => {
+      const envelope = args[0] as {
+        module?: string;
+        command?: { type: string };
+      };
       if (
-        (args[0] as { command?: { type: string } }).command?.type ===
-        "SavePanelLayoutArrangement"
+        envelope.module === "PanelLayoutCommand" &&
+        envelope.command?.type === "SaveArrangement"
       )
         await gate;
       return original(...args);

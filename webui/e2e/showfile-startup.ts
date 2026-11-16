@@ -7,7 +7,7 @@
  */
 
 import { expect, type Page, type Route } from "@playwright/test";
-import { disconnectEngine, waitForTestHooks } from "./app-hooks";
+import { disconnectEngine, escapeRegExp, waitForTestHooks } from "./app-hooks";
 
 export interface StartupShowfileOptions {
   createIfMissing?: boolean;
@@ -50,11 +50,6 @@ export async function seedStartupShowfileName(
     window.localStorage.setItem("nightfall.currentShowfileName", name);
     window.localStorage.setItem("nightfall.e2eAutoOpenStartupShowfile", name);
   }, showfileName);
-}
-
-/** Escapes a string for use inside a regular expression literal. */
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** Returns the accessible-name matcher for a saved showfile revision button. */
@@ -239,17 +234,16 @@ export async function waitForDockviewApp(
 
     if (outcome === "draft-prompt") {
       await resolveStartupDraftRecoveryIfVisible(page);
-    } else {
+    } else if (outcome === "showfile-prompt") {
       await openStartupShowfileIfPrompted(page, options);
     }
     // Give the prompt a moment to close before startup is sampled again.
     await page
       .waitForFunction(
         (phase) => window.__nightfallTest?.readiness().lifecyclePhase !== phase,
-        outcome === "draft-prompt"
-          ? "startup-draft-prompt"
-          : "startup-showfile-prompt",
-        { timeout: 1_000 },
+        `startup-${outcome}`,
+        // The backup pair dialog closes on its own once the primary's show loads.
+        { timeout: outcome === "backup-prompt" ? remainingMs() : 1_000 },
       )
       .catch(() => undefined);
   }
@@ -378,6 +372,29 @@ const EMPTY_NULL_STORE_NAMES = [
 ] as const;
 
 /**
+ * Waits until no toast is on screen. Startup toasts such as "Showfile saved" sit over the
+ * top-right panel tabs for a few seconds and take any press aimed at a tab beneath them.
+ */
+export async function waitForToastsToClear(page: Page): Promise<void> {
+  await expect(page.locator('[data-component="Toast"]')).toHaveCount(0, {
+    timeout: 15_000,
+  });
+}
+
+/**
+ * Resizes the page to a phone-sized viewport and waits for the compact shell's panel
+ * navigation. The compact shell remounts every panel, so locators resolved before the
+ * resize, open panel dialogs included, are gone until it has mounted.
+ */
+export async function enterCompactShell(
+  page: Page,
+  viewport: { width: number; height: number },
+): Promise<void> {
+  await page.setViewportSize(viewport);
+  await expect(page.getByRole("navigation", { name: "Panels" })).toBeVisible();
+}
+
+/**
  * Moves the Fixtures panel out of the default layout's collapsed bottom edge
  * group into the main grid and activates it. Specs that dock their own panels
  * "within" Fixtures then get a visible, full-size group instead of a collapsed
@@ -442,7 +459,12 @@ export async function prepareStoreSeededTestApp(
       for (const name of nullStoreNames) {
         stores[name].set(null);
       }
-      stores.routes.set({ disabled: [], input: [], output: [] });
+      stores.routes.set({
+        disabled: [],
+        input: [],
+        output: [],
+        overlap: { input: [], output: [], disabled: [], universes: [] },
+      });
       stores.layerStack.set([]);
       stores.parameters.set(new Map());
     },

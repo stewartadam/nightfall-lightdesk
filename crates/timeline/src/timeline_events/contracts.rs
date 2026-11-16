@@ -8,6 +8,18 @@
 
 use super::*;
 
+/// Notification that an active timeline's playhead jumped without a seek command: a loop
+/// wrapped, or an external source relocated the timecode. Timeline playback is rebuilt at the
+/// new position as for a seek, without the activation an explicit seek brings.
+#[derive(Clone, Copy, Debug, Message)]
+pub(crate) struct TimelinePlayheadJumped {
+    /// Timeline whose playhead jumped.
+    pub timeline: Entity,
+    /// Timecode position playback is rebuilt at. A loop wrap names the loop start, while the
+    /// timecode itself carries on past it by the overshoot, which the next live scan covers.
+    pub timecode_position: Duration,
+}
+
 /// Notification emitted after a timeline action mutation is accepted.
 #[allow(dead_code)]
 #[derive(Clone, Debug, Message)]

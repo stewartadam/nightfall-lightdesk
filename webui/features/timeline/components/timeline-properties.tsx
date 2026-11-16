@@ -7,23 +7,25 @@
  */
 
 import { useStore } from "@nanostores/solid";
-import { createEffect, createMemo, For, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
 import {
   Checkbox,
   Input,
   NativeSelect,
 } from "../../../components/ui/form-controls";
-import { commandClient } from "../../../lib/engine-commands";
-import { setStoreKeyAction } from "../../../lib/nanostore-action";
-import { useShallowStore } from "../../../lib/use-shallow-store";
 import { durationToMs, msToDuration } from "../../../lib/utils";
-import { timecodes, timelines } from "../../../state/appStores";
+import { timecodes } from "../../../state/appStores";
 import * as types from "../../../types";
 import { timecodeRateLabel, timecodeSourceName } from "../../timecode";
+import type {
+  TimelineEdits,
+  TimelineSettingsPatch,
+} from "../controllers/timeline-edits";
 
 type TimelinePropertiesProps = {
-  timelineUid: string;
+  /** Edit channel of the timeline panel these properties belong to. */
+  edits: TimelineEdits;
 };
 
 function sortById<T extends { identifiers: { id: number } }>(items: T[]): T[] {
@@ -46,10 +48,10 @@ function formatMs(duration: types.Duration | undefined): string {
 }
 
 export default function TimelineProperties(props: TimelinePropertiesProps) {
-  const $timelines = useShallowStore(timelines);
   const $timecodes = useStore(timecodes);
 
-  const timeline = createMemo(() => $timelines()[props.timelineUid]);
+  const edits = props.edits;
+  const timeline = edits.timeline;
   const timecodeRows = createMemo(() =>
     sortById(Object.values($timecodes()).map(([timecode]) => timecode)),
   );
@@ -67,32 +69,9 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
       (a, b) => durationToMs(a.start) - durationToMs(b.start),
     ),
   );
-  let latestTimeline = timeline();
-  /** Keeps property edits merging against the latest optimistic timeline snapshot. */
-  createEffect(() => {
-    latestTimeline = timeline();
-  });
-
-  const storeTimeline = (nextTimeline: types.Timeline) => {
-    const command: types.TimelineCommand = {
-      type: "StoreTimeline",
-      data: nextTimeline,
-    };
-    commandClient.emit("TimelineCommand", command);
-  };
-
-  const updateTimeline = (patch: Partial<types.Timeline>) => {
-    const current = latestTimeline;
-    if (!current) return;
-    const nextTimeline = { ...current, ...patch };
-    latestTimeline = nextTimeline;
-    setStoreKeyAction(
-      timelines,
-      "Update Timeline Properties",
-      props.timelineUid,
-      nextTimeline,
-    );
-    storeTimeline(nextTimeline);
+  /** Sends only the settings a control changes, so it never reverts edits made elsewhere. */
+  const updateTimeline = (patch: TimelineSettingsPatch) => {
+    void edits.editSettings(patch);
   };
 
   const updateStartMs = (value: string) => {
@@ -117,7 +96,7 @@ export default function TimelineProperties(props: TimelinePropertiesProps) {
       enabled: current?.enabled ?? false,
       ...patch,
     };
-    updateTimeline({ loop_range: nextLoopRange });
+    edits.setLoopRange(nextLoopRange);
   };
 
   const updateLoopStartMs = (value: string) => {

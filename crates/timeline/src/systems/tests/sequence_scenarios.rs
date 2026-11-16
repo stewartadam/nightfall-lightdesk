@@ -187,11 +187,11 @@ fn seek_timeline_sequence_materializes_setup_only_clip() {
                     uid: Uuid::new_v4(),
                     label: "Setup".to_owned(),
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref,
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         values: HashMap::from([(
                             Attribute::Intensity,
@@ -469,11 +469,11 @@ fn timeline_lookahead_preactivates_future_sequence_start() {
                 label: "tilt".to_owned(),
             },
             trigger: CueTriggerType::AfterDelay(Duration::from_secs(1)),
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Tilt,
@@ -873,11 +873,11 @@ fn timeline_lookahead_preactivates_setup_and_first_sequence_cues() {
                 uid: cue_1_uid,
                 label: "first-position".to_owned(),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     first_fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([
                         (
@@ -903,11 +903,11 @@ fn timeline_lookahead_preactivates_setup_and_first_sequence_cues() {
                 uid: cue_2_uid,
                 label: "second-position".to_owned(),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     second_fixture_ref,
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Pan,
@@ -938,11 +938,11 @@ fn timeline_lookahead_preactivates_setup_and_first_sequence_cues() {
                     label: "Setup".to_owned(),
                 },
                 instructions: vec![
-                    BoundCueInstruction {
+                    BoundAssertionSet {
                         selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                             first_fixture_ref,
                         ])),
-                        cue_instruction: CueInstruction {
+                        assertions: AssertionSet {
                             blueprint_application: None,
                             values: HashMap::from([
                                 (
@@ -957,11 +957,11 @@ fn timeline_lookahead_preactivates_setup_and_first_sequence_cues() {
                             ..Default::default()
                         },
                     },
-                    BoundCueInstruction {
+                    BoundAssertionSet {
                         selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                             third_fixture_ref,
                         ])),
-                        cue_instruction: CueInstruction {
+                        assertions: AssertionSet {
                             blueprint_application: None,
                             values: HashMap::from([(
                                 Attribute::Pan,
@@ -1137,11 +1137,11 @@ fn timeline_lookahead_reports_future_sequence_status_while_stopped() {
                 label: "tilt".to_owned(),
             },
             trigger: CueTriggerType::AfterDelay(Duration::from_secs(1)),
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Tilt,
@@ -1309,11 +1309,11 @@ fn timeline_lookahead_blocks_future_source_behind_intervening_fixture_assertion(
                 uid: blocker_cue_uid,
                 label: "blocker".to_owned(),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Intensity,
@@ -1345,11 +1345,11 @@ fn timeline_lookahead_blocks_future_source_behind_intervening_fixture_assertion(
                 label: "tilt".to_owned(),
             },
             trigger: CueTriggerType::AfterDelay(Duration::from_secs(1)),
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Tilt,
@@ -1558,11 +1558,11 @@ fn timeline_lookahead_reports_bounded_blockers_for_dense_intervening_actions() {
                     uid: blocker_cue_uid,
                     label: format!("blocker-{index}"),
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref.clone(),
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         values: HashMap::from([(
                             Attribute::Intensity,
@@ -1624,11 +1624,11 @@ fn timeline_lookahead_reports_bounded_blockers_for_dense_intervening_actions() {
                 label: "future-tilt".to_owned(),
             },
             trigger: CueTriggerType::AfterDelay(Duration::from_secs(1)),
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Tilt,
@@ -1833,11 +1833,11 @@ fn timeline_lookahead_blocks_future_source_behind_intervening_fx_selection() {
                 label: "tilt".to_owned(),
             },
             trigger: CueTriggerType::AfterDelay(Duration::from_secs(1)),
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Tilt,
@@ -2063,11 +2063,11 @@ fn timeline_lookahead_rebuilds_when_intervening_fx_group_selection_changes() {
                 label: "tilt".to_owned(),
             },
             trigger: CueTriggerType::AfterDelay(Duration::from_secs(1)),
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Tilt,
@@ -2303,11 +2303,11 @@ fn timeline_lookahead_blocks_future_source_behind_unknown_intervening_action() {
                 label: "tilt".to_owned(),
             },
             trigger: CueTriggerType::AfterDelay(Duration::from_secs(1)),
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Tilt,
@@ -3190,11 +3190,11 @@ fn live_timeline_sequence_auto_end_holds_ltp_until_htp_release_completes() {
                     fade_in: Some(TransitionMode::Fixed(fade_in)),
                     ..Default::default()
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref.clone(),
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         values: HashMap::from([
                             (
@@ -3359,11 +3359,11 @@ fn live_timeline_sequence_auto_end_scoped_release_holds_ltp_until_htp_release_co
                     fade_in: Some(TransitionMode::Fixed(fade_in)),
                     ..Default::default()
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref.clone(),
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         values: HashMap::from([
                             (
@@ -3405,11 +3405,11 @@ fn live_timeline_sequence_auto_end_scoped_release_holds_ltp_until_htp_release_co
                     fade_out: Some(TransitionMode::Fixed(Duration::from_secs(1))),
                     ..Default::default()
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref,
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         values: HashMap::from([(
                             Attribute::Intensity,
@@ -3566,11 +3566,11 @@ fn seek_timeline_sequence_release_delay_keeps_boundary_cue_and_tracked_values() 
                 uid: cue_1_uid,
                 label: "intensity".to_owned(),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Intensity,
@@ -3591,11 +3591,11 @@ fn seek_timeline_sequence_release_delay_keeps_boundary_cue_and_tracked_values() 
                 label: "tilt".to_owned(),
             },
             trigger: CueTriggerType::AfterDelay(Duration::from_secs(2)),
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Tilt,

@@ -11,11 +11,16 @@ import { onCleanup, onMount, Show } from "solid-js";
 import { BoardPaletteCommands } from "../../../features/boards";
 import { ReleaseHeldButtonsCommand } from "../../../features/clips";
 import {
+  BackupBanner,
   MappingModeBanner,
   MappingModeController,
   MidiDeviceDetectedNotice,
 } from "../../../features/io";
 import { KeybindingController } from "../../../features/keybindings";
+import {
+  RigImportCommand,
+  RigImportDialog,
+} from "../../../features/mvr-import";
 import { ObjectPatchWizardModal } from "../../../features/object-library";
 import { PatchWizard } from "../../../features/patch";
 import { SelectionFlattenConfirmModal } from "../../../features/selection";
@@ -54,6 +59,7 @@ function ShellRuntime() {
     <>
       <SettingsCommand />
       <ExportShowfileCommand />
+      <RigImportCommand />
       <FeedbackCommands />
       <ReleaseHeldButtonsCommand />
       <LayoutCommands />
@@ -71,9 +77,11 @@ function ShellRuntime() {
       <PatchWizard />
       <ObjectPatchWizardModal />
       <ShowfileDialogs />
+      <RigImportDialog />
       <AboutDialog />
       <SettingsOverlay />
       <TelemetryConsentPrompt />
+      <GuideInvitation />
       <UpdateNotice />
       <GraphicsReporter />
       <SelectionFlattenConfirmModal />
@@ -85,7 +93,6 @@ function ShellRuntime() {
 function DockedContent() {
   return (
     <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
-      <GuideInvitation />
       <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
         <ShowfileTransitionVeil>
           <DockviewApp />
@@ -137,9 +144,33 @@ export default function AppShell() {
   /** Shares the app's actual bounds with dialogs mounted in providers or body portals. */
   onMount(() => {
     const root = document.documentElement;
-    /** Keeps overlay sizing aligned with the complete app, including its header and footer. */
+    const header = viewport.querySelector<HTMLElement>(".nf-app-header");
+    /** Drops the shared bounds so overlays fall back to sizing against the window. */
+    const clear = () => {
+      for (const property of [
+        "--app-header-bottom",
+        "--app-viewport-right",
+        "--app-viewport-bottom",
+        "--app-viewport-height",
+      ])
+        root.style.removeProperty(property);
+    };
+    /**
+     * Keeps overlay sizing aligned with the complete app, including its header and footer, and
+     * records where the header ends so notifications stack below it instead of covering it.
+     * While the shell is hidden (such as behind the startup picker after a reconnect) it has no
+     * box, so overlays size against the window rather than collapsing to zero height.
+     */
     const measure = () => {
       const bounds = viewport.getBoundingClientRect();
+      if (bounds.width === 0 && bounds.height === 0) {
+        clear();
+        return;
+      }
+      root.style.setProperty(
+        "--app-header-bottom",
+        `${header?.getBoundingClientRect().bottom ?? bounds.top}px`,
+      );
       root.style.setProperty(
         "--app-viewport-right",
         `${window.innerWidth - bounds.right}px`,
@@ -152,17 +183,13 @@ export default function AppShell() {
     };
     const observer = new ResizeObserver(measure);
     observer.observe(viewport);
+    if (header) observer.observe(header);
     window.addEventListener("resize", measure);
     measure();
     onCleanup(() => {
       observer.disconnect();
       window.removeEventListener("resize", measure);
-      for (const property of [
-        "--app-viewport-right",
-        "--app-viewport-bottom",
-        "--app-viewport-height",
-      ])
-        root.style.removeProperty(property);
+      clear();
     });
   });
   return (
@@ -173,6 +200,7 @@ export default function AppShell() {
       >
         <AppHeader />
         <MappingModeBanner />
+        <BackupBanner />
         <div class="min-h-0 flex-1 overflow-hidden">
           <ShellRuntime />
           <ShellContent />

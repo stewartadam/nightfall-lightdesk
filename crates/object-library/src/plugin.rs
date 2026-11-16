@@ -35,12 +35,11 @@ impl Plugin for ObjectLibraryPlugin {
         app.add_message::<ObjectLibraryEvent>();
 
         // Register object library commands with the engine
-        register_ingress_command::<ObjectLibraryCommand>(app);
+        register_client_command::<ObjectLibraryCommand>(app, Undo::Skipped);
+        for query in ["ListAvailableObjects", "GetObjectProfile"] {
+            allow_command_while_read_only(app, ObjectLibraryCommand::COMMAND_MODULE, query);
+        }
         app.add_message::<crate::websocket::ObjectLibraryCommandResult>();
-        register_command_deserializer::<ObjectLibraryCommand>(
-            app,
-            crate::websocket::deserialize_object_library_command,
-        );
 
         // Register HTTP routes for model serving
         app.world_mut()
@@ -79,7 +78,7 @@ impl Plugin for ObjectLibraryPlugin {
 
         // Add WebSocket systems
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 crate::websocket::handle_object_library_commands,
                 crate::websocket::finish_object_library_commands,

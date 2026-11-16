@@ -8,15 +8,17 @@
 
 import {
   type Component,
-  createEffect,
+  createMemo,
   createSignal,
   For,
   onCleanup,
 } from "solid-js";
 import { getLogger } from "../../../lib/logger";
 import { durationToMs, msToPixels, pixelsToMs } from "../../../lib/utils";
+import { createWindowMouseDrag } from "../../../lib/window-drag";
 import type * as types from "../../../types";
 import { useTimelineContext } from "../context/timeline-context";
+import { automationLinePath } from "../model/automation-path";
 
 const log = getLogger(import.meta.url);
 
@@ -33,7 +35,6 @@ const DraggablePoint: Component<{
   onDragStart: (index: number, point: { x: number; y: number }) => void;
   onDragEnd: (index: number) => void;
   trackHeight: number;
-  startTime: number;
   zoom: number;
   isDragging: boolean;
   canEdit: () => boolean;
@@ -50,6 +51,13 @@ const DraggablePoint: Component<{
 
   let clickTimeout: number | null = null;
   const CLICK_DELAY = 200; // ms
+  /** Whether the button was released while waiting to tell a click from a double-click. */
+  let releasedBeforeDrag = false;
+
+  /** Records a release that lands before the drag starts, so a plain click never drags. */
+  const handleEarlyMouseUp = () => {
+    releasedBeforeDrag = true;
+  };
 
   const handleMouseDown = (e: MouseEvent) => {
     e.stopPropagation();
@@ -69,11 +77,17 @@ const DraggablePoint: Component<{
       return;
     }
 
+    releasedBeforeDrag = false;
+    document.addEventListener("mouseup", handleEarlyMouseUp, { once: true });
+
     // Set a timeout to detect single click
     clickTimeout = window.setTimeout(() => {
       // Clear the timeout reference
       clickTimeout = null;
-      // This is a single click, start dragging
+      document.removeEventListener("mouseup", handleEarlyMouseUp);
+      // A click released before the delay is not a drag.
+      if (releasedBeforeDrag) return;
+      // The button is still held, so start dragging
       dragState.isDragging = true;
       dragState.startX = e.clientX;
       dragState.startY = e.clientY;
@@ -83,9 +97,7 @@ const DraggablePoint: Component<{
       // Notify parent about drag start
       props.onDragStart(props.index, { x: props.point.x, y: props.point.y });
 
-      // Add global event listeners
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp, { once: true });
+      pointDrag.start();
     }, CLICK_DELAY);
 
     // Prevent text selection during drag
@@ -133,9 +145,6 @@ const DraggablePoint: Component<{
       pointRef.style.transform = "";
     }
 
-    // Remove event listeners
-    document.removeEventListener("mousemove", handleMouseMove);
-
     // Clear any pending click timeout
     if (clickTimeout) {
       clearTimeout(clickTimeout);
@@ -152,10 +161,14 @@ const DraggablePoint: Component<{
     props.onRemove(props.index);
   };
 
+  const pointDrag = createWindowMouseDrag(
+    { move: handleMouseMove, end: handleMouseUp },
+    document,
+  );
+
   // Cleanup on unmount
   onCleanup(() => {
-    document.removeEventListener("mousemove", handleMouseMove);
-    document.removeEventListener("mouseup", handleMouseUp);
+    document.removeEventListener("mouseup", handleEarlyMouseUp);
     if (clickTimeout) {
       clearTimeout(clickTimeout);
     }
@@ -190,99 +203,25 @@ export const AutomationLane: Component<AutomationLaneProps> = (props) => {
   } | null>(null);
   const TRACK_HEIGHT = 60; // Height of the track in pixels
   const ctx = useTimelineContext();
-  const [svgPath, setSvgPath] = createSignal("");
-  const [pointPositions, setPointPositions] = createSignal<
-    Array<{ x: number; y: number }>
-  >([]);
-
   const isDragging = () => !!draggedPoint();
 
   const isTrackHighlighted = () => ctx.recordTargetTrackId() === props.trackId;
-  // Track the currently dragged point index for visual feedback
 
-  /** Function to calculate point positions from data points */
-  const calculatePointPositions = () => {
-    if (
-      !props.automationLane.points ||
-      props.automationLane.points.length === 0
-    ) {
-      setPointPositions([]);
-      setSvgPath("");
-      return;
-    }
+  /** Pixel positions of the lane's points, sorted by time, for the current zoom and scroll. */
+  const pointPositions = createMemo(() =>
+    [...(props.automationLane.points ?? [])]
+      .sort((a, b) => durationToMs(a.position) - durationToMs(b.position))
+      .map((point) => ({
+        x: msToPixels(durationToMs(point.position), ctx.zoom()),
+        // SVG Y runs top to bottom, while automation values run bottom to top.
+        y: TRACK_HEIGHT - point.value * TRACK_HEIGHT,
+      })),
+  );
 
-    // Sort points by position
-    const sortedPoints = [...props.automationLane.points].sort(
-      (a, b) => durationToMs(a.position) - durationToMs(b.position),
-    );
-
-    // Calculate pixel positions for each point
-    const positions = sortedPoints.map((point) => {
-      const x = msToPixels(
-        durationToMs(point.position) - ctx.start(),
-        ctx.zoom(),
-      );
-      // Invert Y coordinate (SVG Y is top to bottom, but we want bottom to top for automationLane value)
-      const y = TRACK_HEIGHT - point.value * TRACK_HEIGHT;
-      return { x, y };
-    });
-
-    setPointPositions(positions);
-
-    /** Generate SVG path from points, accounting for dragged point */
-    const updateSvgPath = () => {
-      const points = pointPositions();
-      const dragged = draggedPoint();
-
-      if (points.length === 0) {
-        setSvgPath("");
-        return;
-      }
-
-      let path = `M ${points[0].x} ${points[0].y}`;
-
-      for (let i = 1; i < points.length; i++) {
-        if (dragged?.index === i) {
-          // Use dragged position for the point being dragged
-          path += ` L ${dragged.x} ${dragged.y}`;
-        } else if (dragged?.index === i - 1) {
-          // If previous point is being dragged, connect to it
-          path += ` L ${dragged.x} ${dragged.y}`;
-          // Add the next point if it's not the dragged point
-          if (i < points.length - 1 || dragged.index !== i) {
-            path += ` L ${points[i].x} ${points[i].y}`;
-          }
-        } else if (i - 1 !== dragged?.index) {
-          // Normal point connection
-          path += ` L ${points[i].x} ${points[i].y}`;
-        }
-      }
-
-      setSvgPath(path);
-    };
-
-    // Update SVG path when points or dragged point changes
-    createEffect(updateSvgPath);
-  };
-
-  // Update path when points change
-  createEffect(() => {
-    // Track dependency for reactive updates
-    void props.automationLane.points;
-    calculatePointPositions();
-  });
-
-  // Separate effect to update positions when zoom or start position changes
-  createEffect(() => {
-    // Track dependencies for reactive updates
-    void ctx.zoom();
-    void ctx.start();
-
-    // Only recalculate if we have points
-    if (props.automationLane.points.length > 0) {
-      calculatePointPositions();
-    }
-  });
+  /** SVG polyline through the points, following a point while it is dragged. */
+  const svgPath = createMemo(() =>
+    automationLinePath(pointPositions(), draggedPoint()),
+  );
 
   /** Handle track click */
   const handleTrackClick = (e: MouseEvent) => {
@@ -324,7 +263,7 @@ export const AutomationLane: Component<AutomationLaneProps> = (props) => {
       const y = e.clientY - rect.top;
 
       // Convert to automationLane position and value
-      const position = ctx.start() + pixelsToMs(x, ctx.zoom());
+      const position = pixelsToMs(x, ctx.zoom());
       // Invert Y coordinate (SVG Y is top to bottom, but automationLane value is bottom to top)
       const value = 1 - y / TRACK_HEIGHT;
 
@@ -391,10 +330,7 @@ export const AutomationLane: Component<AutomationLaneProps> = (props) => {
 
     if (actualPointIndex !== -1) {
       // Calculate the new position in the timeline (convert from pixels to timeline time)
-      const timelinePosition = Math.max(
-        0,
-        ctx.start() + pixelsToMs(dragged.x, ctx.zoom()),
-      );
+      const timelinePosition = Math.max(0, pixelsToMs(dragged.x, ctx.zoom()));
       // Calculate the new value (inverted Y coordinate), clamped between 0 and 1
       const newValue = Math.max(0, Math.min(1, 1 - dragged.y / TRACK_HEIGHT));
 
@@ -492,7 +428,6 @@ export const AutomationLane: Component<AutomationLaneProps> = (props) => {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               trackHeight={TRACK_HEIGHT}
-              startTime={ctx.start()}
               zoom={ctx.zoom()}
               isDragging={!!draggedPoint()}
               canEdit={isTrackHighlighted}

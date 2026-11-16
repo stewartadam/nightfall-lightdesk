@@ -1107,7 +1107,7 @@ test("demo hides showfile storage actions and fails them fast", async ({
     return Promise.all(
       commands.map(async (command) => {
         const result = await Promise.race([
-          stores.sendAndAwait({ module: "DeskCommand", command }),
+          stores.sendAndAwait({ module: "ShowfileCommand", command }),
           new Promise((resolve) => setTimeout(() => resolve(null), 5_000)),
         ]);
         return result as { outcome: { type: string; data?: any } } | null;
@@ -1116,7 +1116,9 @@ test("demo hides showfile storage actions and fails them fast", async ({
   });
   for (const result of results) {
     expect(result?.outcome.type).toBe("Failed");
-    expect(result?.outcome.data?.code).toBe("desk.disk_storage_unavailable");
+    expect(result?.outcome.data?.code).toBe(
+      "showfile.disk_storage_unavailable",
+    );
   }
 });
 

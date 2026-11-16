@@ -30,8 +30,8 @@ import { GridCellKind } from "../../../lib/data-grid-types";
 import { getRowsToEdit } from "../../../lib/datagrid";
 import { fixtureRefKey } from "../../../lib/selection-resolution";
 import {
+  fanTimingDurations,
   parseTimingFanInput,
-  resolveTimingFanDuration,
 } from "../../../lib/timing-fan";
 import {
   assertionStyleForMarkerEdit,
@@ -162,7 +162,7 @@ export function createCueEditorEditController(
             );
             if (!instructionItem) continue;
 
-            const { cue_instruction: instruction } = instructionItem;
+            const { assertions: instruction } = instructionItem;
             if (assertionStyle !== undefined) {
               const valueKey = normalizedAttributeKey(instruction.values, attr);
               const convertedSource = convertValueSourceAssertionStyle(
@@ -211,8 +211,7 @@ export function createCueEditorEditController(
                   ? updatedCue.instructions
                   : updatedCue.parts?.[target.partIndex]?.instructions;
               const instruction =
-                targetInstructionContainer?.[target.selectionIndex]
-                  ?.cue_instruction;
+                targetInstructionContainer?.[target.selectionIndex]?.assertions;
               if (!instruction) continue;
               if (
                 transitionForFixtureAttribute(
@@ -239,8 +238,7 @@ export function createCueEditorEditController(
                   ? updatedCue.instructions
                   : updatedCue.parts?.[target.partIndex]?.instructions;
               const instruction =
-                targetInstructionContainer?.[target.selectionIndex]
-                  ?.cue_instruction;
+                targetInstructionContainer?.[target.selectionIndex]?.assertions;
               if (!instruction) continue;
               upsertInstructionFixtureAttributeTiming(
                 instruction,
@@ -272,14 +270,21 @@ export function createCueEditorEditController(
   ): boolean => {
     let changed = false;
     const validMembers = members.filter((member) => member.targets.length > 0);
+    const memberDurations = fanTimingDurations(
+      fanDurations,
+      validMembers.length,
+    );
+    if (!memberDurations) return false;
     for (const [offset, member] of validMembers.entries()) {
+      const duration = memberDurations[offset];
+      if (!duration) continue;
       changed =
         applyFixedTimingToFanMember(
           updatedCue,
           member,
           attr,
           field,
-          resolveTimingFanDuration(fanDurations, offset, validMembers.length),
+          duration,
         ) || changed;
     }
     return changed;
@@ -601,7 +606,7 @@ export function createCueEditorEditController(
           ? updatedCue.instructions
           : updatedCue.parts?.[selected.partIndex]?.instructions;
       const instruction =
-        instructionContainer?.[selected.selectionIndex]?.cue_instruction;
+        instructionContainer?.[selected.selectionIndex]?.assertions;
       if (!instruction) continue;
       for (const field of selected.fields) {
         if (

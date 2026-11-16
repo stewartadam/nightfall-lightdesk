@@ -12,8 +12,8 @@ use bevy_ecs::{
 };
 use nightfall::prelude::*;
 use nightfall_clips::Clip;
+use nightfall_controls::prelude::*;
 use nightfall_cues::prelude::*;
-use nightfall_desk::prelude::*;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::*;
 use nightfall_flow::prelude::*;
@@ -22,7 +22,7 @@ use nightfall_fx::prelude::*;
 use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
-use nightfall_io::IoRuntimeSettings;
+use nightfall_park::prelude::ParkedParameters;
 use nightfall_scene_objects::prelude::*;
 use nightfall_tempo::prelude::*;
 use nightfall_timecode::prelude::*;
@@ -33,7 +33,7 @@ use crate::{
     contributors::{
         BoardsSaveContributor, ClipsSaveContributor, ColorPathsSaveContributor,
         CueStructureSaveContributor, DeskStateSaveContributor, FixturesPatchSaveContributor,
-        FlowsSaveContributor, FxSaveContributor, MacrosSaveContributor,
+        FlowsSaveContributor, FxSaveContributor, MacrosSaveContributor, ParkSaveContributor,
         SceneObjectsSaveContributor, ShowfileSaveContributor, TimecodesTimelinesSaveContributor,
         collect_save_contributions,
     },
@@ -58,6 +58,7 @@ pub struct ShowfileSaveState<'w, 's> {
     timeline_data_provider: Res<'w, DataProvider<Timeline>>,
     board_data_provider: Res<'w, DataProvider<Board>>,
     macro_data_provider: Res<'w, DataProvider<Macro>>,
+    parked: Option<Res<'w, ParkedParameters>>,
     input_routes: Res<'w, InputRoutes>,
     output_routes: Res<'w, OutputRoutes>,
     disabled_routes: Res<'w, DisabledRoutes>,
@@ -68,9 +69,9 @@ pub struct ShowfileSaveState<'w, 's> {
     clip_query: Query<'w, 's, &'static Clip>,
     global_variables: Res<'w, GlobalVariables>,
     faders: Res<'w, Faders>,
-    /// Mutable desk settings allow the native save workflow to apply save-time UI state first.
-    pub desk_settings: ResMut<'w, DeskSettings>,
-    io_settings: Res<'w, IoRuntimeSettings>,
+    settings: Option<Res<'w, SettingsValues>>,
+    /// Disk save choices, absent when no host registered them.
+    pub showfile_settings: Option<Res<'w, crate::ShowfileSettings>>,
     tempo: Option<Res<'w, ShowTempo>>,
 }
 
@@ -81,8 +82,7 @@ pub fn snapshot_from_save_state(
     let desk_state_contributor = DeskStateSaveContributor::new(
         showfile_save_state.global_variables.as_ref(),
         &showfile_save_state.faders,
-        &showfile_save_state.desk_settings,
-        &showfile_save_state.io_settings,
+        showfile_save_state.settings.as_deref(),
         showfile_save_state.tempo.as_deref(),
     );
     let fixtures_patch_contributor = FixturesPatchSaveContributor::new(
@@ -121,6 +121,10 @@ pub fn snapshot_from_save_state(
     );
     let boards_contributor = BoardsSaveContributor::new(&showfile_save_state.board_data_provider);
     let macros_contributor = MacrosSaveContributor::new(&showfile_save_state.macro_data_provider);
+    let park_contributor = ParkSaveContributor::new(
+        showfile_save_state.parked.as_deref(),
+        &showfile_save_state.fixture_data_provider,
+    );
 
     collect_save_contributions(&[
         &desk_state_contributor as &dyn ShowfileSaveContributor,
@@ -134,11 +138,13 @@ pub fn snapshot_from_save_state(
         &timecodes_timelines_contributor,
         &boards_contributor,
         &macros_contributor,
+        &park_contributor,
     ])
 }
 
 /// Serialize a standalone ECS world through the same contributor path used by native saves.
 pub fn snapshot_from_world(world: &mut World) -> Result<ShowfileSnapshot, String> {
+    sync_settings_values(world);
     world
         .run_system_once(|showfile_save_state: ShowfileSaveState| {
             snapshot_from_save_state(&showfile_save_state)

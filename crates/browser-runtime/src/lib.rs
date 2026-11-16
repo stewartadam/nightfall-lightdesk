@@ -8,10 +8,11 @@
 
 //! The browser demo engine: a reduced Nightfall engine that runs in a web worker.
 //!
-//! [`BrowserEngine`] builds the engine from a sample showfile with its own hand-written plugin
-//! list, leaving out native-only crates such as the network transports. The worker calls
-//! [`BrowserEngine::tick`] at the engine's frame rate, queues client commands and updates
-//! for the next tick, and drains the encoded messages that a websocket would otherwise carry.
+//! [`BrowserEngine`] builds the engine from a sample showfile with the shared [`ShowPlugins`]
+//! and a built-in fixture library, leaving out native-only crates such as the network
+//! transports. The worker calls [`BrowserEngine::tick`] at the engine's frame rate, queues client
+//! commands and updates for the next tick, and drains the encoded messages that a websocket
+//! would otherwise carry.
 
 #![warn(missing_docs)]
 
@@ -21,32 +22,21 @@ pub mod fixture_library;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use async_channel::{Receiver, Sender};
-use bevy_app::App;
-use bevy_diagnostic::{FrameCountPlugin, FrameTimeDiagnosticsPlugin};
+use bevy_app::{App, PluginGroup};
+use bevy_diagnostic::{EntityCountDiagnosticsPlugin, FrameCountPlugin, FrameTimeDiagnosticsPlugin};
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::NextState;
 use bevy_time::{TimePlugin, TimeUpdateStrategy};
-use nightfall_actions::ActionsPlugin;
-use nightfall_boards::prelude::BoardsPlugin;
-use nightfall_cues::prelude::CuePlugin;
-use nightfall_desk::{prelude::DeskPlugin, resources::log_config::LogConfig};
-use nightfall_engine::EnginePlugin;
+use nightfall_composition::ShowPlugins;
+use nightfall_engine::logging::LogConfig;
 use nightfall_engine::prelude::{
-    AppState, ClientBridgeHost, ClientBridgePlugin, ClientId, CommandJsonEnvelope, CommandSender,
-    DataProvider, OutboundFrame, ReplyTarget, RuntimeCapabilities, UpdateJsonEnvelope,
+    AppState, ClientBridgeHost, ClientId, CommandEnvelope, CommandError, CommandJsonEnvelope,
+    CommandResponder, CommandSender, EngineCommand, OutboundFrame, ReplyTarget,
+    RuntimeCapabilities, UpdateJsonEnvelope,
 };
-use nightfall_fixtures::prelude::{FixtureCompositorPlugin, FixturePlugin};
-use nightfall_flow::prelude::FlowPlugin;
+use nightfall_fixtures::prelude::FixturePlugin;
 use nightfall_framepace::prelude::{FramepaceSettings, Limiter};
-use nightfall_fx::prelude::{FxPlugin, StoredFxModule};
-use nightfall_macros::prelude::MacrosPlugin;
-use nightfall_programmer::prelude::ProgrammerPlugin;
-use nightfall_references::ReferencesPlugin;
-use nightfall_scene_objects::prelude::SceneObjectPlugin;
-use nightfall_tempo::prelude::TempoPlugin;
-use nightfall_timecode::prelude::TimecodePlugin;
 use nightfall_timeline::prelude::TimelinePlugin;
-use nightfall_undo::prelude::UndoPlugin;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -189,18 +179,13 @@ fn set_construction_stage(stage: u8) {
 #[cfg(target_arch = "wasm32")]
 fn construction_stage_name(stage: u8) -> &'static str {
     match stage {
-        1 => "adding EnginePlugin",
-        2 => "adding UndoPlugin",
-        3 => "adding ClientBridgePlugin",
-        4 => "adding FixturePlugin",
-        5 => "adding BuiltinFixtureLibraryPlugin",
-        6 => "adding FixtureCompositorPlugin",
-        7 => "loading the demo showfile",
-        8 => "attaching the client bridge host",
-        9 => "running startup frame one",
-        10 => "running startup frame two",
-        11 => "running startup frame three",
-        12 => "applying the ready-state frame",
+        1 => "adding the show plugins",
+        2 => "loading the demo showfile",
+        3 => "attaching the client bridge host",
+        4 => "running startup frame one",
+        5 => "running startup frame two",
+        6 => "running startup frame three",
+        7 => "applying the ready-state frame",
         _ => "outside runtime construction",
     }
 }
@@ -219,7 +204,11 @@ impl BrowserEngine {
             std::time::Duration::ZERO,
         ));
         // Real time advances by the host tick delta, so these report the worker's engine rate.
-        app.add_plugins((FrameCountPlugin, FrameTimeDiagnosticsPlugin::default()));
+        app.add_plugins((
+            FrameCountPlugin,
+            FrameTimeDiagnosticsPlugin::default(),
+            EntityCountDiagnosticsPlugin::default(),
+        ));
         // The worker paces ticks itself, so only the `fps` command handling is shared with the
         // native frame limiter, whose sleeping limiter cannot run in a browser.
         app.insert_resource(
@@ -227,45 +216,27 @@ impl BrowserEngine {
                 .with_limiter(Limiter::from_framerate(DEFAULT_TICK_RATE_HZ)),
         );
         app.add_systems(
-            bevy_app::Update,
-            nightfall_framepace::handle_events.in_set(nightfall_engine::prelude::EventHandling),
+            nightfall_engine::prelude::ApplyCommands,
+            (nightfall_framepace::handle_events, reject_quit_commands)
+                .in_set(nightfall_engine::prelude::EventHandling),
         );
         set_construction_stage(1);
-        app.add_plugins(EnginePlugin);
+        app.add_plugins(
+            ShowPlugins {
+                log_config: LogConfig::disconnected(),
+                timeline: TimelinePlugin::browser_demo(),
+            }
+            .build()
+            .add_after::<FixturePlugin>(BuiltinFixtureLibraryPlugin),
+        );
         set_construction_stage(2);
-        app.add_plugins(UndoPlugin);
-        set_construction_stage(3);
-        app.add_plugins(ClientBridgePlugin);
-        app.add_plugins(ActionsPlugin);
-        set_construction_stage(4);
-        app.add_plugins(FixturePlugin);
-        set_construction_stage(5);
-        app.add_plugins(BuiltinFixtureLibraryPlugin);
-        set_construction_stage(6);
-        app.add_plugins(FixtureCompositorPlugin);
-        app.add_plugins(SceneObjectPlugin);
-        app.add_plugins(DeskPlugin {
-            log_config: LogConfig::disconnected(),
-        });
-        app.add_plugins(ProgrammerPlugin);
-        app.add_plugins(CuePlugin);
-        app.add_plugins(BoardsPlugin);
-        app.add_plugins(MacrosPlugin);
-        app.add_plugins(TempoPlugin);
-        app.add_plugins(FxPlugin);
-        app.init_resource::<DataProvider<StoredFxModule>>();
-        app.add_plugins(FlowPlugin);
-        app.add_plugins(ReferencesPlugin);
-        app.add_plugins(TimecodePlugin);
-        app.add_plugins(TimelinePlugin::browser_demo());
-        set_construction_stage(7);
         let snapshot = nightfall_showfile::parse_showfile_snapshot_json(
             showfile_json,
             &format!("embedded browser sample {sample_id}"),
         )?;
         nightfall_showfile::apply_showfile_snapshot_to_world(app.world_mut(), snapshot)?;
 
-        set_construction_stage(8);
+        set_construction_stage(3);
         let (command_tx, update_tx, output_rx) = {
             let mut host = app.world_mut().resource_mut::<ClientBridgeHost>();
             let output_rx = host
@@ -355,17 +326,39 @@ impl BrowserEngine {
 
 /// Run startup systems to completion and expose the loaded showfile as ready.
 fn settle_loaded_runtime(app: &mut App) {
-    set_construction_stage(9);
+    set_construction_stage(4);
     app.update();
-    set_construction_stage(10);
+    set_construction_stage(5);
     app.update();
-    set_construction_stage(11);
+    set_construction_stage(6);
     app.update();
     app.world_mut()
         .resource_mut::<NextState<AppState>>()
         .set(AppState::Ready);
-    set_construction_stage(12);
+    set_construction_stage(7);
     app.update();
+}
+
+/// Fails `quit` commands, since the page hosting the demo, not the engine, decides when it
+/// closes; without this the command would never finish.
+fn reject_quit_commands(
+    mut events: MessageReader<CommandEnvelope<EngineCommand>>,
+    mut responder: CommandResponder,
+) {
+    for event in events
+        .read()
+        .filter(|event| matches!(event.command, EngineCommand::Quit))
+    {
+        if let Err(error) = responder.fail(
+            event.command_id,
+            CommandError::new(
+                "browser.quit_unavailable",
+                "The browser demo cannot quit; close its tab instead.",
+            ),
+        ) {
+            tracing::error!(command_id = %event.command_id, %error, "quit_command_failure_failed");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -654,26 +647,40 @@ mod tests {
         }
     }
 
-    /// Verify the demo answers showfile save and load commands with a disk storage failure
-    /// on the next tick instead of leaving them pending forever.
+    /// Verify the demo answers showfile save and load commands, which need disk storage, and
+    /// quit, which the hosting page owns, with a failure on the next tick instead of leaving
+    /// them pending forever.
     #[test]
-    fn showfile_storage_commands_fail_fast() {
+    fn unsupported_commands_fail_fast() {
         let mut engine = sample_engine();
 
-        for command in [
-            json!({ "type": "SaveShowfile" }),
-            json!({ "type": "LoadNamedShowfile", "data": "tour" }),
+        for (module, command, code) in [
+            (
+                "ShowfileCommand",
+                json!({ "type": "SaveShowfile" }),
+                "showfile.disk_storage_unavailable",
+            ),
+            (
+                "ShowfileCommand",
+                json!({ "type": "LoadNamedShowfile", "data": "tour" }),
+                "showfile.disk_storage_unavailable",
+            ),
+            (
+                "EngineCommand",
+                json!({ "type": "Quit" }),
+                "browser.quit_unavailable",
+            ),
         ] {
             let command_id = Uuid::new_v4();
             let envelope = serde_json::from_value(json!({
                 "command_id": command_id,
-                "module": "DeskCommand",
+                "module": module,
                 "command": command,
             }))
-            .expect("desk command should deserialize");
+            .expect("command should deserialize");
             engine
                 .enqueue_command_core(envelope)
-                .expect("desk command should enqueue");
+                .expect("command should enqueue");
             engine.tick_core(16.0);
 
             let command_id_text = command_id.simple().to_string();
@@ -689,7 +696,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{command} should complete within one tick"));
             assert_eq!(result["data"]["outcome"]["type"], "Failed", "{result:#?}");
             assert_eq!(
-                result["data"]["outcome"]["data"]["code"], "desk.disk_storage_unavailable",
+                result["data"]["outcome"]["data"]["code"], code,
                 "{result:#?}"
             );
         }

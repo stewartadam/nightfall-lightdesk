@@ -26,9 +26,11 @@ pub mod command_types;
 pub mod constants;
 pub mod data;
 pub mod engine;
+pub mod fan;
 pub mod macros;
 pub mod object_query;
 pub mod partial_result;
+pub mod playback_speed;
 pub mod spanned_selection;
 pub mod spatial_projection;
 pub mod stores;
@@ -48,7 +50,9 @@ pub mod prelude {
     pub use crate::color_path::{
         ColorAttributeTiming, ColorInterpolationSpace, ColorPath, ColorPathDefault, ColorPathId,
         ColorPathRgb, ColorPathTiming, ColorPathTimingComponent, HueDirection, builtin_color_paths,
-        resolved_interpolation_space, sample_color_path,
+        color_path_channel_ratio, color_path_midpoint_brightness_multiplier,
+        color_path_preview_samples, resolved_interpolation_space, sample_color_path,
+        sample_color_path_with_timing,
     };
     pub use crate::command_types::{
         Axis, ElementSelectorExpr, FixtureRangeExpr, GridSize, GroupRefExpr, IdExpr,
@@ -56,7 +60,12 @@ pub mod prelude {
         ProjectionBounds, ResolvedSelection, SelectionExpr, SelectionIndex, SelectionType,
         SpatialClause, SpatialSelection, UnresolvedFixtureRef,
     };
-    pub use crate::data::{FixtureRef, Group, HasIdentifiers, Identifiers, Priority, References};
+    pub use crate::data::{
+        FixtureRef, Group, HasIdentifiers, Identifiers, Priority, References, RigSource,
+    };
+    pub use crate::fan::{
+        resolve_fan, resolve_fan_duration, resolve_fan_number, resolve_fanned_parameter_value,
+    };
     pub use crate::macros::Macro;
     pub use crate::object_query::{ObjectIdRange, ObjectQuery};
     pub use crate::partial_result::PartialResult;
@@ -73,6 +82,7 @@ pub mod prelude {
         SequenceStepTiming, SequenceStepTimingSummary, SequenceTimingSummary, Transition,
         TransitionMode, cue_authored_duration, evaluate_cubic_bezier, sequence_activation_interval,
         sequence_next_activation_position, sequence_timing_summary,
+        sequence_wraparound_is_zero_length,
     };
     pub use crate::value_source::ValueSource;
     pub use crate::variables::VariableValue;
@@ -83,6 +93,8 @@ use uuid::Uuid;
 
 static ACTIVE_SHOW_DATA_DIR: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
 static CONFIGURED_DATA_DIR: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
+static SHOW_STORAGE_IS_FAILOVER: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// Returns the Nightfall data directory.
 ///
@@ -128,6 +140,33 @@ pub fn clear_active_show_data_dir() {
         .write()
         .expect("active show data directory lock should not be poisoned");
     *guard = None;
+}
+
+/// Returns the folder that holds a failover pair's show and its assets, kept apart from this
+/// computer's own showfiles so a backup never adds to or overwrites them.
+pub fn failover_data_dir() -> Option<PathBuf> {
+    nightfall_data_dir().map(|data_dir| data_dir.join(crate::constants::FAILOVER_DIR))
+}
+
+/// Returns the folder that holds the open show's saved copy, working draft and backups: the
+/// failover folder while this computer runs a failover pair's show, otherwise the data directory.
+pub fn show_storage_root() -> Option<PathBuf> {
+    if show_storage_is_failover() {
+        failover_data_dir()
+    } else {
+        nightfall_data_dir()
+    }
+}
+
+/// Returns whether the open show is stored in the failover folder rather than with this
+/// computer's own showfiles.
+pub fn show_storage_is_failover() -> bool {
+    SHOW_STORAGE_IS_FAILOVER.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Selects where the open show is stored: the failover folder, or this computer's showfiles.
+pub fn set_show_storage_failover(failover: bool) {
+    SHOW_STORAGE_IS_FAILOVER.store(failover, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Returns the process-wide active show data directory lock.

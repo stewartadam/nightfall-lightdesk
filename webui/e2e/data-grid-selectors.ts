@@ -137,3 +137,26 @@ export async function gridCellByIdentifier(
   if (!rowKey) throw new Error("Expected grid row key after identifier lookup");
   return gridCellByKey(grid, { columnKey: options.columnKey, rowKey });
 }
+
+/**
+ * Verifies a patch conflict cell uses conflict text and shows a warning icon laid out ahead of
+ * its value, so the icon never covers the text and the text is not clipped.
+ */
+export async function expectPatchConflictCellPresentation(cell: Locator) {
+  await expect(cell).toHaveCSS("color", "rgb(239, 68, 68)");
+  const icon = cell.getByRole("img", { name: "Conflict", exact: true });
+  await expect(icon).toBeVisible();
+  const layout = await cell.evaluate((element) => {
+    const iconElement = element.querySelector('[aria-label="Conflict"]');
+    const text = element.querySelector<HTMLElement>(".truncate");
+    if (!iconElement || !text) return undefined;
+    return {
+      iconRight: iconElement.getBoundingClientRect().right,
+      textLeft: text.getBoundingClientRect().left,
+      clipped: text.scrollWidth > text.clientWidth,
+    };
+  });
+  expect(layout).toBeDefined();
+  expect(layout!.iconRight).toBeLessThanOrEqual(layout!.textLeft);
+  expect(layout!.clipped).toBe(false);
+}

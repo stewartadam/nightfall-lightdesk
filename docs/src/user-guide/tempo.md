@@ -50,7 +50,9 @@ A press that lands just after the beat or downbeat (within a twentieth of a beat
 
 **Launch armed clips now** (the lightning button in the Tempo panel toolbar, also available as a mappable action) fires everything that is waiting straight away.
 
-Held **Flash** and **Swop** buttons always act at once, and timeline and flow playback never wait.
+Held **Flash** and **Swop** buttons always act at once. Timeline and flow playback never wait, and neither do clip launches that a macro runs.
+
+Changing the mode affects only later presses. Clips already waiting still fire on the beat they were waiting for, even after you switch to **Off**. Opening another show cancels every waiting launch.
 
 ## Commands
 

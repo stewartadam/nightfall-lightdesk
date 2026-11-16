@@ -1,0 +1,34 @@
+[package]
+name = "nightfall-park"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+moonshine-kind.workspace = true
+nightfall = { path = "../common" }
+nightfall-actions = { path = "../actions" }
+nightfall-cmd-parse = { path = "../cmd-parse" }
+nightfall-compositor = { path = "../compositor" }
+nightfall-dmx = { path = "../dmx" }
+nightfall-engine = { path = "../engine" }
+nightfall-fixtures = { path = "../fixtures" }
+nightfall-programming = { path = "../programming" }
+nightfall-selection-runtime = { path = "../selection-runtime" }
+nightfall-undo = { path = "../undo" }
+serde.workspace = true
+tracing.workspace = true
+typeshare.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nightfall-workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[dev-dependencies]
+nightfall-fixture-model = { path = "../fixture-model" }
+serde_json.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

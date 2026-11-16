@@ -42,6 +42,7 @@ import {
   clearSelectionFlattenConfirmation,
   cueDefinitionsLoaded,
   dmxUniverseWatch,
+  markPendingConsoleCommandsUnknown,
   referenceList,
   referenceListWatch,
   runtimeCapabilities,
@@ -61,7 +62,9 @@ import {
   registerCommandResultWaiter,
   registerPendingCurrentShowfileName,
   rejectPendingCommandWaiters,
+  releasePendingCommandWaiters,
   selectionFlattenRetryFromResult,
+  settleCommandCorrelation,
 } from "./command-correlation";
 import { normalizeCorrelationId } from "./console-scrollback";
 import type { EngineRuntimeConfig } from "./engine-runtime-protocol";
@@ -482,6 +485,27 @@ function markResyncPending(): void {
 const BACKEND_SESSION_CHANGED_CONFIRMATION_CANCEL_REASON =
   "Selection flatten confirmation canceled: backend session changed";
 
+/**
+ * Fails a command the worker dropped because the socket was closed between reconnects: rejects
+ * its result waiter, so serialized senders such as the command line move on, and marks its
+ * console entry as failed. Untracked updates carry no command ID and need no cleanup.
+ */
+function rejectDroppedCommand(commandId: string | null) {
+  if (!commandId) return;
+  const commandKey = normalizeCorrelationId(commandId);
+  log.warn("Command dropped while reconnecting:", commandKey);
+  const { waiter } = settleCommandCorrelation(commandKey);
+  waiter?.reject(new EngineRuntimeCommandDisconnectedError());
+  applyConsoleCommandResult(commandKey, {
+    type: "Failed",
+    data: {
+      code: "client.disconnected",
+      message: "Failed to send command: disconnected",
+      details: null,
+    },
+  });
+}
+
 /** Cancels an outstanding selection-flatten confirmation and resolves its command as an error. */
 function cancelPendingSelectionFlattenConfirmation(reason: string) {
   const pendingConfirmation = selectionFlattenConfirmation.get();
@@ -511,8 +535,26 @@ export class EngineRuntimeCommandDisconnectedError extends Error {
   }
 }
 
+/** Warning shown on console entries whose result was discarded by a websocket resync. */
+const RESULT_LOST_DURING_RESYNC_MESSAGE =
+  "Result lost during resync; check that the command took effect";
+
 /**
- * Returns the console statement carried by a desk `Eval` command envelope, so typed
+ * Identifies a command whose result was discarded when the websocket worker fell behind and
+ * resynced. The command may still have run. It extends the disconnected error so callers that
+ * already move on from an interrupted result treat a lost one the same way.
+ */
+export class EngineRuntimeCommandResultLostError extends EngineRuntimeCommandDisconnectedError {
+  /** Creates the error that rejects every result waiter pending when a resync starts. */
+  constructor() {
+    super();
+    this.message = "Command result was lost during a websocket resync";
+    this.name = "EngineRuntimeCommandResultLostError";
+  }
+}
+
+/**
+ * Returns the console statement carried by an `EngineCommand::Eval` envelope, so typed
  * statements sent from panels echo in console scrollback like ones typed at the command line.
  */
 function evalStatementOf(data: object): string | undefined {
@@ -650,12 +692,26 @@ export const engineRuntime = {
           requestUrgentWebsocketPull();
           break;
 
+        case "submitDropped":
+          rejectDroppedCommand(msg.commandId);
+          break;
+
         case "resyncRequired":
           log.warn(
             "WebSocket worker requested resync:",
             msg.reason ?? "unspecified reason",
           );
           markResyncPending();
+          // The worker discarded queued messages, which may include command results, so no
+          // pending command can count on its result anymore. A command parked behind the
+          // selection-flatten dialog already has its result and keeps its pending row.
+          releasePendingCommandWaiters(
+            new EngineRuntimeCommandResultLostError(),
+          );
+          markPendingConsoleCommandsUnknown(
+            RESULT_LOST_DURING_RESYNC_MESSAGE,
+            selectionFlattenConfirmation.get()?.correlationId,
+          );
           this.sendCommand({
             module: "EngineCommand",
             command: {
@@ -797,7 +853,7 @@ export const engineRuntime = {
   /**
    * Stamps command and undo identity onto a command envelope, registers the optional result
    * waiter, and posts the envelope to the worker. Console scrollback tracks the operator text,
-   * or the statement of a desk `Eval` command when no text is given. Throws when the runtime
+   * or the statement of an `EngineCommand::Eval` when no text is given. Throws when the runtime
    * is disconnected or the payload cannot be serialized, after recording a console send error.
    */
   postCommand(

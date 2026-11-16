@@ -38,7 +38,7 @@ sequenceDiagram
   participant Expand as Eval expansion
   participant Undo as Undo capture
   participant Prog as Programmer
-  UI->>Bridge: DeskCommand Eval envelope
+  UI->>Bridge: EngineCommand Eval envelope
   Note over Bridge: Register command ID, undo ID, reply target
   Bridge->>Expand: Eval wrapper in the pending buffer
   Note over Expand: Parse text, run AST converters
@@ -56,12 +56,12 @@ The command line splits your input into statements with the same Rust statement 
 
 Each statement travels as a command envelope, a JSON object with these fields:
 
-- `module`: the name of the command type, here `DeskCommand`.
+- `module`: the name of the command type, here `EngineCommand`.
 - `command`: the serialized command, here `{ "type": "Eval", "data": "fixture 1 red @ 100" }`.
 - `command_id`: a fresh UUID that identifies this command until its result arrives.
 - `undo_id`: the undo group the command belongs to. It defaults to the command ID, so each statement undoes on its own.
 
-`DeskCommand::Eval` carries command text that the engine parses itself. Panels that already know the exact change send typed commands instead, such as a `ProgrammerCommand`, and skip the parsing stages below.
+`EngineCommand::Eval` carries command text that the engine parses itself. Panels that already know the exact change send typed commands instead, such as a `ProgrammerCommand`, and skip the parsing stages below.
 
 The host that carries the envelope stamps a reply target on it. The websocket host uses the sending client's session, and a client can't choose another session's target. For the transports and the outbound format, see [how the engine and the web UI talk](../architecture/client-protocol.md).
 
@@ -73,7 +73,7 @@ For each envelope, the bridge first registers the command with the command track
 
 The bridge then looks up the deserializer registered for the `module` name and calls it. An unknown module or a payload that doesn't deserialize finishes the command as failed right away, so the web UI always gets an answer.
 
-The desk deserializer doesn't execute `Eval`. It pushes the wrapper into the pending command buffer, a queue of type-erased commands waiting for undo capture and dispatch.
+The engine deserializer doesn't execute `Eval`. It pushes the wrapper into the pending command buffer, a queue of type-erased commands waiting for undo capture and dispatch.
 
 ### Eval expansion parses the text
 
@@ -119,7 +119,7 @@ A payload type without a registered route finishes its command as failed with `c
 
 ### The handler changes state and reports the result
 
-Domain handlers run in the `EventHandling` set and read their typed messages. The programmer's handler resolves the selection. When `fixture 1` resolves to nothing, it fails the command. Otherwise it adds the instruction to the programmer, applies per-fixture overrides, follows the selection when auto-select is on, and marks the command as succeeded.
+Domain handlers run in the `EventHandling` set of the `ApplyCommands` schedule and read their typed messages. The programmer's handler resolves the selection. When `fixture 1` resolves to nothing, it fails the command. Otherwise it adds the instruction to the programmer, applies per-fixture overrides, follows the selection when auto-select is on, and marks the command as succeeded.
 
 Handlers finish commands through the command responder, a Bevy system parameter that wraps the command tracker. Finishing writes three messages: the `CommandResult` for clients, a reply that carries the reply target, and a finished-command record. In the `Last` schedule, the undo system reads the finished-command records. It commits a successful command's undo group to history and discards a failed command's group, so a failed edit never leaves an undo step behind.
 
@@ -151,21 +151,23 @@ The undo system uses a two-phase design, described in the [undo crate's design r
 - Domains own their undo logic. A command type implements the `Undoable` trait, which returns an inverse and a description, and the domain plugin registers the type with the undo registry. The undo crate doesn't depend on any domain.
 - Inverses are captured before a command runs, through an undo context that gives read-only world access. An inverse that can't be computed returns nothing, and the command isn't undoable.
 - Inverses group by undo ID. Everything one command produces, including all commands from one `Eval`, undoes as one step. An action can lower to several commands that share one undo ID, as a board press does.
-- Undo and redo run in an exclusive system. Undo pops the newest group, computes redo inverses from the current state, pushes them onto the redo stack, and replays the stored inverses through the normal dispatch path. Replayed commands are marked as undo replays, so handlers restore the saved state without validating it as a new edit.
-- When the current state no longer matches what an inverse expects, undo fails with `undo.state_conflict` and leaves the history unchanged.
+- Undo and redo run in an exclusive system and replay a group one entry at a time. For each entry, the system captures the opposite inverse from the current state, then sends the entry through the normal dispatch path as its own step command and waits for its handler to finish it. Replayed commands are marked as undo replays, so handlers restore the saved state without validating it as a new edit.
+- The steps settle within one frame. Command handlers run in their own `ApplyCommands` schedule, and while a step is in flight the undo system asks for that schedule to run again straight away, so most undos finish in the frame they arrive in.
+- Undo and redo commands that arrive during a replay wait their turn, and edits made during a replay join history after it.
+- When the current state no longer matches what an inverse expects, undo fails with `undo.state_conflict`. Entries that already replayed move to the redo stack, and the rest stay on the undo stack.
 - History follows the GURQ model. When you make a new change after undoing, the redo stack collapses back into the undo stack instead of being discarded, so every earlier state stays reachable through undo. History keeps 100 groups by default.
 
 Some changes are captured at the operation stage instead. An engine operation registered for undo is captured when it leaves its own pending buffer, just before the systems that apply it. Fixture snapshots and MIDI and OSC mapping edits use this route. For how commands and operations relate, see [control layers](control-layers.md).
 
 > [!NOTE]
-> The design record describes command-stage capture only. It doesn't cover operation-stage capture or the rule that a failed command's undo group is discarded. Trust the code in `crates/undo/src/` when the two disagree.
+> The design record describes command-stage capture only. It doesn't cover operation-stage capture or the rule that a failed command's undo group is discarded. Trust the code in `crates/undo/src/` when the two disagree. For why undo replays step by step within one frame, see [ADR 5](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/adr/0005-undo-replays-step-by-step.md).
 
 ## Actions take a shorter path in
 
 A bindable action enters the same pipeline after the parsing stages. Suppose a MIDI button is mapped to `clip.go` for `First playback`:
 
 1. The MIDI input system matches the incoming message to the mapping and writes an action invocation with the `Midi` surface.
-1. The action dispatcher runs after input handling and before Eval expansion. It looks up `clip.go` in the action registry, checks that MIDI may invoke it, and calls the lowering registered by the desk plugin.
+1. The action dispatcher runs after input handling and before Eval expansion. It looks up `clip.go` in the action registry, checks that MIDI may invoke it, and calls the lowering registered by the clips plugin.
 1. The lowering registers a new command with the tracker under an `Automation` origin and a `ClientBroadcast` reply target, and pushes `ClipCommand::GoClip` into the pending command buffer.
 1. From here the command follows the typed path: undo capture, the ingress router, and the clip handler, which turns it into a clip operation for the running playback.
 
@@ -189,7 +191,7 @@ To add a new top-level command to the command language, follow the path of an ex
 1. Define the domain command type in the plugin crate. Derive `Serialize`, `Deserialize`, and `EnginePayload`, add the `typeshare` attribute, and implement `IngressCommand`.
 1. In the domain plugin, register the command with `register_ingress_command`. Register a deserializer for the web UI with `register_command_deserializer`. Push undoable commands into the pending command buffer from the deserializer. Writing the typed message directly skips undo capture.
 1. Implement `AstConvert` for a converter type in the domain's `ast_conv.rs`. Return `NotApplicable` for every AST the domain doesn't own, and register the converter with `register_converter` in the plugin.
-1. Add a handler system in the `EventHandling` set that reads `CommandEnvelope<YourCommand>` and finishes every command exactly once through the command responder.
+1. Add a handler system to the `ApplyCommands` schedule, in the `EventHandling` set, that reads `CommandEnvelope<YourCommand>` and finishes every command exactly once through the command responder.
 1. When the command edits show data, implement `Undoable` and register the type with the undo registry. Compute the inverse from the state before the change. Add `UndoPlugin` before your plugin, because it creates the undo registry and the pending command buffer.
 1. Run `pnpm run typeshare` and `pnpm run wasm --dev`, so the web UI gets the new types, its autocomplete uses the new grammar, and the browser demo engine understands the command.
 
@@ -205,21 +207,21 @@ To add a clause to an existing command, such as a new programmer option, skip st
 | Command line sending one `Eval` per statement | `webui/lib/command-sequence.ts`, `webui/lib/engine-runtime.ts` |
 | Command envelope, client bridge, and result forwarding | `crates/engine/src/client_bridge.rs` |
 | Admitting and deserializing incoming commands | `process_json_envelopes` in `crates/engine/src/client_ingress.rs` |
-| `DeskCommand::Eval` and its deserializer | `crates/desk/src/desk_command.rs`, `crates/desk/src/websocket/inbound.rs` |
-| Eval expansion | `expand_pending_eval_commands` and `handle_eval` in `crates/desk/src/systems/event_handlers/desk_events.rs` |
+| `EngineCommand::Eval` and its deserializer | `crates/engine/src/lib.rs`, `crates/engine/src/eval.rs` |
+| Eval expansion | `expand_pending_eval_commands` and `handle_eval` in `crates/engine/src/eval.rs` |
 | `parse_command_string` | `crates/engine/src/lib.rs` |
 | Grammar, AST, and strict parser | `crates/cmd-parse/src/slots/contracts.rs`, `crates/cmd-parse/src/command_family.rs`, `crates/cmd-parse/src/ast.rs`, `crates/cmd-parse/src/parser/strict.rs`, `crates/cmd-parse/src/parser/strict/`, `crates/cmd-parse/src/slots/catalog.rs`, `crates/cmd-parse/src/completion_groups/catalog.rs` |
 | AST converter registry and `dispatch_ast` | `crates/engine/src/protocol/dispatch_ast.rs` |
-| Programmer AST converter | `crates/programmer/src/ast_conv.rs` |
+| AST converters, one per owning crate | `crates/engine/src/ast_conv.rs`, `crates/programming/src/ast_conv.rs`, `crates/clips/src/ast_conv.rs`, `crates/showfile/src/ast_conv.rs`, and others |
 | `PendingCommandBuffer` and `PendingEngineOperationBuffer` | `crates/engine/src/protocol/erased.rs` |
 | `CommandIngressRouter` and `EngineOperationRouter` | `crates/engine/src/protocol/dispatch.rs` |
 | Command lifecycle, `CommandTracker`, `CommandResponder` | `crates/engine/src/command_lifecycle.rs`, `crates/engine/src/protocol/results.rs` |
 | Update system sets and their order | `crates/engine/src/lib.rs` |
 | Undo capture, registry, history, and replay | `crates/undo/src/dispatcher.rs`, `crates/undo/src/manager.rs`, `crates/undo/src/systems.rs` |
-| Programmer instruction handler and inverse | `crates/programmer/src/events/programmer/values.rs`, `crates/programmer/src/undo.rs` |
+| Programmer instruction handler and inverse | `crates/programming/src/events/programmer/values.rs`, `crates/programming/src/undo.rs` |
 | Render schedule and render passes | `crates/engine/src/render_pass.rs` |
 | Action lowering to commands | `crates/actions/src/lowering.rs`, `dispatch_action_invocations` in `crates/actions/src/lib.rs` |
-| Clip actions and MIDI input | `crates/desk/src/automation_actions.rs`, `crates/input_midi/src/lib.rs` |
+| Clip actions and MIDI input | `crates/clips/src/actions.rs`, `crates/input_midi/src/lib.rs` |
 | Example command end to end | `crates/tempo/src/lib.rs`, `crates/tempo/src/ast_conv.rs` |
 
 ## Related topics

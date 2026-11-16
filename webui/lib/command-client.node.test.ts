@@ -58,7 +58,7 @@ test("CommandClient.invoke forwards undo id and console text", async () => {
   const client = new CommandClient(recordingTransport(sent));
 
   const result = await client.invoke(
-    "DeskCommand",
+    "EngineCommand",
     { type: "Eval", data: "clear" },
     { undoId: "batch-1", consoleCommandText: "clear" },
   );
@@ -69,7 +69,7 @@ test("CommandClient.invoke forwards undo id and console text", async () => {
       kind: "invoke",
       data: {
         undo_id: "batch-1",
-        module: "DeskCommand",
+        module: "EngineCommand",
         command: { type: "Eval", data: "clear" },
       },
       consoleCommandText: "clear",

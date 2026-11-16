@@ -29,6 +29,41 @@ pub struct CompositedPrefix {
     pub prev_priority: Option<Priority>,
 }
 
+impl CompositedPrefix {
+    /// Regroups per-shard prefix composites for a new shard layout, so a settled prefix survives
+    /// a change in how many threads composite the layers above it.
+    ///
+    /// The composites are joined into one, then copied out once per new shard. Every shard
+    /// composited the same layers, so they share `prev_priority`.
+    pub fn reshard(composites: Vec<Self>, shards: &[ParameterShard]) -> Vec<Self> {
+        let mut composites = composites.into_iter();
+        let Some(mut joined) = composites.next() else {
+            return shards.iter().map(|_| Self::default()).collect();
+        };
+        for composite in composites {
+            joined.base.absorb(composite.base);
+            joined.attributed.absorb(composite.attributed);
+        }
+        if matches!(shards, [shard] if shard.is_all()) {
+            return vec![joined];
+        }
+        shards
+            .iter()
+            .map(|&shard| Self {
+                base: ComputedLayer {
+                    absolute: joined.base.absolute.restricted_to(shard),
+                    relative: joined.base.relative.restricted_to(shard),
+                },
+                attributed: AttributedAssertionsLayer {
+                    absolute: joined.attributed.absolute.restricted_to(shard),
+                    relative: joined.attributed.relative.restricted_to(shard),
+                },
+                prev_priority: joined.prev_priority,
+            })
+            .collect()
+    }
+}
+
 /// One step of a resumed composite.
 pub enum CompositeStep<'t, L> {
     /// A layer evaluated against the composite below it and merged on top.
@@ -47,6 +82,13 @@ enum SettledOp {
 }
 
 impl SettledOp {
+    /// Returns the value the op sets or compares against.
+    fn value(self) -> ParameterDmxValue {
+        match self {
+            Self::Set(value) | Self::Max(value) => value,
+        }
+    }
+
     /// Returns the op equivalent to applying `self` and then `upper`.
     fn then(self, upper: Self) -> Self {
         match (self, upper) {
@@ -102,12 +144,13 @@ impl SettledRunTable {
         let mut prev_priority = entry_priority;
 
         for (entity, object_ref, layer, context) in layers {
-            let (computed, skipped) = stages::evaluate_transitions_with_compositing_context(
+            let (computed, mut skipped) = stages::evaluate_transitions_with_compositing_context(
                 layer,
                 &empty_base,
                 param_query,
                 false,
                 context,
+                ParameterShard::ALL,
             );
             let same_priority = prev_priority.is_some_and(|priority| priority == layer.priority);
             for (parameter, value) in computed.absolute.iter() {
@@ -121,7 +164,13 @@ impl SettledRunTable {
                     SettledOp::Set(*value)
                 };
                 match absolute.get_mut(parameter) {
-                    Some(existing) => *existing = existing.then(op),
+                    Some(existing) => {
+                        // A lower layer of the run that keeps its value also keeps ownership.
+                        if uses_htp && existing.value() >= *value {
+                            skipped.absolute.insert(parameter);
+                        }
+                        *existing = existing.then(op);
+                    }
                     None => {
                         absolute.insert(parameter, op);
                     }
@@ -132,6 +181,7 @@ impl SettledRunTable {
                 layer,
                 object_ref,
                 &skipped,
+                ParameterShard::ALL,
             );
             output_layers.push((entity, computed.to_effective()));
             prev_priority = Some(layer.priority);
@@ -153,32 +203,37 @@ impl SettledRunTable {
         self.entry_priority
     }
 
-    /// Applies the run to the composite below it, as compositing each of its layers would.
+    /// Applies the run to the parameters of `shard` in the composite below it, as compositing
+    /// each of its layers would.
     pub fn apply(
         &self,
         base: &mut ComputedLayer,
         attributed: &mut AttributedAssertionsLayer,
         prev_priority: &mut Option<Priority>,
+        shard: ParameterShard,
     ) {
-        for (parameter, op) in self.absolute.iter() {
-            match *op {
-                SettledOp::Set(value) => {
-                    base.absolute.insert(parameter, value);
-                }
-                SettledOp::Max(value) => {
-                    if base
-                        .absolute
-                        .get(parameter)
-                        .is_none_or(|existing| value > *existing)
-                    {
-                        base.absolute.insert(parameter, value);
-                    }
+        // A value the composite below keeps against a `Max` op also keeps its owner there.
+        self.absolute.for_each_in_shard(shard, |parameter, op| {
+            let run_wins = match *op {
+                SettledOp::Set(_) => true,
+                SettledOp::Max(value) => base
+                    .absolute
+                    .get(parameter)
+                    .is_none_or(|existing| value > *existing),
+            };
+            if run_wins {
+                base.absolute.insert(parameter, op.value());
+                if let Some(entry) = self.attributed_absolute.get(parameter) {
+                    attributed.absolute.insert(parameter, entry.clone());
                 }
             }
-        }
-        for (parameter, entry) in self.attributed_absolute.iter() {
-            attributed.absolute.insert(parameter, entry.clone());
-        }
+        });
+        self.attributed_absolute
+            .for_each_in_shard(shard, |parameter, entry| {
+                if !self.absolute.contains_key(parameter) {
+                    attributed.absolute.insert(parameter, entry.clone());
+                }
+            });
         *prev_priority = self.last_priority;
     }
 }
@@ -199,7 +254,8 @@ impl CompositorPipeline {
         Self::compose_layers(layers, param_query)
     }
 
-    /// Compose the upper steps of a stack on top of an already composited prefix.
+    /// Compose the upper steps of a stack on top of an already composited prefix, for the
+    /// parameters of `shard` only.
     ///
     /// Each step is either a layer to evaluate or a run of settled layers applied from its
     /// [`SettledRunTable`]. When `snapshot_after` is set, the composite after that many steps is
@@ -207,9 +263,10 @@ impl CompositorPipeline {
     /// zero elapsed, as in [`Self::compose_with_layer_compositing_contexts`].
     pub fn compose_resuming<L: Borrow<Layer>>(
         prefix: CompositedPrefix,
-        steps: Vec<CompositeStep<'_, L>>,
+        steps: &[CompositeStep<'_, L>],
         snapshot_after: Option<usize>,
         param_query: &impl ParameterLookup,
+        shard: ParameterShard,
     ) -> (
         ComputedLayer,
         AttributedAssertionsLayer,
@@ -231,7 +288,7 @@ impl CompositorPipeline {
             });
         }
 
-        for (index, step) in steps.into_iter().enumerate() {
+        for (index, step) in steps.iter().enumerate() {
             match step {
                 CompositeStep::Layer((
                     entity,
@@ -245,16 +302,17 @@ impl CompositorPipeline {
                     &mut prev_priority,
                     &mut output_layers,
                     (
-                        entity,
-                        object_ref,
+                        *entity,
+                        object_ref.clone(),
                         layer.borrow(),
-                        is_releasing,
-                        compositing_context,
+                        *is_releasing,
+                        *compositing_context,
                     ),
                     param_query,
+                    shard,
                 ),
                 CompositeStep::SettledRun(table) => {
-                    table.apply(&mut base, &mut attributed, &mut prev_priority);
+                    table.apply(&mut base, &mut attributed, &mut prev_priority, shard);
                 }
             }
             if snapshot_after == Some(index + 1) {
@@ -269,7 +327,8 @@ impl CompositorPipeline {
         (base, attributed, output_layers, snapshot)
     }
 
-    /// Evaluate one layer's transitions against the composite below it and merge it on top.
+    /// Evaluate one layer's transitions on the parameters of `shard` against the composite below
+    /// it and merge it on top.
     fn compose_layer(
         base_layer: &mut ComputedLayer,
         attributed_assertions_layer: &mut AttributedAssertionsLayer,
@@ -283,31 +342,39 @@ impl CompositorPipeline {
             Option<LayerCompositingContext>,
         ),
         param_query: &impl ParameterLookup,
+        shard: ParameterShard,
     ) {
         let compositing_context = match compositing_context {
             Some(compositing_context) => compositing_context,
             None => {
-                warn_missing_compositing_context(entity, layer);
+                // Every shard sees the same layer, so only the first one reports it.
+                if shard.is_first() {
+                    warn_missing_compositing_context(entity, layer);
+                }
                 LayerCompositingContext::default()
             }
         };
-        let (computed_layer, skipped) = stages::evaluate_transitions_with_compositing_context(
+        let (computed_layer, mut skipped) = stages::evaluate_transitions_with_compositing_context(
             layer,
             base_layer,
             param_query,
             is_releasing,
             compositing_context,
+            shard,
         );
 
         output_layers.push((entity, computed_layer.to_effective()));
+        let same_priority = prev_priority.is_some_and(|p| p == layer.priority);
+        // A same-priority HTP merge that keeps the lower value also keeps the lower owner.
+        let held_by_base = stages::merge(base_layer, &computed_layer, same_priority, param_query);
+        skipped.absolute.extend(held_by_base);
         stages::merge_layer_with_attribution_skipping(
             attributed_assertions_layer,
             layer,
             object_ref,
             &skipped,
+            shard,
         );
-        let same_priority = prev_priority.is_some_and(|p| p == layer.priority);
-        stages::merge(base_layer, &computed_layer, same_priority, param_query);
         *prev_priority = Some(layer.priority);
     }
 
@@ -351,6 +418,7 @@ impl CompositorPipeline {
                     compositing_context,
                 ),
                 param_query,
+                ParameterShard::ALL,
             );
         }
 

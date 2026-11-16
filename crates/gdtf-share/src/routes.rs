@@ -16,10 +16,12 @@
 //! cannot restore.
 //!
 //! `GET /api/gdtf-share/fixtures?query=` searches the saved fixture list,
-//! `POST /api/gdtf-share/fixtures/refresh` fetches it again, and
+//! `POST /api/gdtf-share/fixtures/refresh` fetches it again,
+//! `POST /api/gdtf-share/fixtures/match` looks fixture types up by name, and
 //! `POST /api/gdtf-share/fixtures/{rid}/install` downloads a revision into the fixture
-//! library, streaming its progress. Any paired device may search and install, as it may
-//! upload fixtures.
+//! library, streaming its progress. `POST /api/gdtf-share/updates` lists newer revisions
+//! of the library files a client names. Any paired device may search, install and check
+//! for updates, as it may upload fixtures.
 
 use std::{
     convert::Infallible,
@@ -44,11 +46,17 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::account::{AccountError, GdtfShareAccount, GdtfShareAccountStatus};
-use crate::catalog::{GdtfShareCatalog, GdtfShareSearchResults};
+use crate::catalog::{
+    GdtfShareCatalog, GdtfShareMatch, GdtfShareMatchRequest, GdtfShareMatches,
+    GdtfShareSearchResults,
+};
 use crate::client::ShareError;
 use crate::credentials::Credentials;
 use crate::install::{
     GdtfShareDownloadProgress, GdtfShareInstallEvent, GdtfShareInstallFailure, install,
+};
+use crate::updates::{
+    GdtfShareUpdateCheck, GdtfShareUpdates, INSTALLS_FILE_NAME, InstalledRevisions, find_updates,
 };
 
 /// Path of the account resource; `GET` reads it and `POST` signs in.
@@ -59,8 +67,12 @@ const SIGN_OUT_PATH: &str = "/api/gdtf-share/account/sign-out";
 const FIXTURES_PATH: &str = "/api/gdtf-share/fixtures";
 /// Path that fetches the fixture list again.
 const REFRESH_PATH: &str = "/api/gdtf-share/fixtures/refresh";
+/// Path that looks fixture types up by manufacturer and fixture name.
+const MATCH_PATH: &str = "/api/gdtf-share/fixtures/match";
 /// Path that installs one revision into the fixture library.
 const INSTALL_PATH: &str = "/api/gdtf-share/fixtures/{rid}/install";
+/// Path that lists newer revisions of library files.
+const UPDATES_PATH: &str = "/api/gdtf-share/updates";
 
 /// A failed request: its status code and a message the UI shows as is.
 type RouteError = (StatusCode, String);
@@ -79,22 +91,35 @@ pub(crate) struct GdtfShare {
     pub(crate) account: Arc<GdtfShareAccount>,
     pub(crate) catalog: Arc<GdtfShareCatalog>,
     pub(crate) library_dir: Arc<PathBuf>,
+    pub(crate) installs: Arc<InstalledRevisions>,
 }
 
 impl GdtfShare {
     /// Assembles the route state around `account` and the folders in `folders`.
+    ///
+    /// The install record is saved next to the fixture list.
     pub(crate) fn new(account: GdtfShareAccount, folders: GdtfShareFolders) -> Self {
+        let installs_file = folders.catalog_file.with_file_name(INSTALLS_FILE_NAME);
         Self {
             account: Arc::new(account),
+            installs: Arc::new(InstalledRevisions::new(
+                installs_file,
+                folders.library_dir.clone(),
+            )),
             catalog: Arc::new(GdtfShareCatalog::new(folders.catalog_file)),
             library_dir: Arc::new(folders.library_dir),
         }
     }
 }
 
-/// Registers the GDTF Share routes against the real GDTF Share API.
-pub fn register_routes(registry: &mut HttpRouteRegistry, folders: GdtfShareFolders) {
-    match GdtfShareAccount::new() {
+/// Registers the GDTF Share routes against the real GDTF Share API, remembering the sign-in in
+/// the system keychain when `system_keychain` is set and in memory otherwise.
+pub fn register_routes(
+    registry: &mut HttpRouteRegistry,
+    folders: GdtfShareFolders,
+    system_keychain: bool,
+) {
+    match GdtfShareAccount::new(system_keychain) {
         Ok(account) => {
             for (path, routes) in routes(GdtfShare::new(account, folders)) {
                 registry.register(path, routes);
@@ -105,7 +130,7 @@ pub fn register_routes(registry: &mut HttpRouteRegistry, folders: GdtfShareFolde
 }
 
 /// Builds every route around `share`, keyed by path.
-fn routes(share: GdtfShare) -> [(&'static str, axum::routing::MethodRouter); 5] {
+fn routes(share: GdtfShare) -> [(&'static str, axum::routing::MethodRouter); 7] {
     [
         (
             ACCOUNT_PATH,
@@ -114,7 +139,12 @@ fn routes(share: GdtfShare) -> [(&'static str, axum::routing::MethodRouter); 5] 
         (SIGN_OUT_PATH, post(sign_out).with_state(share.clone())),
         (FIXTURES_PATH, get(search).with_state(share.clone())),
         (REFRESH_PATH, post(refresh).with_state(share.clone())),
-        (INSTALL_PATH, post(install_fixture).with_state(share)),
+        (MATCH_PATH, post(match_names).with_state(share.clone())),
+        (
+            INSTALL_PATH,
+            post(install_fixture).with_state(share.clone()),
+        ),
+        (UPDATES_PATH, post(check_updates).with_state(share)),
     ]
 }
 
@@ -223,6 +253,45 @@ async fn search(
     Ok(Json(results))
 }
 
+/// Looks each posted name up in the fixture list, answering the newest revision listed under
+/// it or none, in request order.
+///
+/// Signed in, this uses the list as a search does, fetching it when none is saved. Signed
+/// out, it uses the saved list alone, so a rig import can still say which missing fixture
+/// types GDTF Share has before the user signs in to install them; with no saved list every
+/// answer is none.
+async fn match_names(
+    State(share): State<GdtfShare>,
+    Json(request): Json<GdtfShareMatchRequest>,
+) -> Result<Json<GdtfShareMatches>, RouteError> {
+    let catalog = if share.account.is_signed_in().await {
+        let (catalog, stale) = share
+            .catalog
+            .for_search(&share.account)
+            .await
+            .map_err(route_error)?;
+        if stale {
+            share
+                .catalog
+                .refresh_in_background(share.account.clone(), catalog.fetched_at());
+        }
+        Some(catalog)
+    } else {
+        share.catalog.current().await
+    };
+    let matches = request
+        .fixtures
+        .iter()
+        .map(|name| GdtfShareMatch {
+            fixture: catalog
+                .as_ref()
+                .and_then(|catalog| catalog.find(&name.manufacturer, &name.fixture))
+                .cloned(),
+        })
+        .collect();
+    Ok(Json(GdtfShareMatches { matches }))
+}
+
 /// Fetches the fixture list again now, and returns its size and fetch time.
 async fn refresh(
     State(share): State<GdtfShare>,
@@ -277,7 +346,13 @@ async fn install_fixture(
             }
         };
         let outcome = match install(&share.account, &share.library_dir, &fixture, &report).await {
-            Ok(installed) => GdtfShareInstallEvent::Installed(installed),
+            Ok(installed) => {
+                share
+                    .installs
+                    .record(installed.asset_etag.clone(), rid)
+                    .await;
+                GdtfShareInstallEvent::Installed(installed)
+            }
             Err(error) => {
                 let (status, message) = route_error(error);
                 tracing::warn!(rid, message, "GDTF Share install failed");
@@ -301,6 +376,39 @@ async fn install_fixture(
         Body::from_stream(lines),
     )
         .into_response())
+}
+
+/// Lists newer GDTF Share revisions of the posted library files.
+///
+/// Checks against the saved list, fetching it first when there is none, and fetches a
+/// stale one again in the background, as searches do. Without a signed-in account there is
+/// nothing to install updates with, so none are listed.
+async fn check_updates(
+    State(share): State<GdtfShare>,
+    Json(check): Json<GdtfShareUpdateCheck>,
+) -> Result<Json<GdtfShareUpdates>, RouteError> {
+    if !share.account.is_signed_in().await {
+        return Ok(Json(GdtfShareUpdates {
+            updates: Vec::new(),
+            listed: Vec::new(),
+        }));
+    }
+    let (catalog, stale) = share
+        .catalog
+        .for_search(&share.account)
+        .await
+        .map_err(route_error)?;
+    if stale {
+        share
+            .catalog
+            .refresh_in_background(share.account.clone(), catalog.fetched_at());
+    }
+    let installs = share.installs.rids().await;
+    let updates =
+        tokio::task::spawn_blocking(move || find_updates(&catalog, &installs, &check.fixtures))
+            .await
+            .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    Ok(Json(updates))
 }
 
 /// Wraps every route in a router, for tests that call them directly.

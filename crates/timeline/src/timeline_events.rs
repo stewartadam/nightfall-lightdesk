@@ -19,8 +19,6 @@ use nightfall_clips::{Clip, ClipOperation};
 use nightfall_compositor::prelude::ReleaseMarker;
 use nightfall_engine::prelude::*;
 use nightfall_instances::{InstanceClock, InstanceClockSource, InstanceControls};
-#[cfg(test)]
-use nightfall_timecode::TimecodeCommand;
 use nightfall_timecode::prelude::{Timecode, TimecodeEvent, TimecodeGenerator};
 use uuid::Uuid;
 
@@ -47,7 +45,7 @@ use beatgrid::{
 };
 #[cfg(test)]
 use cleanup::release_timeline_owned_entities;
-pub(crate) use contracts::TimelineActionsChanged;
+pub(crate) use contracts::{TimelineActionsChanged, TimelinePlayheadJumped};
 #[cfg(test)]
 use creation::{TimelineTimecodeStoreMode, remove_timeline_creation, store_timeline_creation};
 #[cfg(test)]
@@ -151,6 +149,10 @@ fn actions_to_store<'a>(
             .iter()
             .map(|action| (track_id.as_str(), action))
             .collect(),
+        TimelineCommand::EditTimeline { timeline_id, edit } => {
+            let stored = timelines.from_id(*timeline_id).ok();
+            edit.actions_to_validate(stored.as_deref())
+        }
         _ => Vec::new(),
     }
 }
@@ -229,12 +231,12 @@ pub fn crud_events(
             | TimelineCommand::DeleteTimelineMarker { .. }
             | TimelineCommand::StoreTimelineRegion { .. }
             | TimelineCommand::DeleteTimelineRegion { .. }
-            | TimelineCommand::SetTimelineLoopRange { .. } => {
+            | TimelineCommand::SetTimelineLoopRange { .. }
+            | TimelineCommand::EditTimeline { .. } => {
                 editing::handle_command(&mut context, event);
             }
             TimelineCommand::SetTimelineRecording { .. }
             | TimelineCommand::InsertRecordedActions { .. }
-            | TimelineCommand::DeleteRecordedActions { .. }
             | TimelineCommand::NudgeTimelineSelection { .. } => {
                 recording_mutations::handle_command(&mut context, event);
             }

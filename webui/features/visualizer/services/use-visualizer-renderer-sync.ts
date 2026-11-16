@@ -38,6 +38,7 @@ interface UseVisualizerRendererSyncOptions {
   highlightSelectionEnabled: () => boolean;
   showEmitters: () => boolean;
   showGrid: () => boolean;
+  showSceneObjects: () => boolean;
   showOrbitTargetIndicator: () => boolean;
   darkness: () => number;
   showLabels: () => boolean;
@@ -274,6 +275,13 @@ export function useVisualizerRendererSync(
     if (!workspaceActive()) return;
     const r = options.renderer();
     r?.setGridEnabled(options.showGrid());
+  });
+
+  /** Applies scene object visibility after renderer initialization or workspace reactivation. */
+  createEffect(() => {
+    if (!workspaceActive()) return;
+    const r = options.renderer();
+    r?.setSceneObjectsVisible(options.showSceneObjects());
   });
 
   createEffect(() => {

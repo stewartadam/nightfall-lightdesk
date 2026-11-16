@@ -87,8 +87,7 @@ impl Plugin for InputOscPlugin {
         app.add_message::<OscExternalEval>();
         app.add_message::<OscInput>();
 
-        register_ingress_command::<OscCommand>(app);
-        register_command_deserializer::<OscCommand>(app, websocket::deserialize_osc_command);
+        register_client_command::<OscCommand>(app, Undo::Captured);
         register_binding_undo::<OscMappings, OscCommand>(app);
 
         app.add_systems(
@@ -98,7 +97,7 @@ impl Plugin for InputOscPlugin {
                 .in_set(InputHandling),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             (forward_external_command_invocations, handle_osc_crud).in_set(EventHandling),
         );
         app.init_resource::<OscMappingDiagnostics>();
@@ -106,19 +105,19 @@ impl Plugin for InputOscPlugin {
             Render,
             (
                 refresh_osc_mapping_diagnostics.run_if(bindings_need_diagnosis::<OscMappings>),
-                websocket::send_osc_state,
+                websocket::send_control_touches,
             )
-                .chain()
                 .in_set(ClientOutput),
         );
         app.add_systems(
             PostUpdate,
             websocket::send_external_evals.in_set(ClientFeedback),
         );
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
-        );
+        app.add_resource_feed::<OscSources>();
+        app.add_resource_feed::<OscMappings>();
+        app.add_resource_feed::<OscMappingDiagnostics>();
+        app.add_resource_feed::<OscRuntimeStatus>();
+        app.add_resource_feed::<LastOscEvent>();
     }
 }
 
@@ -239,6 +238,7 @@ fn handle_osc_events(
             let Some((action, input)) = edges.resolve(
                 &registry,
                 EdgeKey::new(mapping.id).with_sender(sender_host(&osc_event.source)),
+                ActionSurface::Osc,
                 &mapping.action,
                 mapping.behavior,
                 mapping.signal(osc_event),
@@ -465,16 +465,6 @@ mod tests {
             .drain()
             .next()
             .expect("OSC command should return a terminal result")
-    }
-
-    /// Verifies OSC mappings preserve domain arguments without interpreting them.
-    #[test]
-    fn registered_action_arguments_remain_opaque() {
-        let arguments = serde_json::json!({ "domainValue": 7 });
-        let action = nightfall_actions::ActionReference::new("domain.action", arguments.clone());
-
-        assert_eq!(action.id.as_str(), "domain.action");
-        assert_eq!(action.arguments, arguments);
     }
 
     /// Creates one OSC event carrying the supplied argument.

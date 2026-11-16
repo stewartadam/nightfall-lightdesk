@@ -23,12 +23,10 @@ use bevy::{
 use moonshine_kind::prelude::*;
 use nightfall::prelude::*;
 use nightfall_clips::{Clip, Source};
+use nightfall_controls::prelude::*;
 use nightfall_cues::prelude::*;
-use nightfall_desk::{
-    prelude::*,
-    resources::log_config::{LogConfig, TracingTarget},
-};
 use nightfall_dmx::prelude::*;
+use nightfall_engine::logging::{LogConfig, TracingTarget};
 use nightfall_engine::prelude::*;
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::placement::{FixturePlacement, PlacementPosition, PlacementRotation};
@@ -200,6 +198,7 @@ fn add_fixture(world: &mut World) -> Result<FixtureRef, String> {
         },
         layout: None,
         library_asset_etag: None,
+        rig_source: None,
     };
 
     let mut system_state: SystemState<(Commands, ResMut<FixtureDataProviderExt>)> =
@@ -362,6 +361,7 @@ fn add_scene_object(world: &mut World) -> Result<(), String> {
             object_type: SceneObjectType::Truss,
             placement: SceneObjectPlacement::at_position(0.0, 5.0, 0.0),
             properties: SceneObjectProperties::Truss(TrussProperties::default()),
+            rig_source: None,
         })
         .map_err(|error| format!("failed to add parser scene object: {error}"))
 }
@@ -381,6 +381,7 @@ fn add_group(world: &mut World, fixture_ref: FixtureRef) -> Result<(), String> {
             },
             selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
             description: "Procedural showfile parser test group".to_owned(),
+            rig_source: None,
         })
         .map_err(|error| format!("failed to add parser group: {error}"))?;
     system_state.apply(world);
@@ -497,9 +498,9 @@ fn add_cue_sequence_and_clips(world: &mut World, fixture_ref: FixtureRef) -> Res
                 curve_in: Some(FadeCurve::Linear),
                 curve_out: Some(FadeCurve::Linear),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     values: HashMap::from([(
                         Attribute::Red,
                         ValueSource::Inline(ParameterValue::AbsolutePercent {
@@ -574,8 +575,8 @@ fn add_fx(world: &mut World, fixture_ref: FixtureRef) -> Result<(), String> {
                 FxWaveform {
                     params: FxWaveformParams {
                         kind: WaveformKind::Sin,
-                        min: 10.0,
-                        max: 100.0,
+                        min: Percentage::from(0.04),
+                        max: Percentage::from(0.4),
                         duty_cycle: 1.0,
                     },
                     phase_range: (0.0, std::f32::consts::PI),

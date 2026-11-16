@@ -14,7 +14,7 @@ export default definePanel({
   panelId: "panel-Timeline",
   componentName: "Timeline",
   title: "Timeline",
-  minWidth: 640,
+  minWidth: 480,
   minHeight: 240,
   icon: FilmSlateIcon,
   loadComponent: () => import("./timeline-editor"),

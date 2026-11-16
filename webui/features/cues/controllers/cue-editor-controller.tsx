@@ -8,7 +8,6 @@
 
 import { useStore } from "@nanostores/solid";
 import {
-  createEffect,
   createMemo,
   createSignal,
   Match,
@@ -29,6 +28,7 @@ import {
   useKeyboardShortcut,
 } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
+import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import { timeDisplayUnitFromPreference } from "../../../lib/time-display-units";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { dockApi } from "../../../state/appStores";
@@ -87,7 +87,7 @@ export function CueEditorController(props: {
     Record<string, RichTimeDisplayUnit>
   >({});
   const defaultTimingDisplayUnit = createMemo(() =>
-    timeDisplayUnitFromPreference(settings().time_display_preference),
+    timeDisplayUnitFromPreference(settings().ui.time_display),
   );
   const [cueGridRevision, setCueGridRevision] = createSignal(0);
   const [cellTooltip, setCellTooltip] = createSignal<CueCellTooltipState>();
@@ -272,13 +272,6 @@ export function CueEditorController(props: {
     ctx.commitEditedCue(updatedCue);
   };
 
-  /** Persists live-projected release cue rows when the owning sequence changes. */
-  createEffect(() => {
-    const projectedCue = ctx.releaseCueProjectionUpdate();
-    if (!projectedCue) return;
-    commitCueUpdate(projectedCue);
-  });
-
   /** Logs editor component mounting for targeted diagnostics. */
   onMount(() => {
     log.trace("mounting CueEditor");
@@ -445,13 +438,7 @@ export function CueEditorController(props: {
     const panelId = source.setupSequenceUid
       ? `setup-cue-editor-${source.setupSequenceUid}-p${source.partId}`
       : `cue-editor-${source.cueUid}-p${source.partId}`;
-    const panel = api.getPanel(panelId);
-    if (panel) {
-      panel.focus();
-      return;
-    }
-
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: panelId,
       component: "CueEditor",
       title: formatCueEditorTitle({

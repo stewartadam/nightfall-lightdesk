@@ -7,14 +7,15 @@
  */
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use nightfall::prelude::*;
 use nightfall_clips::Clip;
+use nightfall_controls::prelude::*;
 use nightfall_cues::prelude::*;
-use nightfall_desk::prelude::*;
+use nightfall_engine::prelude::SettingsSection;
 use nightfall_fixtures::prelude::*;
 use nightfall_flow::prelude::*;
 use nightfall_fx::prelude::*;
@@ -22,7 +23,7 @@ use nightfall_fx::prelude::*;
 use nightfall_input_midi::prelude::*;
 #[cfg(feature = "osc")]
 use nightfall_input_osc::prelude::*;
-use nightfall_io::IoRuntimeSettings;
+use nightfall_park::prelude::ParkedParameter;
 use nightfall_scene_objects::prelude::*;
 use nightfall_selection::ReferenceSource;
 use nightfall_tempo::prelude::*;
@@ -52,16 +53,13 @@ pub struct ShowfileSnapshot {
     /// Patched fixture definitions including embedded parameter profiles.
     pub fixtures: Vec<Fixture>,
     /// Showfile-scoped global variables.
-    pub variables: HashMap<String, VariableValue>,
-    /// Operator-facing desk settings.
+    pub variables: BTreeMap<String, VariableValue>,
+    /// Settings sections saved with the show, keyed by section.
     #[serde(default)]
-    pub settings: DeskSettings,
+    pub settings: BTreeMap<String, serde_json::Value>,
     /// Ordered fader assignments and button modes, excluding levels and pickup state.
     #[serde(default, rename = "faders")]
     pub faders: Vec<FaderConfig>,
-    /// Showfile-scoped input and output transport preferences.
-    #[serde(default, rename = "ioSettings")]
-    pub io_settings: IoRuntimeSettings,
     /// Show tempo and bar length, restored when the show opens.
     #[serde(default)]
     pub tempo: TempoSettings,
@@ -121,9 +119,24 @@ pub struct ShowfileSnapshot {
     /// Command-line macros.
     #[serde(default)]
     pub macros: Vec<Macro>,
+    /// Fixture parameters held at fixed values over all other output.
+    #[serde(default)]
+    pub parked: Vec<ParkedParameter>,
 }
 
 impl ShowfileSnapshot {
+    /// Returns the settings section saved under `section`'s key, or its default when the show
+    /// has none or it no longer parses.
+    pub fn settings_section<T>(&self, section: &SettingsSection<T>) -> T
+    where
+        T: Clone + Default + serde::de::DeserializeOwned,
+    {
+        self.settings
+            .get(section.key())
+            .and_then(|value| T::deserialize(value).ok())
+            .unwrap_or_default()
+    }
+
     /// Returns every object in the snapshot that stores selections, for edits applied to all of
     /// them such as group-reference stabilizing.
     pub fn reference_sources_mut(&mut self) -> impl Iterator<Item = &mut dyn ReferenceSource> {
@@ -171,43 +184,14 @@ pub fn current_showfile_metadata() -> ShowfileMetadata {
     }
 }
 
-/// Validate that versioned fixture and object assets do not conflict inside a snapshot.
+/// Validate that versioned scene object assets do not conflict inside a snapshot.
+///
+/// Fixtures are not checked: each one records the library revision it was created from, so
+/// several revisions of one make, model and mode can share a show.
 pub fn validate_showfile_asset_versions(
     showfile_snapshot: &ShowfileSnapshot,
 ) -> Result<(), String> {
-    validate_unique_fixture_asset_versions(&showfile_snapshot.fixtures)?;
-    validate_unique_scene_object_asset_versions(&showfile_snapshot.scene_objects)?;
-    Ok(())
-}
-
-/// Reject duplicate fixture asset keys that point at different library versions.
-fn validate_unique_fixture_asset_versions(fixtures: &[Fixture]) -> Result<(), String> {
-    let mut versions_by_key: HashMap<(String, String, String), String> = HashMap::new();
-
-    for fixture in fixtures {
-        let Some(asset_version) = fixture.library_asset_etag.as_ref() else {
-            // Built-in or legacy fixtures are not library versioned.
-            continue;
-        };
-
-        let key = (
-            fixture.make.clone(),
-            fixture.model.clone(),
-            fixture.mode.clone(),
-        );
-        if let Some(existing_version) = versions_by_key.get(&key) {
-            if existing_version != asset_version {
-                return Err(format!(
-                    "showfile contains multiple versions of fixture asset {} {} ({})",
-                    fixture.make, fixture.model, fixture.mode
-                ));
-            }
-            continue;
-        }
-        versions_by_key.insert(key, asset_version.clone());
-    }
-
-    Ok(())
+    validate_unique_scene_object_asset_versions(&showfile_snapshot.scene_objects)
 }
 
 /// Reject duplicate scene object asset names that point at different library versions.

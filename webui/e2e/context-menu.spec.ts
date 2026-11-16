@@ -192,7 +192,7 @@ function ownedCue(): object {
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values: {
             Intensity: {
               type: "Inline",
@@ -875,7 +875,7 @@ test("saved showfile reload renders timeline track items", async ({
     backendSlot.backendPort,
   );
   await sendOwnedCommand(page, {
-    module: "DeskCommand",
+    module: "ShowfileCommand",
     command: { type: "SaveShowfile" },
   });
 

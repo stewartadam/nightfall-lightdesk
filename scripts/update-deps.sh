@@ -42,7 +42,10 @@ regenerate_workspace_hack() {
 # moves every locked crate (including transitive ones that no manifest names)
 # to the newest release those requirements allow. Without the second step the
 # lockfile keeps stale transitive versions, which hakari then copies into the
-# workspace-hack as exact pins.
+# workspace-hack as exact pins. `cargo upgrade` ignores the publish-age
+# cooldown in .cargo/config.toml, so `cargo update` stops when it raised a
+# requirement to a release that is still too new; Cargo's error names the
+# newest allowed version to lower that requirement to.
 update_dependencies() {
   local module="$1"
   echo "*** Updating dependencies for $module"
@@ -52,11 +55,44 @@ update_dependencies() {
   popd >/dev/null
 }
 
+# Print, one per line, the npm packages that must stay on their current
+# version: every package with a pnpm patch (patches are keyed to an exact
+# version, so moving it makes pnpm abort with ERR_PNPM_UNUSED_PATCH) and every
+# direct dependency that package.json pins to an exact version on purpose.
+held_js_packages() {
+  local patched
+  patched="$(pnpm config get patchedDependencies --json)"
+  PATCHED_JSON="$patched" node --input-type=module -e '
+    import { readFileSync } from "node:fs";
+    const patched = JSON.parse(process.env.PATCHED_JSON || "null") ?? {};
+    const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+    const held = new Set(
+      Object.keys(patched).map((key) => key.slice(0, key.lastIndexOf("@"))),
+    );
+    for (const deps of [manifest.dependencies, manifest.devDependencies]) {
+      for (const [name, version] of Object.entries(deps ?? {})) {
+        if (/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) held.add(name);
+      }
+    }
+    console.log([...held].sort().join("\n"));
+  '
+}
+
 # Update web UI dependencies to their latest releases, including major
-# versions, rewriting the ranges in package.json and the lockfile
+# versions, rewriting the ranges in package.json and the lockfile. Patched and
+# exactly pinned packages are excluded so the update never invalidates a patch.
 update_js_dependencies() {
   echo "*** Updating pnpm dependencies"
-  pnpm update --latest
+  local held name
+  local args=(update --latest)
+  held="$(held_js_packages)"
+  while IFS= read -r name; do
+    [ -n "$name" ] && args+=("!$name")
+  done <<<"$held"
+  if [ -n "$held" ]; then
+    echo "*** Holding patched or pinned packages: ${held//$'\n'/ }"
+  fi
+  pnpm "${args[@]}"
 }
 
 # Rebuild the project after updating dependencies
@@ -65,6 +101,10 @@ rebuild_project() {
   cargo build --release
 }
 
+# The pnpm update runs first: it is the step most likely to abort (a patch or
+# release-age conflict), and failing here leaves the Rust manifests untouched.
+update_js_dependencies
+
 clear_workspace_hack
 update_dependencies "."
 regenerate_workspace_hack
@@ -72,8 +112,6 @@ regenerate_workspace_hack
 for module in crates/fx-module/examples/*/;do
   update_dependencies "$module"
 done
-
-update_js_dependencies
 
 echo -n "Rebuild project ? [y/N] "
 read -r answer

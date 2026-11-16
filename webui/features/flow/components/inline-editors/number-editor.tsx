@@ -156,14 +156,18 @@ export function NumberEditor(props: NumberEditorProps) {
     isNormalizedPort(props.port.name ?? ""),
   );
 
-  // When onInput is provided, value comes from context (optimistic updates)
-  /** Otherwise, we maintain local state for smooth editing */
-  const hasExternalState = () => props.onInput !== undefined;
+  /**
+   * Resolves the optional per-edit handler in this component's owner, since the slider and
+   * input call `handleInput` from events that run outside any owner, where reading a
+   * conditional prop would create a computation that is never disposed.
+   */
+  const onInput = createMemo(() => props.onInput);
+  /** Whether edits stream to the caller as they happen; without it each input commits directly. */
+  const hasExternalState = () => onInput() !== undefined;
 
+  /** Forwards an in-progress edit to the caller's handler, if it has one. */
   const handleInput = (value: number) => {
-    if (props.onInput) {
-      props.onInput(value);
-    }
+    onInput()?.(value);
   };
 
   const handleCommit = (value: number) => {
@@ -190,7 +194,7 @@ export function NumberEditor(props: NumberEditorProps) {
           step={0.01}
           label={props.port.name ?? "Value"}
           disabled={props.disabled}
-          onInput={hasExternalState() ? handleInput : () => {}}
+          onInput={handleInput}
           onCommit={handleCommit}
         />
       </Show>

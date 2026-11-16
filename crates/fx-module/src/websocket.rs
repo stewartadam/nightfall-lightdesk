@@ -7,6 +7,7 @@
  */
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
 use serde_json::Value;
@@ -22,26 +23,6 @@ use crate::{
 enum FxModuleWsMessage<'a> {
     FxModuleDefinitions(&'a [StoredFxModule]),
     ListAvailableFxModulesResponse(&'a ListAvailableFxModulesResponse),
-}
-
-/// Deserialize and queue fx module commands from JSON so undo is captured before dispatch.
-pub fn deserialize_fx_module_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: FxModuleCommand = serde_json::from_value(json)
-        .map_err(|error| format!("Failed to parse FxModuleCommand: {error}"))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-    Ok(())
 }
 
 /// Deserializes and dispatches an untracked FX module preview update from JSON.
@@ -61,30 +42,25 @@ pub fn forward_fx_module_commands(
     for _event in events.read() {}
 }
 
-/// Send fx module definitions when the provider changes.
-pub fn send_fx_module_on_change(
-    fx_module_provider: Res<DataProvider<StoredFxModule>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if fx_module_provider.is_changed() {
-        send_fx_module(fx_module_provider, &broadcaster);
-    }
+/// The fx module definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct FxModulesFeed<'w> {
+    fx_modules: Res<'w, DataProvider<StoredFxModule>>,
 }
 
-/// Send the current fx module definitions to the sink's websocket clients.
-pub fn send_fx_module(
-    fx_module_provider: Res<DataProvider<StoredFxModule>>,
-    broadcaster: &ClientEventSink,
-) {
-    let fx_module_list: Vec<StoredFxModule> = fx_module_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FxModuleWsMessage::FxModuleDefinitions(&fx_module_list),
-    );
+impl ClientFeed for FxModulesFeed<'static> {
+    /// Publishes every stored fx module definition.
+    fn publish(feed: &FxModulesFeed<'_>, sink: &ClientEventSink) {
+        let fx_module_list: Vec<StoredFxModule> = feed
+            .fx_modules
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FxModuleWsMessage::FxModuleDefinitions(&fx_module_list),
+        );
+    }
 }
 
 /// Send the current available fx module catalog to websocket clients.
@@ -98,16 +74,6 @@ pub fn send_available_fx_modules(
     );
 }
 
-/// Resend fx module state on engine resync.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    fx_module_provider: Res<DataProvider<StoredFxModule>>,
-) {
-    if let Some(broadcaster) = resync.sink() {
-        send_fx_module(fx_module_provider, &broadcaster);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use nightfall::prelude::{Identifiers, SpatialSelection};
@@ -115,32 +81,6 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-
-    /// Verifies management commands enter pending dispatch for undo capture.
-    #[test]
-    fn deserialize_fx_module_command_queues_pending_command() {
-        let mut world = World::new();
-        world.insert_resource(PendingCommandBuffer::default());
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-
-        deserialize_fx_module_command(
-            &mut world,
-            serde_json::json!({ "type": "DeleteFxModule", "data": 42 }),
-            command_id,
-            undo_id,
-        )
-        .expect("module command should deserialize");
-
-        let queued = world.resource_mut::<PendingCommandBuffer>().drain();
-        assert_eq!(queued.len(), 1);
-        assert_eq!(queued[0].command_id, command_id);
-        assert_eq!(queued[0].undo_id, undo_id);
-        assert!(matches!(
-            queued[0].payload.as_any().downcast_ref::<FxModuleCommand>(),
-            Some(FxModuleCommand::DeleteFxModule(42))
-        ));
-    }
 
     /// Verifies a WebSocket module deletion captures its exact restore command for undo.
     #[test]
@@ -170,13 +110,17 @@ mod tests {
             .resource_mut::<UndoRegistry>()
             .register::<FxModuleCommand>();
 
-        deserialize_fx_module_command(
-            &mut world,
+        let command = decode_client_command::<FxModuleCommand>(
             serde_json::json!({ "type": "DeleteFxModule", "data": 42 }),
-            CommandId::new(),
-            UndoId::new(),
         )
         .expect("module delete should deserialize");
+        submit_client_command(
+            &mut world,
+            CommandId::new(),
+            UndoId::new(),
+            command,
+            Undo::Captured,
+        );
         dispatcher::process_pending_commands(&mut world);
         world
             .resource_mut::<UndoManager>()

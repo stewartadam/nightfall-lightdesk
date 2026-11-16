@@ -31,7 +31,7 @@ import {
 import type { NightfallHarness } from "../e2e/harness/registry";
 import { type AppLifecyclePhase, appLifecycle } from "../state/app-lifecycle";
 import { $settings, $settingsSnapshotRevision } from "../state/settings";
-import type { DeskCommand } from "../types";
+import type { ShowfileCommand } from "../types";
 import { commandClient } from "./engine-commands";
 import {
   backendAppState,
@@ -73,7 +73,11 @@ export type TestReadiness = {
 };
 
 /** Where startup stands once it no longer advances without the user. */
-export type StartupOutcome = "interactive" | "draft-prompt" | "showfile-prompt";
+export type StartupOutcome =
+  | "interactive"
+  | "draft-prompt"
+  | "showfile-prompt"
+  | "backup-prompt";
 
 /** Options shared by every lifecycle wait. */
 export type WaitOptions = {
@@ -128,13 +132,13 @@ export type NightfallTestHooks = {
      * once the shell is interactive on it.
      */
     ensureLoaded(name: string, options?: WaitOptions): Promise<TestReadiness>;
-    /** Sends a world-swapping desk command and waits like `load`. */
+    /** Sends a world-swapping showfile command and waits like `load`. */
     swapWorld(
       command: unknown,
       expectedShowfileName: string,
       options?: WaitOptions,
     ): Promise<void>;
-    /** Returns the desk command that saves the current show under a name. */
+    /** Returns the showfile command that saves the current show under a name. */
     saveNamedCommand: typeof saveNamedShowfileCommand;
   };
   uiActions: {
@@ -248,10 +252,11 @@ function startupOutcome(state: TestReadiness): StartupOutcome | undefined {
   if (state.lifecyclePhase === "startup-showfile-prompt") {
     return "showfile-prompt";
   }
+  if (state.lifecyclePhase === "startup-backup-prompt") return "backup-prompt";
   return undefined;
 }
 
-/** Sends a world-swapping desk command and waits for the swapped world to be ready. */
+/** Sends a world-swapping showfile command and waits for the swapped world to be ready. */
 function swapWorld(
   command: unknown,
   expectedShowfileName: string,
@@ -259,7 +264,7 @@ function swapWorld(
 ): Promise<void> {
   markResyncPending();
   return waitForStartupWorldSwapCommand(
-    commandClient.invoke("DeskCommand", command as DeskCommand),
+    commandClient.invoke("ShowfileCommand", command as ShowfileCommand),
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     expectedShowfileName,
   );

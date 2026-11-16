@@ -328,7 +328,6 @@ pub fn handle_sequence_playback_actions(
                     outbound.fail_cue(correlation_id, error.to_owned());
                     continue;
                 }
-
                 if let Some(timing) = timing {
                     msequence.set_position_at_playback_position(*position, Some(timing.started_at));
                     if let Some(mut clock) = clock {

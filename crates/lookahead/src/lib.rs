@@ -9,8 +9,6 @@
 //! Runtime lookahead contracts shared by playback plugins and cross-plugin crates.
 #![warn(missing_docs)]
 
-mod assertions;
 mod provider;
 
-pub use assertions::{LookaheadAssertion, LookaheadAssertions, LookaheadReason};
 pub use provider::{FixtureFootprint, Lookahead, LookaheadProvider, PlaybackFootprint};

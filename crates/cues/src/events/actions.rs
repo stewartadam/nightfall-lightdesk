@@ -264,8 +264,11 @@ pub fn cue_action_events(
     mut cue_definition_changes: MessageWriter<CueDefinitionChange>,
     mut sequence_definition_changes: MessageWriter<SequenceDefinitionChange>,
     selection_resolver: SpatialSelectionResolver,
+    mut sequence_lookahead_dirty: Option<ResMut<SequenceLookaheadStateDirty>>,
 ) {
     for event in actions.read() {
+        // Every cue operation edits cue or sequence definitions, including undo replays.
+        mark_sequence_lookahead_state_dirty(&mut sequence_lookahead_dirty);
         let correlation_id = event
             .command_id
             .map(uuid::Uuid::from)
@@ -295,6 +298,19 @@ pub fn cue_action_events(
                     &mut sequence_data_provider,
                     &mut outbound,
                     &mut sequence_definition_changes,
+                ) {
+                    outbound.succeed_cue(correlation_id);
+                }
+            }
+            CueOperation::RemoveCue(cue_uid) => {
+                if restore_cue_snapshot(
+                    *cue_uid,
+                    None,
+                    &selection_resolver,
+                    correlation_id,
+                    &mut cue_data_provider,
+                    &mut outbound,
+                    &mut cue_definition_changes,
                 ) {
                     outbound.succeed_cue(correlation_id);
                 }
@@ -421,7 +437,7 @@ pub fn cue_action_events(
                 ) {
                     continue;
                 }
-                let _ = restore_sequence_snapshot(
+                if restore_sequence_snapshot(
                     *sequence_id,
                     previous_sequence.as_deref(),
                     &selection_resolver,
@@ -429,7 +445,9 @@ pub fn cue_action_events(
                     &mut sequence_data_provider,
                     &mut outbound,
                     &mut sequence_definition_changes,
-                );
+                ) {
+                    outbound.succeed_cue(correlation_id);
+                }
             }
         }
     }

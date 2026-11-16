@@ -225,7 +225,7 @@ test("new show optionally includes standalone sample data", async ({
 
   const saveResult = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
-      module: "DeskCommand",
+      module: "ShowfileCommand",
       command: { type: "SaveShowfile" },
     }),
   );
@@ -264,13 +264,15 @@ test("new show optionally includes standalone sample data", async ({
   );
   await dialog.getByLabel("Show name").fill(" sample tour ");
   await dialog.getByRole("button", { name: "Create Show" }).click();
-  await expect(dialog.getByRole("alert")).toContainText("already exists");
+  await expect(dialog.getByRole("document").getByRole("alert")).toContainText(
+    "already exists",
+  );
   await page.screenshot({
     path: testInfo.outputPath("duplicate-show-name.png"),
   });
   const duplicateResult = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
-      module: "DeskCommand",
+      module: "ShowfileCommand",
       command: {
         type: "NewNamedShowfile",
         data: { name: "Sample Tour", includeSampleData: false },

@@ -6,6 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::ops::RangeInclusive;
+
 use nightfall::prelude::*;
 
 /// Minimal fixture metadata needed by pure selection resolution.
@@ -41,6 +43,12 @@ pub trait SelectionDataSource {
     /// Look up a fixture by an already-resolved fixture reference.
     fn fixture_by_ref(&self, fixture_ref: &FixtureRef) -> Option<SelectionFixture>;
 
+    /// Return the IDs of the fixtures numbered within `range`, in ascending order.
+    ///
+    /// Range selections walk these instead of every number in the range, so a range far wider
+    /// than the rig, such as `1 thru 4000000000`, costs no more than the rig itself.
+    fn fixture_ids_in(&self, range: RangeInclusive<u32>) -> Vec<u32>;
+
     /// Return whether group lookup is available for this resolution context.
     fn groups_available(&self) -> bool {
         false
@@ -60,6 +68,42 @@ pub trait SelectionDataSource {
     fn group_by_label(&self, _label: &str) -> Option<SelectionGroup> {
         None
     }
+
+    /// Return the IDs of the groups numbered within `range`, in ascending order.
+    ///
+    /// Group ranges walk these instead of every number in the range, like
+    /// [`Self::fixture_ids_in`]. Sources without groups return an empty list.
+    fn group_ids_in(&self, range: RangeInclusive<u32>) -> Vec<u32>;
+}
+
+/// Return the IDs within `range` from a lookup that can test single IDs and list all of them.
+///
+/// Probes each number of the range when it is no wider than the lookup holds, and otherwise
+/// filters and sorts the listed IDs, so the cost is bounded by the smaller of the two.
+pub fn ids_in_range<I>(
+    range: RangeInclusive<u32>,
+    id_count: usize,
+    contains: impl Fn(u32) -> bool,
+    all_ids: impl FnOnce() -> I,
+) -> Vec<u32>
+where
+    I: IntoIterator<Item = u32>,
+{
+    let (start, end) = (*range.start(), *range.end());
+    if start > end {
+        return Vec::new();
+    }
+    let span = u64::from(end) - u64::from(start) + 1;
+    if span <= id_count as u64 {
+        return range.filter(|id| contains(*id)).collect();
+    }
+    let mut ids = all_ids()
+        .into_iter()
+        .filter(|id| range.contains(id))
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
 }
 
 /// Behavior exposed by selection resolvers, independent of their storage owner.

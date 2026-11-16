@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { Page } from "./playwright-fixtures";
+import type { Locator, Page } from "./playwright-fixtures";
 import { expect, test } from "./playwright-fixtures";
 import { prepareStoreSeededTestApp } from "./showfile-startup";
 
@@ -237,6 +237,51 @@ test("fractional fader values remain passive until the operator edits", async ({
   });
 });
 
+/**
+ * Starts counting transitions and animations that start on the faders section itself. Listening for
+ * `transitionrun` and `animationstart` catches motion even when it finishes before the test could
+ * sample `getAnimations()`, which a 200ms transition easily does on a loaded machine. Each call
+ * resets the count.
+ */
+async function recordSectionMotion(section: Locator): Promise<void> {
+  await section.evaluate((element) => {
+    const target = element as HTMLElement & {
+      __motionCount?: number;
+      __motionListener?: (event: Event) => void;
+    };
+    if (target.__motionListener) {
+      target.removeEventListener("transitionrun", target.__motionListener);
+      target.removeEventListener("animationstart", target.__motionListener);
+    }
+    target.__motionCount = 0;
+    target.__motionListener = (event) => {
+      if (event.target === target) {
+        target.__motionCount = (target.__motionCount ?? 0) + 1;
+      }
+    };
+    target.addEventListener("transitionrun", target.__motionListener);
+    target.addEventListener("animationstart", target.__motionListener);
+  });
+}
+
+/**
+ * Returns how many transitions or animations started on the faders section since recording last
+ * started. Waits two animation frames first, because the browser reports motion that a style
+ * change starts only when it renders the next frame.
+ */
+async function sectionMotionCount(section: Locator): Promise<number> {
+  return section.evaluate(async (element) => {
+    for (let frame = 0; frame < 2; frame += 1) {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+    }
+    return (
+      (element as HTMLElement & { __motionCount?: number }).__motionCount ?? 0
+    );
+  });
+}
+
 /** Keeps faders and actions inside both resize limits and honors motion preferences. */
 test("clip faders fill bounded heights and animate only toggles", async ({
   page,
@@ -279,23 +324,22 @@ test("clip faders fill bounded heights and animate only toggles", async ({
     path: test.info().outputPath("faders-maximum.png"),
   });
 
+  await recordSectionMotion(section);
   await toggle.click();
-  await expect
-    .poll(() => section.evaluate((el) => el.getAnimations().length))
-    .toBeGreaterThan(0);
+  await expect.poll(() => sectionMotionCount(section)).toBeGreaterThan(0);
   await expect(fader).toHaveCount(0);
   await expect.poll(async () => (await section.boundingBox())?.height).toBe(46);
+  await recordSectionMotion(section);
   await toggle.click();
-  await expect
-    .poll(() => section.evaluate((el) => el.getAnimations().length))
-    .toBeGreaterThan(0);
+  await expect.poll(() => sectionMotionCount(section)).toBeGreaterThan(0);
   await expect
     .poll(async () => (await section.boundingBox())?.height)
     .toBe(tallSection.height);
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await recordSectionMotion(section);
   await toggle.click();
   await expect(fader).toHaveCount(0);
-  expect(await section.evaluate((el) => el.getAnimations().length)).toBe(0);
+  expect(await sectionMotionCount(section)).toBe(0);
   await toggle.click();
   await expect(fader).toBeVisible();
   expect((await section.boundingBox())?.height).toBe(tallSection.height);

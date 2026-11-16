@@ -16,6 +16,7 @@ use std::{
 use bevy_app::App;
 use bevy_diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, RegisterDiagnostic};
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall::prelude::{ColorPathDefault, SimpleUuid};
 use nightfall_compositor::prelude::FinalLayerAttributedAssertions;
 use nightfall_dmx::prelude::Attribute;
@@ -31,6 +32,7 @@ use crate::fixture::Fixture;
 use crate::geometry::FixtureGeometry;
 use crate::parameter_state::{ParameterLayout, ParameterStateFrame, ParameterStateProjection};
 use crate::prelude::{BeamType, FixtureDataProviderExt, FixturePhysical};
+use crate::route_overlap::{RouteOverlapReport, route_overlap_report};
 use crate::route_validation::RouteValidationSettings;
 use crate::routes::{
     DisabledRoute, DisabledRoutes, InputRoute, InputRoutes, OutputRoute, OutputRoutes,
@@ -78,10 +80,10 @@ pub(crate) enum FixtureWsMessage<'a> {
 
 /// Time spent projecting the current parameter state for clients.
 pub const PARAMETER_STATE_BUILD_MS: DiagnosticPath =
-    DiagnosticPath::const_new("desk/parameter_state/build_ms");
+    DiagnosticPath::const_new("fixtures/parameter_state/build_ms");
 /// Time spent encoding and publishing the current parameter state.
 pub const PARAMETER_STATE_BROADCAST_MS: DiagnosticPath =
-    DiagnosticPath::const_new("desk/parameter_state/broadcast_ms");
+    DiagnosticPath::const_new("fixtures/parameter_state/broadcast_ms");
 
 /// Beam properties for visualization, derived from FixturePhysical.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,6 +110,8 @@ pub struct RoutesSnapshot {
     pub output: Vec<OutputRoute>,
     /// Disabled routes.
     pub disabled: Vec<DisabledRoute>,
+    /// Which routes and universes overlap, aligned with the route lists above.
+    pub overlap: RouteOverlapReport,
 }
 
 impl Default for BeamSpec {
@@ -216,7 +220,11 @@ pub fn send_parameter_state(
 }
 
 /// Add one elapsed duration to a Bevy diagnostic in milliseconds.
-fn record_elapsed_ms(diagnostics: &mut Diagnostics, path: &DiagnosticPath, elapsed: Duration) {
+pub(crate) fn record_elapsed_ms(
+    diagnostics: &mut Diagnostics,
+    path: &DiagnosticPath,
+    elapsed: Duration,
+) {
     let elapsed_ms = elapsed.as_secs_f64() * 1000.0;
     diagnostics.add_measurement(path, || elapsed_ms);
 }
@@ -248,27 +256,6 @@ pub(crate) struct OutboundInputContribution {
     pub is_stale: bool,
 }
 
-/// Deserialize and dispatch FixtureCommand from JSON.
-pub fn deserialize_fixture_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: FixtureCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse FixtureCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
-
 /// Handle a client's request for a parameter keyframe.
 ///
 /// A client sends this after it detects a gap in the parameter frame sequence
@@ -291,14 +278,14 @@ pub fn deserialize_parameter_keyframe_request(
 ///
 /// Note: CRUD commands and update commands are intentionally NOT forwarded here
 /// because the command echo would be sent before we know if the operation succeeded.
-/// Instead, we rely on send_fixtures_on_change to send full definitions after changes.
+/// Instead, we rely on the fixtures feed to send full definitions after changes.
 pub fn forward_fixture_commands(
     mut events: MessageReader<CommandEnvelope<FixtureCommand>>,
     _broadcaster: Res<ClientEventSink>,
 ) {
     // Drain the events to avoid them accumulating
     for _event in events.read() {
-        // CRUD commands are not forwarded - rely on send_fixtures_on_change instead
+        // CRUD commands are not forwarded - rely on the fixtures feed instead
     }
 }
 
@@ -314,29 +301,41 @@ pub fn broadcast_fixture_command(broadcaster: &ClientEventSink, command: &Fixtur
     );
 }
 
-/// Send fixture definitions when FixtureDataProviderExt changes.
-pub fn send_fixtures_on_change(
-    fixture_data_provider: Res<FixtureDataProviderExt>,
-    geometry_provider: Option<Res<crate::geometry::GeometryProviderResource>>,
-    broadcaster: Res<ClientEventSink>,
-    mut suppress_snapshot_events: MessageReader<SuppressFixtureChangedSnapshot>,
-) {
-    let snapshot_suppressed = suppress_snapshot_events.read().count() > 0;
+/// The fixture definitions and geometries feed.
+#[derive(SystemParam)]
+pub(crate) struct FixturesFeed<'w> {
+    fixture_data_provider: Res<'w, FixtureDataProviderExt>,
+    geometry_provider: Option<Res<'w, crate::geometry::GeometryProviderResource>>,
+}
 
-    if !fixture_data_provider.is_changed() {
-        return;
+impl ClientFeed for FixturesFeed<'static> {
+    /// Publishes every fixture definition, then the geometries of those that have one.
+    fn publish(feed: &FixturesFeed<'_>, sink: &ClientEventSink) {
+        send_fixtures(&feed.fixture_data_provider, sink, |fixture| {
+            feed.geometry_provider
+                .as_ref()
+                .and_then(|provider| provider.get_geometry(fixture))
+        });
     }
+}
 
+/// Run condition that passes when fixture data changed, unless the commands that changed it
+/// already sent placement deltas this frame.
+///
+/// The suppression messages are always read, so a suppression never outlives its frame.
+pub(crate) fn fixtures_changed(
+    fixture_data_provider: Res<FixtureDataProviderExt>,
+    mut suppress_snapshot_events: MessageReader<SuppressFixtureChangedSnapshot>,
+) -> bool {
+    let snapshot_suppressed = suppress_snapshot_events.read().count() > 0;
+    if !fixture_data_provider.is_changed() {
+        return false;
+    }
     if snapshot_suppressed {
         tracing::trace!("Skipping full fixture websocket sync; placement deltas already emitted");
-        return;
+        return false;
     }
-
-    send_fixtures(&fixture_data_provider, &broadcaster, |fixture| {
-        geometry_provider
-            .as_ref()
-            .and_then(|p| p.get_geometry(fixture))
-    });
+    true
 }
 
 /// Send list of fixtures and their geometries to websocket clients.
@@ -498,6 +497,11 @@ pub fn send_routes(
         input: input_routes.routes.clone(),
         output: output_routes.routes.clone(),
         disabled: disabled_routes.routes.clone(),
+        overlap: route_overlap_report(
+            &input_routes.routes,
+            &output_routes.routes,
+            &disabled_routes.routes,
+        ),
     };
 
     broadcaster.publish(
@@ -507,23 +511,33 @@ pub fn send_routes(
     tracing::trace!("Sending route definitions to websocket clients");
 }
 
-/// Send route data when routes change.
-pub fn send_routes_on_change(
+/// The input, output and disabled routes feed, with their overlap report.
+#[derive(SystemParam)]
+pub(crate) struct RoutesFeed<'w> {
+    input_routes: Res<'w, InputRoutes>,
+    output_routes: Res<'w, OutputRoutes>,
+    disabled_routes: Res<'w, DisabledRoutes>,
+}
+
+impl ClientFeed for RoutesFeed<'static> {
+    /// Publishes the routes snapshot.
+    fn publish(feed: &RoutesFeed<'_>, sink: &ClientEventSink) {
+        send_routes(
+            &feed.input_routes,
+            &feed.output_routes,
+            &feed.disabled_routes,
+            sink,
+        );
+    }
+}
+
+/// Run condition that passes when any of the input, output or disabled routes changed.
+pub(crate) fn routes_changed(
     input_routes: Res<InputRoutes>,
     output_routes: Res<OutputRoutes>,
     disabled_routes: Res<DisabledRoutes>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if !input_routes.is_changed() && !output_routes.is_changed() && !disabled_routes.is_changed() {
-        return;
-    }
-
-    send_routes(
-        &input_routes,
-        &output_routes,
-        &disabled_routes,
-        &broadcaster,
-    );
+) -> bool {
+    input_routes.is_changed() || output_routes.is_changed() || disabled_routes.is_changed()
 }
 
 /// Send fixture color path defaults to websocket clients.
@@ -544,75 +558,43 @@ pub fn send_color_path_defaults(
     );
 }
 
-/// Send fixture color path defaults when the fixture provider changes.
-pub fn send_color_path_defaults_on_change(
-    fixture_data_provider: Res<FixtureDataProviderExt>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if !fixture_data_provider.is_changed() {
-        return;
+/// The fixture color path defaults feed.
+#[derive(SystemParam)]
+pub(crate) struct ColorPathDefaultsFeed<'w> {
+    fixture_data_provider: Res<'w, FixtureDataProviderExt>,
+}
+
+impl ClientFeed for ColorPathDefaultsFeed<'static> {
+    /// Publishes every fixture's color path default.
+    fn publish(feed: &ColorPathDefaultsFeed<'_>, sink: &ClientEventSink) {
+        send_color_path_defaults(&feed.fixture_data_provider, sink);
     }
-
-    send_color_path_defaults(&fixture_data_provider, &broadcaster);
 }
 
-/// Send route validation settings.
-pub fn send_route_validation_settings(
-    settings: &RouteValidationSettings,
-    broadcaster: &ClientEventSink,
-) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FixtureWsMessage::RouteValidationSettings(settings),
-    );
-}
-
-/// Send route validation settings when they change.
-pub fn send_route_validation_settings_on_change(
-    settings: Res<RouteValidationSettings>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if !settings.is_changed() {
-        return;
+impl ResourceFeed for RouteValidationSettings {
+    /// Publishes the route validation settings.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FixtureWsMessage::RouteValidationSettings(self),
+        );
     }
-
-    send_route_validation_settings(&settings, &broadcaster);
 }
 
-/// Handle ResyncState by sending fixtures and patch data.
-pub fn handle_resync_state(
+/// Queues a parameter layout, a parameter keyframe and the universe list for each client that
+/// resyncs; client output sends them once the frame's DMX is final.
+pub(crate) fn request_streams_on_resync(
     mut resync: ResyncReplies,
-    fixture_data_provider: Res<FixtureDataProviderExt>,
-    geometry_provider: Option<Res<crate::geometry::GeometryProviderResource>>,
-    input_routes: Res<InputRoutes>,
-    output_routes: Res<OutputRoutes>,
-    disabled_routes: Res<DisabledRoutes>,
-    route_validation_settings: Res<RouteValidationSettings>,
     mut parameter_requests: ResMut<ParameterStateRequests>,
     mut universe_stream: ResMut<DmxUniverseStream>,
 ) {
     let Some(broadcaster) = resync.sink() else {
         return;
     };
-
     let audiences = broadcaster.audiences().iter().copied();
     parameter_requests.layout.request_each(audiences.clone());
     parameter_requests.keyframe.request_each(audiences);
     universe_stream.request_list(broadcaster.audiences());
-    // Send fixtures with geometry if provider is available
-    send_fixtures(&fixture_data_provider, &broadcaster, |fixture| {
-        geometry_provider
-            .as_ref()
-            .and_then(|p| p.get_geometry(fixture))
-    });
-    send_routes(
-        &input_routes,
-        &output_routes,
-        &disabled_routes,
-        &broadcaster,
-    );
-    send_color_path_defaults(&fixture_data_provider, &broadcaster);
-    send_route_validation_settings(&route_validation_settings, &broadcaster);
 }
 
 #[cfg(test)]
@@ -904,7 +886,6 @@ mod tests {
                 destination: ResolvedInputDestination::Transport {
                     target: crate::routes::ResolvedTransportTarget {
                         target: "sacn".to_string(),
-                        protocol: RouteTransport::Sacn,
                         transport: OutputTransport::Sacn {
                             mode: nightfall_io::SacnDelivery::Multicast,
                         },

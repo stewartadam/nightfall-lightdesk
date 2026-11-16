@@ -25,10 +25,10 @@ use nightfall_compositor::prelude::{LayerCompositingContext, ObjectRefMarker, Re
 use nightfall_cues::materialized_cue::paint_materialized_cues;
 use nightfall_cues::materialized_sequence::paint_materialized_sequences;
 use nightfall_cues::prelude::*;
-use nightfall_desk::prelude::*;
 use nightfall_dmx::prelude::{Attribute, DmxValueResolution, ParameterValue};
 use nightfall_engine::prelude::*;
 use nightfall_fixture_model::prelude::*;
+use nightfall_fixtures::lookahead_assertions::LookaheadAssertions;
 use nightfall_fixtures::prelude::{
     Fixture, FixtureDataProviderExt, FixtureElement, Parameter, ParameterValues,
 };
@@ -40,7 +40,6 @@ use nightfall_instances::{
     InstanceClock, InstanceClockSource, InstanceControls, InstanceDisplayKind, InstanceId,
     InstanceKind, InstanceMetadata, InstanceOptions, InstancePosition, InstanceStatus, Timebase,
 };
-use nightfall_lookahead::LookaheadAssertions;
 use nightfall_playback_planner::{
     EvaluatedInstanceState, PlannedPlaybackIntervention, PlannedPlaybackInterventionKind,
     PlannedPlaybackLifecycle, PlannedPlaybackSource, PlaybackPositionSource, TimelinePlaybackOwner,
@@ -87,8 +86,9 @@ fn timecode_command(command: TimecodeCommand) -> TimecodeEvent {
         TimecodeCommand::PauseTimecode(id) => TimecodeEvent::Paused(id),
         TimecodeCommand::StopTimecode(id) => TimecodeEvent::Stopped(id),
         TimecodeCommand::SeekTimecode { id, position } => TimecodeEvent::Seeked { id, position },
-        TimecodeCommand::DeleteTimecode(id) => TimecodeEvent::Deleted(id),
-        TimecodeCommand::StoreTimecode(_) | TimecodeCommand::RenameTimecode { .. } => {
+        TimecodeCommand::DeleteTimecode(_)
+        | TimecodeCommand::StoreTimecode(_)
+        | TimecodeCommand::RenameTimecode { .. } => {
             panic!("CRUD commands are not runtime timecode events")
         }
     }
@@ -560,9 +560,9 @@ fn cue_with_release_duration(app: &mut App, cue_uid: Uuid, release_duration: Dur
             fade_out: Some(TransitionMode::Fixed(release_duration)),
             ..Default::default()
         },
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,
@@ -596,7 +596,6 @@ fn setup_sequence_timeline_app_with_stop(
 fn setup_sequence_timeline_test_app(seek_mode: bool) -> App {
     let mut app = App::new();
     crate::install_timeline_test_actions(&mut app);
-    app.add_message::<CommandEnvelope<DeskCommand>>();
     app.add_message::<CommandEnvelope<CueCommand>>();
     app.add_message::<EngineOperationEnvelope<EvalOperation>>();
     app.add_message::<EngineOperationEnvelope<CueLifecycleOperation>>();
@@ -784,11 +783,11 @@ fn setup_sequence_timeline_app_with_clip_options(
                     fade_in: Some(TransitionMode::Fixed(fade_in)),
                     ..Default::default()
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref.clone(),
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         values: HashMap::from([(
                             Attribute::Intensity,
@@ -824,11 +823,11 @@ fn setup_sequence_timeline_app_with_clip_options(
                     fade_out: Some(TransitionMode::Fixed(Duration::from_secs(1))),
                     ..Default::default()
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref.clone(),
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         values: HashMap::from([(
                             Attribute::Intensity,
@@ -1161,11 +1160,11 @@ fn setup_four_cue_auto_sequence_timeline_app_with_timebase(
                     fade_in: Some(TransitionMode::Fixed(Duration::from_secs(1))),
                     ..Default::default()
                 },
-                instructions: vec![BoundCueInstruction {
+                instructions: vec![BoundAssertionSet {
                     selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                         fixture_ref.clone(),
                     ])),
-                    cue_instruction: CueInstruction {
+                    assertions: AssertionSet {
                         blueprint_application: None,
                         values: HashMap::from([(
                             Attribute::Intensity,
@@ -1181,11 +1180,11 @@ fn setup_four_cue_auto_sequence_timeline_app_with_timebase(
 
     let release_instructions = fixture_refs
         .iter()
-        .map(|fixture_ref| BoundCueInstruction {
+        .map(|fixture_ref| BoundAssertionSet {
             selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                 fixture_ref.clone(),
             ])),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,

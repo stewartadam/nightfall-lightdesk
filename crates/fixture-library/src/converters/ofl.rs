@@ -8,10 +8,14 @@
 
 //! OFL to Fixture conversion
 
+use std::collections::{BTreeMap, HashMap, HashSet};
+
 use nightfall::prelude::Identifiers;
 use nightfall_dmx::prelude::*;
 use nightfall_fixture_model::prelude::*;
 use nightfall_fixtures::prelude::*;
+use open_fixture_library::schema::OflPrecedence;
+use open_fixture_library::{OflChannel, OflFixture, OflMatrix, OflMode};
 use uuid::Uuid;
 
 use crate::converters::{apply_position_physical_range, default_merge_strategy};
@@ -41,8 +45,7 @@ pub fn convert_ofl_to_fixture(
     let model = ofl.name().to_string();
 
     // Convert OFL channels to Elements
-    let mut elements = convert_mode_channels(ofl, mode)?;
-    apply_ofl_position_ranges(&mut elements, ofl, mode);
+    let elements = convert_mode_channels(ofl, mode);
 
     // Extract physical properties
     let physical = Some(extract_physical_properties(ofl, mode));
@@ -61,177 +64,374 @@ pub fn convert_ofl_to_fixture(
         placement: FixturePlacement::default(),
         layout: None,
         library_asset_etag: None,
+        rig_source: None,
     };
 
     // OFL doesn't have geometry data
     Ok((fixture, None))
 }
 
-/// Apply OFL fixture-level pan and tilt ranges to every matching parameter.
-fn apply_ofl_position_ranges(
-    elements: &mut [FixtureElement],
-    ofl: &open_fixture_library::OflFixture,
-    mode: &open_fixture_library::OflMode,
-) {
-    let mode_focus = mode
-        .physical
-        .as_ref()
-        .and_then(|physical| physical.focus.as_ref());
-    let fixture_focus = ofl.physical().and_then(|physical| physical.focus.as_ref());
-    let pan_max = mode_focus
-        .and_then(|focus| focus.pan_max)
-        .or_else(|| fixture_focus.and_then(|focus| focus.pan_max));
-    let tilt_max = mode_focus
-        .and_then(|focus| focus.tilt_max)
-        .or_else(|| fixture_focus.and_then(|focus| focus.tilt_max));
-
-    for parameter in elements
-        .iter_mut()
-        .flat_map(|element| element.parameters.iter_mut())
-    {
-        let physical_range = match parameter.attribute {
-            Attribute::Pan => pan_max.map(|max| (0.0, max)),
-            Attribute::Tilt => tilt_max.map(|max| (0.0, max)),
-            _ => None,
-        };
-        apply_position_physical_range(parameter, physical_range);
-    }
+/// The element an OFL channel belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ElementSlot {
+    /// Fixture-wide channels: "Main" for plain fixtures, "Master" for matrix fixtures.
+    Shared,
+    /// The matrix pixel at this index in [`OflMatrix::pixels`] order.
+    Pixel(usize),
+    /// The matrix pixel group at this index in definition order.
+    Group(usize),
 }
 
-/// Convert OFL mode channels to Elements
-fn convert_mode_channels(
-    ofl: &open_fixture_library::OflFixture,
-    mode: &open_fixture_library::OflMode,
-) -> Result<Vec<FixtureElement>> {
-    // Check if this is a matrix fixture
+/// One byte of a parameter, as named by a key in a mode's channel list.
+#[derive(Debug, Clone)]
+struct ChannelByte<'a> {
+    /// Key of the parameter's coarse channel, which identifies the parameter.
+    coarse_key: String,
+    /// Byte index: 0 for the coarse channel, 1 and up for `fineChannelAliases`.
+    byte: usize,
+    element: ElementSlot,
+    /// The available or template channel the byte belongs to.
+    channel: &'a OflChannel,
+}
+
+/// A parameter collected while walking a mode's channel list.
+#[derive(Debug)]
+struct ModeParameter<'a> {
+    coarse_key: String,
+    element: ElementSlot,
+    channel: &'a OflChannel,
+    /// 1-based footprint slot of each byte, indexed by byte, filled as the mode names them.
+    offsets: Vec<Option<u16>>,
+}
+
+/// Indexes every channel key a mode may name: coarse channels and their fine aliases,
+/// template channels instantiated for every matrix pixel and pixel group, and
+/// switching channel aliases.
+///
+/// A switching channel alias stands for whichever channel its trigger channel selects;
+/// it resolves to the channel selected while the trigger rests at its default value,
+/// as its own parameter so it never merges with that channel's own slot.
+fn channel_byte_index(ofl: &OflFixture) -> ChannelIndex<'_> {
+    let mut index = HashMap::new();
+    // (alias, target channel key) of every switching channel alias.
+    let mut switches: Vec<(String, String)> = Vec::new();
+
+    for (key, channel) in ofl.available_channels() {
+        index_channel(
+            &mut index,
+            &mut switches,
+            None,
+            key,
+            ElementSlot::Shared,
+            channel,
+        );
+    }
+
     if let Some(matrix) = ofl.matrix() {
-        convert_matrix_elements(ofl, mode, matrix)
-    } else {
-        // Non-matrix fixture: create a single element with all channels
-        let mut parameters = Vec::new();
-        let available_channels = ofl.available_channels();
-
-        for channel_key in mode.channels.iter().flatten() {
-            if let Some(channel) = available_channels.get(channel_key)
-                && let Some(param_metadata) = convert_channel_to_parameter(channel_key, channel)
-            {
-                parameters.push(param_metadata);
+        let pixels = matrix
+            .pixels()
+            .into_iter()
+            .enumerate()
+            .map(|(index, pixel)| (pixel.key, ElementSlot::Pixel(index)));
+        let groups = matrix
+            .pixel_groups()
+            .into_iter()
+            .enumerate()
+            .map(|(index, (group_key, _))| (group_key, ElementSlot::Group(index)));
+        for (pixel_key, element) in pixels.chain(groups) {
+            for (template_key, template) in ofl.template_channels() {
+                index_channel(
+                    &mut index,
+                    &mut switches,
+                    Some(&pixel_key),
+                    template_key,
+                    element,
+                    template,
+                );
             }
         }
-
-        Ok(vec![FixtureElement {
-            label: "Main".to_string(),
-            parameters,
-        }])
     }
-}
 
-/// Convert matrix fixture to multiple Elements (one per pixel)
-fn convert_matrix_elements(
-    ofl: &open_fixture_library::OflFixture,
-    mode: &open_fixture_library::OflMode,
-    matrix: &open_fixture_library::schema::OflMatrix,
-) -> Result<Vec<FixtureElement>> {
-    let available_channels = ofl.available_channels();
-    let template_channels = ofl.template_channels();
-    let mut elements = Vec::new();
-
-    // First, collect non-pixel channels (master channels that apply to all pixels)
-    let mut master_parameters = Vec::new();
-
-    for channel_key in mode.channels.iter().flatten() {
-        // Skip channels that contain pixel key placeholders (e.g., "$pixelKey")
-        if channel_key.contains('$') {
+    // A switching alias of a coarse channel becomes its own parameter. A switching
+    // alias of a fine channel stays a byte of that fine channel's coarse parameter;
+    // `collect_mode_parameters` moves it to a switching alias when the mode lists
+    // the coarse channel only through one.
+    switches.sort();
+    let mut aliases_by_target: HashMap<String, Vec<String>> = HashMap::new();
+    for (alias, target) in &switches {
+        let Some(target_byte) = index.get(target).cloned() else {
             continue;
-        }
-
-        if let Some(channel) = available_channels.get(channel_key)
-            && let Some(param_metadata) = convert_channel_to_parameter(channel_key, channel)
-        {
-            master_parameters.push(param_metadata);
-        }
+        };
+        let coarse_key = if target_byte.byte == 0 {
+            aliases_by_target
+                .entry(target.clone())
+                .or_default()
+                .push(alias.clone());
+            alias.clone()
+        } else {
+            target_byte.coarse_key.clone()
+        };
+        let switched = ChannelByte {
+            coarse_key,
+            ..target_byte
+        };
+        index.entry(alias.clone()).or_insert(switched);
     }
 
-    // If there are master channels, create a master element
-    if !master_parameters.is_empty() {
-        elements.push(FixtureElement {
-            label: "Master".to_string(),
-            parameters: master_parameters,
-        });
+    ChannelIndex {
+        bytes: index,
+        aliases_by_target,
     }
-
-    // Create an element for each pixel
-    // Determine if we need 2D labeling (for multi-row matrices)
-    let needs_2d_labels =
-        matrix.pixel_keys.len() > 1 && matrix.pixel_keys.iter().any(|row| row.len() > 1);
-
-    let mut pixel_counter = 1;
-    for (row_index, pixel_keys_row) in matrix.pixel_keys.iter().enumerate() {
-        for (col_index, pixel_key) in pixel_keys_row.iter().enumerate() {
-            let mut pixel_parameters = Vec::new();
-
-            // Process template channels for this pixel
-            if let Some(templates) = template_channels {
-                for (template_key, template_channel) in templates {
-                    // Replace $pixelKey with the actual pixel key
-                    let channel_key = template_key.replace("$pixelKey", pixel_key);
-
-                    // Check if this channel is used in the mode
-                    if mode.channels.iter().flatten().any(|k| k == &channel_key) {
-                        if let Some(param_metadata) =
-                            convert_template_channel_to_parameter(&channel_key, template_channel)
-                        {
-                            pixel_parameters.push(param_metadata);
-                        }
-                    }
-                }
-            }
-
-            // Create element for this pixel with appropriate label
-            let element_label = if needs_2d_labels {
-                // For 2D matrices, use row-column notation
-                format!("Pixel {}-{}", row_index + 1, col_index + 1)
-            } else {
-                // For 1D arrays, use simple sequential numbering
-                format!("Pixel {}", pixel_counter)
-            };
-            pixel_counter += 1;
-
-            if !pixel_parameters.is_empty() {
-                elements.push(FixtureElement {
-                    label: element_label,
-                    parameters: pixel_parameters,
-                });
-            }
-        }
-    }
-
-    Ok(elements)
 }
 
-/// Convert an OFL channel to ParameterMetadata
+/// Every channel key a fixture's modes may name, with the switching aliases of each
+/// switched coarse channel.
+struct ChannelIndex<'a> {
+    /// The parameter byte each channel key drives.
+    bytes: HashMap<String, ChannelByte<'a>>,
+    /// The switching aliases that select each coarse channel by default.
+    aliases_by_target: HashMap<String, Vec<String>>,
+}
+
+/// Adds one channel's coarse key and fine aliases to `index`, and records its switching
+/// channel aliases in `switches` with the channel each selects by default.
+///
+/// For a template channel, `pixel_key` replaces `$pixelKey` in every key it names.
+fn index_channel<'a>(
+    index: &mut HashMap<String, ChannelByte<'a>>,
+    switches: &mut Vec<(String, String)>,
+    pixel_key: Option<&str>,
+    coarse_template: &str,
+    element: ElementSlot,
+    channel: &'a OflChannel,
+) {
+    let key_for = |template: &str| match pixel_key {
+        Some(pixel_key) => template.replace("$pixelKey", pixel_key),
+        None => template.to_string(),
+    };
+    let coarse_key = key_for(coarse_template);
+    for (byte, alias) in channel.fine_channel_aliases.iter().enumerate() {
+        index.insert(
+            key_for(alias),
+            ChannelByte {
+                coarse_key: coarse_key.clone(),
+                byte: byte + 1,
+                element,
+                channel,
+            },
+        );
+    }
+    for alias in channel
+        .capabilities()
+        .iter()
+        .flat_map(|capability| capability.switch_channels.keys())
+    {
+        // The slot stays controllable when the default selects no channel: fall back
+        // to the first channel the alias can switch to.
+        let target = channel.default_switch_target(alias).flatten().or_else(|| {
+            channel
+                .capabilities()
+                .iter()
+                .find_map(|capability| capability.switch_channels.get(alias)?.as_deref())
+        });
+        if let Some(target) = target {
+            switches.push((key_for(alias), key_for(target)));
+        }
+    }
+    index.insert(
+        coarse_key.clone(),
+        ChannelByte {
+            coarse_key,
+            byte: 0,
+            element,
+            channel,
+        },
+    );
+}
+
+/// Walks a mode's resolved channel list by position and collects each parameter with
+/// the footprint slot of every byte the mode names.
+///
+/// Positions matter on the wire: a `null` entry, an unknown key or a fine alias all
+/// occupy a DMX slot, so every parameter gets explicit 1-based offsets taken from its
+/// position in the list instead of being packed after the previous parameter.
+fn collect_mode_parameters<'a>(ofl: &'a OflFixture, mode: &OflMode) -> Vec<ModeParameter<'a>> {
+    let index = channel_byte_index(ofl);
+    let keys = ofl.mode_channel_keys(mode);
+    let listed: HashSet<&str> = keys.iter().flatten().map(String::as_str).collect();
+    let mut parameters: Vec<ModeParameter<'a>> = Vec::new();
+    let mut parameter_by_coarse_key = HashMap::new();
+
+    for (position, key) in keys.iter().enumerate() {
+        let Some(channel) = key.as_ref().and_then(|key| index.bytes.get(key)) else {
+            continue;
+        };
+        let Ok(slot) = u16::try_from(position + 1) else {
+            continue;
+        };
+        // A fine alias whose coarse channel the mode only lists through a switching
+        // alias widens that switching parameter.
+        let switched_coarse_key = (channel.byte > 0
+            && !listed.contains(channel.coarse_key.as_str()))
+        .then(|| index.aliases_by_target.get(&channel.coarse_key))
+        .flatten()
+        .and_then(|aliases| aliases.iter().find(|alias| listed.contains(alias.as_str())));
+        let coarse_key = switched_coarse_key.unwrap_or(&channel.coarse_key);
+        let parameter_index = *parameter_by_coarse_key
+            .entry(coarse_key.clone())
+            .or_insert_with(|| {
+                parameters.push(ModeParameter {
+                    coarse_key: coarse_key.clone(),
+                    element: channel.element,
+                    channel: channel.channel,
+                    offsets: Vec::new(),
+                });
+                parameters.len() - 1
+            });
+        let parameter = &mut parameters[parameter_index];
+        if parameter.offsets.len() <= channel.byte {
+            parameter.offsets.resize(channel.byte + 1, None);
+        }
+        parameter.offsets[channel.byte].get_or_insert(slot);
+    }
+
+    parameters
+}
+
+/// Returns the parameter resolution for a number of DMX bytes.
+fn resolution_for_width(width: usize) -> Option<DmxValueResolution> {
+    match width {
+        1 => Some(DmxValueResolution::Coarse),
+        2 => Some(DmxValueResolution::Fine),
+        3 => Some(DmxValueResolution::UltraFine),
+        4 => Some(DmxValueResolution::Uber),
+        _ => None,
+    }
+}
+
+/// Converts the channels of an OFL mode to fixture elements.
+///
+/// Plain fixtures get one "Main" element. Matrix fixtures get a "Master" element for
+/// fixture-wide channels, then one element per pixel and per pixel group that the mode
+/// uses. Each parameter keeps the DMX slots its channels occupy in the mode, and a
+/// parameter whose mode also lists its fine aliases is widened to 16, 24 or 32 bits.
+fn convert_mode_channels(ofl: &OflFixture, mode: &OflMode) -> Vec<FixtureElement> {
+    let mut by_element: BTreeMap<ElementSlot, Vec<(u16, ParameterMetadata)>> = BTreeMap::new();
+
+    for parameter in collect_mode_parameters(ofl, mode) {
+        // Only bytes named contiguously from the coarse channel are usable: a
+        // fine alias without its coarse channel cannot be driven on its own. Widths
+        // beyond 32 bits keep their four most significant bytes.
+        let offsets: Vec<u16> = parameter
+            .offsets
+            .iter()
+            .map_while(|slot| *slot)
+            .take(4)
+            .collect();
+        let Some(resolution) = resolution_for_width(offsets.len()) else {
+            continue;
+        };
+        let coarse_slot = offsets[0];
+        let bytes = offsets.len() as u8;
+        if let Some(metadata) = convert_channel_to_parameter(
+            &parameter.coarse_key,
+            parameter.channel,
+            resolution,
+            bytes,
+            DmxSlots::Explicit {
+                dmx_break: 1,
+                offsets,
+            },
+        ) {
+            by_element
+                .entry(parameter.element)
+                .or_default()
+                .push((coarse_slot, metadata));
+        }
+    }
+
+    let pixel_labels = ofl.matrix().map(pixel_labels).unwrap_or_default();
+    let group_keys: Vec<String> = ofl
+        .matrix()
+        .map(|matrix| matrix.pixel_groups.keys().cloned().collect())
+        .unwrap_or_default();
+    by_element
+        .into_iter()
+        .map(|(element, mut parameters)| {
+            parameters.sort_by_key(|(slot, _)| *slot);
+            let label = match element {
+                ElementSlot::Shared if ofl.matrix().is_some() => "Master".to_string(),
+                ElementSlot::Shared => "Main".to_string(),
+                ElementSlot::Pixel(pixel) => pixel_labels[pixel].clone(),
+                ElementSlot::Group(group) => group_keys[group].clone(),
+            };
+            FixtureElement {
+                label,
+                parameters: parameters
+                    .into_iter()
+                    .map(|(_, parameter)| parameter)
+                    .collect(),
+            }
+        })
+        .collect()
+}
+
+/// Returns the element label of every matrix pixel in [`OflMatrix::pixels`] order.
+///
+/// Matrices spanning several axes use their positions on those axes, outermost first
+/// ("Pixel 2-3" for row 2, column 3); a single row or column uses its position along
+/// that axis ("Pixel 7"), so a gap in the matrix leaves a gap in the numbering.
+fn pixel_labels(matrix: &OflMatrix) -> Vec<String> {
+    let axes = matrix.defined_axes();
+    matrix
+        .pixels()
+        .iter()
+        .map(|pixel| {
+            let position: Vec<String> = axes
+                .iter()
+                .map(|axis| pixel.position[*axis].to_string())
+                .collect();
+            match position.is_empty() {
+                true => "Pixel 1".to_string(),
+                false => format!("Pixel {}", position.join("-")),
+            }
+        })
+        .collect()
+}
+
+/// Returns the rotation range, in degrees, that a Pan or Tilt channel covers across
+/// its DMX range: the first matching capability's start angle and the last one's end
+/// angle. Returns `None` when the angles are not given in degrees.
+fn position_range_degrees(channel: &OflChannel, capability_type: &str) -> Option<(f32, f32)> {
+    let matching: Vec<_> = channel
+        .capabilities()
+        .iter()
+        .filter(|capability| capability.capability_type == capability_type)
+        .collect();
+    let (start, _) = matching.first()?.angle_range_degrees()?;
+    let (_, end) = matching.last()?.angle_range_degrees()?;
+    Some((start, end))
+}
+
+/// Converts one OFL channel (plain or pixel template) to parameter metadata.
+///
+/// `resolution` and `dmx_slots` come from the mode layout, since OFL expresses width
+/// through the fine aliases a mode lists rather than on the channel. Default and
+/// highlight values are rescaled to that width, and Pan and Tilt take their degree
+/// range from the capabilities' angles.
 fn convert_channel_to_parameter(
     channel_key: &str,
-    channel: &open_fixture_library::OflChannel,
+    channel: &OflChannel,
+    resolution: DmxValueResolution,
+    bytes: u8,
+    dmx_slots: DmxSlots,
 ) -> Option<ParameterMetadata> {
-    // Infer attribute from channel capabilities
-    let attribute = infer_attribute_from_capabilities(channel_key, &channel.capabilities)?;
+    let attribute = infer_attribute_from_capabilities(channel_key, channel.capabilities())?;
 
-    // Get DMX resolution
-    let resolution = match channel.dmx_value_resolution {
-        8 => DmxValueResolution::Coarse,
-        16 => DmxValueResolution::Fine,
-        24 => DmxValueResolution::UltraFine,
-        _ => DmxValueResolution::Coarse,
-    };
-
-    // Parse default value (TODO: currently unused because parameters are not stored in our parameter metadata)
-    let _default_value = parse_dmx_value(&channel.default_value).unwrap_or(0.0);
-
-    let merge_type = match channel.precedence.as_deref() {
-        Some("HTP") => MergeStrategy::HTP,
-        Some("LTP") => MergeStrategy::LTP,
-        _ => default_merge_strategy(&attribute),
+    let merge_type = match channel.precedence {
+        Some(OflPrecedence::Htp) => MergeStrategy::HTP,
+        Some(OflPrecedence::Ltp) => MergeStrategy::LTP,
+        None => default_merge_strategy(&attribute),
     };
 
     let use_grandmaster = matches!(
@@ -239,81 +439,31 @@ fn convert_channel_to_parameter(
         Attribute::Intensity | Attribute::VirtualIntensity
     );
 
-    // Calculate max value based on resolution (2^bits - 1)
-    let max = match resolution {
-        DmxValueResolution::Coarse => 255.0,           // 2^8 - 1
-        DmxValueResolution::Fine => 65_535.0,          // 2^16 - 1
-        DmxValueResolution::UltraFine => 16_777_215.0, // 2^24 - 1
-        DmxValueResolution::Uber => 4_294_967_295.0,   // 2^32 - 1
+    let position_range = match attribute {
+        Attribute::Pan => position_range_degrees(channel, "Pan"),
+        Attribute::Tilt => position_range_degrees(channel, "Tilt"),
+        _ => None,
     };
 
-    Some(ParameterMetadata {
-        dmx_slots: Default::default(),
+    let mut metadata = ParameterMetadata {
+        dmx_slots,
         functions: Vec::new(),
-        default_dmx: None,
-        highlight_dmx: None,
+        default_dmx: channel.default_value_at(bytes),
+        highlight_dmx: channel.highlight_value_at(bytes),
         native_unit: attribute.native_unit(),
         value_polarity: attribute.value_polarity(),
         attribute,
         resolution,
         min: 0.0,
-        max,
+        max: resolution.dmx_max() as f32,
         offset: ParameterValue::Absolute { value: 0.0 },
-        is_inverted: channel.invert.unwrap_or(false),
+        is_inverted: false,
         is_snap: false,
         merge_type,
         use_grandmaster,
-    })
-}
-
-/// Convert an OFL template channel to ParameterMetadata
-fn convert_template_channel_to_parameter(
-    channel_key: &str,
-    template_channel: &open_fixture_library::schema::OflTemplateChannel,
-) -> Option<ParameterMetadata> {
-    // Infer attribute from channel capabilities
-    let attribute = infer_attribute_from_capabilities(channel_key, &template_channel.capabilities)?;
-
-    // Get DMX resolution
-    let resolution = match template_channel.dmx_value_resolution {
-        8 => DmxValueResolution::Coarse,
-        16 => DmxValueResolution::Fine,
-        24 => DmxValueResolution::UltraFine,
-        _ => DmxValueResolution::Coarse,
     };
-
-    let merge_type = default_merge_strategy(&attribute);
-
-    let use_grandmaster = matches!(
-        attribute,
-        Attribute::Intensity | Attribute::VirtualIntensity
-    );
-
-    // Calculate max value based on resolution (2^bits - 1)
-    let max = match resolution {
-        DmxValueResolution::Coarse => 255.0,           // 2^8 - 1
-        DmxValueResolution::Fine => 65_535.0,          // 2^16 - 1
-        DmxValueResolution::UltraFine => 16_777_215.0, // 2^24 - 1
-        DmxValueResolution::Uber => 4_294_967_295.0,   // 2^32 - 1
-    };
-
-    Some(ParameterMetadata {
-        dmx_slots: Default::default(),
-        functions: Vec::new(),
-        default_dmx: None,
-        highlight_dmx: None,
-        native_unit: attribute.native_unit(),
-        value_polarity: attribute.value_polarity(),
-        attribute,
-        resolution,
-        min: 0.0,
-        max,
-        offset: ParameterValue::Absolute { value: 0.0 },
-        is_inverted: false, // Template channels typically don't have invert flags
-        is_snap: false,
-        merge_type,
-        use_grandmaster,
-    })
+    apply_position_physical_range(&mut metadata, position_range);
+    Some(metadata)
 }
 
 /// Infer nightfall Attribute from OFL channel capabilities
@@ -419,23 +569,6 @@ pub(super) fn map_channel_key_to_attribute(key: &str) -> Option<Attribute> {
         Some(Attribute::Custom {
             label: key.to_string(),
         })
-    }
-}
-
-/// Parse DMX value from JSON value
-pub(super) fn parse_dmx_value(value: &Option<serde_json::Value>) -> Option<ParameterDmxValue> {
-    match value {
-        Some(serde_json::Value::Number(n)) => n.as_f64().map(|v| v as ParameterDmxValue),
-        Some(serde_json::Value::String(s)) => {
-            // Handle percentage strings like "50%"
-            if s.ends_with('%') {
-                let percent = s.trim_end_matches('%').parse::<f32>().ok()?;
-                Some(percent / 100.0 * 255.0)
-            } else {
-                s.parse::<ParameterDmxValue>().ok()
-            }
-        }
-        _ => None,
     }
 }
 

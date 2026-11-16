@@ -7,8 +7,14 @@
  */
 
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { before } from "node:test";
+import { loadWasmBridge } from "../../lib/wasm-module";
 import { type GuideSnapshot, guideCompletionToken } from "./progress";
+
+/** Loads the WASM bridge that resolves the fan the placement lesson asks for. */
+before(async () => {
+  await loadWasmBridge();
+});
 
 /** Builds the minimal domain state needed to exercise guide completion independently. */
 function sampleState(): GuideSnapshot {

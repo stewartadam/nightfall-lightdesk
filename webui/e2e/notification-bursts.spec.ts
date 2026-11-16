@@ -115,7 +115,7 @@ test("duplicate bursts coalesce and dismissal respects the visible cap", async (
   await page
     .locator(".toastify")
     .filter({ hasText: "Repeated warning" })
-    .getByRole("button", { name: "Close", exact: true })
+    .getByRole("button", { name: "Dismiss notification", exact: true })
     .click();
   await expect(
     page.locator(".toastify").filter({ hasText: "Queued 2" }),

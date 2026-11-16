@@ -310,7 +310,7 @@ function rgbCue(
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values: {
             Red: inlinePercent(red),
             Green: inlinePercent(green),
@@ -929,8 +929,8 @@ test("operator creates a path and assigns it to an RGB cue", async ({
             (uid: string) => cues[uid]?.identifiers?.id === cueId,
           );
           const cue = cues[cueUid];
-          return cue?.instructions?.[0]?.cue_instruction?.values
-            ? Object.keys(cue.instructions[0].cue_instruction.values).sort()
+          return cue?.instructions?.[0]?.assertions?.values
+            ? Object.keys(cue.instructions[0].assertions.values).sort()
             : [];
         },
         { sequenceId, cueId },
@@ -976,7 +976,7 @@ test("operator creates a path and assigns it to an RGB cue", async ({
     .poll(() =>
       page.evaluate((targetCueUid) => {
         const cue = (window as any).appStores.cues.get()[targetCueUid];
-        return cue?.instructions?.[0]?.cue_instruction?.color_path_id;
+        return cue?.instructions?.[0]?.assertions?.color_path_id;
       }, storedCueUid),
     )
     .toBe(colorPathId);

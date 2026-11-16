@@ -17,8 +17,9 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::*;
+use nightfall_clips::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
 use nightfall_engine::prelude::*;
-use nightfall_instances::ClipInstanceAttachment;
+use nightfall_instances::{ClipInstanceAttachment, InstanceKind};
 use nightfall_undo::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -46,9 +47,7 @@ pub mod prelude {
     pub use crate::materialized_fx::{
         MaterializedFx, MaterializedFxReconstructionHandle, spawn_reconstructed_fx_for_clip,
     };
-    pub use crate::preview_status::{
-        StepFxPreviewPlaybackStatus, StepFxPreviewTrackPhaseOffsets, step_fx_preview_status,
-    };
+    pub use crate::preview_status::{StepFxPreviewPlaybackStatus, StepFxPreviewTrackPhaseOffsets};
     pub use crate::step_fx::{
         ActiveStepFx, Bezier, CurveType, DurationInput, FxDirection, FxLane, FxLaneSample, FxStep,
         FxTrack, Linear, MaterializedStepFxReconstructionHandle, PhaseGroups, Point2D, Snap,
@@ -74,21 +73,24 @@ impl Plugin for FxPlugin {
         tracing::debug!("Registering FxPlugin");
         app.init_resource::<DataProvider<fx::Fx>>();
 
-        register_ingress_command::<FxCommand>(app);
-        register_ingress_command::<events::StepFxCommand>(app);
+        register_client_command::<FxCommand>(app, Undo::Captured);
+        register_client_command::<events::StepFxCommand>(app, Undo::Captured);
         app.add_message::<events::FxPreviewUpdate>();
         app.add_message::<events::StepFxPreviewUpdate>();
         app.add_message::<events::StepFxCommandResult>();
-        register_engine_operation::<events::FxPlaybackOperation>(app);
+        for kind in [ClipSourceKind::Fx, ClipSourceKind::StepFx] {
+            app.register_clip_source(
+                kind,
+                ClipSourceDomain {
+                    playback_kind: InstanceKind::Fx,
+                    handles_clip_operations: false,
+                    restarts_on_go: false,
+                },
+            );
+        }
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
 
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FxAstConverter>();
-
-        register_command_deserializer::<FxCommand>(app, websocket::deserialize_fx_command);
-        register_command_deserializer::<events::StepFxCommand>(
-            app,
-            websocket::deserialize_step_fx_command,
-        );
 
         register_update_deserializer(
             app,
@@ -110,9 +112,9 @@ impl Plugin for FxPlugin {
             .register::<events::StepFxCommand>();
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
-                events::handle_events,
+                events::handle_events.after(DeskEventSet::ClipRouting),
                 events::crud_events,
                 (
                     events::handle_step_fx_commands,
@@ -131,7 +133,7 @@ impl Plugin for FxPlugin {
         app.add_systems(
             Update,
             systems::sync_fx_instance_timebase
-                .after(EventHandling)
+                .after(CommandApplication)
                 .run_if(in_state(AppState::Ready)),
         );
         app.add_systems(
@@ -146,18 +148,13 @@ impl Plugin for FxPlugin {
         // WebSocket forwarding and sends owned by fx plugin
         app.add_systems(
             PostUpdate,
-            (
-                websocket::forward_fx_commands,
-                websocket::send_fx_on_change,
-                websocket::send_step_fx_on_change,
-            )
-                .in_set(ClientFeedback),
+            websocket::forward_fx_commands.in_set(ClientFeedback),
         );
-
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
-        );
+        app.add_client_feed::<websocket::FxFeed>()
+            .on_change(resource_changed::<DataProvider<fx::Fx>>);
+        app.add_client_feed::<websocket::StepFxFeed>()
+            .on_change(websocket::step_fx_changed);
+        preview_status::register(app);
     }
 }
 

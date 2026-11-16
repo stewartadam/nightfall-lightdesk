@@ -65,7 +65,7 @@ test("captures live color output cadence during audio discovery", async ({
         curve_out: "Linear",
       };
       for (const instruction of cue.instructions) {
-        instruction.cue_instruction.values = Object.fromEntries(
+        instruction.assertions.values = Object.fromEntries(
           Object.entries({
             Intensity: 1,
             Red: index === 0 ? 1 : 0,

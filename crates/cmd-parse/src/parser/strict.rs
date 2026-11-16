@@ -64,6 +64,7 @@ use crate::ast::{
     FxModuleConfigClauseAst, FxModuleConfigEntryAst, FxModuleMergeFlagAst,
     FxModuleSelectionClauseAst, FxModuleStorePartAst, StoreFxModuleCommandAst,
 };
+use crate::ast::{ParkActionAst, ParkCommandAst};
 use crate::command_family::{StructuralAstDispatchKind, command_family_for_root_clause};
 use crate::lexicon::aliases::{AliasCanonicalizationContext, canonicalize_token};
 #[cfg(test)]
@@ -1787,6 +1788,7 @@ fn dispatch_structural_branch<'i>(
         StructuralAstDispatchKind::Clip => transport::materialize_clip_ast(ctx),
         StructuralAstDispatchKind::ChannelOverride => programmer::materialize_channel_ast(ctx),
         StructuralAstDispatchKind::Release => general::materialize_release_ast(ctx),
+        StructuralAstDispatchKind::Park => general::materialize_park_ast(ctx),
         StructuralAstDispatchKind::Clear => general::materialize_clear_ast(ctx),
         StructuralAstDispatchKind::Flow => flow::materialize_flow_ast(ctx),
         StructuralAstDispatchKind::Timecode => transport::materialize_timecode_ast(ctx),

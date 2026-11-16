@@ -23,6 +23,7 @@ import { normalizeAttributeName } from "../../../lib/utils";
 import { fixtures, programmerSelection } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { ParameterValuePolarity } from "../../../types";
+import { ParkedParametersSection } from "../../park";
 
 const humanizeAttributeName = (attr: string): string => {
   if (attr.includes(" ")) return attr;
@@ -114,11 +115,11 @@ export default function ProgrammerProperties() {
   const sendAttributeValue = (attr: string, value: number) => {
     const mode = getMode(attr);
     const operator = mode === "relative" ? "~" : "@";
-    const cmd: types.DeskCommand = {
+    const cmd: types.EngineCommand = {
       type: "Eval",
       data: `${formatAttributeForCommand(attr)}${operator}${value}`,
     };
-    commandClient.emit("DeskCommand", cmd);
+    commandClient.emit("EngineCommand", cmd);
   };
 
   /** Returns the percentage range supported by one attribute editing mode. */
@@ -147,11 +148,11 @@ export default function ProgrammerProperties() {
               onChange={(color) => {
                 setPickerColor(color);
                 const rgb = parseHexColor(color.hex);
-                const cmd: types.DeskCommand = {
+                const cmd: types.EngineCommand = {
                   type: "Eval",
                   data: `red@${(rgb.r / 255) * 100} green@${(rgb.g / 255) * 100} blue@${(rgb.b / 255) * 100}`,
                 };
-                commandClient.emit("DeskCommand", cmd);
+                commandClient.emit("EngineCommand", cmd);
               }}
             />
           </div>
@@ -208,6 +209,7 @@ export default function ProgrammerProperties() {
           </div>
         </Show>
       </Show>
+      <ParkedParametersSection selectedFixtureUids={$selection()} />
     </div>
   );
 }

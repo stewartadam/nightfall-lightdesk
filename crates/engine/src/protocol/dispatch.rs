@@ -104,6 +104,14 @@ fn handle_ingress_typed<C: IngressCommand + Clone + 'static>(
         return;
     }
 
+    let forwarded_sequence =
+        crate::command_forwarding::record_forwarded_command(world, command, &origin);
+    crate::session_history::record_session_command(
+        command_id,
+        command,
+        &origin,
+        forwarded_sequence,
+    );
     let Some(mut messages) = world.get_resource_mut::<Messages<CommandEnvelope<C>>>() else {
         tracing::warn!(
             command_type = %std::any::type_name::<C>(),

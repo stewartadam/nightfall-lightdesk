@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { BookOpenIcon } from "@squidlab/phosphor-solid/book-open";
+import { CloudArrowUpIcon } from "@squidlab/phosphor-solid/cloud-arrow-up";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
 import { FilePlusIcon } from "@squidlab/phosphor-solid/file-plus";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
@@ -17,6 +18,7 @@ import { GraduationCapIcon } from "@squidlab/phosphor-solid/graduation-cap";
 import { InfoIcon } from "@squidlab/phosphor-solid/info";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { type JSX, Show } from "solid-js";
+import { openRigImportDialog } from "../../../features/mvr-import";
 import { openWelcomeGuide } from "../../../features/welcome-guide";
 import { hasDiskStorage } from "../../../lib/disk-storage";
 import { openDocumentation, openFeedbackPage } from "../../../lib/feedback";
@@ -140,6 +142,9 @@ export default function AppMenu(props: {
         >
           Import Showfile
         </DropdownMenuItem>
+        <DropdownMenuItem icon={CloudArrowUpIcon} onClick={openRigImportDialog}>
+          Import Rig from MVR
+        </DropdownMenuItem>
         <DropdownMenuItem
           icon={FileArrowDownIcon}
           shortcut={desktopShortcut(TAURI_MENU_SHORTCUTS.saveShowfile)}
@@ -158,11 +163,16 @@ export default function AppMenu(props: {
       <DropdownMenuItem icon={GraduationCapIcon} onClick={openWelcomeGuide}>
         Welcome Guide
       </DropdownMenuItem>
-      <DropdownMenuItem icon={BookOpenIcon} onClick={openDocumentation}>
+      <DropdownMenuItem
+        icon={BookOpenIcon}
+        external
+        onClick={openDocumentation}
+      >
         User Guide
       </DropdownMenuItem>
       <DropdownMenuItem
         icon={QuestionIcon}
+        external
         onClick={() => openFeedbackPage("feedback")}
       >
         Give Feedback
@@ -184,6 +194,7 @@ export default function AppMenu(props: {
         </Show>
         <DropdownMenuItem
           icon={QuestionIcon}
+          external
           onClick={() => openFeedbackPage("bug")}
         >
           Report a Bug

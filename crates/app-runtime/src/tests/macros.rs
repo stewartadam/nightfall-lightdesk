@@ -10,33 +10,19 @@
 
 use std::time::{Duration, Instant};
 
-use bevy::prelude::{App, Messages};
 use nightfall::prelude::{Identifiers, Macro};
 use nightfall_actions::{ActionInvocation, ActionSurface};
 use nightfall_clips::Clip;
-use nightfall_desk::prelude::DeskCommand;
-use nightfall_engine::prelude::{
-    CommandId, CommandOrigin, CommandOutcome, CommandResult, CommandTracker, DataProvider,
-    IngressCommand, PayloadEnvelope, PendingCommandBuffer, ReplyTarget, UndoId,
-};
+use nightfall_engine::prelude::{CommandOutcome, DataProvider, UndoId};
 use nightfall_macros::prelude::*;
 use nightfall_undo::prelude::{UndoCommand, UndoManager};
 
-use super::sample_app;
+use super::desk_harness::DeskHarness;
 
-/// Sample world plus every command result seen so far, so tests can wait on any command.
-struct MacroHarness {
-    app: App,
-    results: Vec<CommandResult>,
-}
-
-impl MacroHarness {
+impl DeskHarness {
     /// Builds a sample world holding the given macros as `(id, press body, release body)`.
-    fn new(macros: &[(u32, &str, &str)]) -> Self {
-        let mut harness = Self {
-            app: sample_app(),
-            results: Vec::new(),
-        };
+    pub(super) fn with_macros(macros: &[(u32, &str, &str)]) -> Self {
+        let mut harness = Self::new();
         for (id, commands, release_commands) in macros {
             let stored = harness.submit(MacroCommand::StoreMacro(Macro {
                 identifiers: Identifiers {
@@ -57,80 +43,6 @@ impl MacroHarness {
         harness
     }
 
-    /// Submits a command the way a client does, with undo capture and a broadcast result.
-    fn submit<C: IngressCommand + Clone + 'static>(&mut self, command: C) -> CommandId {
-        let command_id = CommandId::new();
-        let undo_id = UndoId::from(command_id);
-        self.app
-            .world_mut()
-            .resource_mut::<CommandTracker>()
-            .register_context(
-                command_id,
-                undo_id,
-                CommandOrigin::Cli,
-                ReplyTarget::ClientBroadcast,
-            )
-            .expect("test command should register");
-        self.app
-            .world_mut()
-            .resource_mut::<PendingCommandBuffer>()
-            .push(PayloadEnvelope::with_context(
-                command_id,
-                undo_id,
-                Box::new(command),
-            ));
-        command_id
-    }
-
-    /// Submits command-line text as one desk eval command.
-    fn eval(&mut self, text: &str) -> CommandId {
-        self.submit(DeskCommand::Eval(text.to_string()))
-    }
-
-    /// Runs one frame and records the command results it produced.
-    fn step(&mut self) {
-        self.app.update();
-        self.results.extend(
-            self.app
-                .world_mut()
-                .resource_mut::<Messages<CommandResult>>()
-                .drain(),
-        );
-    }
-
-    /// Returns a command's result if it has finished.
-    fn result(&self, command_id: CommandId) -> Option<CommandOutcome> {
-        self.results
-            .iter()
-            .find(|result| result.command_id == command_id)
-            .map(|result| result.outcome.clone())
-    }
-
-    /// Steps frames until a command finishes, giving up after two seconds.
-    fn wait(&mut self, command_id: CommandId) -> CommandOutcome {
-        let deadline = Instant::now() + Duration::from_secs(2);
-        loop {
-            self.step();
-            if let Some(outcome) = self.result(command_id) {
-                return outcome;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "command {command_id} did not finish"
-            );
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
-
-    /// Steps frames for at least `duration` of wall-clock time, so `sleep` statements elapse.
-    fn run_for(&mut self, duration: Duration) {
-        let until = Instant::now() + duration;
-        while Instant::now() < until {
-            self.step();
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
-
     /// Returns whether a clip with this ID exists.
     fn has_clip(&mut self, id: u32) -> bool {
         self.app
@@ -146,6 +58,37 @@ impl MacroHarness {
         self.app.world().resource::<MacroRuns>().is_running(uid)
     }
 
+    /// Lists the clip launches waiting for the next beat or bar.
+    fn armed_launches(&self) -> Vec<nightfall_clips::launch_quantize::ArmedLaunch> {
+        self.app
+            .world()
+            .resource::<nightfall_clips::launch_quantize::ArmedLaunches>()
+            .status()
+    }
+
+    /// Runs frames until the wall-clock show tempo reaches the given zero-based beat of its bar,
+    /// so a quantized launch typed next lands well clear of the downbeat on either side. The
+    /// deadline covers a full bar at the slowest tempo the engine allows.
+    fn wait_for_beat_in_bar(&mut self, beat: u32) {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            self.step();
+            let tempo = self
+                .app
+                .world()
+                .resource::<nightfall_tempo::prelude::ShowTempo>()
+                .snapshot();
+            if tempo.beat_in_bar() == beat {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the show tempo never reached beat {beat} of its bar"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     /// Returns the UID of the macro with this ID.
     fn macro_uid(&self, id: u32) -> uuid::Uuid {
         self.app
@@ -156,23 +99,14 @@ impl MacroHarness {
             .identifiers
             .uid
     }
-
-    /// Returns the undo IDs of the history, oldest first.
-    fn undo_ids(&self) -> Vec<UndoId> {
-        self.app
-            .world()
-            .resource::<UndoManager>()
-            .undo_stack()
-            .map(|group| group.undo_id)
-            .collect()
-    }
 }
 
 /// Typing `macro 1 start` runs every statement in order, finishes when the run ends, and the
 /// whole run undoes as one step.
 #[tokio::test]
 async fn macro_start_runs_statements_in_order_as_one_undo_step() {
-    let mut harness = MacroHarness::new(&[(1, "rename clip 1 901\nrename clip 901 902", "")]);
+    let mut harness =
+        DeskHarness::with_macros(&[(1, "rename clip 1 901\nrename clip 901 902", "")]);
 
     let started = harness.eval("macro 1 start");
     assert_eq!(harness.wait(started), CommandOutcome::succeeded());
@@ -197,7 +131,7 @@ async fn macro_start_runs_statements_in_order_as_one_undo_step() {
 #[tokio::test]
 async fn failed_statement_stops_macro_and_names_the_line() {
     let mut harness =
-        MacroHarness::new(&[(1, "rename clip 1 901\nnot a command\nrename clip 2 902", "")]);
+        DeskHarness::with_macros(&[(1, "rename clip 1 901\nnot a command\nrename clip 2 902", "")]);
 
     let started = harness.eval("macro 1 start");
     let CommandOutcome::Failed(error) = harness.wait(started) else {
@@ -226,7 +160,7 @@ async fn failed_statement_stops_macro_and_names_the_line() {
 #[tokio::test]
 async fn operator_edit_mid_run_splits_the_macro_undo_step() {
     let mut harness =
-        MacroHarness::new(&[(1, "rename clip 1 901\nsleep 150ms\nrename clip 2 902", "")]);
+        DeskHarness::with_macros(&[(1, "rename clip 1 901\nsleep 150ms\nrename clip 2 902", "")]);
 
     let started = harness.eval("macro 1 start");
     while !harness.has_clip(901) {
@@ -251,7 +185,7 @@ async fn operator_edit_mid_run_splits_the_macro_undo_step() {
 #[tokio::test]
 async fn undo_stops_a_running_macro() {
     let mut harness =
-        MacroHarness::new(&[(1, "rename clip 1 901\nsleep 150ms\nrename clip 2 902", "")]);
+        DeskHarness::with_macros(&[(1, "rename clip 1 901\nsleep 150ms\nrename clip 2 902", "")]);
 
     let started = harness.eval("macro 1 start");
     while !harness.has_clip(901) {
@@ -275,7 +209,7 @@ async fn undo_stops_a_running_macro() {
 /// `macro 1 stop` ends a run during a sleep, and the starting command reports success.
 #[tokio::test]
 async fn macro_stop_ends_a_run_during_sleep() {
-    let mut harness = MacroHarness::new(&[(1, "sleep 150ms\nrename clip 1 901", "")]);
+    let mut harness = DeskHarness::with_macros(&[(1, "sleep 150ms\nrename clip 1 901", "")]);
 
     let started = harness.eval("macro 1 start");
     harness.step();
@@ -295,7 +229,7 @@ async fn macro_stop_ends_a_run_during_sleep() {
 /// Starting a macro that is already running is ignored rather than running a second copy.
 #[tokio::test]
 async fn starting_a_running_macro_is_ignored() {
-    let mut harness = MacroHarness::new(&[(1, "sleep 100ms\nrename clip 1 901", "")]);
+    let mut harness = DeskHarness::with_macros(&[(1, "sleep 100ms\nrename clip 1 901", "")]);
 
     let first = harness.eval("macro 1 start");
     harness.step();
@@ -313,7 +247,7 @@ async fn starting_a_running_macro_is_ignored() {
 #[tokio::test]
 async fn release_stops_press_body_and_runs_release_body() {
     let mut harness =
-        MacroHarness::new(&[(1, "sleep 150ms\nrename clip 1 901", "rename clip 2 902")]);
+        DeskHarness::with_macros(&[(1, "sleep 150ms\nrename clip 1 901", "rename clip 2 902")]);
     let uid = harness.macro_uid(1);
 
     harness
@@ -347,7 +281,7 @@ async fn release_stops_press_body_and_runs_release_body() {
 /// on a pad runs the whole macro.
 #[tokio::test]
 async fn release_without_release_body_lets_press_body_finish() {
-    let mut harness = MacroHarness::new(&[(1, "sleep 50ms\nrename clip 1 901", "")]);
+    let mut harness = DeskHarness::with_macros(&[(1, "sleep 50ms\nrename clip 1 901", "")]);
 
     let started = harness.eval("macro 1 start");
     harness.step();
@@ -361,7 +295,7 @@ async fn release_without_release_body_lets_press_body_finish() {
 /// A macro may start another macro and waits for it, while a loop back to itself is refused.
 #[tokio::test]
 async fn nested_macros_wait_for_each_other_and_refuse_cycles() {
-    let mut harness = MacroHarness::new(&[
+    let mut harness = DeskHarness::with_macros(&[
         (1, "macro 2 start\nrename clip 2 902", ""),
         (2, "rename clip 1 901", ""),
         (3, "macro 4 start", ""),
@@ -395,7 +329,7 @@ async fn nested_macros_wait_for_each_other_and_refuse_cycles() {
 /// child's remaining statements run either.
 #[tokio::test]
 async fn stopping_a_macro_stops_the_macros_it_started() {
-    let mut harness = MacroHarness::new(&[
+    let mut harness = DeskHarness::with_macros(&[
         (1, "macro 2 start\nrename clip 2 902", ""),
         (2, "sleep 150ms\nrename clip 1 901", ""),
     ]);
@@ -423,7 +357,7 @@ async fn stopping_a_macro_stops_the_macros_it_started() {
 /// holds.
 #[tokio::test]
 async fn editing_a_running_macro_stops_it() {
-    let mut harness = MacroHarness::new(&[(1, "sleep 150ms\nrename clip 1 901", "")]);
+    let mut harness = DeskHarness::with_macros(&[(1, "sleep 150ms\nrename clip 1 901", "")]);
 
     let started = harness.eval("macro 1 start");
     while !harness.is_running(1) {
@@ -449,7 +383,8 @@ async fn editing_a_running_macro_stops_it() {
 /// An `undo` typed in a macro's body steps the history without stopping the macro itself.
 #[tokio::test]
 async fn undo_in_a_macro_body_keeps_the_macro_running() {
-    let mut harness = MacroHarness::new(&[(1, "rename clip 1 901\nundo\nrename clip 2 902", "")]);
+    let mut harness =
+        DeskHarness::with_macros(&[(1, "rename clip 1 901\nundo\nrename clip 2 902", "")]);
 
     let started = harness.eval("macro 1 start");
     assert_eq!(harness.wait(started), CommandOutcome::succeeded());
@@ -468,7 +403,7 @@ async fn undo_in_a_macro_body_keeps_the_macro_running() {
 /// starting commands still get a result.
 #[tokio::test]
 async fn show_load_ends_running_macros() {
-    let mut harness = MacroHarness::new(&[(1, "sleep 150ms\nrename clip 1 901", "")]);
+    let mut harness = DeskHarness::with_macros(&[(1, "sleep 150ms\nrename clip 1 901", "")]);
 
     let started = harness.eval("macro 1 start");
     while !harness.is_running(1) {
@@ -487,7 +422,7 @@ async fn show_load_ends_running_macros() {
 /// finishes after both, as one undo step.
 #[tokio::test]
 async fn completed_press_body_runs_release_body() {
-    let mut harness = MacroHarness::new(&[(1, "rename clip 1 901", "rename clip 2 902")]);
+    let mut harness = DeskHarness::with_macros(&[(1, "rename clip 1 901", "rename clip 2 902")]);
 
     let started = harness.eval("macro 1 start");
     assert_eq!(harness.wait(started), CommandOutcome::succeeded());
@@ -502,7 +437,7 @@ async fn completed_press_body_runs_release_body() {
 #[tokio::test]
 async fn stopping_a_macro_runs_its_release_body() {
     let mut harness =
-        MacroHarness::new(&[(1, "sleep 150ms\nrename clip 1 901", "rename clip 2 902")]);
+        DeskHarness::with_macros(&[(1, "sleep 150ms\nrename clip 1 901", "rename clip 2 902")]);
 
     let started = harness.eval("macro 1 start");
     while !harness.is_running(1) {
@@ -521,7 +456,7 @@ async fn stopping_a_macro_runs_its_release_body() {
 /// the press failure.
 #[tokio::test]
 async fn failed_press_body_runs_release_body() {
-    let mut harness = MacroHarness::new(&[(1, "not a command", "rename clip 2 902")]);
+    let mut harness = DeskHarness::with_macros(&[(1, "not a command", "rename clip 2 902")]);
 
     let started = harness.eval("macro 1 start");
     let CommandOutcome::Failed(error) = harness.wait(started) else {
@@ -542,7 +477,7 @@ async fn failed_press_body_runs_release_body() {
 /// the press body finished.
 #[tokio::test]
 async fn release_after_the_macro_ended_does_nothing() {
-    let mut harness = MacroHarness::new(&[(1, "rename clip 1 901", "rename clip 2 902")]);
+    let mut harness = DeskHarness::with_macros(&[(1, "rename clip 1 901", "rename clip 2 902")]);
 
     let started = harness.eval("macro 1 start");
     assert_eq!(harness.wait(started), CommandOutcome::succeeded());
@@ -558,7 +493,7 @@ async fn release_after_the_macro_ended_does_nothing() {
 #[tokio::test]
 async fn undo_skips_the_release_body() {
     let mut harness =
-        MacroHarness::new(&[(1, "rename clip 1 901\nsleep 150ms", "rename clip 2 902")]);
+        DeskHarness::with_macros(&[(1, "rename clip 1 901\nsleep 150ms", "rename clip 2 902")]);
 
     let started = harness.eval("macro 1 start");
     while !harness.has_clip(901) {
@@ -570,4 +505,48 @@ async fn undo_skips_the_release_body() {
     harness.run_for(Duration::from_millis(250));
 
     assert!(harness.has_clip(1) && harness.has_clip(2));
+}
+
+/// With bar launch quantize on, the clip launches a macro runs fire at once instead of each
+/// waiting for its own downbeat, while the same launch typed by the operator still waits.
+#[tokio::test]
+async fn macro_clip_launches_skip_launch_quantize() {
+    let mut harness = DeskHarness::with_macros(&[(1, "clip 1 start\nclip 2 start", "")]);
+    let quantize = harness.submit(nightfall_tempo::TempoCommand::SetLaunchQuantize(
+        nightfall_tempo::LaunchQuantize::Bar,
+    ));
+    assert_eq!(harness.wait(quantize), CommandOutcome::succeeded());
+    harness.run_for(Duration::from_millis(50));
+
+    let started = harness.eval("macro 1 start");
+    for _ in 0..50 {
+        harness.step();
+        assert!(
+            harness.armed_launches().is_empty(),
+            "macro statements must not wait for the downbeat"
+        );
+        if harness.result(started).is_some() {
+            break;
+        }
+    }
+    assert_eq!(harness.result(started), Some(CommandOutcome::succeeded()));
+
+    // A press just after a downbeat fires at once (launch grace), so type the launch mid-bar.
+    harness.wait_for_beat_in_bar(1);
+    let typed = harness.eval("clip 3 start");
+    for _ in 0..50 {
+        harness.step();
+        if !harness.armed_launches().is_empty() || harness.result(typed).is_some() {
+            break;
+        }
+    }
+    assert_eq!(
+        harness
+            .armed_launches()
+            .iter()
+            .map(|launch| launch.clip_id)
+            .collect::<Vec<_>>(),
+        vec![3],
+        "an operator's launch still waits, so quantize was on"
+    );
 }

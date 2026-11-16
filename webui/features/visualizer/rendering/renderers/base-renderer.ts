@@ -26,6 +26,11 @@ import type {
   RenderableSceneObject,
 } from "../../model/types";
 import type { SceneManager } from "../scene-manager";
+import {
+  RenderFailureLatch,
+  type VisualizerRenderFailure,
+  type VisualizerRenderFailureCallback,
+} from "./render-failure";
 import type {
   CameraState,
   FixtureDmxBatch,
@@ -50,6 +55,28 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
   protected debugOverlays: DebugOverlayRegistry | undefined;
   /** Set by dispose(); scene updates arriving afterwards are dropped instead of reported as calls made before init. */
   protected disposed = false;
+  /** Holds the first render failure; once set, the render loop stays stopped. */
+  protected readonly failures = new RenderFailureLatch();
+
+  /** Delivers this renderer's failure, if any, to the given listener. */
+  setFailureCallback(callback: VisualizerRenderFailureCallback | null): void {
+    this.failures.setCallback(callback);
+  }
+
+  /**
+   * Stops rendering for good and reports the failure once. The render loop is
+   * not restarted, so a broken renderer does not throw on every frame; the
+   * panel decides how to recover.
+   */
+  protected fail(failure: VisualizerRenderFailure): void {
+    if (this.failures.failed || this.disposed) return;
+    log.warn(`Renderer stopped (${failure.kind}): ${failure.message}`);
+    this.stopRenderingAfterFailure();
+    this.failures.report(failure);
+  }
+
+  /** Stops the render loop of a renderer that failed. */
+  protected abstract stopRenderingAfterFailure(): void;
 
   /**
    * Initialize debug overlays. Call from subclass init() after creating the scene.
@@ -233,6 +260,15 @@ export abstract class BaseVisualizerRenderer implements IVisualizerRenderer {
   }
 
   abstract setGridEnabled(enabled: boolean): void;
+
+  /** Whether scene objects are drawn; kept here so a scene manager created later starts with it. */
+  protected sceneObjectsVisible = true;
+
+  /** Shows or hides every scene object, now and in any scene manager created later. */
+  setSceneObjectsVisible(visible: boolean): void {
+    this.sceneObjectsVisible = visible;
+    this.sceneManager?.setSceneObjectsVisible(visible);
+  }
   /** Changes ambient rig visibility without changing fixture output. */
   abstract setDarkness(darkness: number): void;
   abstract setOrbitTargetIndicatorEnabled(enabled: boolean): void;

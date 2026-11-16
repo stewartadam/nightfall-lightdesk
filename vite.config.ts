@@ -149,8 +149,11 @@ function proxiedUrls(
   const env = loadEnv(mode, resolve(projectRoot), ["NIGHTFALL_"]);
   const backendPort =
     process.env.NIGHTFALL_PORT || env.NIGHTFALL_PORT || "3030";
-  const dashboardHost = env.NIGHTFALL_WORKTREE_DASHBOARD_HOST || "127.0.0.1";
-  const dashboardPort = env.NIGHTFALL_WORKTREE_DASHBOARD_PORT || "4780";
+  // The dashboard API reads its address only from the shell that starts it, so
+  // the proxy does the same instead of reading it from `.env`.
+  const dashboardHost =
+    process.env.NIGHTFALL_WORKTREE_DASHBOARD_HOST || "127.0.0.1";
+  const dashboardPort = process.env.NIGHTFALL_WORKTREE_DASHBOARD_PORT || "4780";
   const sharedPlaywrightServer =
     process.env.NIGHTFALL_PLAYWRIGHT_SHARED_VITE === "1";
 
@@ -281,6 +284,31 @@ function e2eChunkFileName(chunk: { facadeModuleId: string | null }): string {
   return directory === "."
     ? "assets/[name]-[hash].js"
     : `assets/${directory}/[name]-[hash].js`;
+}
+
+/**
+ * Declares the cascade layer order Tailwind expects before any stylesheet
+ * loads. Cascade layers rank by first appearance, and builds split component
+ * CSS into chunks whose links precede the Tailwind entry stylesheet, so a
+ * chunk's `@layer components` would otherwise rank below Tailwind's `base`
+ * preflight and lose its borders, padding and margins to the reset. Every
+ * HTML entry gets the statement here, so a new page cannot miss it. The list
+ * mirrors Tailwind v4's own layer statement and must follow it on upgrades.
+ */
+function cssLayerOrderPlugin(): Plugin {
+  return {
+    name: "nightfall:css-layer-order",
+    /** Prepends the layer order statement to every HTML page's head. */
+    transformIndexHtml() {
+      return [
+        {
+          tag: "style",
+          children: "@layer properties, theme, base, components, utilities;",
+          injectTo: "head-prepend",
+        },
+      ];
+    },
+  };
 }
 
 /**
@@ -447,6 +475,7 @@ export default defineConfig(({ mode, command }) => {
     },
     plugins: [
       tailwindcss(),
+      cssLayerOrderPlugin(),
       solidPlugin(),
       distributionNoticesPlugin(),
       loggerModuleNamesPlugin(),

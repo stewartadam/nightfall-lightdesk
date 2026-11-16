@@ -9,7 +9,7 @@
 import type { ProjectedCueInstructionValues } from "../../../lib/cue-value-projection";
 import type { ProcessedParameterValue } from "../../../lib/datagrid";
 import type * as types from "../../../types";
-import { selectedBlueprintValues } from "../../blueprints";
+import { appliedBlueprintValues } from "../../blueprints";
 
 export type ReferencedBlueprintInstructionTarget = {
   partIndex?: number;
@@ -26,7 +26,7 @@ export interface CueAssertionRow {
 
 /** Resolves operator-facing provenance for one live Blueprint instruction. */
 export function blueprintValueSourceForInstruction(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
   blueprintMap: Record<string, types.Blueprint>,
 ): types.OutboundBlueprintValueSource | undefined {
   const application = instruction.blueprint_application;
@@ -178,7 +178,7 @@ export function makeBlueprintInstructionsAbsolute(
       target.partIndex === undefined
         ? cue.instructions
         : cue.parts?.[target.partIndex]?.instructions;
-    const instruction = instructions?.[target.selectionIndex]?.cue_instruction;
+    const instruction = instructions?.[target.selectionIndex]?.assertions;
     const application = instruction?.blueprint_application;
     const blueprint = application
       ? blueprintMap[application.blueprint_uid]
@@ -191,10 +191,7 @@ export function makeBlueprintInstructionsAbsolute(
     ) {
       continue;
     }
-    instruction.values = selectedBlueprintValues(
-      blueprint,
-      application.selector,
-    );
+    instruction.values = appliedBlueprintValues(blueprint, application);
     delete instruction.blueprint_application;
     changed = true;
   }

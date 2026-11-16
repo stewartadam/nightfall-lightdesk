@@ -62,8 +62,8 @@ export function setTelemetryConsent(patch: Partial<TelemetryConsent>): void {
     ...state,
     consent,
   });
-  commandClient.emit("SettingsCommand", {
-    type: "SetTelemetryConsent",
+  commandClient.emit("TelemetryCommand", {
+    type: "SetConsent",
     data: consent,
   });
 }
@@ -220,7 +220,7 @@ function TelemetrySettings() {
     setResettingId(previousId);
     setUncopiedId(undefined);
     const copied = writeClipboardText(previousId);
-    commandClient.emit("SettingsCommand", { type: "ResetTelemetryInstallId" });
+    commandClient.emit("TelemetryCommand", { type: "ResetInstallId" });
     copied.then(confirmCopy, () => setUncopiedId(previousId));
   };
 

@@ -8,8 +8,11 @@
 
 import type * as types from "../types";
 import { parseDurationInput } from "./datagrid-rich-cell-helpers";
-import { durationToMs, msToDuration } from "./duration";
-import { resolveFanNumber, splitFanInput } from "./value-fan";
+import { getLogger } from "./logger";
+import { splitFanInput } from "./value-fan";
+import { loadedWasmBridge } from "./wasm-module";
+
+const log = getLogger(import.meta.url);
 
 /** Parses a timing fan expression into ordered duration waypoints. */
 export function parseTimingFanInput(input: string): types.Duration[] | null {
@@ -23,16 +26,30 @@ export function parseTimingFanInput(input: string): types.Duration[] | null {
   return durations as types.Duration[];
 }
 
-/** Resolves one fixed duration from fan waypoints at a target offset. */
-export function resolveTimingFanDuration(
+/**
+ * Resolves one fixed duration per target from timing fan waypoints, with the
+ * same rules cue playback uses for a fanned (manual) transition mode. Returns
+ * null while the WASM bridge is still loading.
+ */
+export function fanTimingDurations(
   durations: readonly types.Duration[],
-  offset: number,
   total: number,
-): types.Duration {
-  const first = durations[0] ?? msToDuration(0);
-  if (durations.length <= 1 || total <= 1) return first;
-
-  return msToDuration(
-    resolveFanNumber(durations.map(durationToMs), offset, total),
-  );
+): types.Duration[] | null {
+  const wasm = loadedWasmBridge();
+  if (!wasm) {
+    log.warn(
+      "Timing fan edit ignored because the WASM bridge has not loaded yet",
+    );
+    return null;
+  }
+  const mode: types.TransitionMode = {
+    type: "Manual",
+    data: [...durations],
+  };
+  const requests = Array.from({ length: Math.max(0, total) }, (_, offset) => ({
+    mode,
+    offset,
+    total,
+  }));
+  return wasm.resolve_transition_modes(requests) as types.Duration[];
 }

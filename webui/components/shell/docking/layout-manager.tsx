@@ -216,7 +216,7 @@ export default function LayoutManager(props: LayoutManagerProps) {
 
                     /** Identifies the layout devices open when they have no arrangement of their own. */
                     const isDefault = () =>
-                      settings().default_panel_layout_id === layout().id;
+                      settings().panelLayouts.default_layout_id === layout().id;
 
                     return (
                       <div

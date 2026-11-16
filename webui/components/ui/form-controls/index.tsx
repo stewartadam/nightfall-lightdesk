@@ -6,7 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type JSX, onCleanup, onMount, splitProps } from "solid-js";
+import {
+  createUniqueId,
+  type JSX,
+  onCleanup,
+  onMount,
+  Show,
+  splitProps,
+} from "solid-js";
+import "../selectable-surface.css";
 import "./form-controls.css";
 
 interface ControlDensity {
@@ -135,5 +143,65 @@ export function Radio(
   const [local, rest] = splitProps(props, ["class"]);
   return (
     <input type="radio" class={`nf-choice ${local.class ?? ""}`} {...rest} />
+  );
+}
+
+/**
+ * Presents one choice of a radio group as a selectable card with a title and an optional
+ * description. The whole card toggles the radio, the radio's accessible name is the title alone
+ * and the description is announced ahead of any caller-supplied `aria-describedby` hint.
+ * Grouping and change handling remain caller-owned, as with `Radio`. `checked` is required so
+ * the card's selected surface always matches the radio.
+ */
+export function RadioCard(
+  props: Omit<
+    JSX.InputHTMLAttributes<HTMLInputElement>,
+    "type" | "title" | "checked"
+  > & {
+    /** Short name of the choice, used as the radio's accessible name. */
+    title: JSX.Element;
+    /** Longer explanation shown beneath the title and announced as the radio's description. */
+    description?: JSX.Element;
+    /** Whether this choice is the group's current value. */
+    checked: boolean;
+  },
+) {
+  const [local, rest] = splitProps(props, [
+    "class",
+    "title",
+    "description",
+    "checked",
+    "aria-describedby",
+  ]);
+  const titleId = createUniqueId();
+  const descriptionId = createUniqueId();
+  /** Lists the card's own description first, followed by any hint the caller links. */
+  const describedBy = () =>
+    [local.description ? descriptionId : undefined, local["aria-describedby"]]
+      .filter(Boolean)
+      .join(" ") || undefined;
+  return (
+    <label
+      class={`nf-radio-card ${local.class ?? ""}`}
+      data-selectable-surface
+      data-selected={local.checked ? "true" : undefined}
+    >
+      <Radio
+        {...rest}
+        checked={local.checked}
+        aria-labelledby={titleId}
+        aria-describedby={describedBy()}
+      />
+      <span class="nf-radio-card-text">
+        <span id={titleId} class="nf-radio-card-title">
+          {local.title}
+        </span>
+        <Show when={local.description}>
+          <span id={descriptionId} class="nf-radio-card-description">
+            {local.description}
+          </span>
+        </Show>
+      </span>
+    </label>
   );
 }

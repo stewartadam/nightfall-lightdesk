@@ -50,6 +50,7 @@ import { setSceneDarkness } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import { observeRenderSize } from "./observe-render-size";
+import { describeDeviceLoss, SimulatedRenderFailure } from "./render-failure";
 import type {
   CameraState,
   Vec3,
@@ -78,6 +79,7 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
     DEFAULT_CAMERA_ROTATION_MODE;
   private cameraDragEnabled = true;
   private orbitTargetIndicatorEnabled = false;
+  private simulatedFailure = new SimulatedRenderFailure(undefined);
 
   // ============================================================================
   // IVisualizerRenderer Implementation
@@ -93,9 +95,13 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
       loadFixtureEvaluation(),
     ]);
     this.rendererState = rendererState;
+    rendererState.renderer.onDeviceLost = (info) =>
+      this.fail(describeDeviceLoss(info));
+    this.simulatedFailure = new SimulatedRenderFailure(config.simulateFailure);
 
     // Create scene manager
     this.sceneManager = new SceneManager(this.rendererState.scene, profile);
+    this.sceneManager.setSceneObjectsVisible(this.sceneObjectsVisible);
     if (this.rendererState.postProcessing) {
       setOutlineSelectedObjects(
         this.rendererState.postProcessing,
@@ -165,7 +171,7 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   }
 
   resume(): void {
-    if (!this.rendererState?.isPaused) return;
+    if (!this.rendererState?.isPaused || this.failures.failed) return;
     this.instrumentation?.resume();
     this.startRenderLoopInternal();
   }
@@ -397,8 +403,18 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
   // Private Methods
   // ============================================================================
 
+  /** Stops the render loop of a renderer that failed. */
+  protected stopRenderingAfterFailure(): void {
+    if (this.rendererState) stopRenderLoop(this.rendererState);
+  }
+
   private startRenderLoopInternal(): void {
-    if (!this.rendererState || !this.sceneManager || !this.instrumentation)
+    if (
+      !this.rendererState ||
+      !this.sceneManager ||
+      !this.instrumentation ||
+      this.failures.failed
+    )
       return;
 
     const callbacks: RenderLoopCallbacks = {
@@ -420,7 +436,10 @@ export class MainThreadRenderer extends BaseVisualizerRenderer {
           renderMs: metrics.renderMs,
           gpu: metrics.gpu,
         });
+        const simulated = this.simulatedFailure.tick();
+        if (simulated) this.fail(simulated);
       },
+      onFailure: (failure) => this.fail(failure),
     };
 
     startRenderLoop(this.rendererState, callbacks);

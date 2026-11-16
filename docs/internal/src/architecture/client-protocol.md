@@ -84,7 +84,7 @@ The host ignores binary frames from the client and logs text it can't parse.
 
 ## Messages the engine sends
 
-Every frame the engine sends has the same layout: one discriminator byte, then a CBOR map with a `type` field naming the message and a `data` field holding its payload. Each domain defines its messages as one Rust enum, such as `EngineClientMessage`, `DeskWsMessage`, or `FixtureWsMessage`, and the TypeScript types come from those enums (see [Shared message types come from Rust](#shared-message-types-come-from-rust)).
+Every frame the engine sends has the same layout: one discriminator byte, then a CBOR map with a `type` field naming the message and a `data` field holding its payload. Each domain defines its messages as one Rust enum, such as `EngineClientMessage`, `PlaybackWsMessage`, or `FixtureWsMessage`, and the TypeScript types come from those enums (see [Shared message types come from Rust](#shared-message-types-come-from-rust)).
 
 The discriminator puts each frame in one of three delivery classes:
 
@@ -223,10 +223,10 @@ Other events start a resync too:
 - A reconnect, after the connection dropped or the host closed a lagging client.
 - An overflow in the worker. If more than 10,000 non-droppable messages wait for the main thread, the worker discards everything it staged, stops staging, and asks the main thread to resync.
 
-Resync output goes only to the clients that asked for it. Resync handlers take the `ResyncReplies` system parameter, whose sink addresses the clients that requested a resync this frame, so a phone reconnecting doesn't push the whole show down every other connection. When several clients resync in the same frame, they share one sink, and each snapshot is still encoded once. `ResyncComplete` goes to the same clients. A `ParameterKeyframeRequest` is answered the same way: the client that asked gets a layout and keyframe copied from the last published frame and numbered like it, and the shared delta stream carries on unchanged for everyone else.
+Resync output goes only to the clients that asked for it. Most state reaches clients as a client feed, which publishes it to every client when it changes and replays it to just the resyncing clients; see [Where client feeds and metrics live](crate-map.md#where-client-feeds-and-metrics-live). Other resync handlers take the `ResyncReplies` system parameter, whose sink addresses the clients that requested a resync this frame, so a phone reconnecting doesn't push the whole show down every other connection. When several clients resync in the same frame, they share one sink, and each snapshot is still encoded once. `ResyncComplete` goes to the same clients. A `ParameterKeyframeRequest` is answered the same way: the client that asked gets a layout and keyframe copied from the last published frame and numbered like it, and the shared delta stream carries on unchanged for everyone else.
 
 > [!WARNING]
-> Two messages still go to every client after a resync: the layer stack snapshot and the sequence lookahead projection. Keep the UI's handling of those cheap for clients that didn't ask. A new resync handler must publish through the `ResyncReplies` sink, not the shared client sink, or its snapshot reaches every client again.
+> Two messages still go to every client after a resync: the layer stack snapshot and the sequence lookahead projection. Keep the UI's handling of those cheap for clients that didn't ask. A new feed should be a client feed. A hand-written resync handler must publish through the `ResyncReplies` sink, not the shared client sink, or its snapshot reaches every client again.
 
 ## The browser transport worker
 
@@ -338,6 +338,7 @@ The UI is served over plain HTTP, so anyone watching the network can read the PI
 | Discriminators, `Audience`, `ClientEventSink`, command and update envelopes | `crates/engine/src/client_bridge.rs` |
 | Engine-level messages such as `ServerVersion`, `ResyncComplete`, and `WorldReplaced` | `crates/engine/src/protocol/client.rs` |
 | Resync request and completion | `crates/engine/src/lib.rs` |
+| Client feeds: `ClientFeed`, `ResourceFeed`, and `add_client_feed` | `crates/engine/src/client_feed.rs` |
 | Command and update ingress dispatch | `crates/engine/src/client_ingress.rs` |
 | Socket lifecycle, sender tagging, heartbeats, fan-out, router | `crates/websocket/src/websocket.rs` |
 | Per-client outbox and lagging disconnects | `crates/websocket/src/outbox.rs` |
@@ -346,7 +347,10 @@ The UI is served over plain HTTP, so anyone watching the network can read the PI
 | PIN pairing | `crates/websocket/src/pairing.rs` |
 | Parameter layout, keyframes, and deltas | `crates/fixtures/src/parameter_state.rs`, `crates/fixtures/src/websocket.rs` |
 | Watched DMX universe channels | `crates/fixtures/src/universe_stream.rs` |
-| `ActiveInstances`, `Controls`, and `LayerStack` | `crates/desk/src/websocket/` |
+| `ActiveInstances` | `crates/clips/src/websocket/playbacks.rs` |
+| `Faders` and `MasterDefinitions` | `crates/controls/src/websocket.rs` |
+| `LayerStack` | `crates/fixtures/src/layer_stack.rs` |
+| `Metrics` | `crates/engine/src/metrics.rs` |
 | Browser demo adapter | `crates/browser-runtime/src/lib.rs` |
 | Transport worker | `webui/lib/engine-runtime-worker-core.ts` |
 | Parameter stream rebuild and drift checks | `webui/lib/parameter-stream.ts` |

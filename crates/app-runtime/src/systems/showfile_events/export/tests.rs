@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use nightfall_engine::prelude::{PanelLayouts, register_settings_section};
 use nightfall_showfile::{current_showfile_metadata, parse_showfile_snapshot_json};
 
 use super::*;
@@ -16,8 +17,19 @@ fn snapshot() -> ShowfileSnapshot {
         metadata: current_showfile_metadata(),
         ..Default::default()
     };
-    snapshot.settings.audio_device = Some("unsaved audio selection".to_string());
+    snapshot.settings.insert(
+        PanelLayouts::SECTION.key().to_string(),
+        serde_json::json!({ "default_layout_id": UNSAVED_MARKER }),
+    );
     snapshot
+}
+
+/// Unsaved value the test snapshot carries, so exports can be told apart from stored sources.
+const UNSAVED_MARKER: &str = "unsaved default layout";
+
+/// Returns the unsaved marker an exported snapshot carries, if any.
+fn unsaved_marker(snapshot: &ShowfileSnapshot) -> Option<&str> {
+    snapshot.settings.get(PanelLayouts::SECTION.key())?["default_layout_id"].as_str()
 }
 
 /// Reads an exported snapshot through the same parser used by normal showfile loading.
@@ -61,10 +73,7 @@ fn zip_exports_preserve_named_show_contents_and_warning_details() {
     zip.extract(destination.path()).unwrap();
     let show = destination.path().join("Tour.nightfall-show");
     let loaded = super::super::storage::read_showfile_snapshot_from_path(&show).unwrap();
-    assert_eq!(
-        loaded.settings.audio_device.as_deref(),
-        Some("unsaved audio selection")
-    );
+    assert_eq!(unsaved_marker(&loaded), Some(UNSAVED_MARKER));
     assert_eq!(
         std::fs::read(show.join("asset.bin")).unwrap(),
         b"asset contents"
@@ -100,10 +109,7 @@ fn published_showfiles_survive_staging_and_have_current_manifests() {
     assert!(path.join("showfile.json.gz").is_file());
     assert!(!path.join("showfile.json").exists());
     let loaded = super::super::storage::read_showfile_snapshot_from_path(&path).unwrap();
-    assert_eq!(
-        loaded.settings.audio_device.as_deref(),
-        Some("unsaved audio selection")
-    );
+    assert_eq!(unsaved_marker(&loaded), Some(UNSAVED_MARKER));
     super::super::manifest::read_current_showfile_manifest_from_dir(&path).unwrap();
     assert_eq!(
         std::fs::read(path.join("extra.bin")).unwrap(),
@@ -165,8 +171,8 @@ fn policies_preserve_live_state_and_directory_contents_without_saving() {
             prepare_showfile_export(snapshot(), &source, directory.path(), policy).unwrap();
         assert!(prepared.warnings.is_empty());
         assert_eq!(
-            read_export(&prepared).settings.audio_device.as_deref(),
-            Some("unsaved audio selection")
+            unsaved_marker(&read_export(&prepared)),
+            Some(UNSAVED_MARKER)
         );
         super::super::manifest::read_current_showfile_manifest_from_dir(&prepared.path()).unwrap();
         assert_eq!(
@@ -355,7 +361,7 @@ fn all_references_reload_without_the_original_libraries() {
     let previous_show = nightfall::active_show_data_dir();
     let isolated = tempfile::tempdir().unwrap();
     nightfall::set_nightfall_data_dir(Some(isolated.path().to_owned()));
-    use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
+    use nightfall_engine::logging::{LogConfig, TracingTarget};
     let config = LogConfig::new(
         |_| Ok(()),
         std::sync::Arc::new(std::sync::RwLock::new(TracingTarget::default())),
@@ -368,9 +374,10 @@ fn all_references_reload_without_the_original_libraries() {
         .unwrap();
     assert_eq!(
         app.world()
-            .resource::<nightfall_desk::prelude::DeskSettings>()
-            .audio_device,
-        loaded.settings.audio_device
+            .resource::<PanelLayouts>()
+            .default_layout_id
+            .as_deref(),
+        unsaved_marker(&loaded)
     );
     assert!(
         app.world()
@@ -393,13 +400,14 @@ fn all_references_reload_without_the_original_libraries() {
     }
 
     let mut world = bevy::prelude::World::new();
+    register_settings_section(&mut world, PanelLayouts::SECTION);
     nightfall_showfile::apply_showfile_snapshot_to_world(&mut world, loaded.clone()).unwrap();
     assert_eq!(
         world
-            .resource::<nightfall_desk::prelude::DeskSettings>()
-            .audio_device
+            .resource::<PanelLayouts>()
+            .default_layout_id
             .as_deref(),
-        Some("unsaved audio selection")
+        Some(UNSAVED_MARKER)
     );
     assert_eq!(
         std::fs::read(prepared.path().join(&loaded.timelines[0].audio_path)).unwrap(),
@@ -567,4 +575,84 @@ fn ofl_profiles_preserve_identity_across_exports() {
         .unwrap();
         assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
     }
+}
+
+/// Fixtures patched from two revisions of one make, model and mode each package their own
+/// file, and the exported show resolves every fixture to its own revision without the
+/// original library.
+#[cfg(feature = "fixture-library")]
+#[test]
+fn exports_package_each_revision_of_one_mode() {
+    use nightfall_fixture_library::manager::FixtureLibraryManager;
+    use nightfall_fixture_library::testing::{GdtfBuilder, GeometrySpec, ModeSpec};
+    let original = tempfile::tempdir().unwrap();
+    let source = original.path().join("active");
+    for name in ["active", "fixtures"] {
+        std::fs::create_dir(original.path().join(name)).unwrap();
+    }
+    for revision in ["v1", "v2"] {
+        GdtfBuilder::new("Export Test", "Export Fixture")
+            .revision(revision)
+            .geometry(GeometrySpec::generic("Base"))
+            .mode(ModeSpec::new("Default", "Base"))
+            .write_to(
+                &original
+                    .path()
+                    .join(format!("fixtures/export-{revision}.gdtf")),
+            );
+    }
+    let installed =
+        FixtureLibraryManager::read_from_directories(original.path().join("fixtures"), None)
+            .unwrap();
+    let mut revisions: Vec<String> = installed
+        .list_fixtures()
+        .into_iter()
+        .filter(|profile| profile.model == "Export Fixture")
+        .map(|profile| profile.revision.clone())
+        .collect();
+    revisions.sort();
+    assert_eq!(revisions.len(), 2, "both revisions are installed");
+    let mut snapshot = snapshot();
+    for (id, revision) in revisions.iter().enumerate() {
+        let mut fixture = export_fixture_ref();
+        fixture.identifiers.id = id as u32 + 1;
+        fixture.library_asset_etag = Some(revision.clone());
+        snapshot.fixtures.push(fixture);
+    }
+    let prepared = prepare_showfile_export(
+        snapshot,
+        &source,
+        original.path(),
+        ShowfileExportPolicy::AllReferences,
+    )
+    .unwrap();
+    assert!(prepared.warnings.is_empty(), "{:?}", prepared.warnings);
+    original.close().unwrap();
+    assert_eq!(
+        std::fs::read_dir(prepared.path().join("fixtures"))
+            .unwrap()
+            .count(),
+        2
+    );
+    let loaded = read_export(&prepared);
+    let empty = tempfile::tempdir().unwrap();
+    let library = FixtureLibraryManager::read_from_directories(
+        empty.path().to_owned(),
+        Some(prepared.path()),
+    )
+    .unwrap();
+    let mut packaged: Vec<String> = loaded
+        .fixtures
+        .iter()
+        .map(|fixture| {
+            let profile = library
+                .profile_for_fixture(fixture)
+                .expect("packaged revision");
+            assert!(profile.file_path.starts_with(prepared.path()));
+            assert_eq!(Some(&profile.revision), fixture.library_asset_etag.as_ref());
+            profile.revision.clone()
+        })
+        .collect();
+    packaged.sort();
+    assert_eq!(packaged, revisions);
 }

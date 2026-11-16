@@ -11,13 +11,13 @@ use std::collections::HashMap;
 use bevy_app::prelude::*;
 use bevy_ecs::system::SystemState;
 use moonshine_kind::prelude::Instance;
+use nightfall_engine::prelude::FixtureAttributeTransition;
 use nightfall_engine::prelude::*;
 use nightfall_fixture_model::prelude::*;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use uuid::Uuid;
 
 use super::*;
-use crate::cue::FixtureAttributeTransition;
 
 fn spawn_parameter(
     world: &mut World,
@@ -162,6 +162,75 @@ fn materialized_absolute_value(
     }
 }
 
+/// Verifies the planner's cue duration profile times Blueprint-applied values the same way live
+/// materialization does, so follow cues after a Blueprint fade are planned at the same moment
+/// they fire live.
+#[test]
+fn duration_profile_includes_blueprint_applied_values() {
+    let mut app = App::new();
+    app.init_resource::<DataProvider<Group>>();
+    app.init_resource::<DataProvider<Blueprint>>();
+    app.init_resource::<FixtureDataProviderExt>();
+    let (fixture_ref, _parameters) =
+        add_single_element_fixture(app.world_mut(), 402, &[(Attribute::Red, 0.0, 255.0)]);
+    let blueprint_uid = Uuid::new_v4();
+    app.world_mut()
+        .resource_mut::<DataProvider<Blueprint>>()
+        .add(Blueprint {
+            identifiers: Identifiers {
+                id: 6,
+                uid: blueprint_uid,
+                label: "Color".to_owned(),
+            },
+            values: HashMap::from([(
+                Attribute::Red,
+                ValueSource::Inline(ParameterValue::Absolute { value: 64.0 }),
+            )]),
+            ..Default::default()
+        })
+        .expect("blueprint should be insertable");
+    let cue = Cue {
+        transitions: PartialTransition {
+            fade_in: Some(TransitionMode::Fixed(Duration::from_secs(5))),
+            ..Default::default()
+        },
+        instructions: vec![BoundAssertionSet {
+            selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
+            assertions: AssertionSet {
+                blueprint_application: Some(BlueprintApplication::new(
+                    blueprint_uid,
+                    BlueprintSelector::Category(AttributeCategory::Color),
+                )),
+                ..Default::default()
+            },
+        }],
+        ..Default::default()
+    };
+
+    let materialized = make_materialized_cue_with_blueprints(app.world_mut(), &cue);
+    assert_eq!(
+        materialized.duration_profile().cue_entry_duration(),
+        Duration::from_secs(5)
+    );
+
+    let mut system_state = SystemState::<(
+        Res<FixtureDataProviderExt>,
+        Res<DataProvider<Blueprint>>,
+        SpatialSelectionResolver,
+    )>::new(app.world_mut());
+    let (fixture_data_provider, blueprint_data_provider, selection_resolver) = system_state
+        .get(app.world_mut())
+        .expect("test system parameters should be available");
+    assert_eq!(
+        fixture_data_provider.cue_duration_profile(
+            &cue,
+            Some(&blueprint_data_provider),
+            &selection_resolver,
+        ),
+        materialized.duration_profile()
+    );
+}
+
 /// Live category applications re-read values and category membership while absolute copies do not.
 #[test]
 fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
@@ -195,22 +264,22 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
         .expect("blueprint should be insertable");
 
     let referenced_cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_ref.clone()]).into(),
-            cue_instruction: CueInstruction {
-                blueprint_application: Some(BlueprintApplication {
+            assertions: AssertionSet {
+                blueprint_application: Some(BlueprintApplication::new(
                     blueprint_uid,
-                    selector: BlueprintSelector::Category(AttributeCategory::Color),
-                }),
+                    BlueprintSelector::Category(AttributeCategory::Color),
+                )),
                 ..Default::default()
             },
         }],
         ..Default::default()
     };
     let absolute_cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 values: blueprint
                     .selected_values(&BlueprintSelector::Category(AttributeCategory::Color)),
                 ..Default::default()
@@ -302,17 +371,19 @@ fn blueprint_reference_is_dynamic_while_absolute_values_are_stable() {
     );
 }
 
-/// Blueprint definition events refresh affected active cue components in place.
+/// Editing a stored Blueprint refreshes affected active cue components in place, through the
+/// change messages published from the Blueprint store.
 #[test]
 fn blueprint_definition_change_rematerializes_active_cue() {
     let mut app = App::new();
-    app.add_message::<BlueprintDefinitionChange>();
     app.init_resource::<DataProvider<Group>>();
     app.init_resource::<DataProvider<Blueprint>>();
     app.init_resource::<FixtureDataProviderExt>();
+    app.publish_object_changes::<Blueprint>();
     app.add_systems(
         Update,
-        crate::materialized_sequence::rematerialize_after_blueprint_definition_change,
+        crate::materialized_sequence::rematerialize_after_blueprint_definition_change
+            .after(ObjectChangePublication),
     );
     let (fixture_ref, parameters) =
         add_single_element_fixture(app.world_mut(), 402, &[(Attribute::Red, 0.0, 255.0)]);
@@ -334,14 +405,15 @@ fn blueprint_definition_change_rematerializes_active_cue() {
         .resource_mut::<DataProvider<Blueprint>>()
         .add(make_blueprint(20.0))
         .expect("blueprint should be insertable");
+    app.update();
     let cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
-            cue_instruction: CueInstruction {
-                blueprint_application: Some(BlueprintApplication {
+            assertions: AssertionSet {
+                blueprint_application: Some(BlueprintApplication::new(
                     blueprint_uid,
-                    selector: BlueprintSelector::Attribute(Attribute::Red),
-                }),
+                    BlueprintSelector::Attribute(Attribute::Red),
+                )),
                 ..Default::default()
             },
         }],
@@ -354,8 +426,6 @@ fn blueprint_definition_change_rematerializes_active_cue() {
         .resource_mut::<DataProvider<Blueprint>>()
         .add(make_blueprint(140.0))
         .expect("blueprint should be updateable");
-    app.world_mut()
-        .write_message(BlueprintDefinitionChange { uid: blueprint_uid });
     app.update();
 
     let refreshed = app
@@ -391,9 +461,9 @@ fn blueprint_application_obeys_instruction_order() {
             ..Default::default()
         })
         .expect("blueprint should be insertable");
-    let direct = |value| BoundCueInstruction {
+    let direct = |value| BoundAssertionSet {
         selection: SelectionExpr::Resolved(vec![fixture_ref.clone()]).into(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             values: HashMap::from([(
                 Attribute::Red,
                 ValueSource::Inline(ParameterValue::Absolute { value }),
@@ -401,13 +471,13 @@ fn blueprint_application_obeys_instruction_order() {
             ..Default::default()
         },
     };
-    let reference = BoundCueInstruction {
+    let reference = BoundAssertionSet {
         selection: SelectionExpr::Resolved(vec![fixture_ref.clone()]).into(),
-        cue_instruction: CueInstruction {
-            blueprint_application: Some(BlueprintApplication {
+        assertions: AssertionSet {
+            blueprint_application: Some(BlueprintApplication::new(
                 blueprint_uid,
-                selector: BlueprintSelector::Attribute(Attribute::Red),
-            }),
+                BlueprintSelector::Attribute(Attribute::Red),
+            )),
             ..Default::default()
         },
     };
@@ -432,13 +502,13 @@ fn missing_blueprint_application_materializes_no_values() {
     let (fixture_ref, _) =
         add_single_element_fixture(app.world_mut(), 404, &[(Attribute::Red, 0.0, 255.0)]);
     let cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
-            cue_instruction: CueInstruction {
-                blueprint_application: Some(BlueprintApplication {
-                    blueprint_uid: Uuid::new_v4(),
-                    selector: BlueprintSelector::All,
-                }),
+            assertions: AssertionSet {
+                blueprint_application: Some(BlueprintApplication::new(
+                    Uuid::new_v4(),
+                    BlueprintSelector::All,
+                )),
                 ..Default::default()
             },
         }],
@@ -497,22 +567,22 @@ fn blueprint_fan_matches_direct_spatial_materialization() {
         union: Vec::new(),
     };
     let referenced = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone(),
-            cue_instruction: CueInstruction {
-                blueprint_application: Some(BlueprintApplication {
+            assertions: AssertionSet {
+                blueprint_application: Some(BlueprintApplication::new(
                     blueprint_uid,
-                    selector: BlueprintSelector::Attribute(Attribute::Intensity),
-                }),
+                    BlueprintSelector::Attribute(Attribute::Intensity),
+                )),
                 ..Default::default()
             },
         }],
         ..Default::default()
     };
     let direct = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection,
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 values: HashMap::from([(Attribute::Intensity, fan)]),
                 ..Default::default()
             },
@@ -567,13 +637,13 @@ fn paint_materialized_cues_applies_color_path_samples() {
             fade_in: Some(TransitionMode::Fixed(Duration::from_secs(10))),
             ..Default::default()
         },
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(vec![fixture_ref.clone()]),
                 clauses: vec![],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -681,13 +751,13 @@ fn paint_materialized_cues_samples_color_paths_from_lower_layer_base() {
             fade_in: Some(TransitionMode::Fixed(Duration::from_secs(10))),
             ..Default::default()
         },
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(vec![fixture_ref.clone()]),
                 clauses: vec![],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -798,13 +868,13 @@ fn paint_materialized_cues_gives_each_color_path_cue_its_own_lower_base() {
             fade_in: Some(TransitionMode::Fixed(Duration::from_secs(10))),
             ..Default::default()
         },
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(vec![fixture_ref.clone()]),
                 clauses: vec![],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -919,13 +989,13 @@ fn non_intensity_out_timing_supplies_assertion_fade() {
         .merge_type = MergeStrategy::LTP;
 
     let cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(vec![fixture_ref]),
                 clauses: vec![],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Red,
@@ -1383,7 +1453,7 @@ fn test_resolve_transition() {
         fixture_uid: Uuid::new_v4(),
         index: Some(1),
     };
-    let cue_instruction = CueInstruction {
+    let assertions = AssertionSet {
         blueprint_application: None,
         transitions: PartialTransition {
             fade_in: Some(TransitionMode::Fixed(Duration::from_millis(200))),
@@ -1406,7 +1476,7 @@ fn test_resolve_transition() {
     let transition = MaterializedCue::resolve_transition(
         &cue.transitions,
         &cue.transitions_by_attribute,
-        &cue_instruction,
+        &assertions,
         &fixture_ref,
         &attribute,
         &attribute,
@@ -1478,7 +1548,7 @@ fn test_resolve_fanned_value_two_values() {
     ];
 
     // First fixture (index 0 of 4) should be 0%
-    let result = MaterializedCue::resolve_fanned_value(&values, 0, 4);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 0, 4);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.0).abs() < 0.001, "Expected 0%, got {}", val);
@@ -1487,7 +1557,7 @@ fn test_resolve_fanned_value_two_values() {
     }
 
     // Middle fixture (index 1 of 4) should be ~33%
-    let result = MaterializedCue::resolve_fanned_value(&values, 1, 4);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 1, 4);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!(
@@ -1498,7 +1568,7 @@ fn test_resolve_fanned_value_two_values() {
     }
 
     // Last fixture (index 3 of 4) should be 100%
-    let result = MaterializedCue::resolve_fanned_value(&values, 3, 4);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 3, 4);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 1.0).abs() < 0.001, "Expected 100%, got {}", val);
@@ -1515,21 +1585,21 @@ fn test_resolve_fanned_value_three_values() {
     ];
 
     // First fixture should be 0%
-    let result = MaterializedCue::resolve_fanned_value(&values, 0, 5);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 0, 5);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.0).abs() < 0.001, "Expected 0%, got {}", val);
     }
 
     // Middle fixture (index 2 of 5, t=0.5) should be at the peak (100%)
-    let result = MaterializedCue::resolve_fanned_value(&values, 2, 5);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 2, 5);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 1.0).abs() < 0.001, "Expected 100%, got {}", val);
     }
 
     // Last fixture (index 4 of 5) should be 50%
-    let result = MaterializedCue::resolve_fanned_value(&values, 4, 5);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 4, 5);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.5).abs() < 0.001, "Expected 50%, got {}", val);
@@ -1541,13 +1611,13 @@ fn test_resolve_fanned_value_single_value() {
     // Single value should be returned for all fixtures
     let values = vec![ParameterValue::AbsolutePercent { value: 0.75.into() }];
 
-    let result = MaterializedCue::resolve_fanned_value(&values, 0, 4);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 0, 4);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.75).abs() < 0.001, "Expected 75%, got {}", val);
     }
 
-    let result = MaterializedCue::resolve_fanned_value(&values, 3, 4);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 3, 4);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.75).abs() < 0.001, "Expected 75%, got {}", val);
@@ -1562,7 +1632,7 @@ fn test_resolve_fanned_value_single_fixture() {
         ParameterValue::AbsolutePercent { value: 1.0.into() },
     ];
 
-    let result = MaterializedCue::resolve_fanned_value(&values, 0, 1);
+    let result = nightfall::fan::resolve_fanned_parameter_value(&values, 0, 1);
     if let ParameterValue::AbsolutePercent { value } = result {
         let val = value.as_f32();
         assert!((val - 0.0).abs() < 0.001, "Expected 0%, got {}", val);
@@ -1582,7 +1652,7 @@ fn materialize_fans_values_by_resolved_selection_index() {
         .collect();
 
     let cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(fixtures.clone()),
                 clauses: vec![SpatialClause::Group {
@@ -1591,7 +1661,7 @@ fn materialize_fans_values_by_resolved_selection_index() {
                 }],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,
@@ -1650,13 +1720,13 @@ fn materialize_fixture_attribute_timing_overrides_instruction_fan() {
         .collect();
 
     let cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(fixtures.clone()),
                 clauses: vec![],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,
@@ -1743,13 +1813,13 @@ fn release_holds_ltp_color_until_virtual_intensity_fade_completes() {
         .merge_type = MergeStrategy::LTP;
 
     let cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(vec![fixture_ref]),
                 clauses: vec![],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -1875,13 +1945,13 @@ fn release_cue_intensity_timing_resolves_virtual_intensity() {
         .merge_type = MergeStrategy::LTP;
 
     let cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(vec![fixture_ref.clone()]),
                 clauses: vec![],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -1899,13 +1969,13 @@ fn release_cue_intensity_timing_resolves_virtual_intensity() {
         ..Default::default()
     };
     let release_cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(vec![fixture_ref.clone()]),
                 clauses: vec![],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 transitions_by_fixture_attribute: vec![FixtureAttributeTransition {
                     fixture: fixture_ref.clone(),
@@ -1990,13 +2060,13 @@ fn release_cue_global_timing_resolves_virtual_intensity() {
         .merge_type = MergeStrategy::LTP;
 
     let cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(vec![fixture_ref.clone()]),
                 clauses: vec![],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -2018,13 +2088,13 @@ fn release_cue_global_timing_resolves_virtual_intensity() {
             fade_out: Some(TransitionMode::Fixed(Duration::from_secs(2))),
             ..Default::default()
         },
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(vec![fixture_ref.clone()]),
                 clauses: vec![],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Red,
@@ -2079,7 +2149,7 @@ fn materialize_inverts_only_targeted_attributes() {
         .collect();
 
     let cue = Cue {
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: SpatialSelection {
                 source: SelectionExpr::Resolved(fixtures.clone()),
                 clauses: vec![SpatialClause::Invert {
@@ -2088,7 +2158,7 @@ fn materialize_inverts_only_targeted_attributes() {
                 }],
                 union: Vec::new(),
             },
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -2161,9 +2231,9 @@ fn materialize_cue_parts_share_start_and_override_in_order() {
     let fixture =
         add_single_element_fixture(app.world_mut(), 1, &[(Attribute::Intensity, 0.0, 255.0)]).0;
 
-    let instruction = |value: f32| BoundCueInstruction {
+    let instruction = |value: f32| BoundAssertionSet {
         selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture.clone()])),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: None,
             values: HashMap::from([(
                 Attribute::Intensity,
@@ -2239,7 +2309,7 @@ fn materialize_cue_parts_share_start_and_override_in_order() {
         .get(app.world_mut())
         .expect("test system parameters should be available");
     assert_eq!(
-        fixture_data_provider.cue_duration_profile(&cue, &selection_resolver),
+        fixture_data_provider.cue_duration_profile(&cue, None, &selection_resolver),
         duration_profile
     );
     assert_eq!(
@@ -2261,9 +2331,9 @@ fn materialize_cue_part_inherits_parent_cue_transition() {
     let fixture =
         add_single_element_fixture(app.world_mut(), 1, &[(Attribute::Intensity, 0.0, 255.0)]).0;
 
-    let instruction = |value| BoundCueInstruction {
+    let instruction = |value| BoundAssertionSet {
         selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture.clone()])),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             blueprint_application: None,
             values: HashMap::from([(
                 Attribute::Intensity,
@@ -2332,7 +2402,7 @@ fn exact_fan_waypoints_preserve_mixed_value_types() {
     ];
     for (index, expected) in values.iter().enumerate() {
         assert_eq!(
-            MaterializedCue::resolve_fanned_value(&values, index, values.len()),
+            nightfall::fan::resolve_fanned_parameter_value(&values, index, values.len()),
             *expected
         );
     }

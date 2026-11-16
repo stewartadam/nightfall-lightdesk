@@ -49,4 +49,5 @@
   - [Console](user-guide/panels/console.md)
   - [Undo Stack](user-guide/panels/undo-stack.md)
   - [Instrumentation](user-guide/panels/instrumentation.md)
+- [Coming from another console](user-guide/coming-from-other-consoles.md)
 - [Glossary](user-guide/glossary.md)

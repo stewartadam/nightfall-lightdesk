@@ -13,7 +13,8 @@
 //! `macro <id> start` command share one runner. See [`runner`] for how runs advance and how
 //! they group into undo steps.
 
-use bevy_app::{App, Plugin, PostUpdate, Update};
+use bevy_app::{App, Plugin, Update};
+use bevy_ecs::prelude::resource_changed;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
 use nightfall_engine::prelude::*;
@@ -45,11 +46,7 @@ impl Plugin for MacrosPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DataProvider<Macro>>();
         app.init_resource::<runner::MacroRuns>();
-        register_ingress_command::<command::MacroCommand>(app);
-        register_command_deserializer::<command::MacroCommand>(
-            app,
-            websocket::deserialize_macro_command,
-        );
+        register_client_command::<command::MacroCommand>(app, Undo::Captured);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::MacroAstConverter>(
         );
         app.world_mut()
@@ -59,22 +56,17 @@ impl Plugin for MacrosPlugin {
 
         app.add_systems(
             Update,
-            (
-                (runner::record_statement_results, runner::advance_macro_runs)
-                    .chain()
-                    .after(EventHandling)
-                    .before(ResyncHandling),
-                command::handle_macro_commands.in_set(EventHandling),
-                websocket::handle_resync_state.in_set(ResyncHandling),
-            ),
+            (runner::record_statement_results, runner::advance_macro_runs)
+                .chain()
+                .after(CommandApplication)
+                .before(ResyncHandling),
         );
         app.add_systems(
-            PostUpdate,
-            (
-                websocket::send_macros_on_change,
-                websocket::send_macro_runs_on_change,
-            )
-                .in_set(ClientFeedback),
+            ApplyCommands,
+            command::handle_macro_commands.in_set(EventHandling),
         );
+        app.add_client_feed::<websocket::MacrosFeed>()
+            .on_change(resource_changed::<DataProvider<Macro>>);
+        app.add_resource_feed_when::<runner::MacroRuns, _>(websocket::macro_runs_changed);
     }
 }

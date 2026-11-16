@@ -40,6 +40,23 @@ tempo half
 
 `tempo` sets, taps, halves or doubles the show tempo, and can resync or nudge the beat. See [Show tempo and tap tempo](tempo.md) for every form and how taps are interpreted.
 
+## Park
+
+```text
+park fixture 5
+park fixture 5 pan tilt
+park fixture 5 intensity @ 80
+park @ 50
+park
+unpark fixture 5
+unpark fixture 5 intensity
+unpark
+```
+
+`park` holds parameters at the value they output right now, or at the value after `@`, whatever cues, FX, the programmer, masters or virtual dimmers do. Use it for a broken mover, house lights, or anything that must not change during the show. Without attributes it parks every parameter of the fixtures; without fixtures it uses the active selection. `@` takes a value like the programmer does, in percent. `park @ 50` with no attributes parks intensity.
+
+`unpark` releases parked parameters so they follow playback again. Parked parameters survive `clear`, are saved with the show, and undo like any other edit. The Fixtures and Programmer panels tag parked values with **P**, and Properties lists them with **Unpark** buttons. A show that opens with parked parameters shows a warning.
+
 ## Clear, save, and recover
 
 ```text

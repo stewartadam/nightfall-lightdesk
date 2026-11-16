@@ -11,14 +11,14 @@
 use super::*;
 
 /// Returns whether an instruction has any remaining asserted attributes.
-pub(super) fn instruction_has_attributes(instruction: &CueInstruction) -> bool {
+pub(super) fn instruction_has_attributes(instruction: &AssertionSet) -> bool {
     !instruction.values.is_empty()
         || !instruction.transitions_by_attribute.is_empty()
         || !instruction.transitions_by_fixture_attribute.is_empty()
 }
 
 /// Returns whether an instruction has a supported color destination for path assignment.
-pub(super) fn instruction_has_color_vector_destination(instruction: &CueInstruction) -> bool {
+pub(super) fn instruction_has_color_vector_destination(instruction: &AssertionSet) -> bool {
     [
         [Attribute::Red, Attribute::Green, Attribute::Blue],
         [Attribute::Cyan, Attribute::Magenta, Attribute::Yellow],
@@ -46,15 +46,15 @@ pub(super) fn set_color_vector_instruction_color_path(
 ) -> usize {
     let mut updated = 0;
     for instruction in &mut cue.instructions {
-        if instruction_has_color_vector_destination(&instruction.cue_instruction) {
-            instruction.cue_instruction.color_path_id = color_path_id;
+        if instruction_has_color_vector_destination(&instruction.assertions) {
+            instruction.assertions.color_path_id = color_path_id;
             updated += 1;
         }
     }
     for part in &mut cue.parts {
         for instruction in &mut part.instructions {
-            if instruction_has_color_vector_destination(&instruction.cue_instruction) {
-                instruction.cue_instruction.color_path_id = color_path_id;
+            if instruction_has_color_vector_destination(&instruction.assertions) {
+                instruction.assertions.color_path_id = color_path_id;
                 updated += 1;
             }
         }
@@ -64,7 +64,7 @@ pub(super) fn set_color_vector_instruction_color_path(
 
 /// Rewrites one cue instruction if it explicitly references the moved color path.
 pub(super) fn rewrite_instruction_color_path_id(
-    instruction: &mut CueInstruction,
+    instruction: &mut AssertionSet,
     id: u32,
     new_id: u32,
 ) -> bool {
@@ -79,13 +79,13 @@ pub(super) fn rewrite_instruction_color_path_id(
 pub(super) fn rewrite_cue_color_path_references(cue: &mut Cue, id: u32, new_id: u32) -> usize {
     let mut updated = 0;
     for instruction in &mut cue.instructions {
-        if rewrite_instruction_color_path_id(&mut instruction.cue_instruction, id, new_id) {
+        if rewrite_instruction_color_path_id(&mut instruction.assertions, id, new_id) {
             updated += 1;
         }
     }
     for part in &mut cue.parts {
         for instruction in &mut part.instructions {
-            if rewrite_instruction_color_path_id(&mut instruction.cue_instruction, id, new_id) {
+            if rewrite_instruction_color_path_id(&mut instruction.assertions, id, new_id) {
                 updated += 1;
             }
         }
@@ -115,7 +115,7 @@ pub(super) fn rewrite_stored_cue_color_path_references(
 }
 
 /// Clears color path references from an instruction when it points at a removed path.
-pub(super) fn clear_instruction_color_path_id(instruction: &mut CueInstruction, id: u32) -> bool {
+pub(super) fn clear_instruction_color_path_id(instruction: &mut AssertionSet, id: u32) -> bool {
     if instruction.color_path_id == Some(ColorPathId(id)) {
         instruction.color_path_id = None;
         return true;
@@ -127,13 +127,13 @@ pub(super) fn clear_instruction_color_path_id(instruction: &mut CueInstruction, 
 pub(super) fn clear_cue_color_path_references(cue: &mut Cue, id: u32) -> usize {
     let mut updated = 0;
     for instruction in &mut cue.instructions {
-        if clear_instruction_color_path_id(&mut instruction.cue_instruction, id) {
+        if clear_instruction_color_path_id(&mut instruction.assertions, id) {
             updated += 1;
         }
     }
     for part in &mut cue.parts {
         for instruction in &mut part.instructions {
-            if clear_instruction_color_path_id(&mut instruction.cue_instruction, id) {
+            if clear_instruction_color_path_id(&mut instruction.assertions, id) {
                 updated += 1;
             }
         }

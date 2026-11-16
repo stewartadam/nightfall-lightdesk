@@ -42,9 +42,12 @@ pub use descriptor::{
     ActionCatalogEntry, ActionDescriptor, ActionId, ActionInputKind, ActionParameter,
     ActionParameterKind, ActionSurface,
 };
-pub use eval::{DESK_EVAL_ACTION_ID, DeskEvalActionArguments, desk_eval_action};
+pub use eval::{
+    DESK_EVAL_ACTION_ID, DeskEvalActionArguments, desk_eval_action, register_eval_action,
+};
 pub use failures::{FAILURE_REPEAT_WINDOW, InvocationFailureThrottle};
 pub use feedback::{ActionFeedback, FeedbackState};
+pub use flash::FlashStates;
 pub use invocation::{
     ActionInput, ActionInvocation, ActionInvocationFailure, ActionReference,
     ClientActionInvocation, ExternalCommandInvocation, InvocationDispatch, InvocationError,
@@ -55,12 +58,16 @@ pub use mapping_mode::{
     ControllerMappingMode, ControllerMappingModeState, MAPPING_MODE_LEASE, MappingLeaseExpired,
 };
 use nightfall_engine::prelude::{
-    ClientDisconnected, ClientFeedback, CommandDeserializerRegistry, CommandIngressRouter,
-    EventHandling, InputHandling, PendingCommandExpansion, ResyncHandling, ResyncRequested,
-    register_command_deserializer, register_ingress_command,
+    ApplyCommands, ClientDisconnected, ClientFeedAppExt, ClientFeedback, ClientIngressGate,
+    CommandApplication, CommandDeserializerRegistry, CommandIngressRouter, EventHandling,
+    InputHandling, READ_ONLY_COMMAND_ERROR, ResyncRequested, register_command_deserializer,
+    register_ingress_command,
 };
 pub use registry::{ActionRegistry, CLIENT_ACTION_PREFIX, is_client_action};
-pub use source::{BindingTarget, ControlBehavior, EdgeKey, SourceEdgeStates, SourceSignal};
+pub use source::{
+    BindingTarget, ControlBehavior, ControlHolds, EdgeKey, SourceEdgeStates, SourceSignal,
+    dispatch_forgotten_releases,
+};
 pub use targets::{
     ActionTargetTracking, ActionTargets, BindingDiagnostic, bindings_need_diagnosis,
     collect_binding_diagnostics, mark_action_targets_changed,
@@ -76,7 +83,9 @@ pub struct ActionInvocationHandling;
 impl Plugin for ActionsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ActionRegistry>();
+        eval::register_eval_action(app);
         app.init_resource::<SourceEdgeStates>();
+        app.init_resource::<FlashStates>();
         app.init_resource::<InvocationFailureThrottle>();
         app.init_resource::<ActionTargets>();
         app.init_resource::<ControllerMappingMode>();
@@ -91,17 +100,18 @@ impl Plugin for ActionsPlugin {
             Update,
             ActionInvocationHandling
                 .after(InputHandling)
-                .before(PendingCommandExpansion),
+                .before(CommandApplication),
         );
-        app.configure_sets(Update, ActionTargetTracking.after(EventHandling));
+        app.configure_sets(Update, ActionTargetTracking.after(CommandApplication));
         app.add_systems(
             Update,
-            dispatch_action_invocations.in_set(ActionInvocationHandling),
+            (dispatch_forgotten_releases, dispatch_action_invocations)
+                .chain()
+                .in_set(ActionInvocationHandling),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
-                websocket::handle_resync_state.in_set(ResyncHandling),
                 mapping_mode::release_disconnected_mapping_clients.in_set(EventHandling),
                 mapping_mode::expire_mapping_mode_leases
                     .in_set(EventHandling)
@@ -112,13 +122,13 @@ impl Plugin for ActionsPlugin {
         app.add_systems(
             PostUpdate,
             (
-                websocket::send_action_catalog_on_change,
                 websocket::send_client_action_invocations,
                 websocket::send_action_invocation_failures,
-                websocket::send_mapping_mode_on_change,
             )
                 .in_set(ClientFeedback),
         );
+        app.add_resource_feed::<ActionRegistry>();
+        app.add_resource_feed::<mapping_mode::ControllerMappingMode>();
         // Client invoke commands need the engine's command routing, which focused test apps
         // without the engine and client bridge plugins do not have.
         if app.world().contains_resource::<CommandIngressRouter>()
@@ -132,7 +142,7 @@ impl Plugin for ActionsPlugin {
                 command::deserialize_action_command,
             );
             app.add_systems(
-                Update,
+                ApplyCommands,
                 command::handle_action_commands
                     .in_set(EventHandling)
                     .before(mapping_mode::release_disconnected_mapping_clients),
@@ -161,13 +171,15 @@ pub fn dispatch_action_invocations(
     }
     let now = web_time::Instant::now();
     for invocation in invocations {
-        let outcome: InvocationOutcome = world
-            .resource_scope(
+        let outcome: InvocationOutcome = match read_only_refusal(world, &invocation) {
+            Some(refusal) => Err(refusal),
+            None => world.resource_scope(
                 |world, registry: bevy_ecs::change_detection::Mut<ActionRegistry>| {
                     registry.invoke(world, &invocation)
                 },
-            )
-            .into();
+            ),
+        }
+        .into();
         let publish =
             world
                 .resource_mut::<InvocationFailureThrottle>()
@@ -187,6 +199,19 @@ pub fn dispatch_action_invocations(
                 outcome,
             });
     }
+}
+
+/// Refuses an invocation from an operator surface (MIDI, OSC, keyboard, boards, clients) while
+/// the engine is read-only, as on a backup. Timeline events stay allowed: they come from the
+/// show's own playback rather than from someone at this computer.
+fn read_only_refusal(world: &World, invocation: &ActionInvocation) -> Option<InvocationError> {
+    if invocation.surface == ActionSurface::Timeline {
+        return None;
+    }
+    let reason = world
+        .get_resource::<ClientIngressGate>()?
+        .read_only_reason()?;
+    Some(InvocationError::new(READ_ONLY_COMMAND_ERROR, reason))
 }
 
 /// Logs one invocation failure and, when admitted, writes it for client publication.
@@ -229,6 +254,7 @@ fn report_failure(
 #[cfg(test)]
 mod tests {
     use bevy_ecs::prelude::Message;
+    use bevy_ecs::system::RunSystemOnce;
     use nightfall_engine::prelude::{
         CommandError, CommandId, CommandOrigin, CommandOutcome, CommandOutput, CommandReply,
         CommandResult, CommandTracker, EnginePayload, FinishedCommand, IngressCommand,
@@ -331,10 +357,18 @@ mod tests {
         register_trigger_action(&mut app);
 
         let catalog = app.world().resource::<ActionRegistry>().catalog();
+        let mut ids: Vec<&str> = catalog
+            .iter()
+            .map(|entry| entry.descriptor.id.as_str())
+            .collect();
+        ids.sort_unstable();
+        let entry = catalog
+            .iter()
+            .find(|entry| entry.descriptor.id.as_str() == "test.apply")
+            .expect("the registered action should be listed");
 
-        assert_eq!(catalog.len(), 1);
-        assert_eq!(catalog[0].descriptor.id.as_str(), "test.apply");
-        assert_eq!(catalog[0].capabilities, vec!["test.capability".to_string()]);
+        assert_eq!(ids, vec![DESK_EVAL_ACTION_ID, "test.apply"]);
+        assert_eq!(entry.capabilities, vec!["test.capability".to_string()]);
     }
 
     /// Verifies a surface invokes registered domain behavior through opaque arguments.
@@ -353,6 +387,39 @@ mod tests {
 
         assert_eq!(applied(&mut app), vec![TestApplied(42.0)]);
         assert_eq!(outcome, InvocationOutcome::Succeeded { output: None });
+    }
+
+    /// Verifies a read-only engine refuses controller surfaces before any domain runs, while the
+    /// show's own timeline events still play.
+    #[test]
+    fn read_only_engine_refuses_controller_surfaces_but_plays_timelines() {
+        let mut app = action_app();
+        register_trigger_action(&mut app);
+        app.world_mut()
+            .get_resource_or_init::<ClientIngressGate>()
+            .set_read_only(Some("This Nightfall is a backup.".into()));
+        let action = ActionReference::new("test.apply", json!({ "value": 7 }));
+
+        for surface in [
+            ActionSurface::Midi,
+            ActionSurface::Osc,
+            ActionSurface::Board,
+        ] {
+            let outcome = invoke(&mut app, ActionInvocation::trigger(action.clone(), surface));
+            assert!(matches!(
+                outcome,
+                InvocationOutcome::Failed(InvocationError { ref code, .. })
+                    if code == READ_ONLY_COMMAND_ERROR
+            ));
+        }
+        assert!(applied(&mut app).is_empty());
+
+        let timeline = invoke(
+            &mut app,
+            ActionInvocation::trigger(action, ActionSurface::Timeline),
+        );
+        assert_eq!(timeline, InvocationOutcome::Succeeded { output: None });
+        assert_eq!(applied(&mut app), vec![TestApplied(7.0)]);
     }
 
     /// Verifies a button press fires a trigger action and its release is ignored.
@@ -620,6 +687,110 @@ mod tests {
             ),
             None
         );
+    }
+
+    /// Creates an action app with a flashable `test.level` action whose level reads 0.4.
+    fn flash_app() -> App {
+        let mut app = action_app();
+        app.insert_resource(TestLevel(0.4));
+        app.register_update_action::<TestArguments, TestApplied, _>(
+            ActionDescriptor::new("test.level", "Test level", "Tests")
+                .with_input(ActionInputKind::Absolute),
+            |_world, _arguments, value| Ok(TestApplied(value)),
+        )
+        .register_flash_level::<TestArguments, _>("test.level", |world, _arguments| {
+            Ok(Some(world.resource::<TestLevel>().0))
+        });
+        app
+    }
+
+    /// Adapts one button edge from a Flash binding on `test.level` the way a MIDI pad would,
+    /// writes the resulting invocation, and runs a frame.
+    fn flash_button(app: &mut App, binding: uuid::Uuid, pressed: bool) {
+        let action = ActionReference::new("test.level", json!({ "value": 1 }));
+        let resolved = app.world_mut().resource_scope(
+            |world, mut edges: bevy_ecs::prelude::Mut<SourceEdgeStates>| {
+                edges.resolve(
+                    world.resource::<ActionRegistry>(),
+                    binding,
+                    ActionSurface::Midi,
+                    &action,
+                    ControlBehavior::Flash,
+                    SourceSignal::Button(pressed),
+                    false,
+                )
+            },
+        );
+        if let Some((action, input)) = resolved {
+            app.world_mut().write_message(ActionInvocation::new(
+                action,
+                ActionSurface::Midi,
+                input,
+            ));
+        }
+        app.update();
+    }
+
+    /// Returns whether a flash still holds `test.level`.
+    fn flash_held(app: &App) -> bool {
+        app.world()
+            .resource::<FlashStates>()
+            .is_held(&ActionReference::new("test.level", json!({ "value": 1 })))
+    }
+
+    /// Verifies forgetting a binding mid-flash, as editing or deleting its mapping does,
+    /// restores the level at once, and the control's later release changes nothing.
+    #[test]
+    fn forgetting_a_held_flash_binding_restores_the_level() {
+        let mut app = flash_app();
+        let binding = uuid::Uuid::from_u128(1);
+
+        flash_button(&mut app, binding, true);
+        app.world_mut()
+            .resource_mut::<SourceEdgeStates>()
+            .forget(binding);
+        app.update();
+
+        assert_eq!(applied(&mut app), vec![TestApplied(1.0), TestApplied(0.4)]);
+        assert!(!flash_held(&app));
+        flash_button(&mut app, binding, false);
+        assert!(applied(&mut app).is_empty());
+    }
+
+    /// Verifies a second note on without a note off between them, as a replugged controller
+    /// can send, does not stack a second hold, so one release restores the level.
+    #[test]
+    fn repeated_flash_press_needs_one_release() {
+        let mut app = flash_app();
+        let binding = uuid::Uuid::from_u128(1);
+
+        flash_button(&mut app, binding, true);
+        assert_eq!(applied(&mut app), vec![TestApplied(1.0)]);
+        flash_button(&mut app, binding, true);
+        assert!(applied(&mut app).is_empty());
+        flash_button(&mut app, binding, false);
+
+        assert_eq!(applied(&mut app), vec![TestApplied(0.4)]);
+        assert!(!flash_held(&app));
+    }
+
+    /// Verifies a show load ends held flashes without restoring their captured level onto the
+    /// new show, and a control still held across the load releases into nothing.
+    #[test]
+    fn show_load_ends_held_flashes_without_restoring() {
+        let mut app = flash_app();
+        let binding = uuid::Uuid::from_u128(1);
+        flash_button(&mut app, binding, true);
+        applied(&mut app);
+
+        app.world_mut()
+            .run_system_once(|mut holds: ControlHolds| holds.end_for_show_load())
+            .expect("show load reset should run");
+        app.update();
+
+        assert!(!flash_held(&app));
+        flash_button(&mut app, binding, false);
+        assert!(applied(&mut app).is_empty());
     }
 
     /// Verifies triggers with a release counterpart support Hold and resolve the counterpart.

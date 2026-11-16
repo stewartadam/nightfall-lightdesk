@@ -76,8 +76,15 @@ import {
   updateOrbitTargetIndicator,
 } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
+import { supplyWebGpuCanvasContext } from "../webgpu-canvas-context";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import { observeRenderSize } from "./observe-render-size";
+import {
+  describeDeviceLoss,
+  describeRenderFailure,
+  SimulatedRenderFailure,
+  type VisualizerRenderFailureCallback,
+} from "./render-failure";
 import type {
   CameraState,
   FixtureDmxBatch,
@@ -178,6 +185,7 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
       initialCameraState,
       diagnostics: config.diagnostics,
       quality: config.quality,
+      simulateFailure: config.simulateFailure,
     };
     // The main thread converts DMX for the worker, so it needs the fixture model too.
     await Promise.all([
@@ -357,6 +365,11 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
     this.liveApi?.setGridEnabled(enabled);
   }
 
+  /** Forwards scene object visibility to the rendering worker. */
+  setSceneObjectsVisible(visible: boolean): void {
+    this.liveApi?.setSceneObjectsVisible(visible);
+  }
+
   /** Forwards ambient visibility changes to the rendering worker. */
   setDarkness(darkness: number): void {
     this.liveApi?.setDarkness(darkness);
@@ -447,6 +460,14 @@ export class WorkerRendererProxy implements IVisualizerRenderer {
         clearTimeout(timeout);
         this.worker.terminate();
       });
+  }
+
+  /**
+   * Forwards the listener to the worker, wrapped for Comlink so the worker can
+   * call it back across the thread boundary when its renderer fails.
+   */
+  setFailureCallback(callback: VisualizerRenderFailureCallback | null): void {
+    this.liveApi?.setFailureCallback(callback ? Comlink.proxy(callback) : null);
   }
 
   setStatsCallback(
@@ -549,6 +570,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
   private postProcessing: PostProcessingState | null = null;
   private environment: SceneEnvironment | undefined;
   private _isPaused = false;
+  private simulatedFailure = new SimulatedRenderFailure(undefined);
   private statsCallback: ((stats: VisualizerStats | null) => void) | null =
     null;
   private cameraChangeCallback: ((state: CameraState) => void) | null = null;
@@ -604,9 +626,12 @@ class WorkerRenderer extends BaseVisualizerRenderer {
       devicePixelRatio,
     });
     this.renderer.setSize(width, height, false);
+    this.renderer.onDeviceLost = (info) => this.fail(describeDeviceLoss(info));
 
     // Wait for WebGPU and the fixture model that evaluates channel output
     await Promise.all([this.renderer.init(), loadFixtureEvaluation()]);
+    supplyWebGpuCanvasContext(this.renderer);
+    this.simulatedFailure = new SimulatedRenderFailure(config.simulateFailure);
 
     // Create scene
     this.scene = createScene("VisualizerWorkerScene");
@@ -662,6 +687,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
     await preparePostProcessing(this.postProcessing);
     // Create scene manager (handles fixtures, beams, selection)
     this.sceneManager = new SceneManager(this.scene, profile);
+    this.sceneManager.setSceneObjectsVisible(this.sceneObjectsVisible);
     // Create debug overlays (from base class)
     this.initDebugOverlays();
     setOutlineSelectedObjects(
@@ -723,7 +749,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
   }
 
   resume(): void {
-    if (!this._isPaused) return;
+    if (!this._isPaused || this.failures.failed) return;
     this._isPaused = false;
     this.instrumentation?.resume();
     this.startRenderLoop();
@@ -928,7 +954,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
   }
 
   private startRenderLoop(): void {
-    if (!this.renderer) return;
+    if (!this.renderer || this.failures.failed) return;
 
     this._isPaused = false;
     this.lastTime = 0;
@@ -936,68 +962,85 @@ class WorkerRenderer extends BaseVisualizerRenderer {
 
     // Use setAnimationLoop for proper WebGPU async rendering
     this.renderer.setAnimationLoop((time: number) => {
-      const startedAt = performance.now();
-      if (this._isPaused || !this.scene || !this.camera || !this.controls) {
-        return;
+      if (this.failures.failed) return;
+      try {
+        this.renderFrame(time);
+      } catch (error) {
+        this.fail(describeRenderFailure("render-error", error));
       }
-
-      // Calculate delta time
-      const deltaTime = this.lastTime === 0 ? 0 : time - this.lastTime;
-      this.lastTime = time;
-      this.accumulator += deltaTime;
-
-      // Only render when enough time has accumulated (60 FPS cap)
-      const remainingFrameTime = consumeDueFrame(this.accumulator);
-      if (remainingFrameTime === null) return;
-      this.accumulator = remainingFrameTime;
-
-      // Replay the retained DMX snapshot so time-based effects advance
-      const updateStarted = performance.now();
-      for (const [uid, dmx] of this.dmxSnapshot) this.setElementDmx(uid, dmx);
-
-      // Update controls
-      this.controls.update();
-
-      // Update floor transparency based on camera position
-      if (this.environment) {
-        updateFloorTransparency(this.environment, this.camera);
-        updateOrbitTargetIndicator(
-          this.environment,
-          this.camera,
-          this.controls.target,
-        );
-      }
-
-      // Render and track timing
-      const renderStart = performance.now();
-      const updateMs = renderStart - updateStarted;
-      const timedRenderer = this.renderer! as unknown as TimestampRenderer;
-      this.gpuTimer.begin(timedRenderer);
-      if (this.postProcessing) {
-        renderWithPostProcessing(
-          this.postProcessing,
-          this.gpuTimer.sample,
-          updateMs,
-        );
-      } else {
-        this.renderer!.render(this.scene, this.camera);
-      }
-      this.gpuTimer.end(timedRenderer);
-      const renderEnd = performance.now();
-      this.instrumentation?.recordFrame(time, {
-        startedAt,
-        completedAt: renderEnd,
-        updateMs,
-        renderMs: renderEnd - renderStart,
-        gpu: this.gpuTimer.reading,
-        reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
-        reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
-        omittedSurfaceLights:
-          this.postProcessing?.surfaceLighting?.omittedPointLights,
-        atmosphereScale: this.postProcessing?.volumePass.getResolutionScale(),
-        sceneScale: this.postProcessing?.scenePass.getResolutionScale(),
-      });
     });
+  }
+
+  /** Renders one frame once it is due and records its timing. */
+  private renderFrame(time: number): void {
+    const startedAt = performance.now();
+    if (this._isPaused || !this.scene || !this.camera || !this.controls) {
+      return;
+    }
+
+    // Calculate delta time
+    const deltaTime = this.lastTime === 0 ? 0 : time - this.lastTime;
+    this.lastTime = time;
+    this.accumulator += deltaTime;
+
+    // Only render when enough time has accumulated (60 FPS cap)
+    const remainingFrameTime = consumeDueFrame(this.accumulator);
+    if (remainingFrameTime === null) return;
+    this.accumulator = remainingFrameTime;
+
+    // Replay the retained DMX snapshot so time-based effects advance
+    const updateStarted = performance.now();
+    for (const [uid, dmx] of this.dmxSnapshot) this.setElementDmx(uid, dmx);
+
+    // Update controls
+    this.controls.update();
+
+    // Update floor transparency based on camera position
+    if (this.environment) {
+      updateFloorTransparency(this.environment, this.camera);
+      updateOrbitTargetIndicator(
+        this.environment,
+        this.camera,
+        this.controls.target,
+      );
+    }
+
+    // Render and track timing
+    const renderStart = performance.now();
+    const updateMs = renderStart - updateStarted;
+    const timedRenderer = this.renderer! as unknown as TimestampRenderer;
+    this.gpuTimer.begin(timedRenderer);
+    if (this.postProcessing) {
+      renderWithPostProcessing(
+        this.postProcessing,
+        this.gpuTimer.sample,
+        updateMs,
+      );
+    } else {
+      this.renderer!.render(this.scene, this.camera);
+    }
+    this.gpuTimer.end(timedRenderer);
+    const renderEnd = performance.now();
+    this.instrumentation?.recordFrame(time, {
+      startedAt,
+      completedAt: renderEnd,
+      updateMs,
+      renderMs: renderEnd - renderStart,
+      gpu: this.gpuTimer.reading,
+      reducedPrismEmitters: this.sceneManager?.reducedPrismEmitters,
+      reducedGoboEmitters: this.sceneManager?.reducedGoboEmitters,
+      omittedSurfaceLights:
+        this.postProcessing?.surfaceLighting?.omittedPointLights,
+      atmosphereScale: this.postProcessing?.volumePass.getResolutionScale(),
+      sceneScale: this.postProcessing?.scenePass.getResolutionScale(),
+    });
+    const simulated = this.simulatedFailure.tick();
+    if (simulated) this.fail(simulated);
+  }
+
+  /** Stops the animation loop of a renderer that failed. */
+  protected stopRenderingAfterFailure(): void {
+    this.renderer?.setAnimationLoop(null);
   }
 
   private applyControlInteractionState(): void {
@@ -1060,6 +1103,9 @@ const workerApi = {
     renderer.setEmitterDebugEnabled(enabled),
   toggleBeams: () => renderer.toggleBeams(),
   setGridEnabled: (enabled: boolean) => renderer.setGridEnabled(enabled),
+  /** Shows or hides every scene object in the worker's scene. */
+  setSceneObjectsVisible: (visible: boolean) =>
+    renderer.setSceneObjectsVisible(visible),
   /** Applies the main thread's persisted environment preference. */
   setDarkness: (darkness: number) => renderer.setDarkness(darkness),
   setOrbitTargetIndicatorEnabled: (enabled: boolean) =>
@@ -1089,6 +1135,8 @@ const workerApi = {
   ) => renderer.setStatsCallback(callback),
   setCameraChangeCallback: (callback: ((state: CameraState) => void) | null) =>
     renderer.setCameraChangeCallback(callback),
+  setFailureCallback: (callback: VisualizerRenderFailureCallback | null) =>
+    renderer.setFailureCallback(callback),
 
   // Viewport control
   getCameraState: () => renderer.getCameraState(),

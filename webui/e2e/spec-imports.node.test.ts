@@ -17,9 +17,13 @@ if (!repoRoot) {
 }
 const e2eRoot = join(repoRoot, "webui", "e2e");
 
-/** Matches a dynamic import of an absolute path, which only Vite's dev server can serve. */
+/**
+ * Matches dynamic imports only Vite's dev server can serve: an absolute path,
+ * an origin-relative template, or any import that has to opt out of Vite's
+ * analysis because its specifier is computed at runtime.
+ */
 const sourcePathImport =
-  /import\(\s*(?:\/\*[^*]*\*\/\s*)?["'`]\/[^"'`]*["'`]\s*\)/g;
+  /import\(\s*(?:\/\*\s*@vite-ignore\s*\*\/[^)]*|(?:\/\*[^*]*\*\/\s*)?["'`](?:\/|\$\{location\.origin\})[^"'`]*["'`]\s*)\)|from\s+["'`]\$\{location\.origin\}\/[^"'`]*["'`]/g;
 
 /** Lists the Node-side Playwright files: specs and their helpers, not browser harnesses. */
 function playwrightSources(directory: string): string[] {

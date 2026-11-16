@@ -25,7 +25,7 @@ pub(super) fn write_timeline_desk_action(
     writer.write(event);
 }
 
-/// Tracking change inferred from a clip command embedded in a desk eval timeline action.
+/// Tracking change inferred from a clip command embedded in a command-line eval timeline action.
 pub(super) enum DeskEvalClipTracking {
     Track {
         entity: Entity,
@@ -34,7 +34,7 @@ pub(super) enum DeskEvalClipTracking {
     Untrack(Entity),
 }
 
-/// Resolve a clip entity by numeric clip ID for parsed desk eval commands.
+/// Resolve a clip entity by numeric clip ID for parsed eval commands.
 pub(super) fn clip_entity_for_id(exec_query: &Query<(Entity, &Clip)>, id: u32) -> Option<Entity> {
     exec_query
         .iter()
@@ -48,6 +48,7 @@ pub(super) fn sequence_auto_end_release_completed(
     exec_query: &Query<(Entity, &Clip)>,
     sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) -> bool {
     let target = instance.target();
@@ -63,11 +64,12 @@ pub(super) fn sequence_auto_end_release_completed(
         clip,
         sequence_data_provider,
         fixture_data_provider,
+        blueprint_data_provider,
         selection_resolver,
     )
 }
 
-/// Appends clip ownership changes from an ID expression used inside a desk eval command.
+/// Appends clip ownership changes from an ID expression used inside an eval command.
 pub(super) fn push_desk_eval_clip_tracking_for_id_expr(
     tracking: &mut Vec<DeskEvalClipTracking>,
     exec_query: &Query<(Entity, &Clip)>,
@@ -79,7 +81,7 @@ pub(super) fn push_desk_eval_clip_tracking_for_id_expr(
         let Some(entity) = clip_entity_for_id(exec_query, id) else {
             tracing::warn!(
                 clip_id = id,
-                "Skipping timeline desk eval ownership tracking for missing clip"
+                "Skipping timeline eval ownership tracking for missing clip"
             );
             continue;
         };
@@ -105,7 +107,7 @@ pub(super) fn desk_eval_clip_tracking(
             tracing::debug!(
                 %command,
                 %error,
-                "Skipping timeline desk eval ownership tracking for unparseable command"
+                "Skipping timeline eval ownership tracking for unparseable command"
             );
             return Vec::new();
         }
@@ -336,6 +338,7 @@ pub(super) fn planned_release_reconstruction_timing_for_clip_stop(
     cue_data_provider: &DataProvider<Cue>,
     sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver<'_>,
     timeline_beats_per_second: f64,
 ) -> Option<PlaybackReconstructionTiming> {
@@ -363,6 +366,7 @@ pub(super) fn planned_release_reconstruction_timing_for_clip_stop(
                 cue_data_provider,
                 None,
                 fixture_data_provider,
+                blueprint_data_provider,
                 selection_resolver,
                 1.0,
             ),
@@ -409,8 +413,14 @@ pub(super) fn planned_release_reconstruction_timing_for_clip_stop(
                 timeline_beats_per_second,
             );
             PlaybackReconstructionTiming {
-                started_at: timing.started_at.mul_f64(scale),
-                position: timing.position.mul_f64(scale),
+                started_at: nightfall::playback_speed::saturating_scale_duration(
+                    timing.started_at,
+                    scale,
+                ),
+                position: nightfall::playback_speed::saturating_scale_duration(
+                    timing.position,
+                    scale,
+                ),
                 ..timing
             }
         })
@@ -444,6 +454,7 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
     cue_data_provider: &DataProvider<Cue>,
     sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver<'_>,
     intervention_kind: PlannedPlaybackInterventionKind,
     timeline_beats_per_second: f64,
@@ -472,6 +483,7 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
                 cue_data_provider,
                 sequence_data_provider,
                 fixture_data_provider,
+                blueprint_data_provider,
                 selection_resolver,
                 timeline_beats_per_second,
             ),
@@ -535,6 +547,7 @@ pub(super) fn planned_intervention_render_target_for_clip_action(
         sequence_data_provider?,
         cue_data_provider,
         fixture_data_provider,
+        blueprint_data_provider,
         selection_resolver,
         origin_position,
     )?
@@ -600,6 +613,7 @@ pub(super) fn playback_duration_profile_for_source(
     cue_data_provider: &DataProvider<Cue>,
     sequence_data_provider: Option<&DataProvider<Sequence>>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver<'_>,
     timeline_beats_per_second: f64,
 ) -> PlaybackDurationProfile {
@@ -609,7 +623,7 @@ pub(super) fn playback_duration_profile_for_source(
             .ok()
             .map(|cue| {
                 fixture_data_provider
-                    .cue_duration_profile(&cue, selection_resolver)
+                    .cue_duration_profile(&cue, blueprint_data_provider, selection_resolver)
                     .to_playback_duration_profile()
             })
             .unwrap_or_else(PlaybackDurationProfile::unknown),
@@ -617,6 +631,7 @@ pub(super) fn playback_duration_profile_for_source(
             sequence_uid,
             sequence_data_provider,
             fixture_data_provider,
+            blueprint_data_provider,
             selection_resolver,
         )
         .map(|profile| {

@@ -52,8 +52,8 @@ function TimelineCard(props: TimelineCardProps) {
   const timelineUid = normalizeTimelineUid(props.timeline.identifiers.uid);
   /** Reports whether selection mode currently includes this card. */
   const isSelected = () =>
-    controller.selectionMode() &&
-    controller.selectedTimelineUidSet().has(timelineUid);
+    controller.crud.selectionMode() &&
+    controller.crud.selectedUidSet().has(timelineUid);
 
   return (
     <button
@@ -80,7 +80,7 @@ function TimelineCard(props: TimelineCardProps) {
         title={props.timeline.identifiers.label}
       >
         <Show
-          when={controller.editingCardLabelUid() === timelineUid}
+          when={controller.crud.editingCardLabelUid() === timelineUid}
           fallback={
             <span class="min-w-0 truncate">
               {props.timeline.identifiers.label}
@@ -91,7 +91,7 @@ function TimelineCard(props: TimelineCardProps) {
             ariaLabel="Timeline card label"
             allowEmpty
             value={props.timeline.identifiers.label}
-            onClose={() => controller.setEditingCardLabelUid(null)}
+            onClose={() => controller.crud.finishCardLabelEdit()}
             onCommit={(label) =>
               controller.updateTimelineLabel(props.timeline, label)
             }
@@ -126,8 +126,8 @@ function TimelineRowList(props: TimelineListViewProps) {
         panelId={controller.panelId}
         rows={controller.timelineList()}
         rowKey={(timeline) => timeline.identifiers.uid}
-        editRequest={controller.labelEditRequest()}
-        selectionRequest={controller.listSelectionRequest()}
+        editRequest={controller.crud.labelEditRequest()}
+        selectionRequest={controller.crud.listSelectionRequest()}
         columns={[
           {
             id: "id",
@@ -156,38 +156,25 @@ function TimelineRowList(props: TimelineListViewProps) {
           },
         ]}
         isRowSelected={(timeline) =>
-          controller
-            .selectedTimelineUidSet()
+          controller.crud
+            .selectedUidSet()
             .has(normalizeTimelineUid(timeline.identifiers.uid))
         }
         onSelectionChange={(rows) =>
-          controller.selectTimelines(
+          controller.crud.select(
             rows.map((timeline) =>
               normalizeTimelineUid(timeline.identifiers.uid),
             ),
           )
         }
-        onDeleteRequested={controller.handleDeleteSelected}
-        multiSelectOnPlainClick={controller.selectionMode()}
+        onDeleteRequested={controller.crud.requestDelete}
+        multiSelectOnPlainClick={controller.crud.selectionMode()}
         onRowClick={(timeline, modifiers) => {
-          if (
-            controller.isCreateModalOpen() ||
-            controller.isEditModalOpen() ||
-            controller.isDeleteModalOpen() ||
-            !modifiers.altKey
-          ) {
-            return;
-          }
+          if (controller.crud.dialogOpen() || !modifiers.altKey) return;
           controller.openTimeline(timeline);
         }}
         onRowContextMenu={(timeline, _modifiers, position) => {
-          if (
-            controller.isCreateModalOpen() ||
-            controller.isEditModalOpen() ||
-            controller.isDeleteModalOpen()
-          ) {
-            return;
-          }
+          if (controller.crud.dialogOpen()) return;
           controller.openTimelineContextMenu(timeline, position.x, position.y);
         }}
       />
@@ -219,7 +206,7 @@ export function TimelineListView(props: TimelineListViewProps) {
               tooltip={"Open selected timeline (Enter)"}
               type="button"
               onClick={controller.handleOpenSelected}
-              disabled={controller.selectedCount() !== 1}
+              disabled={controller.crud.selectedCount() !== 1}
               label="Open selected timeline"
             >
               <ArrowSquareOutIcon class="size-4" aria-hidden />
@@ -228,33 +215,33 @@ export function TimelineListView(props: TimelineListViewProps) {
               tooltip={"Edit selected timeline (E)"}
               type="button"
               onClick={controller.handleEditSelected}
-              disabled={controller.selectedCount() !== 1}
+              disabled={controller.crud.selectedCount() !== 1}
               label="Edit selected timeline"
             >
               <PencilSimpleLineIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <ToolbarButton
               variant="danger"
-              count={controller.selectedCount()}
+              count={controller.crud.selectedCount()}
               tooltip={
-                controller.selectedCount() > 0
-                  ? `Delete selected timelines (${controller.selectedCount()})`
+                controller.crud.selectedCount() > 0
+                  ? `Delete selected timelines (${controller.crud.selectedCount()})`
                   : "Delete selected timelines (Delete/Backspace)"
               }
               type="button"
-              onClick={controller.handleDeleteSelected}
-              disabled={controller.selectedCount() === 0}
+              onClick={controller.crud.requestDelete}
+              disabled={controller.crud.selectedCount() === 0}
               label="Delete selected timelines"
             >
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
-            <Show when={controller.viewMode() === "grid"}>
+            <Show when={controller.crud.viewMode() === "grid"}>
               <ToolbarSeparator />
               <ToggleToolbarButton
-                tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
+                tooltip={`${controller.crud.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
-                onClick={controller.handleToggleSelectionMode}
-                pressed={controller.selectionMode()}
+                onClick={controller.crud.handleToggleSelectionMode}
+                pressed={controller.crud.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
@@ -265,12 +252,12 @@ export function TimelineListView(props: TimelineListViewProps) {
         right={
           <>
             <CrudPanelSearch
-              search={controller.search}
+              search={controller.crud.search}
               placeholder="Search timelines"
             />
             <CrudViewModeToggle
-              viewMode={controller.viewMode()}
-              onViewModeChange={controller.setViewMode}
+              viewMode={controller.crud.viewMode()}
+              onViewModeChange={controller.crud.setViewMode}
             />
           </>
         }
@@ -302,38 +289,39 @@ export function TimelineListView(props: TimelineListViewProps) {
         onSubmit={controller.handleEditSubmit}
       />
       <DeleteConfirmModal
-        isOpen={controller.isDeleteModalOpen()}
+        isOpen={controller.crud.isDeleteModalOpen()}
         title="Delete selected timelines"
-        message={`Delete ${controller.selectedCount()} selected timeline(s)? This action cannot be undone.`}
+        message={`Delete ${controller.crud.selectedCount()} selected timeline(s)? This action cannot be undone.`}
         confirmLabel="Delete"
-        onCancel={() => controller.setIsDeleteModalOpen(false)}
+        onCancel={() => controller.crud.closeDeleteConfirm()}
         onConfirm={controller.confirmDeleteSelected}
       />
 
       <CrudScrollArea
-        viewMode={controller.viewMode()}
+        viewMode={controller.crud.viewMode()}
         aria-label="Timelines scroll area"
       >
         <div
           class="min-h-0 min-h-full"
           classList={{
-            "h-full": controller.viewMode() !== "grid",
-            "p-4": controller.viewMode() === "grid",
-            relative: controller.viewMode() === "grid",
+            "h-full": controller.crud.viewMode() !== "grid",
+            "p-4": controller.crud.viewMode() === "grid",
+            relative: controller.crud.viewMode() === "grid",
             "select-none":
-              controller.selectionMode() && controller.viewMode() === "grid",
+              controller.crud.selectionMode() &&
+              controller.crud.viewMode() === "grid",
           }}
-          onPointerDown={controller.gridDragSelection.onPointerDown}
-          onPointerMove={controller.gridDragSelection.onPointerMove}
-          onPointerUp={controller.gridDragSelection.onPointerUp}
-          onPointerCancel={controller.gridDragSelection.onPointerCancel}
+          onPointerDown={controller.crud.gridDragSelection.onPointerDown}
+          onPointerMove={controller.crud.gridDragSelection.onPointerMove}
+          onPointerUp={controller.crud.gridDragSelection.onPointerUp}
+          onPointerCancel={controller.crud.gridDragSelection.onPointerCancel}
           onClick={(event) => {
-            if (controller.gridDragSelection.consumeSuppressedClick()) {
+            if (controller.crud.gridDragSelection.consumeSuppressedClick()) {
               event.preventDefault();
               event.stopPropagation();
               return;
             }
-            controller.gridClickSelection.handleBackgroundClick(event);
+            controller.crud.gridClickSelection.handleBackgroundClick(event);
           }}
           onKeyDown={(event) => {
             if (event.key === "Escape") return;
@@ -352,7 +340,7 @@ export function TimelineListView(props: TimelineListViewProps) {
             }
           >
             <Show
-              when={controller.viewMode() === "grid"}
+              when={controller.crud.viewMode() === "grid"}
               fallback={<TimelineRowList controller={controller} />}
             >
               <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
@@ -366,18 +354,18 @@ export function TimelineListView(props: TimelineListViewProps) {
           </Show>
           <Show
             when={
-              controller.viewMode() === "grid" &&
-              controller.gridDragSelection.dragBox()
+              controller.crud.viewMode() === "grid" &&
+              controller.crud.gridDragSelection.dragBox()
             }
           >
             <div
               class={CRUD_GRID_DRAG_BOX_CLASS}
               data-crud-drag-box=""
               style={{
-                left: `${controller.gridDragSelection.dragBox()?.left}px`,
-                top: `${controller.gridDragSelection.dragBox()?.top}px`,
-                width: `${controller.gridDragSelection.dragBox()?.width}px`,
-                height: `${controller.gridDragSelection.dragBox()?.height}px`,
+                left: `${controller.crud.gridDragSelection.dragBox()?.left}px`,
+                top: `${controller.crud.gridDragSelection.dragBox()?.top}px`,
+                width: `${controller.crud.gridDragSelection.dragBox()?.width}px`,
+                height: `${controller.crud.gridDragSelection.dragBox()?.height}px`,
               }}
             />
           </Show>

@@ -14,7 +14,8 @@
 //! connected to the engine shares that one account.
 //!
 //! Clients search a copy of the GDTF Share fixture list saved next to the fixture library,
-//! and installs download straight into the library folder. Everything is exposed as HTTP
+//! and installs download straight into the library folder. Library files are matched to
+//! their fixture type's revisions on GDTF Share to offer newer ones. Everything is exposed as HTTP
 //! routes registered through [`register_routes`]. Nothing contacts GDTF Share or the
 //! keychain until a client asks for the account.
 
@@ -28,15 +29,23 @@ pub mod install;
 mod routes;
 #[cfg(test)]
 mod testing;
+pub mod updates;
 
 pub use routes::{GdtfShareFolders, register_routes};
 
 /// Prelude for ergonomic imports
 pub mod prelude {
     pub use crate::account::{GdtfShareAccount, GdtfShareAccountStatus, GdtfShareCredentialSource};
-    pub use crate::catalog::{GdtfShareFixture, GdtfShareMode, GdtfShareSearchResults};
+    pub use crate::catalog::{
+        GdtfShareFixture, GdtfShareFixtureName, GdtfShareMatch, GdtfShareMatchRequest,
+        GdtfShareMatches, GdtfShareMode, GdtfShareSearchResults,
+    };
     pub use crate::install::{
         GdtfShareDownloadProgress, GdtfShareInstall, GdtfShareInstallEvent, GdtfShareInstallFailure,
+    };
+    pub use crate::updates::{
+        GdtfShareLibraryFixture, GdtfShareListing, GdtfShareUpdate, GdtfShareUpdateCheck,
+        GdtfShareUpdates,
     };
     pub use crate::{GdtfShareFolders, register_routes as register_gdtf_share_routes};
 }

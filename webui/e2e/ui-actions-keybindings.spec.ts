@@ -327,7 +327,7 @@ test("OSC mappings to UI actions run on opted-in clients only", async ({
   await page
     .getByRole("alert")
     .filter({ hasText: "Bound OSC /e2e/ui/osc-panel" })
-    .getByRole("button", { name: "Close" })
+    .getByRole("button", { name: "Dismiss notification" })
     .click();
   await page.getByRole("button", { name: "Done" }).click();
   // Controller actions stay paused until the backend confirms no client is mapping.

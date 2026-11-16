@@ -97,6 +97,8 @@ After the merge, Nightfall applies adjustments that act on the whole stage rathe
 - **Virtual dimmers** give fixtures without an intensity channel a usable intensity. For a color-only light, Nightfall scales the color attributes, such as red, green, blue, and white, by the virtual intensity, with a gamma curve so dimming looks even.
 - **Virtual relations** apply other profile rules that involve virtual attributes.
 
+Parked parameters are applied last. A parked parameter holds the value it had when it was parked, whatever the layers, masters and virtual dimmers produce.
+
 Rate masters are different. They change how fast the targeted playbacks run, so they act on the playbacks' clocks rather than on the merged values.
 
 ## Values become DMX

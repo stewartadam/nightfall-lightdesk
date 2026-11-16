@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { FilePlusIcon } from "@squidlab/phosphor-solid/file-plus";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { createEffect, onCleanup, Show } from "solid-js";
 import type { StartupDraftRecovery } from "../../../lib/showfile-startup";
@@ -24,8 +23,7 @@ interface ShowfileDraftRecoveryModalProps {
   error: string | null;
   onLoadDraft: () => void;
   onKeepSaved: () => void;
-  onNewShowfile: () => void;
-  onOpenOther: () => void;
+  onManageShowfiles: () => void;
   disabled: boolean;
 }
 
@@ -80,8 +78,8 @@ export function ShowfileDraftRecoveryModal(
                 <span class="font-semibold text-neutral-100 [overflow-wrap:anywhere]">
                   {draft().showfileName}
                 </span>{" "}
-                using the saved version or draft. You can also create a new
-                showfile or open another.
+                using the saved version or draft, or manage your showfiles to
+                create or open a different one.
               </p>
               <Show when={props.error}>
                 {(error) => (
@@ -117,30 +115,16 @@ export function ShowfileDraftRecoveryModal(
             </DialogBody>
             <form onSubmit={submitDefaultAction}>
               <DialogFooter style={{ "justify-content": "space-between" }}>
-                <div class="flex items-center gap-2">
-                  <Button
-                    size="compact"
-                    type="button"
-                    class="items-center gap-1.5"
-                    aria-label="New showfile"
-                    disabled={props.disabled}
-                    onClick={props.onNewShowfile}
-                  >
-                    <FilePlusIcon class="size-4" aria-hidden />
-                    <span>New</span>
-                  </Button>
-                  <Button
-                    size="compact"
-                    type="button"
-                    class="items-center gap-1.5"
-                    aria-label="Open Other..."
-                    disabled={props.disabled}
-                    onClick={props.onOpenOther}
-                  >
-                    <FolderOpenIcon class="size-4" aria-hidden />
-                    <span>Open</span>
-                  </Button>
-                </div>
+                <Button
+                  size="compact"
+                  type="button"
+                  class="items-center gap-1.5"
+                  disabled={props.disabled}
+                  onClick={props.onManageShowfiles}
+                >
+                  <FolderOpenIcon class="size-4" aria-hidden />
+                  <span>Manage showfiles</span>
+                </Button>
                 <div class="flex items-center justify-end gap-x-2">
                   <Button
                     size="compact"

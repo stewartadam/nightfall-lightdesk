@@ -9,15 +9,19 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test as playwrightTest } from "@playwright/test";
+import {
+  type BrowserContext,
+  expect,
+  test as playwrightTest,
+} from "@playwright/test";
 import { createSampleWav } from "../../scripts/browser-demo-audio.mjs";
-
 import {
   startPlaywrightTestBackend,
   startPlaywrightWorkerSlot,
   stopPlaywrightTestBackend,
   stopPlaywrightWorkerSlot,
 } from "../../scripts/playwright-backend-pool.mjs";
+import { type GpuGateFixtures, gpuGateFixture } from "./gpu-gate";
 
 type WorkerSlot = {
   backendPort: number;
@@ -47,11 +51,30 @@ type TestFixtures = {
   /** Leaves telemetry consent unanswered so the first-run prompt appears. */
   telemetryUndecided: boolean;
   backendSlot: BackendSlot;
+} & GuideInvitationFixtures &
+  GpuGateFixtures;
+
+type GuideInvitationFixtures = {
+  /**
+   * Shows the first-launch guide invitation. Off by default because most specs clear browser
+   * storage, which would bring the notification back over the workspace they test.
+   */
+  guideInvitation: boolean;
 };
 
 type WorkerFixtures = {
   workerSlot: WorkerSlot;
 };
+
+/** Asks the page to leave out the guide invitation unless the test opted into it. */
+async function skipGuideInvitation(context: BrowserContext, show: boolean) {
+  if (show) return;
+  await context.addInitScript(() => {
+    (
+      window as { __nightfallSkipGuideInvitation?: boolean }
+    ).__nightfallSkipGuideInvitation = true;
+  });
+}
 
 /** Returns a required environment value or explains the wrapper requirement. */
 function requiredEnvironment(name: string): string {
@@ -67,6 +90,13 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   sampleDataOnly: [false, { option: true }],
   emptyStartupWorld: [false, { option: true }],
   telemetryUndecided: [false, { option: true }],
+  guideInvitation: [false, { option: true }],
+  gpuGate: [gpuGateFixture, { auto: true }],
+  /** Leaves out the guide invitation unless the test opted into it. */
+  context: async ({ context, guideInvitation }, use) => {
+    await skipGuideInvitation(context, guideInvitation);
+    await use(context);
+  },
   /** Claims a fixed backend port for a Playwright worker on the run's shared Vite server. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
@@ -172,9 +202,11 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
 
 /** Playwright fixture that uses only the shared Vite server, leaving the backend port deliberately empty. */
 export const frontendOnlyTest = playwrightTest.extend<
-  Record<never, never>,
+  GuideInvitationFixtures & GpuGateFixtures,
   WorkerFixtures
 >({
+  guideInvitation: [false, { option: true }],
+  gpuGate: [gpuGateFixture, { auto: true }],
   /** Claims a port pair for a backend-free browser test worker on the shared Vite server. */
   workerSlot: [
     // biome-ignore lint/correctness/noEmptyPattern: Playwright requires fixture parameters to use object destructuring.
@@ -200,9 +232,11 @@ export const frontendOnlyTest = playwrightTest.extend<
 
   /**
    * Serve generated audio for the demo show's timelines in dev mode, where the sample
-   * media is not packaged; preview tests use the packaged artifact unchanged.
+   * media is not packaged; preview tests use the packaged artifact unchanged. Also leaves out
+   * the guide invitation unless the test opted into it.
    */
-  context: async ({ context }, use) => {
+  context: async ({ context, guideInvitation }, use) => {
+    await skipGuideInvitation(context, guideInvitation);
     if (process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE !== "preview") {
       await context.route(
         "**/nightfall-demo.nightfall-show/timeline-audio/**",

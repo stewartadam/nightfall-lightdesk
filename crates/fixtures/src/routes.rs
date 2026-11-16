@@ -417,8 +417,6 @@ pub struct ResolvedConsoleTarget {
 pub struct ResolvedTransportTarget {
     /// Output transport target identifier.
     pub target: String,
-    /// Target physical protocol.
-    pub protocol: RouteTransport,
     /// Target output transport settings.
     pub transport: OutputTransport,
     /// Target universe.

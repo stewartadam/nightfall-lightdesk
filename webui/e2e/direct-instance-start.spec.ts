@@ -265,7 +265,7 @@ test("direct fx and flow starts create unbound instances", async ({
     /** Evaluates one direct instance command and rejects failed outcomes. */
     const evaluate = async (command: string): Promise<void> => {
       const result = await stores.sendAndAwait({
-        module: "DeskCommand",
+        module: "EngineCommand",
         command: { type: "Eval", data: command },
       });
       if (result.outcome.type !== "Succeeded") {
@@ -312,7 +312,7 @@ test("direct fx and flow starts create unbound instances", async ({
       },
     });
     const result = await (window as any).appStores.sendAndAwait({
-      module: "DeskCommand",
+      module: "EngineCommand",
       command: { type: "Eval", data: `fx ${stepFxId} start` },
     });
     if (result.outcome.type !== "Succeeded") {
@@ -380,7 +380,7 @@ test("direct fx and flow starts create unbound instances", async ({
     /** Stops one owned direct instance and rejects failed outcomes. */
     const stop = async (command: string): Promise<void> => {
       const result = await stores.sendAndAwait({
-        module: "DeskCommand",
+        module: "EngineCommand",
         command: { type: "Eval", data: command },
       });
       if (result.outcome.type !== "Succeeded") {

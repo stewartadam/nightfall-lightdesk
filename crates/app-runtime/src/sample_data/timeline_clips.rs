@@ -14,6 +14,7 @@
 
 use nightfall::prelude::Axis;
 use nightfall_clips::ClipOptions;
+use nightfall_selection_runtime::SelectionResolver;
 
 use super::*;
 
@@ -133,9 +134,9 @@ fn cue(
             label: label.to_owned(),
         },
         trigger,
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 values: values.iter().cloned().collect(),
                 ..Default::default()
             },
@@ -670,8 +671,8 @@ fn add_sparkles(world: &mut World) {
     let waveform = |phase_start: f32| FxWaveform {
         params: FxWaveformParams {
             kind: WaveformKind::Sin,
-            min: 0.0,
-            max: 255.0,
+            min: Percentage::from(0.0),
+            max: Percentage::from(1.0),
             duty_cycle: 1.0,
         },
         phase_range: (phase_start, phase_start + 2.0 * std::f32::consts::PI),
@@ -814,9 +815,9 @@ fn add_snap(world: &mut World) {
         steps: vec![flash.identifiers.uid.into(), fade.identifiers.uid.into()],
         ..Default::default()
     };
-    sequence.setup_cue.instructions = vec![BoundCueInstruction {
+    sequence.setup_cue.instructions = vec![BoundAssertionSet {
         selection: strobes().into(),
-        cue_instruction: CueInstruction {
+        assertions: AssertionSet {
             values: HashMap::from([
                 (Attribute::Intensity, percent(0.75)),
                 (Attribute::Tilt, percent(-0.4)),

@@ -56,7 +56,7 @@ export function createDmxUniverseSelectionController() {
   const setInputUniverseVisibilityMode = (
     value: InputUniverseVisibilityMode,
   ) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("IoSettingsCommand", {
       type: "SetInputUniverseVisibilityMode",
       data: value,
     });

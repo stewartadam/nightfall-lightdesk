@@ -14,9 +14,12 @@
 #![warn(missing_docs)]
 
 mod apply;
+mod ast_conv;
+mod command;
 mod contributors;
 mod migrations;
 mod selection_refs;
+pub mod settings;
 mod snapshot;
 mod world;
 
@@ -25,8 +28,43 @@ pub use apply::{
     apply_showfile_snapshot_to_world, initialize_showfile_resources, ordered_showfile_load_domains,
 };
 /// Current schema version written into newly saved showfile metadata.
-pub const CURRENT_SHOWFILE_VERSION: u32 = 23;
+pub const CURRENT_SHOWFILE_VERSION: u32 = 27;
+pub use ast_conv::ShowfileAstConverter;
+pub use command::{
+    NewShowfileOptions, ShowfileCommand, ShowfileImportOptions, ShowfileImportPolicy,
+    ShowfileRevisionSelection, reject_disk_storage_commands,
+};
 pub use selection_refs::stabilize_showfile_group_refs;
+pub use settings::{
+    DEFAULT_SHOWFILE_BACKUP_RETENTION, ShowfileSettings, ShowfileSettingsCommand,
+    apply_showfile_settings_command,
+};
+
+/// Registers the showfile requests and the [`ShowfileSettings`] section, in every host.
+///
+/// Hosts that store shows on disk answer [`ShowfileCommand`]s themselves. Without disk storage
+/// this plugin fails them, so the caller is never left waiting.
+pub struct ShowfilePlugin;
+
+impl bevy_app::Plugin for ShowfilePlugin {
+    /// Registers [`ShowfileCommand`] and its words, the disk storage guard, and the settings
+    /// section with the handler for [`ShowfileSettingsCommand`].
+    fn build(&self, app: &mut bevy_app::App) {
+        use bevy_ecs::prelude::*;
+        use nightfall_engine::prelude::*;
+
+        register_client_command::<ShowfileCommand>(app, Undo::Skipped);
+        nightfall_engine::protocol::dispatch_ast::register_converter::<ShowfileAstConverter>();
+        app.add_systems(
+            ApplyCommands,
+            reject_disk_storage_commands
+                .run_if(not(disk_storage_available))
+                .in_set(EventHandling),
+        );
+        app.register_settings_section(ShowfileSettings::SECTION);
+        app.add_settings_command(apply_showfile_settings_command);
+    }
+}
 pub use snapshot::{
     RoutesSnapshot, ShowfileMetadata, ShowfileSnapshot, current_showfile_metadata,
     validate_showfile_asset_versions,
@@ -106,7 +144,7 @@ mod tests {
     #[test]
     fn faders_round_trip_and_replace_existing_bank() {
         use bevy_ecs::prelude::World;
-        use nightfall_desk::prelude::{FaderAssignment, FaderButtonMode, FaderConfig, Faders};
+        use nightfall_controls::prelude::{FaderAssignment, FaderButtonMode, FaderConfig, Faders};
 
         let mut world = World::new();
         initialize_showfile_resources(&mut world);
@@ -186,6 +224,116 @@ mod tests {
         assert_eq!(parsed.metadata.showfile_version, CURRENT_SHOWFILE_VERSION);
         assert!(parsed.routes.output.is_empty());
         assert!(parsed.routes.disabled.is_empty());
+    }
+
+    /// Load a schema 23 showfile whose cue instructions use the `cue_instruction` field: the
+    /// values come back as the cue's assertion sets.
+    #[test]
+    fn schema_23_showfile_with_cue_instructions_loads() {
+        let mut snapshot = contributors::collect_save_contributions(&[]);
+        let mut assertions = nightfall_engine::prelude::AssertionSet::default();
+        assertions.values.insert(
+            nightfall_dmx::prelude::Attribute::Intensity,
+            nightfall::prelude::ValueSource::Release,
+        );
+        snapshot.cues.push(nightfall_cues::prelude::Cue {
+            instructions: vec![nightfall_engine::prelude::BoundAssertionSet {
+                assertions: assertions.clone(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+        let mut showfile = serde_json::to_value(&snapshot).unwrap();
+        showfile["metadata"]["showfileVersion"] = 23.into();
+        let instruction = showfile["cues"][0]["instructions"][0]
+            .as_object_mut()
+            .unwrap();
+        let stored = instruction.remove("assertions").unwrap();
+        instruction.insert("cue_instruction".to_string(), stored);
+
+        let parsed = parse_showfile_snapshot_json(&showfile.to_string(), "schema-23").unwrap();
+
+        assert_eq!(parsed.metadata.showfile_version, CURRENT_SHOWFILE_VERSION);
+        assert_eq!(parsed.cues[0].instructions[0].assertions, assertions);
+    }
+
+    /// A schema 24 show with flat desk settings and separate IO settings loads them as sections.
+    #[test]
+    fn schema_24_showfile_with_flat_settings_loads() {
+        let snapshot = contributors::collect_save_contributions(&[]);
+        let mut showfile = serde_json::to_value(&snapshot).unwrap();
+        showfile["metadata"]["showfileVersion"] = 24.into();
+        showfile["settings"] = serde_json::json!({
+            "programmer_auto_select": true,
+            "showfile_backup_retention": 3
+        });
+        showfile["ioSettings"] = serde_json::json!({ "dmx_output_rate_hz": 30 });
+
+        let parsed = parse_showfile_snapshot_json(&showfile.to_string(), "schema-24").unwrap();
+
+        assert_eq!(parsed.settings["programming"]["auto_select"], true);
+        assert_eq!(
+            parsed
+                .settings_section(&crate::ShowfileSettings::SECTION)
+                .backup_retention,
+            3
+        );
+        assert_eq!(parsed.settings["io"]["dmx_output_rate_hz"], 30);
+    }
+
+    /// A schema 25 show patched with the retired 308ch and 312ch strobe models loads them as
+    /// the matching modes of the Strobe Matrix profile, with their saved elements intact.
+    #[test]
+    fn schema_25_showfile_with_retired_strobe_models_loads() {
+        let mut snapshot = contributors::collect_save_contributions(&[]);
+        for (id, mode) in [(1, "308ch"), (2, "312ch")] {
+            let mut fixture = nightfall_fixtures::library::create_fixture_from_library(
+                id,
+                "Generic",
+                "Strobe Matrix",
+                mode,
+            )
+            .unwrap();
+            fixture.model = format!("Strobe Matrix {mode}");
+            fixture.mode = "Strobe".to_string();
+            fixture.library_asset_etag = Some(format!("builtin:generic-strobe-matrix-{mode}:v1"));
+            snapshot.fixtures.push(fixture);
+        }
+        let mut showfile = serde_json::to_value(&snapshot).unwrap();
+        showfile["metadata"]["showfileVersion"] = 25.into();
+
+        let parsed = parse_showfile_snapshot_json(&showfile.to_string(), "schema-25").unwrap();
+
+        let migrated = parsed
+            .fixtures
+            .iter()
+            .map(|fixture| {
+                (
+                    fixture.model.as_str(),
+                    fixture.mode.as_str(),
+                    fixture.library_asset_etag.as_deref(),
+                    fixture.elements.len(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            migrated,
+            vec![
+                (
+                    "Strobe Matrix",
+                    "308ch",
+                    Some("builtin:generic-strobe-matrix:v1"),
+                    115
+                ),
+                (
+                    "Strobe Matrix",
+                    "312ch",
+                    Some("builtin:generic-strobe-matrix:v1"),
+                    119
+                ),
+            ]
+        );
+        validate_showfile_asset_versions(&parsed).unwrap();
     }
 
     /// Reject absent and malformed schema metadata instead of assuming a legacy version.

@@ -15,6 +15,7 @@ import { fixtureElementIdsInDmxOrder } from "./dmx";
 import {
   buildFixturePatchMapFromRoutes,
   collectConsoleFixtureSpans,
+  type RouteLists,
 } from "./route-utils";
 
 /**
@@ -53,7 +54,7 @@ test("buildFixturePatchMapFromRoutes keeps multiple output routes per element", 
 
   const source: types.OutputSource = { type: "Fixture", data: { uids: [uid] } };
 
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -116,7 +117,7 @@ test("buildFixturePatchMapFromRoutes resolves custom network dmx targets", () =>
     ],
   };
 
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -211,7 +212,7 @@ test("buildFixturePatchMapFromRoutes places explicit profile slots", () => {
     identifiers: { id: 2, uid: nextUid, label: "Next" },
     elements: [{ label: "Main", parameters: [makeParam({ type: "Red" })] }],
   };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -274,7 +275,7 @@ test("buildFixturePatchMapFromRoutes places additional dmx breaks", () => {
     type: "Transport",
     data: { target: "sacn", universe: { start: 1, end: 1 }, address },
   });
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -347,7 +348,7 @@ test("buildFixturePatchMapFromRoutes lays console-bound fixtures out in console 
     a: makeRgbFixture("a", 1),
     b: makeRgbFixture("b", 2),
   };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [consoleRoute(["a", "b"], 2, 121)],
@@ -379,7 +380,7 @@ test("buildFixturePatchMapFromRoutes lays console-bound fixtures out in console 
  */
 test("buildFixturePatchMapFromRoutes remaps console passthrough to wire numbering", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -420,7 +421,7 @@ test("buildFixturePatchMapFromRoutes remaps console passthrough to wire numberin
 /** Verifies the highest-priority console route decides a fixture's console address. */
 test("buildFixturePatchMapFromRoutes applies the highest-priority console route", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -463,7 +464,7 @@ test("buildFixturePatchMapFromRoutes honors element filters on console routes", 
     a: makeTwoCellFixture("a", 1),
     b: makeTwoCellFixture("b", 2),
   };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -536,7 +537,7 @@ test("buildFixturePatchMapFromRoutes patches only the filtered parameter", () =>
     a: makeRgbFixture("a", 1),
     b: makeRgbFixture("b", 2),
   };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -600,7 +601,7 @@ test("buildFixturePatchMapFromRoutes patches only the filtered parameter", () =>
  */
 test("buildFixturePatchMapFromRoutes replaces console addresses per parameter", () => {
   const fixtures = { a: makeRgbFixture("a", 1) };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -678,7 +679,7 @@ test("buildFixturePatchMapFromRoutes places explicit slots in console space", ()
     a: makeInterleavedFixture("a"),
     b: makeRgbFixture("b", 2),
   };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -744,7 +745,7 @@ test("buildFixturePatchMapFromRoutes places explicit slots in console space", ()
  */
 test("buildFixturePatchMapFromRoutes rebases explicit slots for element filters", () => {
   const fixtures = { a: makeInterleavedFixture("a") };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [
@@ -842,7 +843,7 @@ test("buildFixturePatchMapFromRoutes lays wired layouts out in DMX order", () =>
     const fixtures = {
       a: makeSegmentedFixture("a", Math.max(...order), layout),
     };
-    const snapshot: types.RoutesSnapshot = {
+    const snapshot: RouteLists = {
       input: [],
       disabled: [],
       output: [
@@ -889,7 +890,7 @@ test("collectConsoleFixtureSpans spans whole footprints at the winning console a
     a: makeInterleavedFixture("a"),
     b: makeRgbFixture("b", 2),
   };
-  const snapshot: types.RoutesSnapshot = {
+  const snapshot: RouteLists = {
     input: [],
     disabled: [],
     output: [

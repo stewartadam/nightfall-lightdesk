@@ -7,6 +7,7 @@
  */
 
 import { expect, type Page, test } from "./playwright-fixtures";
+import { waitForDockviewApp } from "./showfile-startup";
 
 /** Waits for the dev appStores bridge used by focused Playwright checks. */
 async function waitForAppStores(page: Page): Promise<void> {
@@ -43,6 +44,8 @@ test("notification history opens from the header bell and lists recent toasts", 
 
   await expect(page.locator("main#app")).toBeVisible();
   await waitForAppStores(page);
+  // Startup toasts (such as the seeded show's save) arrive before the shell opens.
+  await waitForDockviewApp(page);
   await page.evaluate(() => {
     (window as any).appStores.clearNotificationHistory();
   });

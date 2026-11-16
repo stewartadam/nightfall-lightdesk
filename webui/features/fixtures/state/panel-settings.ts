@@ -89,6 +89,11 @@ export const fixturesExpandedSet = atom<Set<string>>(
 export const fixturesShowReleasedOutput = atom<boolean>(
   initialSettings.showReleasedOutput,
 );
+/**
+ * Whether the Fixtures panel shows only parked rows and attribute columns. It isn't persisted, so
+ * a reload never opens on a grid that hides most of the patch.
+ */
+export const fixturesShowOnlyParked = atom<boolean>(false);
 
 /**
  * Persists a snapshot of the primary in-memory fixture panel atoms.
@@ -182,4 +187,9 @@ export function setFixturesShowReleasedOutput(
       enabled,
     );
   }
+}
+
+/** Turns the Fixtures panel's parked-only view on or off. */
+export function setFixturesShowOnlyParked(enabled: boolean): void {
+  setStoreAction(fixturesShowOnlyParked, "Set Fixtures Parked Filter", enabled);
 }

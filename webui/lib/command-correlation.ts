@@ -22,7 +22,7 @@ export interface CommandResultWaiter {
   reject: (error: Error) => void;
 }
 
-/** Showfile name a desk command will make current once it succeeds. */
+/** Showfile name a showfile command will make current once it succeeds. */
 export interface PendingCurrentShowfileName {
   name: string;
 }
@@ -93,7 +93,20 @@ export function rejectPendingCommandWaiters(error: Error): void {
   }
 }
 
-/** Extracts the current showfile name implied by a successful desk command. */
+/**
+ * Rejects every terminal-result waiter while the session continues, so callers stop waiting on a
+ * result that may have been lost. Retry aliases and showfile-name metadata are kept, so a result
+ * that still arrives later updates the right console entry and the current showfile name.
+ */
+export function releasePendingCommandWaiters(error: Error): void {
+  const waiters = [...commandWaiters.values()];
+  commandWaiters.clear();
+  for (const waiter of waiters) {
+    waiter.reject(error);
+  }
+}
+
+/** Extracts the current showfile name implied by a successful showfile command. */
 function currentShowfileNameFromCommand(
   data: object,
 ): PendingCurrentShowfileName | null {
@@ -101,7 +114,7 @@ function currentShowfileNameFromCommand(
     module?: unknown;
     command?: { type?: unknown; data?: unknown };
   };
-  if (envelope.module !== "DeskCommand") {
+  if (envelope.module !== "ShowfileCommand") {
     return null;
   }
 

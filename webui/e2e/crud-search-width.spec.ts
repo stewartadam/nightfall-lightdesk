@@ -6,12 +6,36 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { Locator } from "@playwright/test";
 import { expect, frontendOnlyTest as test } from "./playwright-fixtures";
 import {
   dockFixturesInMainGrid,
   resetToDefaultLayout,
   waitForDockviewApp,
 } from "./showfile-startup";
+
+/**
+ * Opens the Clips toolbar search, unfolding "More actions" first when the
+ * panel is too narrow to show the search button on the toolbar's first row
+ * and the toolbar has made it inert.
+ */
+async function openClipSearch(panel: Locator) {
+  const search = panel.getByRole("button", {
+    name: "Search clips",
+    exact: true,
+  });
+  await expect(search).toBeAttached();
+  // The toolbar folds controls in the frame after a resize lands.
+  await panel.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+  if (await search.evaluate((button) => button.closest("[inert]") !== null))
+    await panel.getByRole("button", { name: "More actions" }).click();
+  await search.click();
+}
 
 /** Checks Clips keeps its minimum width and toolbar search presents only the grouped clear action. */
 test("Clips minimum width and grouped search clear", async ({
@@ -39,10 +63,8 @@ test("Clips minimum width and grouped search clear", async ({
   );
   await expect
     .poll(async () => (await panel.boundingBox())?.width ?? 0)
-    .toBeGreaterThanOrEqual(515);
-  await panel
-    .getByRole("button", { name: "Search clips", exact: true })
-    .click();
+    .toBeGreaterThanOrEqual(360);
+  await openClipSearch(panel);
   const search = panel.getByRole("searchbox");
   await search.fill("afa");
   const group = panel.getByRole("search");
@@ -54,14 +76,12 @@ test("Clips minimum width and grouped search clear", async ({
   });
   await group.getByRole("button", { name: "Clear search" }).click();
   await expect(search).toBeHidden();
-  await panel
-    .getByRole("button", { name: "Search clips", exact: true })
-    .click();
+  await openClipSearch(panel);
   await expect(panel.getByRole("searchbox")).toHaveValue("");
 });
 
 /** Checks each searchable CRUD panel enforces its own minimum in a separate dock group. */
-test("searchable CRUD panels enforce 515px minimum width", async ({
+test("searchable CRUD panels enforce 360px minimum width", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
@@ -102,7 +122,7 @@ test("searchable CRUD panels enforce 515px minimum width", async ({
           ),
         { message: `${component} minimum width` },
       )
-      .toBeGreaterThanOrEqual(515);
+      .toBeGreaterThanOrEqual(360);
     if (component === "SceneObjects")
       await page.screenshot({
         path: testInfo.outputPath("crud-panel-minimum-width.png"),

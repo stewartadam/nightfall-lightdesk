@@ -33,18 +33,14 @@ import {
 } from "solid-js";
 import { formatCueEditorTitle } from "../../../lib/cue-editor-title";
 import {
+  cueWithUnconfirmedEdit,
   previewCue,
   sendCueUpdate,
   sendSequenceUpdate,
+  sequenceWithUnconfirmedEdit,
   stopPreviewInstance,
 } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
-import { setStoreAction } from "../../../lib/nanostore-action";
-import {
-  hasCueInstructionRows,
-  projectReleaseCueFromSequence,
-  releaseCueProjectionSignature,
-} from "../../../lib/release-cue-scaffold";
 import { normalizeFixtureUid } from "../../../lib/route-utils";
 import {
   activeInstances,
@@ -81,10 +77,6 @@ export interface CueEditorContextType {
   isReleaseCue: boolean;
   /** Sequence UID whose built-in release cue is being edited, if applicable. */
   releaseSequenceUid?: string;
-  /** Live-projected release cue rows that should be persisted when they change. */
-  releaseCueProjection: Accessor<types.Cue | undefined>;
-  /** Projected release cue payload when it differs from stored sequence data. */
-  releaseCueProjectionUpdate: Accessor<types.Cue | undefined>;
   /** Label for the active part. */
   partLabel: Accessor<string>;
   /** Label for the properties panel header */
@@ -93,7 +85,7 @@ export interface CueEditorContextType {
   // Backend communication
   /** Send a cue update to the backend */
   updateCue: (cue: types.Cue) => void;
-  /** Commit an edited cue after the editor UI has yielded. */
+  /** Send an edited cue to the backend and refresh a running preview with it. */
   commitEditedCue: (cue: types.Cue) => void;
 
   // Preview state
@@ -166,19 +158,25 @@ export function createCueEditorContextValue(
     setSequenceStoreRevision((revision) => revision + 1);
   });
 
-  /** Returns the sequence that owns this editor's built-in setup cue. */
+  /** Returns the sequence that owns this editor's built-in setup cue, with unconfirmed edits. */
   const setupSequence = createMemo(() => {
     sequenceStoreRevision();
     return options.setupSequenceUid
-      ? sequences.get()[options.setupSequenceUid]
+      ? sequenceWithUnconfirmedEdit(
+          options.setupSequenceUid,
+          sequences.get()[options.setupSequenceUid],
+        )
       : undefined;
   });
 
-  /** Returns the sequence that owns this editor's built-in release cue. */
+  /** Returns the sequence that owns this editor's built-in release cue, with unconfirmed edits. */
   const releaseSequence = createMemo(() => {
     sequenceStoreRevision();
     return options.releaseSequenceUid
-      ? sequences.get()[options.releaseSequenceUid]
+      ? sequenceWithUnconfirmedEdit(
+          options.releaseSequenceUid,
+          sequences.get()[options.releaseSequenceUid],
+        )
       : undefined;
   });
 
@@ -198,30 +196,6 @@ export function createCueEditorContextValue(
       return sequences.get()[options.releaseSequenceUid];
     }
     return undefined;
-  });
-
-  /** Derives value-bearing release cue rows from the owning sequence. */
-  const releaseCueProjection = createMemo(() => {
-    cueStoreRevision();
-    const releaseOwner = releaseSequence();
-    if (!releaseOwner) return undefined;
-
-    const projectedCue = projectReleaseCueFromSequence(
-      releaseOwner,
-      cues.get(),
-    );
-    return hasCueInstructionRows(projectedCue) ? projectedCue : undefined;
-  });
-
-  /** Returns the projected release cue only when stored sequence data is stale. */
-  const releaseCueProjectionUpdate = createMemo(() => {
-    const releaseOwner = releaseSequence();
-    const projectedCue = releaseCueProjection();
-    if (!releaseOwner || !projectedCue) return undefined;
-    return releaseCueProjectionSignature(projectedCue) ===
-      releaseCueProjectionSignature(releaseOwner.release_cue)
-      ? undefined
-      : projectedCue;
   });
 
   /** Stops any active cue preview when the shared editor context is disposed. */
@@ -312,7 +286,7 @@ export function createCueEditorContextValue(
     if (releaseOwner) {
       return {
         status: "loaded",
-        cue: releaseCueProjection() ?? releaseOwner.release_cue,
+        cue: releaseOwner.release_cue,
       };
     }
 
@@ -320,7 +294,7 @@ export function createCueEditorContextValue(
       return { status: "not_found", cueUid };
     }
 
-    const cue = cueMap[cueUid];
+    const cue = cueWithUnconfirmedEdit(cueUid, cueMap[cueUid]);
     if (cue) {
       return { status: "loaded", cue };
     }
@@ -389,71 +363,32 @@ export function createCueEditorContextValue(
     }
   });
 
-  /** Optimistically updates the cue store and sends the cue definition to the backend. */
+  /**
+   * Sends the cue definition to the backend, wrapped in its owning sequence for setup and release
+   * cues. The editor shows the sent cue until the engine confirms it; other panels keep showing
+   * the engine's definition.
+   */
   const updateCue = (updatedCue: types.Cue) => {
     const setupOwner = setupSequence();
     if (setupOwner) {
-      const updatedSequence = {
-        ...setupOwner,
-        setup_cue: updatedCue,
-      };
-      setStoreAction(sequences, "Update Setup Cue Sequence", {
-        ...sequences.get(),
-        [updatedSequence.identifiers.uid]: updatedSequence,
-      });
-      sendSequenceUpdate(updatedSequence);
+      sendSequenceUpdate({ ...setupOwner, setup_cue: updatedCue });
       return;
     }
 
     const releaseOwner = releaseSequence();
     if (releaseOwner) {
-      const updatedSequence = {
-        ...releaseOwner,
-        release_cue: updatedCue,
-      };
-      setStoreAction(sequences, "Update Release Cue Sequence", {
-        ...sequences.get(),
-        [updatedSequence.identifiers.uid]: updatedSequence,
-      });
-      sendSequenceUpdate(updatedSequence);
+      sendSequenceUpdate({ ...releaseOwner, release_cue: updatedCue });
       return;
     }
 
-    setStoreAction(cues, "Update Cue", {
-      ...cues.get(),
-      [updatedCue.identifiers.uid]: updatedCue,
-    });
     sendCueUpdate(updatedCue);
   };
 
-  let pendingEditedCue: types.Cue | undefined;
-  let pendingEditedCueFrame: number | undefined;
-
-  /** Cancels any scheduled edited-cue commit. */
-  const cancelPendingEditedCueCommit = () => {
-    if (pendingEditedCueFrame === undefined) return;
-    cancelAnimationFrame(pendingEditedCueFrame);
-    pendingEditedCueFrame = undefined;
-  };
-
-  /** Schedules optimistic persistence after inline editor teardown can paint. */
+  /** Stores an edited cue and pushes it into a running preview. */
   const commitEditedCue = (updatedCue: types.Cue) => {
-    pendingEditedCue = updatedCue;
-    cancelPendingEditedCueCommit();
-    pendingEditedCueFrame = requestAnimationFrame(() => {
-      pendingEditedCueFrame = undefined;
-      const cueToCommit = pendingEditedCue;
-      pendingEditedCue = undefined;
-      if (!cueToCommit) return;
-      updateCue(cueToCommit);
-      updatePreview(cueToCommit);
-    });
+    updateCue(updatedCue);
+    updatePreview(updatedCue);
   };
-
-  onCleanup(() => {
-    cancelPendingEditedCueCommit();
-    pendingEditedCue = undefined;
-  });
 
   /** Returns a cue payload suitable for preview, optionally stripping transitions. */
   const toPreviewCue = (
@@ -476,9 +411,9 @@ export function createCueEditorContextValue(
     };
     previewCue.transitions_by_attribute = {};
     for (const instruction of previewCue.instructions) {
-      instruction.cue_instruction.transitions = {};
-      instruction.cue_instruction.transitions_by_attribute = {};
-      instruction.cue_instruction.transitions_by_fixture_attribute = [];
+      instruction.assertions.transitions = {};
+      instruction.assertions.transitions_by_attribute = {};
+      instruction.assertions.transitions_by_fixture_attribute = [];
     }
     for (const part of previewCue.parts ?? []) {
       part.transitions = {
@@ -490,9 +425,9 @@ export function createCueEditorContextValue(
       };
       part.transitions_by_attribute = {};
       for (const instruction of part.instructions) {
-        instruction.cue_instruction.transitions = {};
-        instruction.cue_instruction.transitions_by_attribute = {};
-        instruction.cue_instruction.transitions_by_fixture_attribute = [];
+        instruction.assertions.transitions = {};
+        instruction.assertions.transitions_by_attribute = {};
+        instruction.assertions.transitions_by_fixture_attribute = [];
       }
     }
     return previewCue;
@@ -615,8 +550,6 @@ export function createCueEditorContextValue(
     isSetupCue,
     isReleaseCue,
     releaseSequenceUid: options.releaseSequenceUid,
-    releaseCueProjection,
-    releaseCueProjectionUpdate,
     partLabel,
     label,
     updateCue,

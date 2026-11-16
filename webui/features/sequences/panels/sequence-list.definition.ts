@@ -17,7 +17,7 @@ export default definePanel({
   panelId: "panel-SequenceList",
   componentName: "SequenceList",
   title: "Sequences",
-  minWidth: 515,
+  minWidth: 360,
   minHeight: 160,
   icon: QueueIcon,
   loadComponent: () => import("./sequence-list-panel"),

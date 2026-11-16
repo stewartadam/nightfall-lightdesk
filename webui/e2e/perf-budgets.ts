@@ -16,6 +16,16 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { summarizePresentationTrace } from "./visualizer-presentation-report";
 
+/**
+ * Whether the opt-in wall-clock timing specs run. Their latency and jitter thresholds depend
+ * on the host's load, so they stay off by default and run with NIGHTFALL_TIMING_PERF=1.
+ */
+export const TIMING_SPECS_ENABLED = process.env.NIGHTFALL_TIMING_PERF === "1";
+
+/** Skip reason shown for timing specs when NIGHTFALL_TIMING_PERF is unset. */
+export const TIMING_SPECS_SKIP_REASON =
+  "Opt-in wall-clock timing budget; set NIGHTFALL_TIMING_PERF=1";
+
 /** Summary of a measured Chromium presentation trace. */
 export type PresentationSummary = ReturnType<typeof summarizePresentationTrace>;
 

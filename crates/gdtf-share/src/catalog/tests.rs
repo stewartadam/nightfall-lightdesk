@@ -124,6 +124,37 @@ fn search_returns_every_match() {
     assert_eq!(results.fixtures.len(), 250);
 }
 
+/// Looking a fixture type up by name ignores case, underscores and punctuation, returns
+/// the type's newest revision, and prefers manufacturer uploads when two types share the
+/// names.
+#[test]
+fn find_matches_names_from_file_names() {
+    let user_upload = GdtfShareFixture {
+        rating: Some(5.0),
+        last_modified: 300,
+        ..fixture(1, "Clay Paky", "Alpha Spot QWO 800", "Standard")
+    };
+    let official_old = GdtfShareFixture {
+        fixture_type_id: Some("official".into()),
+        manufacturer_upload: true,
+        last_modified: 100,
+        ..fixture(2, "Clay Paky", "Alpha Spot QWO 800", "Standard")
+    };
+    let official_new = GdtfShareFixture {
+        fixture_type_id: Some("official".into()),
+        manufacturer_upload: true,
+        last_modified: 200,
+        ..fixture(3, "Clay Paky", "Alpha Spot QWO 800", "Standard")
+    };
+    let other = fixture(4, "Robe Lighting s.r.o.", "Spiider", "Mode 1");
+    let catalog = Catalog::new(0, vec![user_upload, official_old, official_new, other]);
+    let rid = |manufacturer, name| catalog.find(manufacturer, name).map(|found| found.rid);
+    assert_eq!(rid("clay_paky", "Alpha_Spot_QWO_800"), Some(3));
+    assert_eq!(rid("Robe Lighting s.r.o", "SPIIDER"), Some(4));
+    assert_eq!(rid("Robe", "Spiider"), None);
+    assert_eq!(rid("", "Spiider"), None);
+}
+
 /// List entries keep their fields, with a blank id, an `N/A` rating and the
 /// manufacturer upload marker normalized.
 #[test]

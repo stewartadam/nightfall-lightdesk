@@ -36,6 +36,7 @@ import BrowserDemoBanner from "../runtime/browser-demo-banner";
 import AppMenu from "./app-menu";
 import { ConnectionIndicator } from "./connection-indicator";
 import { smoothStatusMetric } from "./model";
+import { ParkedIndicator } from "./parked-indicator";
 import UndoControls from "./undo-controls";
 
 const log = getLogger(import.meta.url);
@@ -176,6 +177,7 @@ export default function StatusBar() {
       <BrowserDemoBanner />
 
       <div class="flex items-center gap-2">
+        <ParkedIndicator />
         <Tooltip content={() => `Showfile: ${showfileName()}`}>
           <div
             data-testid="status-showfile-name"

@@ -8,6 +8,7 @@
 
 //! Integration tests, linked into one binary to avoid per-file link overhead.
 
+mod aliases;
 mod attribute_command;
 mod autocomplete;
 mod autocomplete_edge_snapshots;

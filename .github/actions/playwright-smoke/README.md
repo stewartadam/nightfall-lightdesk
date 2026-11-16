@@ -4,7 +4,7 @@ Run Chromium product flows in an existing Linux build-and-test job:
 
 ```yaml
 - name: Run Chromium product flows
-  uses: ./.github/actions/playwright-smoke
+  uses: $/.github/actions/playwright-smoke
 ```
 
 The caller must check out this repository, set up Node.js, pnpm and Rust, install Node

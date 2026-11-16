@@ -10,7 +10,6 @@ bevy_ecs.workspace = true
 nightfall = { path = "../common" }
 nightfall-actions = { path = "../actions" }
 nightfall-cmd-parse = { path = "../cmd-parse" }
-nightfall-desk = { path = "../desk", default-features = false }
 nightfall-engine = { path = "../engine" }
 nightfall-undo = { path = "../undo" }
 serde.workspace = true

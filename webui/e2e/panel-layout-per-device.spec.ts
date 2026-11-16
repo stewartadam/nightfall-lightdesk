@@ -26,12 +26,15 @@ async function installBrowserStorageSeed(page: Page) {
   });
 }
 
-/** Sends a desk command and throws when the backend reports an error. */
-async function sendDeskCommand(page: Page, command: Record<string, unknown>) {
+/** Sends a showfile command and throws when the backend reports an error. */
+async function sendShowfileCommand(
+  page: Page,
+  command: Record<string, unknown>,
+) {
   const result = await page.evaluate(
     async (commandData) =>
       (window as any).appStores.sendAndAwait({
-        module: "DeskCommand",
+        module: "ShowfileCommand",
         command: commandData,
       }),
     command,
@@ -50,7 +53,7 @@ function isNavigationContextError(error: unknown): boolean {
 }
 
 /** Sends a world-swap command and awaits the replacement backend resync. */
-async function sendWorldSwapDeskCommand(
+async function sendWorldSwapShowfileCommand(
   page: Page,
   command: Record<string, unknown>,
 ) {
@@ -332,7 +335,7 @@ test("opens the showfile's default layout on a device without its own arrangemen
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
   // Keep the fresh show on disk so the test can switch back to it.
-  await sendDeskCommand(page, { type: "SaveShowfile" });
+  await sendShowfileCommand(page, { type: "SaveShowfile" });
 
   await arrangeDistinctiveLayout(page);
   const defaultLayoutId = await storeArrangementAsDefaultLayout(page, "Stage");
@@ -340,12 +343,12 @@ test("opens the showfile's default layout on a device without its own arrangemen
 
   // Work in another show, so this device's arrangement no longer belongs to
   // the saved one, as when a device opens a show it never arranged.
-  await sendWorldSwapDeskCommand(page, {
+  await sendWorldSwapShowfileCommand(page, {
     type: "LoadNamedShowfile",
     data: otherShowfileName,
   });
   await arrangeDiscardedLayout(page);
-  await sendWorldSwapDeskCommand(page, {
+  await sendWorldSwapShowfileCommand(page, {
     type: "LoadNamedShowfile",
     data: showfileName,
   });
@@ -424,7 +427,7 @@ test("saving on another device leaves this device's panels alone", async ({
     if (!id || !(await harness.layoutManagement.saveNamedLayout(api, id)))
       throw new Error("Could not save the other device's layout");
   });
-  await sendDeskCommand(otherPage, { type: "SaveShowfile" });
+  await sendShowfileCommand(otherPage, { type: "SaveShowfile" });
   await expect.poll(settingsRevision).toBeGreaterThan(before);
 
   await page.waitForTimeout(500);

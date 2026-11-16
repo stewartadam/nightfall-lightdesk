@@ -15,7 +15,6 @@ use nightfall::prelude::{FixtureRef, Priority, ResolvedSelection};
 use nightfall_compositor::prelude::Layer;
 use nightfall_engine::prelude::DataProvider;
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_fx_module::instances::{
     FixtureMetadataHost, build_selected_grid, build_selected_targets,
     fx_module_layer_to_engine_layer, fx_module_path, random_seed_for_activation,
@@ -25,6 +24,7 @@ use nightfall_fx_module::prelude::{
     FxModuleRuntimeError, StoredFxModule,
 };
 use nightfall_selection::filter_existing_selection;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use tracing::warn;
 use uuid::Uuid;
 

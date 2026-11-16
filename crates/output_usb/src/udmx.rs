@@ -6,199 +6,157 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-//! uDMX USB output via process-lifetime service host.
+//! uDMX protocol: channel ranges written with USB vendor control transfers.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use bevy_ecs::prelude::*;
-use nightfall_fixtures::prelude::*;
-use nightfall_io::{IoRuntimeSettings, OutputTransport, TransportRuntimePolicy};
+use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
+use nusb::MaybeFuture;
 
-use crate::service::UdmxOutputClient;
+use crate::driver::{Universe, WriteOutcome};
 
-/// Minimum interval between DMX frames (15Hz = ~66.66ms)
-/// See: https://www.illutzminator.de/udmx-timing.html?L=1
-const DMX_FRAME_INTERVAL: Duration = Duration::from_micros(66667);
+/// `bRequest` of the uDMX "set channel range" vendor request.
+const UDMX_SET_CHANNEL_RANGE: u8 = 2;
 
-/// Submits every composed uDMX wire frame to its selected device.
-///
-/// Frames come from [`OutputDmxFrames`], which already combines routed console windows,
-/// direct fixture output, and input passthrough for each USB device. Submission is skipped
-/// while USB output is disabled and rate limited to the uDMX frame interval.
-pub fn output(
-    udmx_client: Option<Res<UdmxOutputClient>>,
-    mut last_send: Local<Option<Instant>>,
-    mut last_effective_output_enabled: Local<Option<bool>>,
-    settings: Res<IoRuntimeSettings>,
-    transport_policy: Option<Res<TransportRuntimePolicy>>,
-    frames: Res<OutputDmxFrames>,
-) {
-    let usb_output_enabled = transport_policy
-        .as_deref()
-        .map_or(settings.usb_output_enabled, |policy| {
-            policy.usb_output_enabled(&settings)
-        });
-    if *last_effective_output_enabled != Some(usb_output_enabled) {
-        if !usb_output_enabled {
-            tracing::info!("uDMX output is disabled by effective USB output state");
-        }
-        *last_effective_output_enabled = Some(usb_output_enabled);
-    }
-    if !usb_output_enabled {
-        return;
-    }
+/// Timeout of one control transfer.
+const TRANSFER_TIMEOUT: Duration = Duration::from_millis(500);
 
-    let Some(udmx_client) = udmx_client else {
-        return;
-    };
+/// Unchanged channels between two changed runs below which the runs are written as one
+/// transfer, since each USB control transfer costs more than a few extra channels.
+const RUN_MERGE_GAP: usize = 16;
 
-    // Rate limit to avoid flooding the uDMX worker channel.
-    let now = Instant::now();
-    if let Some(last) = *last_send
-        && now.duration_since(last) < DMX_FRAME_INTERVAL
-    {
-        return;
-    }
-    *last_send = Some(now);
+/// Claimed interface of a uDMX device.
+pub(crate) struct UdmxInterface {
+    interface: nusb::Interface,
+}
 
-    for frame in frames.iter() {
-        let OutputTransport::Udmx { device } = &frame.transport else {
-            continue;
+impl UdmxInterface {
+    /// Opens the device and claims its interface.
+    ///
+    /// Some uDMX clones need configuration 1 set before the interface can be claimed, while
+    /// others reject the request, so it is only set when the first claim fails.
+    pub(crate) fn open(device: &nusb::DeviceInfo) -> Option<Self> {
+        let opened = match device.open().wait() {
+            Ok(device) => device,
+            Err(error) => {
+                tracing::error!("failed to open uDMX device: {}", error);
+                return None;
+            }
         };
-        let _ = udmx_client.submit_frame(device, &frame.channels);
+
+        if let Ok(interface) = opened.claim_interface(0).wait() {
+            return Some(Self { interface });
+        }
+        if let Err(error) = opened.set_configuration(1).wait() {
+            tracing::error!("failed to set uDMX configuration: {}", error);
+            return None;
+        }
+        match opened.claim_interface(0).wait() {
+            Ok(interface) => Some(Self { interface }),
+            Err(error) => {
+                tracing::error!("failed to claim uDMX interface: {}", error);
+                None
+            }
+        }
     }
+
+    /// Writes the channels of `next` that differ from `written`, every channel when `written` is
+    /// unknown.
+    ///
+    /// The uDMX firmware needs roughly 66 ms to take all 512 channels, so writing whole
+    /// universes would cap output near 15 Hz; a chase or strobe usually changes a few channels,
+    /// which transfer within one tick.
+    pub(crate) fn write(&mut self, written: Option<&Universe>, next: &Universe) -> WriteOutcome {
+        for (start, end) in changed_runs(written, next) {
+            let outcome = self.write_range(start, &next[start..end]);
+            if outcome != WriteOutcome::Written {
+                return outcome;
+            }
+        }
+        WriteOutcome::Written
+    }
+
+    /// Writes `data` to the device's channels starting at zero-based channel `start`.
+    fn write_range(&mut self, start: usize, data: &[u8]) -> WriteOutcome {
+        let control_out = nusb::transfer::ControlOut {
+            control_type: nusb::transfer::ControlType::Vendor,
+            recipient: nusb::transfer::Recipient::Interface,
+            request: UDMX_SET_CHANNEL_RANGE,
+            value: data.len() as u16,
+            index: start as u16,
+            data,
+        };
+
+        match self
+            .interface
+            .control_out(control_out, TRANSFER_TIMEOUT)
+            .wait()
+        {
+            Ok(()) => WriteOutcome::Written,
+            Err(nusb::transfer::TransferError::Disconnected) => WriteOutcome::Disconnected,
+            Err(error) => {
+                tracing::warn!("uDMX USB transfer failed: {}", error);
+                WriteOutcome::Failed
+            }
+        }
+    }
+}
+
+/// Returns the channel ranges `start..end` that must be written for a device holding
+/// `written` to show `next`, empty when nothing changed.
+///
+/// Runs of changed channels closer than [`RUN_MERGE_GAP`] are merged, so channels changing far
+/// apart in the universe do not turn into one near-full-universe transfer. A device whose
+/// contents are unknown gets every channel.
+fn changed_runs(written: Option<&Universe>, next: &Universe) -> Vec<(usize, usize)> {
+    let Some(written) = written else {
+        return vec![(0, MAX_CHANNELS_PER_UNIVERSE)];
+    };
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    for channel in
+        (0..MAX_CHANNELS_PER_UNIVERSE).filter(|&channel| written[channel] != next[channel])
+    {
+        match runs.last_mut() {
+            Some((_, end)) if channel - *end < RUN_MERGE_GAP => *end = channel + 1,
+            _ => runs.push((channel, channel + 1)),
+        }
+    }
+    runs
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
-
-    use bevy_app::App;
-    use nightfall_dmx::prelude::MAX_CHANNELS_PER_UNIVERSE;
-    use nightfall_io::SacnDelivery;
-    use tokio::sync::mpsc;
-
     use super::*;
-    use crate::service::UdmxCommand;
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    struct SentFrame {
-        device: String,
-        data: Vec<u8>,
-    }
-
-    fn spawn_mock_client() -> (
-        UdmxOutputClient,
-        Arc<Mutex<Vec<SentFrame>>>,
-        std::thread::JoinHandle<()>,
-    ) {
-        let client = UdmxOutputClient::default();
-        let (command_tx, mut command_rx) = mpsc::unbounded_channel::<UdmxCommand>();
-        client.set_sender(Some(command_tx));
-
-        let sent = Arc::new(Mutex::new(Vec::new()));
-        let sent_for_thread = Arc::clone(&sent);
-        let handle = std::thread::spawn(move || {
-            while let Some(command) = command_rx.blocking_recv() {
-                match command {
-                    UdmxCommand::SubmitFrame { device, data } => {
-                        sent_for_thread
-                            .lock()
-                            .expect("send capture lock poisoned")
-                            .push(SentFrame { device, data });
-                    }
-                    UdmxCommand::Shutdown => break,
-                }
-            }
-        });
-
-        (client, sent, handle)
-    }
-
-    /// Builds a composed frame whose first channel holds `first`.
-    fn frame(transport: OutputTransport, first: u8) -> OutputDmxFrame {
-        let mut channels = [0u8; MAX_CHANNELS_PER_UNIVERSE];
-        channels[0] = first;
-        OutputDmxFrame {
-            transport,
-            universe: 1,
-            channels,
-        }
-    }
-
-    /// Runs the output system once with the given settings and frames, returning submissions.
-    fn submit_frames(settings: IoRuntimeSettings, frames: Vec<OutputDmxFrame>) -> Vec<SentFrame> {
-        let mut app = App::new();
-        let (client, sent, handle) = spawn_mock_client();
-        app.insert_resource(client);
-        app.insert_resource(settings);
-        app.init_resource::<OutputDmxFrames>();
-        app.world_mut()
-            .resource_mut::<OutputDmxFrames>()
-            .set(frames);
-
-        app.add_systems(bevy_app::Update, output);
-        app.update();
-
-        drop(app);
-        handle.join().expect("mock worker should exit");
-        sent.lock().expect("send capture lock poisoned").clone()
-    }
-
-    /// Verifies distinct uDMX transports submit frames to their selected devices and frames
-    /// composed for other transports are ignored.
+    /// A device whose contents are unknown is sent the whole universe.
     #[test]
-    fn output_routes_each_udmx_transport_to_its_selected_device() {
-        let sent = submit_frames(
-            IoRuntimeSettings::default(),
+    fn changed_runs_without_written_frame_cover_every_channel() {
+        let next = [7u8; MAX_CHANNELS_PER_UNIVERSE];
+        assert_eq!(
+            changed_runs(None, &next),
+            vec![(0, MAX_CHANNELS_PER_UNIVERSE)]
+        );
+    }
+
+    /// An unchanged frame writes nothing, nearby changes share one run, distant changes get
+    /// their own runs, and the final channel of the universe is covered.
+    #[test]
+    fn changed_runs_group_nearby_changes_and_split_distant_ones() {
+        let written = [0u8; MAX_CHANNELS_PER_UNIVERSE];
+        assert!(changed_runs(Some(&written), &written).is_empty());
+
+        let mut next = written;
+        next[3] = 255;
+        next[3 + RUN_MERGE_GAP - 1] = 10;
+        next[480] = 1;
+        next[MAX_CHANNELS_PER_UNIVERSE - 1] = 1;
+        assert_eq!(
+            changed_runs(Some(&written), &next),
             vec![
-                frame(
-                    OutputTransport::Udmx {
-                        device: "16c0:05dc:port:20:1.2".to_string(),
-                    },
-                    11,
-                ),
-                frame(
-                    OutputTransport::Udmx {
-                        device: "16c0:05dc:port:20:1.3".to_string(),
-                    },
-                    22,
-                ),
-                frame(
-                    OutputTransport::Sacn {
-                        mode: SacnDelivery::Multicast,
-                    },
-                    33,
-                ),
-            ],
+                (3, 3 + RUN_MERGE_GAP),
+                (480, 481),
+                (MAX_CHANNELS_PER_UNIVERSE - 1, MAX_CHANNELS_PER_UNIVERSE),
+            ]
         );
-
-        assert_eq!(sent.len(), 2);
-        let sent_by_device = sent
-            .iter()
-            .map(|frame| (frame.device.as_str(), frame.data[0]))
-            .collect::<HashMap<_, _>>();
-        assert_eq!(sent_by_device["16c0:05dc:port:20:1.2"], 11);
-        assert_eq!(sent_by_device["16c0:05dc:port:20:1.3"], 22);
-    }
-
-    /// Verifies disabled USB output does not submit frames to the uDMX worker.
-    #[test]
-    fn output_does_not_send_when_usb_output_is_disabled() {
-        let sent = submit_frames(
-            IoRuntimeSettings {
-                usb_output_enabled: false,
-                ..Default::default()
-            },
-            vec![frame(
-                OutputTransport::Udmx {
-                    device: "default".to_string(),
-                },
-                42,
-            )],
-        );
-
-        assert!(sent.is_empty());
     }
 }

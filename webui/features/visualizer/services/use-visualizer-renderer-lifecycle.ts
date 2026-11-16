@@ -18,6 +18,10 @@ import type * as THREE from "three";
 import { getLogger } from "../../../lib/logger";
 import type { VisualizerStats } from "../../../state/appStores";
 import { createVisualizerRenderer } from "../rendering/create-renderer";
+import {
+  describeRenderFailure,
+  type VisualizerRenderFailure,
+} from "../rendering/renderers/render-failure";
 import type {
   CameraState,
   IVisualizerRenderer,
@@ -39,6 +43,8 @@ interface UseVisualizerRendererLifecycleOptions {
   apiRef?: (api: VisualizerRendererPublicApi | null) => void;
   /** Camera pose carried over from a renderer this one replaces. */
   initialCameraState?: CameraState;
+  /** Receives the renderer's failure, including one while it was being created. */
+  onFailure?: (failure: VisualizerRenderFailure) => void;
 }
 
 /**
@@ -87,6 +93,9 @@ export function useVisualizerRendererLifecycle(
           }),
         () => disposed,
         (newRenderer) => {
+          newRenderer.setFailureCallback((failure) => {
+            if (!disposed) options.onFailure?.(failure);
+          });
           newRenderer.setStatsCallback((stats) => {
             if (!disposed) options.onStats(stats);
           });
@@ -131,6 +140,7 @@ export function useVisualizerRendererLifecycle(
     } catch (error) {
       if (!disposed) {
         log.errorWithCause(error, "Failed to initialize renderer");
+        options.onFailure?.(describeRenderFailure("init-error", error));
       }
     }
   });
@@ -142,6 +152,7 @@ export function useVisualizerRendererLifecycle(
     setRenderer(null);
     if (currentRenderer) options.apiRef?.(null);
     currentRenderer?.setStatsCallback(null);
+    currentRenderer?.setFailureCallback(null);
     currentRenderer?.dispose();
     options.onStats(null);
   });

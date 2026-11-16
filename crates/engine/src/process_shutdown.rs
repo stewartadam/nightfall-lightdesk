@@ -34,8 +34,8 @@ pub enum DebugPanicTarget {
     InputSacnListener,
     /// OSC input listener thread.
     InputOscListener,
-    /// uDMX output worker thread.
-    OutputUdmxThread,
+    /// USB DMX output worker thread.
+    OutputUsbThread,
 }
 
 #[cfg(any(feature = "debug", debug_assertions))]
@@ -47,7 +47,7 @@ impl DebugPanicTarget {
             DebugPanicTarget::InputArtnetListener => "input_artnet_listener",
             DebugPanicTarget::InputSacnListener => "input_sacn_listener",
             DebugPanicTarget::InputOscListener => "input_osc_listener",
-            DebugPanicTarget::OutputUdmxThread => "output_udmx_thread",
+            DebugPanicTarget::OutputUsbThread => "output_usb_thread",
         }
     }
 }
@@ -58,7 +58,7 @@ const DEBUG_PANIC_TARGET_NAMES: &[&str] = &[
     "input_artnet_listener",
     "input_sacn_listener",
     "input_osc_listener",
-    "output_udmx_thread",
+    "output_usb_thread",
 ];
 
 /// Process-wide shutdown signal, reason, and grace-period configuration.
@@ -157,7 +157,7 @@ pub fn parse_debug_panic_target(value: &str) -> Option<DebugPanicTarget> {
         "input_artnet_listener" => Some(DebugPanicTarget::InputArtnetListener),
         "input_sacn_listener" => Some(DebugPanicTarget::InputSacnListener),
         "input_osc_listener" => Some(DebugPanicTarget::InputOscListener),
-        "output_udmx_thread" => Some(DebugPanicTarget::OutputUdmxThread),
+        "output_usb_thread" => Some(DebugPanicTarget::OutputUsbThread),
         _ => None,
     }
 }

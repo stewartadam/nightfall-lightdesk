@@ -51,6 +51,7 @@ pub(in crate::parser) fn continuation_kind_for_slot(
         | crate::slots::contracts::SlotId::TimelineIdentifier
         | crate::slots::contracts::SlotId::MacroIdentifier
         | crate::slots::contracts::SlotId::ReleaseChannelExpr
+        | crate::slots::contracts::SlotId::ParkTargetExpr
         | crate::slots::contracts::SlotId::RecallCueRef
         | crate::slots::contracts::SlotId::RecallBlueprintIdentifier
         | crate::slots::contracts::SlotId::RenameSource
@@ -136,6 +137,7 @@ pub(in crate::parser) fn keeps_identifier_continuation(slot: SlotId) -> bool {
             | SlotId::MacroIdentifier
             | SlotId::ChannelOverrideIdentifier
             | SlotId::ReleaseChannelExpr
+            | SlotId::ParkTargetExpr
             | SlotId::PatchSourceEndpoint
             | SlotId::PatchTargetEndpoint
             | SlotId::StoreCueRef
@@ -310,7 +312,7 @@ pub(in crate::parser) fn slot_requires_followup_value(
     {
         return true;
     }
-    if slot == SlotId::ReleaseChannelExpr {
+    if matches!(slot, SlotId::ReleaseChannelExpr | SlotId::ParkTargetExpr) {
         return fills.last().is_some_and(|item| {
             matches!(
                 token_id_for_text(item.surface.as_str()),
@@ -408,7 +410,7 @@ pub(in crate::parser) fn slot_requires_followup_value(
             )
         });
     }
-    if slot == SlotId::ChannelOverrideValue {
+    if matches!(slot, SlotId::ChannelOverrideValue | SlotId::ParkValue) {
         return fills
             .last()
             .is_some_and(|item| token_id_for_text(item.surface.as_str()) == Some(TokenId::AtSign));

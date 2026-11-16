@@ -1,0 +1,174 @@
+// SPDX-License-Identifier: MPL-2.0
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+//! Clip storage commands, clip playback routing, and the lifecycle of running playbacks.
+//!
+//! [`ClipsPlugin`] handles clip and instance commands, routes clip starts and stops to the
+//! playback domain registered for each clip source, and keeps playback clocks and the clip to
+//! instance index current.
+
+use bevy_app::prelude::*;
+use bevy_ecs::prelude::*;
+use nightfall_engine::prelude::*;
+use nightfall_instances::{
+    ClipInstanceAttachment, ClipInstanceRequest, InstanceCommand, InstanceControlUpdate,
+    PlaybackOperation, PlaybackReleaseOperation,
+};
+use nightfall_undo::prelude::UndoRegistry;
+
+use crate::{
+    ClipCommand, ClipOperation, InstanceIndex, RestoreClipSource, launch_quantize::ArmedLaunches,
+    register_clip_source_routing,
+};
+
+pub mod clip_events;
+pub mod clocks;
+pub mod instance_events;
+#[cfg(test)]
+mod release_tests;
+
+/// Installs clip commands, clip playback routing, and playback lifecycle systems.
+///
+/// Requires the engine and undo plugins, which provide command ingress and the undo registry.
+/// Playback clocks read the show tempo when the tempo plugin is present.
+pub struct ClipsPlugin;
+
+impl Plugin for ClipsPlugin {
+    /// Registers clip and instance messages, undo support, and the playback systems.
+    fn build(&self, app: &mut App) {
+        assert!(
+            app.is_plugin_added::<nightfall_engine::EnginePlugin>(),
+            "ClipsPlugin requires EnginePlugin (provides command ingress)"
+        );
+        assert!(
+            app.is_plugin_added::<nightfall_undo::UndoPlugin>(),
+            "ClipsPlugin requires UndoPlugin (provides UndoRegistry)"
+        );
+        nightfall_engine::protocol::dispatch_ast::register_converter::<
+            crate::ast_conv::ClipAstConverter,
+        >();
+        app.init_resource::<clip_events::PendingClipPlaybackSpeeds>();
+        app.init_resource::<ArmedLaunches>();
+        app.init_resource::<InstanceIndex>();
+        app.init_resource::<crate::live_state::PendingLiveClips>();
+        app.register_live_state(
+            crate::CLIPS_LIVE_STATE,
+            crate::live_state::capture_live_clips,
+            crate::live_state::restore_live_clips,
+        );
+
+        register_client_command::<ClipCommand>(app, Undo::Captured);
+        register_engine_operation::<ClipOperation>(app);
+        register_engine_operation::<RestoreClipSource>(app);
+        register_clip_source_routing(app);
+        crate::register_clip_actions(app);
+        register_client_command::<InstanceCommand>(app, Undo::Captured);
+        app.forward_commands_to_backup::<ClipCommand>(&[
+            "StartClip",
+            "StartClipAtTiming",
+            "StopClip",
+            "StopClipAtTiming",
+            "GoClip",
+            "BackClip",
+            "LaunchArmed",
+            "SetSpeed",
+            "GotoClip",
+        ])
+        .forward_commands_to_backup::<InstanceCommand>(&[
+            "StopAll",
+            "StopByTag",
+            "StopByKind",
+        ]);
+        register_engine_operation::<PlaybackOperation>(app);
+        register_engine_operation::<PlaybackReleaseOperation>(app);
+        app.add_message::<InstanceControlUpdate>();
+        app.add_message::<OperationResult<(), CommandError>>();
+        app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
+        app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
+        {
+            let mut registry = app.world_mut().resource_mut::<UndoRegistry>();
+            registry.register::<ClipCommand>();
+            registry.register_operation::<RestoreClipSource>();
+        }
+
+        // Keep the instance index current, then sync clip active state once both index systems
+        // have run, so new instances are indexed and removed ones de-indexed before orphan checks.
+        app.add_systems(
+            Update,
+            (
+                crate::add_instances_to_index,
+                crate::remove_instances_from_index,
+                clocks::sync_active_state_on_instance_despawn
+                    .after(crate::add_instances_to_index)
+                    .after(crate::remove_instances_from_index),
+            ),
+        );
+        app.add_systems(
+            Render,
+            (
+                clocks::add_missing_instance_clocks,
+                clocks::advance_realtime_instance_clocks,
+            )
+                .chain()
+                .in_set(ClockUpdate)
+                .after(nightfall_tempo::TempoUpdate),
+        );
+
+        app.add_systems(
+            ApplyCommands,
+            (
+                clip_events::forward_clip_ingress_actions
+                    .in_set(DeskEventSet::ClipForwarding)
+                    .before(clip_events::handle_clip_speed_commands)
+                    .before(clip_events::route_clip_playback_actions),
+                clip_events::forward_clip_playback_requests
+                    .in_set(DeskEventSet::ClipForwarding)
+                    .before(clip_events::route_clip_playback_actions),
+                clip_events::route_clip_playback_actions
+                    .in_set(DeskEventSet::ClipRouting)
+                    .before(instance_events::handle_playback_commands),
+                clip_events::handle_configuration_commands,
+                clip_events::crud_events,
+                clip_events::handle_restore_clip_source,
+                instance_events::handle_events,
+                instance_events::handle_playback_commands.in_set(DeskEventSet::InstancePlayback),
+                clip_events::handle_clip_speed_commands
+                    .before(instance_events::handle_playback_control_updates),
+                instance_events::handle_playback_control_updates,
+            )
+                .in_set(EventHandling),
+        );
+
+        // Attachments come from input handlers and from FX module evaluation in render passes, so
+        // they are applied after both, in every update.
+        app.add_systems(
+            PostUpdate,
+            (
+                clip_events::handle_clip_playback_attachments,
+                crate::live_state::settle_pending_live_clips,
+            )
+                .chain()
+                .before(ClientFeedback),
+        );
+
+        app.add_systems(
+            PostUpdate,
+            crate::websocket::forward_clip_commands.in_set(ClientFeedback),
+        );
+        // Both change conditions read removals, which only last two updates, so they run in
+        // ClientFeedback.
+        app.add_client_feed::<crate::websocket::ClipsFeed>()
+            .on_change(crate::websocket::clips_changed);
+        app.add_resource_feed::<ArmedLaunches>();
+        app.add_client_feed::<crate::websocket::PlaybacksFeed>()
+            // Playbacks refer to the clips sent before them.
+            .resync_after(resync_client_feed::<crate::websocket::ClipsFeed>)
+            .on_change(crate::websocket::playbacks_changed)
+            .on_interval(crate::websocket::PLAYBACKS_REFRESH_INTERVAL);
+    }
+}

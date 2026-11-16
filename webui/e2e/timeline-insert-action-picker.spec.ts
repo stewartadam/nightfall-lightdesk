@@ -700,6 +700,11 @@ test("insert action picker inserts desk eval command actions", async ({
         },
       ],
     });
+    // Send the seeded track to the engine too, since timeline edits name tracks it stores.
+    void stores.sendAndAwait({
+      module: "TimelineCommand",
+      command: { type: "StoreTimeline", data: stores.timelines.get()[uid] },
+    });
     return id;
   }, timelineUid);
   const targetLane = timelineSurface.locator(
@@ -761,6 +766,11 @@ test("keyboard insert action uses the selected track target", async ({
           automation_lanes: [],
         },
       ],
+    });
+    // Send the seeded track to the engine too, since timeline edits name tracks it stores.
+    void stores.sendAndAwait({
+      module: "TimelineCommand",
+      command: { type: "StoreTimeline", data: stores.timelines.get()[uid] },
     });
     return { targetTrackId: id, targetTrackLabel: label };
   }, timelineUid);
@@ -849,6 +859,11 @@ test("keyboard insert action uses the selected action track first", async ({
             automation_lanes: [],
           },
         ],
+      });
+      // Send the seeded tracks to the engine too, since timeline edits name tracks it stores.
+      void stores.sendAndAwait({
+        module: "TimelineCommand",
+        command: { type: "StoreTimeline", data: stores.timelines.get()[uid] },
       });
       return { staleTargetTrackId, selectedItemTrackId, selectedItemId };
     }, timelineUid);

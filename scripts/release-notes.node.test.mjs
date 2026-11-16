@@ -21,8 +21,11 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   collectReleaseNotes,
+  MAX_ENTRIES,
+  MAX_ENTRY_LENGTH,
   parseReleaseNote,
   previousRelease,
+  releaseNoteProblems,
   renderReleaseNotes,
   snapshotList,
 } from "./release-notes.mjs";
@@ -33,13 +36,22 @@ test("parses prose, bullets, comments and explicit omissions", () => {
     parseReleaseNote(
       "## Summary\nInternal details.\n\n## Release notes\nNotes: Fixed cue playback.\n\n## Tests\nPassed.",
     ),
-    { kind: "notes", entries: ["Fixed cue playback."] },
+    {
+      kind: "notes",
+      entries: [{ type: null, area: null, text: "Fixed cue playback." }],
+    },
   );
   assert.deepEqual(
     parseReleaseNote(
-      "Notes:\n- Added cue controls.\n* Fixed playback.\n\n## Tests",
+      "Notes:\n- feature(cues): Cues have controls.\n* fix(dmx): Output no longer stutters.\n\n## Tests",
     ),
-    { kind: "notes", entries: ["Added cue controls.", "Fixed playback."] },
+    {
+      kind: "notes",
+      entries: [
+        { type: "feature", area: "cues", text: "Cues have controls." },
+        { type: "fix", area: "dmx", text: "Output no longer stutters." },
+      ],
+    },
   );
   assert.deepEqual(
     parseReleaseNote(
@@ -47,9 +59,9 @@ test("parses prose, bullets, comments and explicit omissions", () => {
     ),
     { kind: "none", reason: "only changes test coverage", entries: [] },
   );
-  assert.deepEqual(parseReleaseNote("Notes: Fixed playback.\r\n"), {
+  assert.deepEqual(parseReleaseNote("Notes: fix(cues): Fixed playback.\r\n"), {
     kind: "notes",
-    entries: ["Fixed playback."],
+    entries: [{ type: "fix", area: "cues", text: "Fixed playback." }],
   });
 });
 
@@ -73,7 +85,7 @@ test("plans and renders release notes entirely from API snapshots", (t) => {
     "metadata/releases.json",
     JSON.stringify([{ tag_name: "v0.1.0" }]),
   );
-  const pr = pull(7, sha, "Notes: Fixed cue playback.");
+  const pr = pull(7, sha, "Notes: feature(cues): Fixed cue playback.");
   writeFileSync(`metadata/commits/${sha}.json`, JSON.stringify([pr]));
   const script = fileURLToPath(new URL("./release-notes.mjs", import.meta.url));
   const options = {
@@ -98,7 +110,10 @@ test("plans and renders release notes entirely from API snapshots", (t) => {
     [script, "generate", ...common, "--to", "v0.2.0", "--output", "notes.md"],
     options,
   );
-  assert.match(readFileSync("notes.md", "utf8"), /Fixed cue playback/);
+  assert.match(
+    readFileSync("notes.md", "utf8"),
+    /### New features\n\n- Fixed cue playback/,
+  );
   assert.equal(
     JSON.parse(readFileSync("notes.md.json", "utf8")).from,
     "v0.1.0",
@@ -108,7 +123,15 @@ test("plans and renders release notes entirely from API snapshots", (t) => {
   writeFileSync("metadata/pr.json", JSON.stringify(pr));
   assert.match(
     execFileSync(process.execPath, [script, "check", ...common], options),
-    /Fixed cue playback/,
+    /New features · Cues and sequences: Fixed cue playback/,
+  );
+  writeFileSync(
+    "metadata/pr.json",
+    JSON.stringify({ ...pr, body: "Notes: Fixed cue playback." }),
+  );
+  assert.throws(
+    () => execFileSync(process.execPath, [script, "check", ...common], options),
+    /type\(area\): tag/,
   );
   writeFileSync("event.json", JSON.stringify({ pull_request: { number: 8 } }));
   assert.throws(
@@ -151,6 +174,68 @@ test("rejects missing, duplicate, empty and malformed declarations", () => {
   ]) {
     assert.throws(() => parseReleaseNote(body), /Notes:|Multiline|omission/);
   }
+});
+
+/** The PR check requires a type(area): tag and flags long entries and too many entries. */
+test("reports untagged, overlong and too many entries", () => {
+  const short = "fix(cues): Fixed playback.";
+  assert.deepEqual(
+    releaseNoteProblems(parseReleaseNote(`Notes: ${short}`)),
+    [],
+  );
+  assert.deepEqual(
+    releaseNoteProblems(parseReleaseNote("Notes: none (test-only change)")),
+    [],
+  );
+  assert.deepEqual(
+    releaseNoteProblems(
+      parseReleaseNote(`Notes: fix(dmx): ${"é".repeat(MAX_ENTRY_LENGTH)}`),
+    ),
+    [],
+  );
+  assert.match(
+    releaseNoteProblems(parseReleaseNote("Notes: Fixed playback.")).join(),
+    /Start this entry with a type\(area\): tag/,
+  );
+  const long = "a".repeat(MAX_ENTRY_LENGTH + 1);
+  assert.match(
+    releaseNoteProblems(parseReleaseNote(`Notes: fix(dmx): ${long}`)).join(),
+    /Shorten this entry to 160 characters or fewer \(it has 161\)/,
+  );
+  const many = Array.from({ length: MAX_ENTRIES + 1 }, () => `- ${short}`);
+  assert.match(
+    releaseNoteProblems(parseReleaseNote(`Notes:\n${many.join("\n")}`)).join(),
+    /Keep to the 5 most important entries \(found 6\)/,
+  );
+});
+
+/** The catch-all misc type and other area are accepted for changes that fit no other group. */
+test("accepts the catch-all type and area", () => {
+  assert.deepEqual(
+    parseReleaseNote("Notes: misc(other): The app looks different."),
+    {
+      kind: "notes",
+      entries: [
+        { type: "misc", area: "other", text: "The app looks different." },
+      ],
+    },
+  );
+});
+
+/** Unknown types and areas fail outright, since their entries would match no release group. */
+test("rejects unknown entry types and areas", () => {
+  assert.throws(
+    () => parseReleaseNote("Notes: bugfix(dmx): Output works."),
+    /Unknown release note type "bugfix"/,
+  );
+  assert.throws(
+    () => parseReleaseNote("Notes: fix(audio): Output works."),
+    /Unknown release note area "audio"/,
+  );
+  assert.throws(
+    () => parseReleaseNote("Notes:\n- fix(dmx): TODO"),
+    /placeholder/,
+  );
 });
 
 /** Provides isolated real Git ancestry without inheriting the user's signing settings or hooks. */
@@ -267,7 +352,9 @@ test("collects all-parent ancestry and deduplicates PR associations", (t) => {
     (_repo, endpoint) => responses.get(endpoint.split("/")[1]),
   );
   assert.equal(report.notes.length, 1);
-  assert.deepEqual(report.notes[0].entries, ["Fixed cue playback."]);
+  assert.deepEqual(report.notes[0].entries, [
+    { type: "fix", area: null, text: "Fixed cue playback." },
+  ]);
   assert.deepEqual(
     report.omitted.map((entry) => entry.number),
     [2, 3],

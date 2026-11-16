@@ -52,7 +52,6 @@ const Waveform = (props: WaveformProps) => {
     const x = clientX - rect.left;
     const seekPosition = seekPositionFromTimelineX({
       x,
-      start: ctx.start(),
       zoom: ctx.zoom(),
       useBeatgrid: ctx.useBeatgrid(),
       snapEnabled: ctx.snapEnabled(),

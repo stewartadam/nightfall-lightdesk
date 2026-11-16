@@ -149,7 +149,7 @@ function ownedRedInstruction(fixtureUid: string, value: number): object {
       },
       clauses: [],
     },
-    cue_instruction: {
+    assertions: {
       values: {
         Red: {
           type: "Inline",
@@ -373,7 +373,7 @@ async function evalCommand(page: Page, command: string) {
   const result = await page.evaluate(async (commandText) => {
     const stores = (window as any).appStores;
     return stores.sendAndAwait({
-      module: "DeskCommand",
+      module: "EngineCommand",
       command: { type: "Eval", data: commandText },
     });
   }, command);
@@ -484,7 +484,7 @@ async function seedReleaseCueEditor(page: Page) {
               },
               clauses: [],
             },
-            cue_instruction: {
+            assertions: {
               values: {
                 Intensity: {
                   type: "Inline",
@@ -501,6 +501,8 @@ async function seedReleaseCueEditor(page: Page) {
         tracking_flags: "HTP",
       };
 
+      // The backend keeps release rows in sync with the steps: one row per
+      // value-bearing step instruction, with its values and without timing.
       const releaseCue = {
         identifiers: {
           id: 0,
@@ -510,7 +512,28 @@ async function seedReleaseCueEditor(page: Page) {
         trigger: { type: "FollowPrevious" },
         transitions: {},
         transitions_by_attribute: {},
-        instructions: [],
+        instructions: [
+          {
+            selection: {
+              source: {
+                type: "Resolved",
+                data: [{ fixture_uid: fixtureUid, index: null }],
+              },
+              clauses: [],
+            },
+            assertions: {
+              values: {
+                Intensity: {
+                  type: "Inline",
+                  data: { type: "Absolute", data: { value: 255 } },
+                },
+              },
+              transitions: {},
+              transitions_by_attribute: {},
+              transitions_by_fixture_attribute: [],
+            },
+          },
+        ],
         parts: [],
         tracking_flags: "HTP",
       };
@@ -534,7 +557,7 @@ async function seedReleaseCueEditor(page: Page) {
                 },
                 clauses: [],
               },
-              cue_instruction: {
+              assertions: {
                 values: {
                   Intensity: {
                     type: "Inline",
@@ -713,7 +736,7 @@ test("sequence setup cue row opens value-capable cue editor", async ({
       page.evaluate((sequenceUid) => {
         const setupInstruction = (window as any).appStores.sequences.get()[
           sequenceUid
-        ]?.setup_cue?.instructions?.[0]?.cue_instruction;
+        ]?.setup_cue?.instructions?.[0]?.assertions;
         return setupInstruction?.values?.Intensity?.data?.data?.value;
       }, SEQUENCE_UID),
     )
@@ -750,8 +773,8 @@ test("sequence setup cue editor refreshes when setup cue attributes change", asy
     const stores = (window as any).appStores;
     const sequence = stores.sequences.get()[sequenceUid];
     const setupCue = JSON.parse(JSON.stringify(sequence.setup_cue));
-    setupCue.instructions[0].cue_instruction.values = {
-      ...setupCue.instructions[0].cue_instruction.values,
+    setupCue.instructions[0].assertions.values = {
+      ...setupCue.instructions[0].assertions.values,
       Red: {
         type: "Inline",
         data: { type: "Absolute", data: { value: 100 } },
@@ -771,7 +794,7 @@ test("sequence setup cue editor refreshes when setup cue attributes change", asy
       page.evaluate((sequenceUid) => {
         const setupInstruction = (window as any).appStores.sequences.get()[
           sequenceUid
-        ]?.setup_cue?.instructions?.[0]?.cue_instruction;
+        ]?.setup_cue?.instructions?.[0]?.assertions;
         return setupInstruction?.values?.Red?.data?.data?.value;
       }, SEQUENCE_UID),
     )
@@ -992,51 +1015,6 @@ test("sequence release cue row opens sequence-backed cue editor", async ({
   ).toContainText("Intensity");
   await expectStoreSequenceCommitsToSettle(page);
 
-  await page.evaluate((sequenceUid) => {
-    const stores = (window as any).appStores;
-    const sequence = stores.sequences.get()[sequenceUid];
-    const releaseCue = JSON.parse(JSON.stringify(sequence.release_cue));
-    releaseCue.instructions[0].cue_instruction.transitions = {
-      fade_out: {
-        type: "Fixed",
-        data: { secs: 7, nanos: 0 },
-      },
-    };
-    releaseCue.instructions[0].cue_instruction.transitions_by_attribute = {
-      Intensity: {
-        fade_out: {
-          type: "Fixed",
-          data: { secs: 8, nanos: 0 },
-        },
-      },
-    };
-    stores.sequences.set({
-      ...stores.sequences.get(),
-      [sequenceUid]: {
-        ...sequence,
-        release_cue: releaseCue,
-      },
-    });
-  }, SEQUENCE_UID);
-  await expect
-    .poll(async () =>
-      page.evaluate((sequenceUid) => {
-        const instruction = (window as any).appStores.sequences.get()[
-          sequenceUid
-        ]?.release_cue?.instructions?.[0]?.cue_instruction;
-        return {
-          copiedCueFadeOut: instruction?.transitions?.fade_out?.data?.secs,
-          copiedAttributeFadeOut:
-            instruction?.transitions_by_attribute?.Intensity?.fade_out?.data
-              ?.secs,
-        };
-      }, SEQUENCE_UID),
-    )
-    .toEqual({
-      copiedCueFadeOut: undefined,
-      copiedAttributeFadeOut: undefined,
-    });
-
   const fixtureIdCell = gridCellByRowIndex(cueGrid, {
     columnKey: "id",
     rowIndex: 0,
@@ -1058,138 +1036,21 @@ test("sequence release cue row opens sequence-backed cue editor", async ({
       page.evaluate((sequenceUid) => {
         const sequence = (window as any).appStores.sequences.get()[sequenceUid];
         const transition =
-          sequence?.release_cue?.instructions?.[0]?.cue_instruction
+          sequence?.release_cue?.instructions?.[0]?.assertions
             ?.transitions_by_fixture_attribute?.[0];
-        const scaffoldedValue =
-          sequence?.release_cue?.instructions?.[0]?.cue_instruction?.values
-            ?.Intensity?.data?.data?.value;
-        const copiedCueFadeOut =
-          sequence?.release_cue?.instructions?.[0]?.cue_instruction?.transitions
-            ?.fade_out?.data?.secs;
-        const copiedAttributeFadeOut =
-          sequence?.release_cue?.instructions?.[0]?.cue_instruction
-            ?.transitions_by_attribute?.Intensity?.fade_out?.data?.secs;
         return {
           hasFixtureUid: typeof transition?.fixture?.fixture_uid === "string",
           fadeOut:
             transition?.transitions_by_attribute?.Intensity?.fade_out?.data
               ?.secs,
-          scaffoldedValue,
-          copiedCueFadeOut,
-          copiedAttributeFadeOut,
         };
       }, SEQUENCE_UID),
     )
     .toEqual({
       hasFixtureUid: true,
       fadeOut: 3,
-      scaffoldedValue: 255,
-      copiedCueFadeOut: undefined,
-      copiedAttributeFadeOut: undefined,
     });
 
-  const addedFixture = await page.evaluate(
-    ({ cueUid, fixtureId, fixtureUid, sequenceUid }) => {
-      const stores = (window as any).appStores;
-      const cue = stores.cues.get()[cueUid];
-
-      const updatedCue = JSON.parse(JSON.stringify(cue));
-      updatedCue.instructions[0].selection.source.data.push({
-        fixture_uid: fixtureUid,
-        index: null,
-      });
-      stores.cues.set({
-        ...stores.cues.get(),
-        [cueUid]: updatedCue,
-      });
-      return {
-        id: fixtureId,
-        uid: fixtureUid,
-        releaseRows:
-          stores.sequences.get()[sequenceUid]?.release_cue?.instructions
-            ?.length ?? 0,
-      };
-    },
-    {
-      cueUid: CUE_UID,
-      fixtureId: ADDED_FIXTURE_ID,
-      fixtureUid: ADDED_FIXTURE_UID,
-      sequenceUid: SEQUENCE_UID,
-    },
-  );
-
-  await expect
-    .poll(async () =>
-      page.evaluate((sequenceUid) => {
-        const sequence = (window as any).appStores.sequences.get()[sequenceUid];
-        return {
-          releaseRows:
-            sequence?.release_cue?.instructions?.[0]?.selection?.source?.data
-              ?.length,
-          projectedFixture:
-            sequence?.release_cue?.instructions?.[0]?.selection?.source
-              ?.data?.[1]?.fixture_uid,
-          copiedValue:
-            sequence?.release_cue?.instructions?.[0]?.cue_instruction?.values
-              ?.Intensity?.data?.data?.value,
-          sourceFadeOut:
-            sequence?.release_cue?.instructions?.[0]?.cue_instruction
-              ?.transitions?.fade_out?.data?.secs,
-        };
-      }, SEQUENCE_UID),
-    )
-    .toEqual({
-      releaseRows: 2,
-      projectedFixture: addedFixture.uid,
-      copiedValue: 255,
-      sourceFadeOut: undefined,
-    });
-  await expect(
-    await gridCellByIdentifier(cueGrid, {
-      columnKey: "id",
-      identifierColumnKey: "id",
-      identifierText: String(addedFixture.id),
-    }),
-  ).toContainText(String(addedFixture.id));
-
-  const addedFixtureFadeOutCell = await gridCellByIdentifier(cueGrid, {
-    columnKey: cueGridAttributeTimingColumnKey("Intensity", "fade_out"),
-    identifierColumnKey: "id",
-    identifierText: String(addedFixture.id),
-  });
-  await addedFixtureFadeOutCell.dblclick();
-  const addedFixtureEditor = addedFixtureFadeOutCell.locator("input");
-  await expect(addedFixtureEditor).toBeVisible();
-  await addedFixtureEditor.fill("4s");
-  await page.keyboard.press("Enter");
-
-  await expect
-    .poll(async () =>
-      page.evaluate(
-        ({ sequenceUid, fixtureUid }) => {
-          const sequence = (window as any).appStores.sequences.get()[
-            sequenceUid
-          ];
-          const transition =
-            sequence?.release_cue?.instructions?.[0]?.cue_instruction?.transitions_by_fixture_attribute?.find(
-              (entry: any) => entry.fixture?.fixture_uid === fixtureUid,
-            );
-          return {
-            releaseRows:
-              sequence?.release_cue?.instructions?.[0]?.selection?.source?.data
-                ?.length,
-            fadeOut:
-              transition?.transitions_by_attribute?.Intensity?.fade_out?.data
-                ?.secs,
-          };
-        },
-        { sequenceUid: SEQUENCE_UID, fixtureUid: addedFixture.uid },
-      ),
-    )
-    .toEqual({
-      releaseRows: 2,
-      fadeOut: 4,
-    });
   await page.screenshot({
     path: testInfo.outputPath("owned-projected-release-cue.png"),
   });
@@ -1280,8 +1141,7 @@ test("sequence release cue keeps timing edits for command-merged fixtures", asyn
           const transition = sequence.release_cue.instructions
             .flatMap(
               (instruction: any) =>
-                instruction.cue_instruction.transitions_by_fixture_attribute ??
-                [],
+                instruction.assertions.transitions_by_fixture_attribute ?? [],
             )
             .find((entry: any) => entry.fixture?.fixture_uid === fixtureUid);
           return transition?.transitions_by_attribute?.Red?.fade_out?.data
@@ -1318,7 +1178,7 @@ test("sequence release cue keeps timing edits for command-merged fixtures", asyn
               ),
           );
           const transition =
-            redInstruction?.cue_instruction?.transitions_by_fixture_attribute?.find(
+            redInstruction?.assertions?.transitions_by_fixture_attribute?.find(
               (entry: any) => entry.fixture?.fixture_uid === fixtureUid,
             );
           return transition?.transitions_by_attribute?.Red?.fade_out?.data
@@ -1351,7 +1211,7 @@ test("sequence release cue keeps timing edits for command-merged fixtures", asyn
               ),
           );
           const transition =
-            redInstruction?.cue_instruction?.transitions_by_fixture_attribute?.find(
+            redInstruction?.assertions?.transitions_by_fixture_attribute?.find(
               (entry: any) => entry.fixture?.fixture_uid === fixtureUid,
             );
           return transition?.transitions_by_attribute?.Red?.fade_out?.data

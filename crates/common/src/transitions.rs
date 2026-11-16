@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use typeshare::typeshare;
 
+use crate::fan::resolve_fan_duration;
+
 #[typeshare::typeshare]
 #[typeshare(serialized_as = "Record<String, PartialTransition>")]
 pub type AttributeTransitions = HashMap<Attribute, PartialTransition>;
@@ -37,37 +39,10 @@ impl TransitionMode {
         match self {
             TransitionMode::Fixed(duration) => *duration,
             TransitionMode::Interpolated { start, end } => {
-                if total <= 1 {
-                    *start
-                } else {
-                    let factor = offset as f32 / (total - 1).max(1) as f32;
-                    let interpolated =
-                        start.as_secs_f32() + factor * (end.as_secs_f32() - start.as_secs_f32());
-                    Duration::from_secs_f32(interpolated)
-                }
+                resolve_fan_duration(&[*start, *end], offset, total).unwrap_or_default()
             }
             TransitionMode::Manual(durations) => {
-                if durations.is_empty() {
-                    return Duration::from_millis(0);
-                }
-                if durations.len() == 1 || total <= 1 {
-                    return durations[0];
-                }
-
-                // Calculate the position in the range [0.0, 1.0]
-                // This matches resolve_fanned_value semantics in materialized_cue.rs
-                let t = offset as f32 / (total - 1).max(1) as f32;
-
-                // Map t to a position in the durations array (envelope interpolation)
-                let max_segment = durations.len() - 1;
-                let segment_position = t * max_segment as f32;
-                let segment_idx = (segment_position as usize).min(max_segment - 1);
-                let segment_t = segment_position - segment_idx as f32;
-
-                // Interpolate between adjacent waypoints
-                let start = durations[segment_idx].as_secs_f32();
-                let end = durations[segment_idx + 1].as_secs_f32();
-                Duration::from_secs_f32(start + segment_t * (end - start))
+                resolve_fan_duration(durations, offset, total).unwrap_or_default()
             }
         }
     }
@@ -110,9 +85,9 @@ pub enum CueTriggerType {
 }
 
 /// Delay, fade, and curve settings applied when values enter or leave a state.
-#[derive(Partial, Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Partial, Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[typeshare::typeshare]
-#[partially(derive(Default, Serialize, Deserialize, Debug, Clone))]
+#[partially(derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq))]
 pub struct Transition {
     pub delay_in: TransitionMode,
     pub fade_in: TransitionMode,
@@ -266,6 +241,27 @@ pub fn sequence_next_activation_position(
             }
         }
     }
+}
+
+/// Reports whether an autonomous wrap back to cue 1 would complete a cycle that took no time.
+///
+/// `first_step_activation` is where cue 1 was last activated and `current_activation` is where
+/// the last cue was activated. When every step in a wrapping sequence follows the previous one
+/// with zero duration, the wrap lands on the position cue 1 started this cycle at and every later
+/// advance stays due at it, so autonomous playback would spin through the cues within a single
+/// tick. Callers hold on the last cue instead of wrapping in that case. A cue 1 anchor later than
+/// the current one is left over from before a re-anchor and says nothing about this cycle, so it
+/// never blocks a wrap.
+pub fn sequence_wraparound_is_zero_length(
+    is_wraparound: bool,
+    next_activation: Duration,
+    current_activation: Duration,
+    first_step_activation: Option<Duration>,
+) -> bool {
+    is_wraparound
+        && first_step_activation.is_some_and(|first_activation| {
+            first_activation <= current_activation && next_activation <= first_activation
+        })
 }
 
 /// Returns the source-local interval from one cue activation to the next.
@@ -598,6 +594,43 @@ impl MaterializedTransition {
 mod tests {
     use super::*;
 
+    /// Verifies only a wrap that lands on this cycle's cue 1 anchor counts as zero-length, and a
+    /// stale cue 1 anchor later than the current cue never blocks a wrap.
+    #[test]
+    fn wraparound_zero_length_detection() {
+        let at = Duration::from_secs;
+        assert!(sequence_wraparound_is_zero_length(
+            true,
+            at(2),
+            at(2),
+            Some(at(2))
+        ));
+        assert!(!sequence_wraparound_is_zero_length(
+            false,
+            at(2),
+            at(2),
+            Some(at(2))
+        ));
+        assert!(!sequence_wraparound_is_zero_length(
+            true,
+            at(3),
+            at(2),
+            Some(at(0))
+        ));
+        assert!(!sequence_wraparound_is_zero_length(
+            true,
+            at(3),
+            at(2),
+            Some(at(5))
+        ));
+        assert!(!sequence_wraparound_is_zero_length(
+            true,
+            at(2),
+            at(2),
+            None
+        ));
+    }
+
     #[test]
     fn test_fixed_returns_same_duration_for_all() {
         let mode = TransitionMode::Fixed(Duration::from_secs(2));
@@ -614,8 +647,8 @@ mod tests {
         };
 
         assert_eq!(mode.resolve(0, 4), Duration::ZERO);
-        assert_eq!(mode.resolve(1, 4), Duration::from_secs_f32(2.0 / 3.0));
-        assert_eq!(mode.resolve(2, 4), Duration::from_secs_f32(4.0 / 3.0));
+        assert_eq!(mode.resolve(1, 4), Duration::from_nanos(666_666_667));
+        assert_eq!(mode.resolve(2, 4), Duration::from_nanos(1_333_333_333));
         assert_eq!(mode.resolve(3, 4), Duration::from_secs(2));
     }
 

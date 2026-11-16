@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::net::{SocketAddrV4, UdpSocket};
 use std::ops::ControlFlow;
@@ -23,6 +23,13 @@ use nightfall_service_host::prelude::{
 };
 
 const ARTNET_PORT: u16 = 6454;
+
+/// A complete ArtSync packet: the Art-Net ID, OpSync (0x5200, little-endian), protocol version
+/// 14 (high byte first) and the two zero Aux bytes.
+///
+/// Built here because `artnet_protocol` serializes `ArtCommand::Sync` without the version and
+/// Aux bytes, which nodes reject as too short.
+const ART_SYNC_PACKET: [u8; 14] = *b"Art-Net\0\x00\x52\x00\x0e\x00\x00";
 
 /// Error returned when Art-Net output cannot send a frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +78,9 @@ struct ArtNetShared {
     /// Whether a worker is currently running. Set by the worker when it starts and cleared when
     /// it disables itself, so a self-disabled worker is never reported as available.
     running: AtomicBool,
+    /// Whether each tick ends with an ArtSync broadcast, so nodes in synchronous mode apply
+    /// every universe of the tick at once.
+    sync_enabled: AtomicBool,
 }
 
 /// Art-Net output client used inside ECS worlds.
@@ -117,6 +127,16 @@ impl ArtNetOutputClient {
     /// Marks the worker as running or stopped.
     pub(crate) fn set_running(&self, running: bool) {
         self.shared.running.store(running, Ordering::Release);
+    }
+
+    /// Sets whether the worker ends each tick with an ArtSync broadcast.
+    pub(crate) fn set_sync_enabled(&self, enabled: bool) {
+        self.shared.sync_enabled.store(enabled, Ordering::Release);
+    }
+
+    /// Returns whether the worker ends each tick with an ArtSync broadcast.
+    fn sync_enabled(&self) -> bool {
+        self.shared.sync_enabled.load(Ordering::Acquire)
     }
 
     /// Records the outcomes of one tick for the ECS to drain.
@@ -228,23 +248,47 @@ fn transmit_tick(
         }
     }
 
+    if flow.is_continue()
+        && sent_count > 0
+        && client.sync_enabled()
+        && let Err(error) = socket.send_sync()
+    {
+        tracing::trace!(?error, "Sending ArtSync failed");
+    }
     client.record_tick(outcomes, start.elapsed(), sent_count);
     flow
 }
 
+/// Advances an ArtDmx sequence number through 1..=255, skipping 0 because a zero
+/// sequence tells receivers to disable re-ordering.
+fn next_sequence(previous: u8) -> u8 {
+    previous.wrapping_add(1).max(1)
+}
+
 /// UDP socket and broadcast target used by the Art-Net output worker.
+///
+/// Broadcasts go to the directed broadcast address of the bound interface's subnet, because
+/// Art-Net asks controllers not to use the limited broadcast address 255.255.255.255.
 struct ArtNetSocket {
     socket: UdpSocket,
     broadcast_dest: SocketAddrV4,
-    sequence: u8,
+    /// Last sequence number sent for each universe. The spec only says the sequence lets a node
+    /// re-order packets; a node does that for the universe it outputs, so every universe counts
+    /// on its own. One counter shared by all universes would make each universe skip ahead by
+    /// the number of universes sent per tick, which a node cannot tell apart from lost or
+    /// reordered packets, and a skip of 128 or more looks like a late packet. Broadcast and unicast
+    /// deliveries of one universe share its counter, because a unicast target also hears the
+    /// broadcast and must see one rising sequence from this sender.
+    sequences: HashMap<u16, u8>,
 }
 
 impl ArtNetSocket {
-    fn new(socket: UdpSocket) -> Self {
+    /// Wraps `socket`, sending broadcast ArtDmx and ArtSync packets to `broadcast_ip`.
+    fn new(socket: UdpSocket, broadcast_ip: Ipv4Addr) -> Self {
         Self {
             socket,
-            broadcast_dest: SocketAddrV4::new(Ipv4Addr::BROADCAST, ARTNET_PORT),
-            sequence: 0,
+            broadcast_dest: SocketAddrV4::new(broadcast_ip, ARTNET_PORT),
+            sequences: HashMap::new(),
         }
     }
 
@@ -257,12 +301,18 @@ impl ArtNetSocket {
         unicast_ip: Option<Ipv4Addr>,
         recent_frames: &ArtNetRecentFramesByUniverse,
     ) -> Result<(), std::io::Error> {
-        let port_address = artnet_protocol::PortAddress::try_from(universe)
-            .unwrap_or_else(|_| artnet_protocol::PortAddress::try_from(0u16).unwrap());
+        let port_address = artnet_protocol::PortAddress::try_from(universe).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Art-Net universe {universe} is outside the Port-Address range 0-32767"),
+            )
+        })?;
 
-        self.sequence = self.sequence.wrapping_add(1).max(1);
+        let sequence = self.sequences.entry(universe).or_insert(0);
+        *sequence = next_sequence(*sequence);
+        let sequence = *sequence;
         let output = artnet_protocol::Output {
-            sequence: self.sequence,
+            sequence,
             port_address,
             data: data.to_vec().into(),
             ..artnet_protocol::Output::default()
@@ -280,13 +330,25 @@ impl ArtNetSocket {
 
         recent_frames.record_recent_frame(
             universe,
-            self.sequence,
+            sequence,
             data,
             self.socket.local_addr().ok(),
             Instant::now(),
         );
         self.socket.send_to(&bytes, destination)?;
         Ok(())
+    }
+
+    /// Broadcasts one ArtSync packet, telling nodes in synchronous mode to output the ArtDmx
+    /// data they buffered since the previous ArtSync.
+    ///
+    /// Art-Net has a controller send its ArtDmx packets first and then broadcast a single
+    /// ArtSync, also when the ArtDmx packets were unicast. A node enters synchronous mode when
+    /// it receives ArtSync and drops back to applying each ArtDmx on arrival once ArtSync stops.
+    fn send_sync(&self) -> Result<(), std::io::Error> {
+        self.socket
+            .send_to(&ART_SYNC_PACKET, self.broadcast_dest)
+            .map(|_| ())
     }
 }
 
@@ -389,13 +451,21 @@ fn init_socket(binding: ArtNetOutputBinding) -> Option<ArtNetSocket> {
         return None;
     }
 
+    let broadcast_ip = nightfall_io::ipv4_directed_broadcast(bind_ip).unwrap_or_else(|| {
+        tracing::warn!(
+            bind_ip = %bind_ip,
+            "Could not find the subnet broadcast address; Art-Net broadcasts use 255.255.255.255"
+        );
+        Ipv4Addr::BROADCAST
+    });
     tracing::info!(
         interface_name = ?binding.interface_name,
         bind_ip = %bind_ip,
+        broadcast_ip = %broadcast_ip,
         "Starting Art-Net output"
     );
 
-    Some(ArtNetSocket::new(socket))
+    Some(ArtNetSocket::new(socket, broadcast_ip))
 }
 
 /// Process-lifetime Art-Net output service host.
@@ -422,7 +492,7 @@ impl ArtNetOutputService {
     }
 
     /// Configures Art-Net output binding and rate from IO settings and the current interface
-    /// snapshot; a rate change retimes the running worker without rebinding it.
+    /// snapshot; a rate or ArtSync change applies to the running worker without rebinding it.
     pub fn sync_with_settings(
         &self,
         settings: &IoRuntimeSettings,
@@ -430,6 +500,7 @@ impl ArtNetOutputService {
         transport_policy: &TransportRuntimePolicy,
     ) -> bool {
         self.period.set(settings.dmx_output_interval());
+        self.client.set_sync_enabled(settings.artnet_sync_enabled);
         self.configure_binding(ArtNetOutputBinding::from_settings(
             settings,
             interface_state,
@@ -484,4 +555,116 @@ impl Drop for ArtNetOutputService {
 pub fn process_artnet_output_service() -> &'static ArtNetOutputService {
     static PROCESS_SERVICE: OnceLock<ArtNetOutputService> = OnceLock::new();
     process_singleton(&PROCESS_SERVICE, ArtNetOutputService::new)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Opens an output socket on loopback so frames can be sent without a configured interface.
+    fn loopback_socket() -> ArtNetSocket {
+        ArtNetSocket::new(
+            UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind loopback"),
+            Ipv4Addr::BROADCAST,
+        )
+    }
+
+    /// Sends one all-zero frame for `universe` to the loopback address.
+    fn send(socket: &mut ArtNetSocket, universe: u16) -> std::io::Result<()> {
+        socket.send_frame(
+            universe,
+            &[0; MAX_CHANNELS_PER_UNIVERSE],
+            Some(Ipv4Addr::LOCALHOST),
+            &ArtNetRecentFramesByUniverse::new(),
+        )
+    }
+
+    /// Sequence numbers count 1 to 255 and wrap back to 1, never sending 0.
+    #[test]
+    fn sequence_wraps_without_zero() {
+        assert_eq!(next_sequence(0), 1);
+        assert_eq!(next_sequence(1), 2);
+        assert_eq!(next_sequence(255), 1);
+    }
+
+    /// Each universe advances its own sequence by one per frame, however many other universes
+    /// are sent in between.
+    #[test]
+    fn each_universe_counts_its_own_sequence() {
+        let mut socket = loopback_socket();
+        for _ in 0..3 {
+            for universe in 1..=200 {
+                send(&mut socket, universe).expect("send frame");
+            }
+        }
+
+        assert_eq!(socket.sequences.get(&1), Some(&3));
+        assert_eq!(socket.sequences.get(&200), Some(&3));
+    }
+
+    /// The ArtSync packet parses as OpSync and carries protocol version 14 and both Aux bytes,
+    /// which the `artnet_protocol` serializer leaves out.
+    #[test]
+    fn art_sync_packet_is_complete() {
+        assert!(matches!(
+            artnet_protocol::ArtCommand::from_buffer(&ART_SYNC_PACKET),
+            Ok(artnet_protocol::ArtCommand::Sync)
+        ));
+        assert_eq!(&ART_SYNC_PACKET[10..], &[0, 14, 0, 0]);
+    }
+
+    /// A tick with sync enabled sends every ArtDmx packet first and then one ArtSync, and a tick
+    /// with sync disabled sends no ArtSync.
+    #[test]
+    fn sync_follows_the_tick_only_when_enabled() {
+        let receiver = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind receiver");
+        receiver
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .expect("set timeout");
+        let SocketAddr::V4(receiver_addr) = receiver.local_addr().expect("receiver address") else {
+            unreachable!("bound to IPv4");
+        };
+        let mut socket = loopback_socket();
+        // Point the broadcast target at the receiver so the test can observe ArtSync.
+        socket.broadcast_dest = receiver_addr;
+        let client = ArtNetOutputClient::default();
+        let frames = [1, 2]
+            .map(|universe| ArtNetFrame {
+                universe,
+                unicast_ip: None,
+                data: [0; MAX_CHANNELS_PER_UNIVERSE],
+            })
+            .to_vec();
+        client.publish(frames);
+
+        /// Receives every packet sent within the read timeout and returns its opcode.
+        fn opcodes(receiver: &UdpSocket) -> Vec<u16> {
+            let mut buffer = [0u8; 1024];
+            let mut opcodes = Vec::new();
+            while let Ok(length) = receiver.recv(&mut buffer) {
+                assert!(length >= 10, "Art-Net packet too short");
+                opcodes.push(u16::from_le_bytes([buffer[8], buffer[9]]));
+            }
+            opcodes
+        }
+
+        let recent = ArtNetRecentFramesByUniverse::new();
+        let _ = transmit_tick(&mut socket, &client, &recent);
+        assert_eq!(opcodes(&receiver), vec![0x5000, 0x5000]);
+
+        client.set_sync_enabled(true);
+        let _ = transmit_tick(&mut socket, &client, &recent);
+        assert_eq!(opcodes(&receiver), vec![0x5000, 0x5000, 0x5200]);
+    }
+
+    /// A universe beyond the 15-bit Port-Address range is refused instead of being sent to
+    /// universe 0.
+    #[test]
+    fn out_of_range_universe_is_refused() {
+        let mut socket = loopback_socket();
+        let error = send(&mut socket, 32_768).expect_err("universe 32768 must be refused");
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(socket.sequences.is_empty());
+    }
 }

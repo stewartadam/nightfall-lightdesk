@@ -11,7 +11,9 @@
  * their state with `data-selected="true"`. The `.nf-button` branch of each
  * `:is()` lifts every rule above the shared Button's own state rules, so a
  * surface rendered through Button keeps this look regardless of stylesheet
- * order.
+ * order. An input that is a direct child of the surface is the surface's own
+ * control, as in a radio card: when it is disabled, such as in a disabled
+ * fieldset, the surface neither lightens on hover nor presses.
  */
 :is([data-selectable-surface], .nf-button[data-selectable-surface]) {
   --nf-selectable-surface-bg: #202325;
@@ -30,6 +32,7 @@
 }
 :is([data-selectable-surface], .nf-button[data-selectable-surface]):hover:not(
   :disabled,
+  :has(> input:disabled),
   [data-selected="true"]
 ) {
   background: var(--nf-selectable-surface-hover-bg);
@@ -58,11 +61,12 @@
 /*
  * Large surfaces press with a gentler scale than compact buttons. Pressing a
  * nested control or field, such as an inline rename input, leaves the surface
- * still.
+ * still. Pressing the surface's own direct-child input still presses it.
  */
 :is([data-selectable-surface], .nf-button[data-selectable-surface]):active:not(
   :disabled,
-  :has(:is(button, input, select, textarea, [role="button"]):active)
+  :has(> input:disabled),
+  :has(:is(button, select, textarea, [role="button"]):active, * input:active)
 ) {
   transform: translateY(2px) scale(0.995);
   transition-duration: 35ms;

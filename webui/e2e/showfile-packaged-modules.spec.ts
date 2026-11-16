@@ -22,7 +22,7 @@ test("creates module FX from the active show's packaged modules", async ({
   await waitForDockviewApp(page);
   const saved = await page.evaluate(() =>
     (window as any).appStores.sendAndAwait({
-      module: "DeskCommand",
+      module: "ShowfileCommand",
       command: {
         type: "SaveNamedShowfile",
         data: "packaged-modules",

@@ -266,11 +266,15 @@ function seedTelemetryChoice(dataDir, telemetryUndecided) {
   );
 }
 
-/** Starts a freshly seeded backend for one test on its worker's fixed port. */
+/**
+ * Starts a freshly seeded backend for one test on its worker's fixed port, or, given the
+ * `dataDir` of a backend stopped with `keepDataDir`, restarts that backend with its data.
+ */
 export async function startPlaywrightTestBackend({
   emptyStartupWorld = false,
   experimentalFlows = false,
   telemetryUndecided = false,
+  dataDir: existingDataDir = "",
   seedDataDir,
   testId,
   workerSlot,
@@ -279,10 +283,9 @@ export async function startPlaywrightTestBackend({
   // Every backend connects only to its own test's MIDI port, which is unique across runs, so
   // tests never see one another's (or the host's) MIDI controllers.
   const midiInputPort = `Nightfall E2E ${shortIdentifier(`${workerSlot.runRoot}\0${testId}`)}`;
-  const { runDataDir: dataDir, seedDataAvailable } = clonePlaywrightDataDir(
-    seedDataDir,
-    workerSlot.runRoot,
-  );
+  const { runDataDir: dataDir, seedDataAvailable } = existingDataDir
+    ? { runDataDir: existingDataDir, seedDataAvailable: true }
+    : clonePlaywrightDataDir(seedDataDir, workerSlot.runRoot);
   seedTelemetryChoice(dataDir, telemetryUndecided);
   const registryPath = join(
     workerSlot.runRoot,
@@ -297,6 +300,10 @@ export async function startPlaywrightTestBackend({
         // Tests that turn reports on must never reach the project's services.
         NIGHTFALL_ERROR_REPORTS_DSN: "",
         NIGHTFALL_USAGE_REPORTS_URL: "",
+        // Keep sign-ins in memory: each rebuilt backend has a new code signature, so reading
+        // the developer's keychain would raise a macOS access prompt that "Always Allow"
+        // cannot silence.
+        NIGHTFALL_SYSTEM_KEYCHAIN: "false",
         NIGHTFALL_INPUT_ARTNET: "false",
         NIGHTFALL_INPUT_SACN_ENABLED: "false",
         NIGHTFALL_OUTPUT_ARTNET: "false",
@@ -328,18 +335,27 @@ export async function startPlaywrightTestBackend({
     try {
       await stopService(backendService);
     } finally {
-      rmSync(dataDir, { force: true, recursive: true });
+      // A restarted backend's data belongs to the caller, which removes it.
+      if (!existingDataDir) rmSync(dataDir, { force: true, recursive: true });
     }
     throw error;
   }
 }
 
-/** Stops one test backend and removes its disposable application data. */
-export async function stopPlaywrightTestBackend(testBackend) {
+/**
+ * Stops one test backend and removes its disposable application data, unless `keepDataDir`
+ * keeps it for a restart.
+ */
+export async function stopPlaywrightTestBackend(
+  testBackend,
+  { keepDataDir = false } = {},
+) {
   try {
     await stopService(testBackend.backendService);
   } finally {
-    rmSync(testBackend.dataDir, { force: true, recursive: true });
+    if (!keepDataDir) {
+      rmSync(testBackend.dataDir, { force: true, recursive: true });
+    }
   }
 }
 

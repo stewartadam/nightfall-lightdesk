@@ -53,7 +53,10 @@ function seedStartupDraft(dataRoot: string, name: string): SeededStartupDraft {
     },
     settings: {
       ...savedSnapshot.settings,
-      programmer_auto_select: !savedSnapshot.settings?.programmer_auto_select,
+      programming: {
+        ...savedSnapshot.settings?.programming,
+        auto_select: !savedSnapshot.settings?.programming?.auto_select,
+      },
     },
   };
 

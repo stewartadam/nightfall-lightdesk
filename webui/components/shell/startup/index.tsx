@@ -8,6 +8,7 @@
 
 import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal } from "solid-js";
+import { BackupPairStartupDialog } from "../../../features/io";
 import { OpenShowfileModal } from "../../../features/showfile";
 import { markResyncPending } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
@@ -18,12 +19,12 @@ import {
   loadShowfileRevisionAndAwait,
   newShowfileAndAwait,
   type OpenShowfileSelection,
-  promptForNewShowfile,
 } from "../../../lib/showfile-actions";
 import {
   appLifecycle,
   transitionAppLifecycle,
 } from "../../../state/app-lifecycle";
+import { continueStartupAsPrimary } from "./controller";
 import { shouldShowStartupSplash, startupPhaseForLifecycle } from "./model";
 import {
   clearE2eAutoOpenStartupShowfileRequest,
@@ -120,7 +121,7 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
   };
 
   /** Opens the startup-owned showfile picker without revealing the shell UI. */
-  const openOtherShowfile = () => {
+  const openStartupShowfilePicker = () => {
     setStartupShowfilePickerOpen(true);
   };
 
@@ -233,14 +234,20 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
     }).finally(clearE2eAutoOpenStartupShowfileRequest);
   });
 
-  /** Prompts for and creates a new showfile from startup recovery. */
-  const startNewShowfile = () => {
-    void (async () => {
-      const options = await promptForNewShowfile();
-      if (!options) return;
-      void openStartupShowfileSelection({ type: "new", ...options });
-    })();
+  /**
+   * Closes the picker after following a primary. Startup moves to the backup pair dialog once the
+   * new role arrives, and the dialog opens the app when the primary's show has loaded.
+   */
+  const followFromStartup = () => {
+    setStartupShowfilePickerOpen(false);
   };
+
+  /** Closes a picker opened from the draft prompt once startup moves to the backup pair dialog. */
+  createEffect(() => {
+    if (lifecycle().phase === "startup-backup-prompt") {
+      setStartupShowfilePickerOpen(false);
+    }
+  });
 
   return (
     <>
@@ -260,13 +267,17 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
         }
         onKeepSaved={() => void keepSaved()}
         onLoadDraft={() => void loadDraft()}
-        onNewShowfile={startNewShowfile}
-        onOpenOther={openOtherShowfile}
+        onManageShowfiles={openStartupShowfilePicker}
       />
       <OpenShowfileModal
         open={showStartupShowfilePicker()}
         onClose={closeStartupShowfilePicker}
         onOpen={openStartupShowfileSelection}
+        onFollowed={followFromStartup}
+      />
+      <BackupPairStartupDialog
+        open={lifecycle().phase === "startup-backup-prompt"}
+        onContinueAsPrimary={continueStartupAsPrimary}
       />
     </>
   );

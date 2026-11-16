@@ -26,7 +26,7 @@ use super::{
         AvailableShowfileDraftResponse, AvailableShowfilesResponse,
         available_showfile_draft_for_name_in_root, list_available_showfiles_in_root,
     },
-    paths::{show_data_dir_path, showfile_root_dir_path},
+    paths::{show_data_dir_path, showfile_library_root_path},
     trash::{list_deleted_showfiles_in_root, now_ms},
 };
 
@@ -85,6 +85,11 @@ async fn export_current_showfile(Json(options): Json<ShowfileExportRequest>) -> 
             "Application data directory unavailable",
         );
     };
+    let source = if capture.source == crate::diagnostic_showfile::LIVE_SOURCE {
+        nightfall_backup::EXPORT_SOURCE_LIVE
+    } else {
+        nightfall_backup::EXPORT_SOURCE_STORED
+    };
     let result = tokio::task::spawn_blocking(move || {
         let mut prepared = super::export::prepare_showfile_export(
             capture.snapshot,
@@ -92,7 +97,7 @@ async fn export_current_showfile(Json(options): Json<ShowfileExportRequest>) -> 
             &app_data,
             options.policy,
         )?;
-        if capture.source != "current engine state" {
+        if capture.source != crate::diagnostic_showfile::LIVE_SOURCE {
             prepared.warnings.push(
                 "The engine did not respond; the latest stored showfile was exported.".to_string(),
             );
@@ -113,6 +118,7 @@ async fn export_current_showfile(Json(options): Json<ShowfileExportRequest>) -> 
                         "attachment; filename=\"showfile.zip\"",
                     )
                     .header("x-showfile-export-warnings", warnings.to_string())
+                    .header(nightfall_backup::EXPORT_SOURCE_HEADER, source)
                     .body(Body::from_stream(stream))
                     .expect("showfile export response should be valid"),
             )
@@ -261,7 +267,7 @@ async fn serve_current_showfile_resource(
 /// Listing the trash also purges entries past their retention period.
 async fn list_available_showfiles() -> Response {
     match tokio::task::spawn_blocking(|| {
-        let root = showfile_root_dir_path()?;
+        let root = showfile_library_root_path()?;
         Ok::<_, String>(AvailableShowfilesResponse {
             showfiles: list_available_showfiles_in_root(&root)?,
             trash: list_deleted_showfiles_in_root(&root, now_ms())?,
@@ -288,7 +294,7 @@ async fn list_available_showfiles() -> Response {
 /// Return lightweight available-draft metadata for one requested showfile.
 async fn get_available_showfile_draft(AxumPath(showfile_name): AxumPath<String>) -> Response {
     match tokio::task::spawn_blocking(move || {
-        showfile_root_dir_path()
+        showfile_library_root_path()
             .and_then(|root| available_showfile_draft_for_name_in_root(&root, &showfile_name))
     })
     .await

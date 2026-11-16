@@ -8,6 +8,7 @@
 
 import { createContext, type JSX, useContext } from "solid-js";
 import { getLogger } from "../../../lib/logger";
+import { createTimelineEdits } from "../controllers/timeline-edits";
 import { createTimelineHydrationController } from "../controllers/timeline-hydration-controller";
 import { createTimelineMarkerRegionController } from "../controllers/timeline-marker-region-controller";
 import { createTimelineSelectionController } from "../controllers/timeline-selection-controller";
@@ -46,6 +47,7 @@ interface TimelineContextProviderProps {
 export function TimelineContextProvider(props: TimelineContextProviderProps) {
   log.trace("mounting");
   const state = createTimelineState();
+  const edits = createTimelineEdits(props.initialTimelineUid);
   const selection = createTimelineSelectionController({
     tracks: state.tracks,
     setTracks: state.setTracks,
@@ -57,11 +59,12 @@ export function TimelineContextProvider(props: TimelineContextProviderProps) {
   const hydration = createTimelineHydrationController({
     timelineUid: props.initialTimelineUid,
     state,
+    edits,
     selection,
     playbackCommands: props.playbackCommands,
   });
-  const settings = createTimelineSettingsController(state);
-  const track = createTimelineTrackController(state, selection);
+  const settings = createTimelineSettingsController(edits);
+  const track = createTimelineTrackController(edits, selection);
   const markerRegion = createTimelineMarkerRegionController(state, selection);
   const recording = createTimelineRecordingController(
     state,
@@ -70,9 +73,9 @@ export function TimelineContextProvider(props: TimelineContextProviderProps) {
 
   const value: TimelineContextType = {
     timelineUid: props.initialTimelineUid,
+    edits,
     componentId: props.initialPanelId,
     timelineHydrated: state.timelineHydrated,
-    start: hydration.playback.start,
     position: hydration.playback.position,
     paused: hydration.playback.paused,
     audioPath: state.audioPath,
@@ -91,7 +94,6 @@ export function TimelineContextProvider(props: TimelineContextProviderProps) {
     setZoom: state.setZoom,
     scrollMode: state.scrollMode,
     setScrollMode: settings.setScrollMode,
-    onScrollModeChange: settings.scrollModeEvent,
     showDurationTrails: state.showDurationTrails,
     setShowDurationTrails: state.setShowDurationTrails,
     useBeatgrid: state.useBeatgrid,
@@ -100,7 +102,6 @@ export function TimelineContextProvider(props: TimelineContextProviderProps) {
     setBpm: settings.setBpm,
     beatsPerBar: state.beatsPerBar,
     setBeatsPerBar: settings.setBeatsPerBar,
-    onBeatgridSettingsChange: settings.beatgridSettingsEvent,
     snapEnabled: state.snapEnabled,
     setSnapEnabled: state.setSnapEnabled,
     nudgeUnit: state.nudgeUnit,
@@ -150,7 +151,6 @@ export function TimelineContextProvider(props: TimelineContextProviderProps) {
     track: {
       addLane: track.addLane,
       removeLane: track.removeLane,
-      onLanesChanged: track.lanesChangedEvent,
       addTrack: track.addTrack,
       removeTrack: track.removeTrack,
       renameTrack: track.renameTrack,
@@ -161,15 +161,6 @@ export function TimelineContextProvider(props: TimelineContextProviderProps) {
       toggleMute: track.toggleTrackMute,
       toggleSolo: track.toggleTrackSolo,
       toggleTrackExpanded: track.toggleTrackExpanded,
-      onAddTrack: track.addTrackEvent,
-      onRemoveTrack: track.removeTrackEvent,
-      onRenameTrack: track.renameTrackEvent,
-      onReorderTrack: track.reorderTrackEvent,
-      onAddPoint: track.addPointEvent,
-      onUpdatePoint: track.updatePointEvent,
-      onRemovePoint: track.removePointEvent,
-      onMute: track.muteEvent,
-      onSolo: track.soloEvent,
     },
     actions: {
       selectAction: selection.selectAction,
@@ -181,10 +172,6 @@ export function TimelineContextProvider(props: TimelineContextProviderProps) {
       selectedActions: selection.selectedActions,
       onSelect: selection.selectActionEvent,
       onOpen: track.openActionEvent,
-      onInsert: track.insertActionEvent,
-      onUpdate: track.updateActionEvent,
-      onDelete: track.deleteActionEvent,
-      onReposition: track.repositionActionEvent,
     },
   };
 

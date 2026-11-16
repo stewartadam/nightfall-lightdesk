@@ -62,6 +62,29 @@ export type EmbeddedRuntimeFactory = (callbacks: {
   isCurrent(generation: number): boolean;
 }) => EmbeddedRuntime;
 
+/**
+ * Returns the `command_id` of a submitted envelope, or `null` for untracked updates, so a dropped
+ * submit can be matched to the command waiting on its result.
+ */
+function commandIdOf(data: string | object): string | null {
+  const envelope: unknown =
+    typeof data === "string" ? safeJsonParse(data) : data;
+  if (envelope && typeof envelope === "object" && "command_id" in envelope) {
+    const commandId = envelope.command_id;
+    return typeof commandId === "string" ? commandId : null;
+  }
+  return null;
+}
+
+/** Parses JSON text, returning `null` instead of throwing on malformed input. */
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 /** Install worker message handling and telemetry, optionally enabling the demo engine. */
 export function startEngineRuntimeWorker(
   createEmbeddedRuntime?: EmbeddedRuntimeFactory,
@@ -190,10 +213,23 @@ export function startEngineRuntimeWorker(
   let socket: WebSocket | null = null;
   /**
    * Submits that arrive while `socket` is still opening. They are sent in order
-   * once it opens and discarded if it closes first, when the main thread
-   * rejects their result waiters on the disconnected status.
+   * once it opens, and reported dropped if it closes or is replaced first.
    */
   let submitsAwaitingOpen: string[] = [];
+
+  /**
+   * Tells the main thread a submit was never sent, with its command ID, so the command's result
+   * waiter and console entry fail instead of waiting forever.
+   */
+  function reportDroppedSubmit(data: string | object) {
+    self.postMessage({ type: "submitDropped", commandId: commandIdOf(data) });
+  }
+
+  /** Reports every submit still waiting for the socket to open as dropped, then forgets them. */
+  function dropSubmitsAwaitingOpen() {
+    for (const submit of submitsAwaitingOpen) reportDroppedSubmit(submit);
+    submitsAwaitingOpen = [];
+  }
   let url = "";
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   // When the backend last dropped this client for lagging, for reconnect backoff.
@@ -567,7 +603,7 @@ export function startEngineRuntimeWorker(
       socket.close();
       socket = null;
     }
-    submitsAwaitingOpen = [];
+    dropSubmitsAwaitingOpen();
 
     postStatus(Status.Connecting);
     // A new connection may reach a different backend world, whose layouts and frames restart.
@@ -588,7 +624,7 @@ export function startEngineRuntimeWorker(
 
     socket.onclose = (event: CloseEvent) => {
       stopHeartbeatTimer();
-      submitsAwaitingOpen = [];
+      dropSubmitsAwaitingOpen();
       postStatus(Status.Disconnected);
       socket = null;
       scheduleReconnect(reconnectDelayAfterClose(event.code));
@@ -675,6 +711,10 @@ export function startEngineRuntimeWorker(
           socket.send(JSON.stringify(msg.data));
         } else if (socket?.readyState === WebSocket.CONNECTING) {
           submitsAwaitingOpen.push(JSON.stringify(msg.data));
+        } else {
+          // Between a close and the next reconnect there is no socket to send on or queue
+          // behind. Report the drop so the sender stops waiting for a result.
+          reportDroppedSubmit(msg.data);
         }
         break;
 

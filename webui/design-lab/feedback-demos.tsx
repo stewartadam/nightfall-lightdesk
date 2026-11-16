@@ -244,6 +244,10 @@ export function BadgeDemo() {
           Overflow
           <CountBadge count={count() * 40} max={99} />
         </span>
+        <span class="inline-flex items-center gap-1.5">
+          Inline
+          <CountBadge count={count()} placement="inline" />
+        </span>
         <Button size="compact" onClick={() => setCount(count() + 1)}>
           Add
         </Button>

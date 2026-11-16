@@ -782,7 +782,7 @@ mod command_json_envelope_tests {
         let command_id = CommandId::new();
         let envelope: CommandJsonEnvelope = serde_json::from_value(serde_json::json!({
             "command_id": command_id.to_string(),
-            "module": "DeskCommand",
+            "module": "EngineCommand",
             "command": { "type": "Eval", "data": "store cue 1.1" }
         }))
         .unwrap();
@@ -815,6 +815,7 @@ mod client_bridge_tests {
 
     use super::*;
     use crate::EventHandling;
+    use crate::command_apply::ApplyCommands;
     use crate::prelude::{
         CommandId, CommandNotice, CommandOutcome, CommandResult, CommandTracker, FinishedCommand,
         NoticeLevel,
@@ -967,7 +968,7 @@ mod client_bridge_tests {
         let (mut app, output) = bridge_app();
         let command_id = CommandId::new();
         app.insert_resource(PendingReply(Some(command_id)));
-        app.add_systems(Update, finish_pending_reply.in_set(EventHandling));
+        app.add_systems(ApplyCommands, finish_pending_reply.in_set(EventHandling));
 
         app.update();
 
@@ -1132,7 +1133,7 @@ mod client_bridge_tests {
     fn wire_envelope_ignores_reply_target() {
         let envelope: CommandJsonEnvelope = serde_json::from_value(serde_json::json!({
             "command_id": CommandId::new().to_string(),
-            "module": "DeskCommand",
+            "module": "ShowfileCommand",
             "command": {},
             "reply_target": { "Client": 9 }
         }))

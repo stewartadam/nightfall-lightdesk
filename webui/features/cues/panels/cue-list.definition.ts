@@ -17,7 +17,7 @@ export default definePanel({
   panelId: "panel-CueList",
   componentName: "CueList",
   title: "Cues",
-  minWidth: 515,
+  minWidth: 360,
   minHeight: 160,
   icon: TableIcon,
   loadComponent: () => import("./cue-list-panel"),

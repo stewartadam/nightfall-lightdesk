@@ -200,7 +200,7 @@ function fixtureWideRefFor(
  * Resolves fixture-specific attribute timing, merging fixture-wide and element-specific overrides.
  */
 export function transitionForFixtureAttribute(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
   fixtureRef: types.FixtureRef | undefined,
   attr: string,
 ): types.PartialTransition | undefined {
@@ -234,7 +234,7 @@ export function transitionForFixtureAttribute(
 export async function resolveCueInstructionTiming(
   resolver: TransitionModeResolver,
   cue: types.Cue,
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
   attr: string,
   field: TimingField,
   offset: number,
@@ -387,7 +387,7 @@ export async function selectionTimingPositionForFixtureAttribute(
 }
 
 /** Lists normalized attribute names written by a cue instruction. */
-function attributesForInstruction(instruction: types.CueInstruction): string[] {
+function attributesForInstruction(instruction: types.AssertionSet): string[] {
   return Object.keys(instruction.values ?? {}).map(normalizeAttributeName);
 }
 
@@ -426,7 +426,7 @@ export async function calculateCueTransitionDurations(
   const transitionResolver = createTransitionModeResolver();
 
   const accumulateInstructionDurations = async (
-    items: readonly types.BoundCueInstruction[],
+    items: readonly types.BoundAssertionSet[],
     transitions: types.PartialTransition,
     transitionsByAttribute: types.AttributeTransitions,
   ) => {
@@ -437,7 +437,7 @@ export async function calculateCueTransitionDurations(
     };
 
     for (const item of items) {
-      const instruction = item.cue_instruction;
+      const instruction = item.assertions;
       const attrs = attributesForInstruction(instruction);
       const timingIndexes = await resolvedSelectionTimingIndexes(
         item.selection,
@@ -600,7 +600,7 @@ function updateMaxDurations(
 
 /** Adds or replaces a fixture-specific transition mode for one instruction attribute. */
 export function upsertInstructionFixtureAttributeTiming(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
   fixtureRef: types.FixtureRef,
   attr: string,
   field: TimingField,
@@ -623,7 +623,7 @@ export function upsertInstructionFixtureAttributeTiming(
 
 /** Deletes an instruction-level attribute timing override and prunes empty entries. */
 export function deleteInstructionAttributeTiming(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
   attr: string,
   field: TimingField,
 ) {
@@ -643,7 +643,7 @@ export function deleteInstructionAttributeTiming(
 
 /** Deletes a fixture-specific attribute timing override and prunes empty entries. */
 export function deleteInstructionFixtureAttributeTiming(
-  instruction: types.CueInstruction,
+  instruction: types.AssertionSet,
   fixtureRef: types.FixtureRef,
   attr: string,
   field: TimingField,

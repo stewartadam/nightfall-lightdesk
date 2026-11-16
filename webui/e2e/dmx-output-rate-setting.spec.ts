@@ -13,7 +13,7 @@ import { waitForDockviewApp } from "./showfile-startup";
 /** Reads the DMX output rate from the backend's latest IO settings snapshot. */
 async function storedRate(page: import("@playwright/test").Page) {
   return page.evaluate(
-    () => (window as any).appStores.ioSettings.get().dmx_output_rate_hz,
+    () => (window as any).appStores.settings.get().io.dmx_output_rate_hz,
   );
 }
 

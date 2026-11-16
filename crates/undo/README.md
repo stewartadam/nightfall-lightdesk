@@ -25,6 +25,10 @@ Implemented a **two-phase command dispatch pattern** with **exclusive system pro
    - Original commands are then queued for normal dispatch
 
 2. **Undo/Redo Execution** (`handle_undo_commands`):
+   - Replays a group one entry per step, capturing each entry's opposite inverse just before
+     the entry runs, and settles the steps within one update by asking the engine to rerun
+     its `ApplyCommands` schedule. See [ADR 5](../../docs/adr/0005-undo-replays-step-by-step.md) for the design and
+     the alternatives considered.
    - Exclusive system with `world: &mut World` parameter
    - Uses cached `SystemState` for `MessageReader` to prevent duplicate event processing
    - Accesses all resources through `world.resource_mut::<T>()`
@@ -93,13 +97,17 @@ User Input → AST Parser → Command Dispatch
 ```
 Undo Command → handle_undo_commands
                       ↓
-            Pop from Undo Stack
+            Pop group from Undo Stack
                       ↓
-        Generate Redo Inverses (scoped)
+   ┌→ Capture redo inverse of next entry (scoped)
+   │                  ↓
+   │    Queue entry as a replay step command
+   │                  ↓
+   │    Domain handler applies it (next run of
+   │    ApplyCommands, within the same update)
+   └──────────────────┘ until no entries remain
                       ↓
-        Push to Redo Stack
-                      ↓
-        Execute Inverse Commands
+        Push captured inverses to Redo Stack
 ```
 
 ### Rationale

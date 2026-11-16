@@ -385,7 +385,7 @@ export async function cuePartConflictIds(cue: types.Cue): Promise<Set<number>> {
   /** Records each fixture attribute written by the displayed cue part ID. */
   const recordInstructionWriters = async (
     partId: number,
-    instructions: readonly types.BoundCueInstruction[],
+    instructions: readonly types.BoundAssertionSet[],
   ) => {
     for (const instruction of instructions) {
       const fixtureRefs = await resolvedFixtureRefsForSelection(
@@ -393,7 +393,7 @@ export async function cuePartConflictIds(cue: types.Cue): Promise<Set<number>> {
       );
       if (fixtureRefs.length === 0) continue;
 
-      for (const attribute of Object.keys(instruction.cue_instruction.values)) {
+      for (const attribute of Object.keys(instruction.assertions.values)) {
         const normalizedAttribute = normalizeAttributeName(attribute);
         for (const fixtureRef of fixtureRefs) {
           const writerKey = `${fixtureRefKey(fixtureRef)}:${normalizedAttribute}`;

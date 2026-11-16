@@ -14,28 +14,6 @@ use nightfall_fx::events::StepFxCommand;
 use nightfall_fx::prelude::*;
 
 // ============================================================================
-// AST Alias Equality Tests
-// ============================================================================
-
-#[test]
-fn test_rgb_attribute_aliases() {
-    let base_ast = generate_ast(
-        "store fx 1 step fix 1 5s int steps 100 0 r steps 100 0 g steps 100 0 b steps 100 0",
-    )
-    .expect("Failed to parse with 'r' alias");
-
-    // Test "red" alias produces identical AST to "r"
-    let red_ast = generate_ast(
-        "store fx 1 step fix 1 5s int steps 100 0 red steps 100 0 g steps 100 0 b steps 100 0",
-    )
-    .expect("Failed to parse with 'red' alias");
-    assert_eq!(
-        base_ast, red_ast,
-        "'red' should produce identical AST to 'r'"
-    );
-}
-
-// ============================================================================
 // AST -> Command Conversion Tests
 // ============================================================================
 

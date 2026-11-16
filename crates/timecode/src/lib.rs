@@ -26,6 +26,7 @@ pub mod ast_conv;
 pub mod components;
 pub mod events;
 pub mod external;
+pub mod live_state;
 pub mod systems;
 pub mod timecode;
 mod undo;
@@ -50,20 +51,26 @@ pub struct TimecodePlugin;
 impl Plugin for TimecodePlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering TimecodePlugin");
-        register_ingress_command::<TimecodeCommand>(app);
+        register_client_command::<TimecodeCommand>(app, Undo::Captured);
+        app.forward_commands_to_backup::<TimecodeCommand>(&[
+            "StartTimecode",
+            "PauseTimecode",
+            "StopTimecode",
+            "SeekTimecode",
+        ]);
         app.add_message::<EngineOperationEnvelope<TimecodeOperation>>();
         app.add_message::<TimecodeEvent>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<
             ast_conv::TimecodeAstConverter,
         >();
 
-        register_command_deserializer::<TimecodeCommand>(
-            app,
-            websocket::deserialize_timecode_command,
-        );
-
         app.init_resource::<DataProvider<timecode::Timecode>>();
         app.init_resource::<external::ExternalTimecodeFeeds>();
+        app.register_live_state(
+            live_state::TIMECODES_LIVE_STATE,
+            live_state::capture_live_timecodes,
+            live_state::restore_live_timecodes,
+        );
 
         // Register undoable commands
         app.world_mut()
@@ -75,7 +82,7 @@ impl Plugin for TimecodePlugin {
             (systems::update_timecode_system).in_set(ClockUpdate),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 events::handle_events,
                 events::handle_actions,
@@ -84,12 +91,8 @@ impl Plugin for TimecodePlugin {
                 .in_set(EventHandling),
         );
         // WebSocket sends owned by timecode plugin
-        app.add_systems(Render, websocket::send_timecodes.in_set(ClientOutput));
-
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
-        );
+        app.add_client_feed::<websocket::TimecodesFeed>()
+            .on_interval(websocket::SEND_INTERVAL);
     }
 }
 
@@ -170,5 +173,11 @@ pub enum TimecodeEvent {
         position: Duration,
     },
     /// A persisted timecode and its generator were deleted.
-    Deleted(u32),
+    Deleted {
+        /// Numeric identifier the timecode had.
+        id: u32,
+        /// Stable identifier the timecode had, which timelines reference. Readers cannot look
+        /// it up from `id` any more because the timecode is already gone.
+        uid: uuid::Uuid,
+    },
 }

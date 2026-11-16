@@ -7,25 +7,71 @@
  */
 
 use nightfall_dmx::prelude::AttributeCategory;
+use nightfall_engine::prelude::BoundAssertionSet;
 
 use super::*;
-use crate::cue::BoundCueInstruction;
+
+/// Resolves a sequence's cue references to cue snapshots, one per authored step.
+///
+/// A reference whose cue is missing from the store becomes an empty placeholder that keeps the
+/// missing cue's UID and follows the previous cue. Keeping one entry per authored step keeps cue
+/// positions aligned with the sequence definition, so `goto 3` always lands on the third authored
+/// step, while a running chase flows through the gap as it did when the step was skipped. If the
+/// cue is stored again later, cue definition refreshes replace the placeholder by UID.
+pub(super) fn resolved_sequence_steps(
+    sequence: &Sequence,
+    cue_data_provider: &DataProvider<Cue>,
+) -> Vec<Cue> {
+    sequence
+        .steps
+        .iter()
+        .map(|cue_uid| {
+            let cue_id: uuid::Uuid = (*cue_uid).into();
+            match cue_data_provider.get(cue_id) {
+                Ok(cue_ref) => (*cue_ref).clone(),
+                Err(err) => {
+                    tracing::warn!(
+                        uid = %sequence.identifiers.uid,
+                        cue_uid = %cue_id,
+                        "Sequence '{}' references a missing cue; holding its position with an empty step: {}",
+                        sequence.identifiers.label,
+                        err
+                    );
+                    missing_cue_placeholder(cue_id)
+                }
+            }
+        })
+        .collect()
+}
+
+/// Builds the empty step that stands in for a missing cue reference and follows the previous cue.
+fn missing_cue_placeholder(cue_uid: uuid::Uuid) -> Cue {
+    Cue {
+        identifiers: Identifiers {
+            uid: cue_uid,
+            label: "Missing cue".to_owned(),
+            ..Default::default()
+        },
+        trigger: CueTriggerType::FollowPrevious,
+        ..Default::default()
+    }
+}
 
 /// Returns whether an instruction currently resolves any position-category values.
 fn instruction_has_position_values(
-    instruction: &BoundCueInstruction,
+    instruction: &BoundAssertionSet,
     blueprint_data_provider: Option<&DataProvider<Blueprint>>,
 ) -> bool {
-    let values = if let Some(application) = &instruction.cue_instruction.blueprint_application {
+    let values = if let Some(application) = &instruction.assertions.blueprint_application {
         let Some(provider) = blueprint_data_provider else {
             return false;
         };
         let Ok(blueprint) = provider.get(application.blueprint_uid) else {
             return false;
         };
-        blueprint.selected_values(&application.selector)
+        blueprint.applied_values(application)
     } else {
-        instruction.cue_instruction.values.clone()
+        instruction.assertions.values.clone()
     };
     values
         .keys()
@@ -477,26 +523,9 @@ impl MaterializedSequence {
         parameter_query: &Query<InstanceRef<Parameter>>,
         selection_resolver: &SpatialSelectionResolver,
     ) -> Self {
-        let mut steps: Vec<Cue> = Vec::new();
-        for cue_uid in &sequence.steps {
-            let cue_id: uuid::Uuid = (*cue_uid).into();
-            match cue_data_provider.get(cue_id) {
-                Ok(cue_ref) => steps.push((*cue_ref).clone()),
-                Err(err) => {
-                    tracing::warn!(
-                        uid = %sequence.identifiers.uid,
-                        cue_uid = %cue_id,
-                        "Skipping missing cue while materializing sequence '{}': {}",
-                        sequence.identifiers.label,
-                        err
-                    );
-                }
-            }
-        }
-
         Self::materialize_from_steps_with_sources(
             sequence,
-            steps,
+            resolved_sequence_steps(sequence, cue_data_provider),
             color_path_data_provider,
             blueprint_data_provider,
             fixture_data_provider,
@@ -515,26 +544,9 @@ impl MaterializedSequence {
         parameter_query: &Query<InstanceRef<Parameter>>,
         selection_resolver: &SpatialSelectionResolver,
     ) -> Self {
-        let mut steps = Vec::with_capacity(sequence.steps.len());
-        for cue_uid in &sequence.steps {
-            let cue_id: uuid::Uuid = (*cue_uid).into();
-            match cue_data_provider.get(cue_id) {
-                Ok(cue_ref) => steps.push((*cue_ref).clone()),
-                Err(err) => {
-                    tracing::warn!(
-                        uid = %sequence.identifiers.uid,
-                        cue_uid = %cue_id,
-                        "Skipping missing cue while materializing sequence '{}': {}",
-                        sequence.identifiers.label,
-                        err
-                    );
-                }
-            }
-        }
-
         Self::materialize_from_steps_through_with_sources(
             sequence,
-            steps,
+            resolved_sequence_steps(sequence, cue_data_provider),
             1,
             color_path_data_provider,
             blueprint_data_provider,
@@ -550,17 +562,17 @@ mod tests {
     use std::collections::HashMap;
 
     use nightfall_dmx::prelude::Attribute;
+    use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
 
     use super::*;
-    use crate::cue::{BoundCueInstruction, CueInstruction};
 
     /// Builds a cue containing one absolute value for lookahead predicate tests.
     fn cue_with_attribute(attribute: Attribute, lookahead: Option<bool>) -> Cue {
         Cue {
             lookahead,
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::default(),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         attribute,
@@ -581,13 +593,10 @@ mod tests {
     ) -> Cue {
         Cue {
             lookahead,
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::default(),
-                cue_instruction: CueInstruction {
-                    blueprint_application: Some(BlueprintApplication {
-                        blueprint_uid,
-                        selector,
-                    }),
+                assertions: AssertionSet {
+                    blueprint_application: Some(BlueprintApplication::new(blueprint_uid, selector)),
                     ..Default::default()
                 },
             }],

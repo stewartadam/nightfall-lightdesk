@@ -234,16 +234,45 @@ fn read_showfile_json_with_limit(
 }
 
 /// Hash a showfile snapshot after replacing volatile save metadata with a stable baseline.
+///
+/// The hash covers a canonical JSON form with every object's keys sorted, so two snapshots of
+/// identical state hash the same even when a persisted `HashMap` iterates in a different order.
 pub(super) fn hash_showfile_snapshot_with_metadata(
     snapshot: &ShowfileSnapshot,
     metadata: &ShowfileMetadata,
 ) -> Result<u64, String> {
-    let mut snapshot = snapshot.clone();
-    snapshot.metadata = metadata.clone();
-    let json = serialize_showfile_snapshot_json(&snapshot)?;
+    let to_value = |value: Result<serde_json::Value, serde_json::Error>| {
+        value.map_err(|error| format!("failed to serialize showfile json: {error}"))
+    };
+    let mut value = to_value(serde_json::to_value(snapshot))?;
+    let serde_json::Value::Object(fields) = &mut value else {
+        return Err("failed to serialize showfile json: snapshot is not an object".to_string());
+    };
+    fields.insert(
+        "metadata".to_string(),
+        to_value(serde_json::to_value(metadata))?,
+    );
+    value.sort_all_objects();
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    json.hash(&mut hasher);
+    value.to_string().hash(&mut hasher);
     Ok(hasher.finish())
+}
+
+/// Hashes a live show's contents for backups, ignoring its metadata, which records when and by
+/// which build the snapshot was taken rather than what the show holds.
+///
+/// The tempo, bar length, master levels and global variables are left out too: they change while
+/// the show runs, such as variables driven by a playing timeline's parameter lanes, and the
+/// backup follows them through live state checkpoints instead of reloading the whole show.
+/// Launch quantize stays in, since only a reload carries it to the backup.
+pub(crate) fn live_showfile_revision(mut snapshot: ShowfileSnapshot) -> Result<u64, String> {
+    snapshot.variables.clear();
+    snapshot.tempo.bpm = 0.0;
+    snapshot.tempo.beats_per_bar = 0;
+    for master in &mut snapshot.masters {
+        master.level_percent = 0.0;
+    }
+    hash_showfile_snapshot_with_metadata(&snapshot, &ShowfileMetadata::default())
 }
 
 #[cfg(test)]
@@ -253,6 +282,30 @@ mod tests {
         manifest::read_current_showfile_manifest_from_dir,
     };
     use super::*;
+
+    /// A live tempo move or a variable a timeline lane drives leaves the backup revision alone,
+    /// while a launch quantize change, which only a reload carries to the backup, changes it.
+    #[test]
+    fn live_revision_ignores_tempo_but_not_launch_quantize() {
+        let show = ShowfileSnapshot::default();
+        let base = live_showfile_revision(show.clone()).unwrap();
+
+        let mut automated = show.clone();
+        automated.variables.insert(
+            "intensity".into(),
+            nightfall::variables::VariableValue::Float(0.5),
+        );
+        assert_eq!(live_showfile_revision(automated).unwrap(), base);
+
+        let mut faster = show.clone();
+        faster.tempo.bpm = 140.0;
+        faster.tempo.beats_per_bar = 3;
+        assert_eq!(live_showfile_revision(faster).unwrap(), base);
+
+        let mut quantized = show;
+        quantized.tempo.launch_quantize = nightfall_tempo::LaunchQuantize::Bar;
+        assert_ne!(live_showfile_revision(quantized).unwrap(), base);
+    }
 
     /// Encode one gzip member for boundary and concatenated-stream regression cases.
     fn gzip_member(bytes: &[u8]) -> Vec<u8> {
@@ -346,6 +399,43 @@ mod tests {
         );
     }
 
+    /// Snapshots that differ only in JSON object key order hash the same, so a saved show whose
+    /// maps iterate in a different order on the next autosave still reads as clean.
+    #[test]
+    fn snapshot_hash_ignores_object_key_order() {
+        let metadata = nightfall_showfile::current_showfile_metadata();
+        let snapshot_with_audio_settings = |pairs: &[(&str, &str)]| {
+            let mut fields = serde_json::Map::new();
+            for (key, value) in pairs {
+                fields.insert(key.to_string(), serde_json::json!(value));
+            }
+            let mut snapshot = ShowfileSnapshot {
+                metadata: metadata.clone(),
+                ..Default::default()
+            };
+            snapshot
+                .settings
+                .insert("audio".to_string(), serde_json::Value::Object(fields));
+            snapshot
+        };
+        let forward = snapshot_with_audio_settings(&[("input", "mic"), ("output", "speakers")]);
+        let reverse = snapshot_with_audio_settings(&[("output", "speakers"), ("input", "mic")]);
+        assert_ne!(
+            serialize_showfile_snapshot_json(&forward).unwrap(),
+            serialize_showfile_snapshot_json(&reverse).unwrap(),
+            "fixture must exercise differing key order"
+        );
+        assert_eq!(
+            hash_showfile_snapshot_with_metadata(&forward, &metadata).unwrap(),
+            hash_showfile_snapshot_with_metadata(&reverse, &metadata).unwrap()
+        );
+        let changed = snapshot_with_audio_settings(&[("input", "line"), ("output", "speakers")]);
+        assert_ne!(
+            hash_showfile_snapshot_with_metadata(&forward, &metadata).unwrap(),
+            hash_showfile_snapshot_with_metadata(&changed, &metadata).unwrap()
+        );
+    }
+
     /// Gzip storage preserves JSON and semantic hashes while keeping manifests and discovery usable.
     #[test]
     fn compressed_snapshots_roundtrip_and_remain_discoverable() {
@@ -382,7 +472,10 @@ mod tests {
         super::super::backup::backup_show_data_directory(&directory, 2).unwrap();
         let draft = root.path().join("drafts/Tour.nightfall-show");
         let mut edited = snapshot.clone();
-        edited.settings.audio_device = Some("draft selection".to_string());
+        edited.settings.insert(
+            "audio".to_string(),
+            serde_json::json!({ "output_device": "draft selection" }),
+        );
         let edited_hash = hash_showfile_snapshot_with_metadata(&edited, &edited.metadata).unwrap();
         write_showfile_snapshot_with_manifest_to_dir(&edited, &draft, edited_hash, Some(hash))
             .unwrap();
@@ -392,12 +485,8 @@ mod tests {
         let revision = Path::new(&shows[0].revisions[0].path);
         assert_eq!(read_showfile_json_from_path(revision).unwrap(), json);
         assert_eq!(
-            read_showfile_snapshot_from_path(&draft)
-                .unwrap()
-                .settings
-                .audio_device
-                .as_deref(),
-            Some("draft selection")
+            read_showfile_snapshot_from_path(&draft).unwrap().settings["audio"]["output_device"],
+            "draft selection"
         );
         let diagnostic =
             crate::diagnostic_showfile::read_stored_showfile(directory.clone()).unwrap();

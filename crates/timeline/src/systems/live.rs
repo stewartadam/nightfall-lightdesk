@@ -17,46 +17,86 @@ mod actions;
 /// Synchronize materialized timelines with their timecodes and apply enabled loop seeks.
 ///
 /// Loops apply only to internal timecodes: an external source owns its position, so seeking it
-/// back would be undone by the next frame.
+/// back would be undone by the next frame. A loop wrap, and an external source relocating its
+/// timecode, are announced as playhead jumps so the timeline's playback is rebuilt at the new
+/// position and its actions fire again, instead of the next live scan finding an empty
+/// backward range.
 pub fn update_timeline_system(
     mut timeline_query: Query<(Entity, &mut MaterializedTimeline)>,
     mut timecode_query: Query<(Entity, &mut TimecodeGenerator)>,
+    mut playhead_jumps: MessageWriter<TimelinePlayheadJumped>,
 ) {
     let timecode_entities = timecode_query
         .iter_mut()
         .map(|(entity, timecode)| (timecode.timecode.identifiers.uid, entity))
         .collect::<HashMap<_, _>>();
+    let mut wrapped_timecodes = HashMap::new();
 
-    for (_, mut timeline) in timeline_query.iter_mut() {
+    for (timeline_entity, mut timeline) in timeline_query.iter_mut() {
         let Some(timecode_entity) = timecode_entities.get(&timeline.timeline.timecode_uid) else {
             continue;
         };
         let Ok((_, mut timecode)) = timecode_query.get_mut(*timecode_entity) else {
             continue;
         };
+        let mut jumped = false;
         if timeline.is_active
             && timecode.is_internal()
             && let Some(loop_range) = timeline
                 .timeline
                 .loop_range
                 .as_ref()
-                .filter(|range| range.enabled && range.end > range.start)
+                .filter(|range| range.enabled)
+            && let Some(wrapped_position) = loop_range.wrap(
+                timecode
+                    .state
+                    .current_time
+                    .saturating_sub(timeline.timeline.timecode_start),
+            )
         {
-            let timeline_position = timecode
-                .state
-                .current_time
-                .saturating_sub(timeline.timeline.timecode_start);
-            if timeline_position >= loop_range.end {
-                timecode.seek(timeline.timeline.timecode_start + loop_range.start);
-                timeline.audio_needs_sync = true;
-            }
+            timecode.seek(timeline.timeline.timecode_start + wrapped_position);
+            // Playback is rebuilt at the loop start, so actions in the carried overshoot fire
+            // live on the next scan rather than through seek reconstruction.
+            wrapped_timecodes.insert(
+                *timecode_entity,
+                timeline.timeline.timecode_start + loop_range.start,
+            );
         }
-        timeline.follow_timecode_transport(
-            !timecode.is_internal(),
-            timecode.state.is_active,
-            timecode.position_jumps,
-        );
+        jumped |= timeline.follow_timecode_transport(TimecodeTransport {
+            external: !timecode.is_internal(),
+            running: timecode.state.is_active,
+            position_jumps: timecode.position_jumps,
+            position: timecode.state.current_time,
+        });
         timeline.update_with_timecode(timecode.state.current_time);
+        if jumped {
+            timeline.audio_needs_sync = true;
+            playhead_jumps.write(TimelinePlayheadJumped {
+                timeline: timeline_entity,
+                timecode_position: timecode.state.current_time,
+            });
+        }
+    }
+
+    // A wrap moves the shared timecode, so every active timeline following it jumps too, also
+    // those visited before the timeline whose loop wrapped.
+    if wrapped_timecodes.is_empty() {
+        return;
+    }
+    for (timeline_entity, mut timeline) in timeline_query.iter_mut() {
+        let Some(position) = timecode_entities
+            .get(&timeline.timeline.timecode_uid)
+            .and_then(|entity| wrapped_timecodes.get(entity))
+        else {
+            continue;
+        };
+        if timeline.is_active {
+            timeline.audio_needs_sync = true;
+            playhead_jumps.write(TimelinePlayheadJumped {
+                timeline: timeline_entity,
+                timecode_position: *position,
+            });
+        }
     }
 }
 
@@ -90,7 +130,8 @@ pub fn handle_timeline_audio_system(
 
         let playback_position = timeline.get_playback_position(current_time);
         let audio_enabled = timeline.timeline.audio_enabled && audio_output_enabled.0;
-        let playing = timeline.is_active && timecode_running && audio_enabled;
+        let playing =
+            audio_enabled && timeline.audio_transport_playing(current_time, timecode_running);
 
         // The timecode leads: playing audio is told where the timecode is, and the audio
         // worker seeks it back when the audio actually played has drifted away.
@@ -346,7 +387,7 @@ pub fn process_actions_system(
     for (_, timecode) in timecode_query.iter() {
         timecode_times.insert(
             timecode.timecode.identifiers.uid,
-            timecode.state.current_time,
+            (timecode.state.current_time, timecode.state.is_active),
         );
     }
 
@@ -355,10 +396,14 @@ pub fn process_actions_system(
             continue;
         }
 
-        let Some(timecode_time) = timecode_times.get(&timeline.timeline.timecode_uid).copied()
+        let Some((timecode_time, timecode_running)) =
+            timecode_times.get(&timeline.timeline.timecode_uid).copied()
         else {
             continue;
         };
+        if cursor.holds_scan(timecode_running) {
+            continue;
+        }
 
         let current_position = timeline.get_playback_position(timecode_time);
         let timeline_uid = timeline.timeline.identifiers.uid;
@@ -367,7 +412,7 @@ pub fn process_actions_system(
         // Seek replay reconstructs timeline-owned state in handle_timeline_seek_system.
         // Skip regular trigger scanning in the render after a seek to avoid duplicate lifecycle
         // actions.
-        let Some(last_processed) = cursor.take_scan_start() else {
+        let Some(scan_start) = cursor.take_scan_start() else {
             continue;
         };
 
@@ -384,7 +429,7 @@ pub fn process_actions_system(
             action_positions: timeline_action_positions(&timeline),
             planning_actions: navigation_planning_actions(
                 &timeline,
-                last_processed,
+                scan_start,
                 current_position,
                 sources.action_registry.as_deref(),
             ),
@@ -393,7 +438,7 @@ pub fn process_actions_system(
             entities_to_track: HashMap::new(),
             entities_to_untrack: HashSet::new(),
         };
-        let actions_to_trigger = timeline.process_actions(last_processed, current_position);
+        let actions_to_trigger = timeline.process_actions(scan_start, current_position);
         cursor.advance_to(current_position);
 
         for (track, timeline_action) in actions_to_trigger {
@@ -414,15 +459,15 @@ pub fn process_actions_system(
 ///
 /// Sequence navigation reconstructs its render target from the full action history, so the
 /// history is only collected when an advance, back, or jump-to-cue action lies between
-/// `last_processed` and `current_position`.
+/// `scan_start` and `current_position`.
 fn navigation_planning_actions(
     timeline: &MaterializedTimeline,
-    last_processed: Duration,
+    scan_start: ActionRangeStart,
     current_position: Duration,
     action_registry: Option<&ActionRegistry>,
 ) -> Vec<TimelinePlanningAction> {
     let has_navigation = timeline
-        .collect_actions_in_range(last_processed, current_position)
+        .collect_actions_in_range(scan_start, current_position)
         .iter()
         .any(|(action, _)| {
             matches!(
@@ -436,7 +481,7 @@ fn navigation_planning_actions(
         return Vec::new();
     }
     timeline
-        .collect_actions_in_range(Duration::ZERO, current_position)
+        .collect_actions_in_range(ActionRangeStart::Beginning, current_position)
         .into_iter()
         .map(|(action, track)| TimelinePlanningAction {
             track_id: track.id.clone(),
@@ -506,11 +551,14 @@ mod update_timeline_tests {
     use super::*;
     use crate::prelude::{Timeline, TimelineLoopRange};
 
-    /// Looping one timeline seeks only its UID-associated timecode generator.
+    /// Looping one timeline seeks only its UID-associated timecode generator, carrying the
+    /// 20 ms played past the loop end into the next pass, and announces the jump, so the
+    /// timeline is rebuilt at the loop start and its actions fire on every pass.
     #[test]
     fn loop_seek_targets_associated_timecode() {
         let mut app = App::new();
         crate::install_timeline_test_actions(&mut app);
+        app.add_message::<TimelinePlayheadJumped>();
         app.add_systems(Update, update_timeline_system);
 
         let mut unrelated_timecode = TimecodeGenerator::default();
@@ -518,7 +566,7 @@ mod update_timeline_tests {
         let unrelated_entity = app.world_mut().spawn(unrelated_timecode).id();
 
         let mut associated_timecode = TimecodeGenerator::default();
-        associated_timecode.state.current_time = Duration::from_secs(6);
+        associated_timecode.state.current_time = Duration::from_millis(5020);
         let associated_uid = associated_timecode.timecode.identifiers.uid;
         let associated_entity = app.world_mut().spawn(associated_timecode).id();
 
@@ -556,7 +604,7 @@ mod update_timeline_tests {
             .expect("associated timecode should remain materialized");
         assert_eq!(
             associated_timecode.state.current_time,
-            Duration::from_secs(3)
+            Duration::from_millis(3020)
         );
 
         let materialized_timeline = app
@@ -565,5 +613,13 @@ mod update_timeline_tests {
             .single(app.world())
             .expect("timeline should remain materialized");
         assert!(materialized_timeline.audio_needs_sync);
+
+        let jumps = app
+            .world_mut()
+            .resource_mut::<Messages<TimelinePlayheadJumped>>()
+            .drain()
+            .map(|jump| jump.timecode_position)
+            .collect::<Vec<_>>();
+        assert_eq!(jumps, [Duration::from_secs(3)]);
     }
 }

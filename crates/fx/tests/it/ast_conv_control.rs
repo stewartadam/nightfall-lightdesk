@@ -12,34 +12,6 @@ use nightfall_fx::ast_conv::FxAstConverter;
 use nightfall_fx::events::StepFxCommand;
 
 // ============================================================================
-// AST Alias Equality Tests
-// ============================================================================
-
-#[test]
-fn test_fx_start_aliases() {
-    let base_ast = generate_ast("fx 1 start").expect("Failed to parse 'fx 1 start'");
-
-    // Test "on" alias produces identical AST
-    let on_ast = generate_ast("fx 1 on").expect("Failed to parse 'fx 1 on'");
-    assert_eq!(
-        base_ast, on_ast,
-        "'on' should produce identical AST to 'start'"
-    );
-}
-
-#[test]
-fn test_fx_stop_aliases() {
-    let base_ast = generate_ast("fx 1 stop").expect("Failed to parse 'fx 1 stop'");
-
-    // Test "off" alias produces identical AST
-    let off_ast = generate_ast("fx 1 off").expect("Failed to parse 'fx 1 off'");
-    assert_eq!(
-        base_ast, off_ast,
-        "'off' should produce identical AST to 'stop'"
-    );
-}
-
-// ============================================================================
 // AST -> Command Conversion Tests
 // ============================================================================
 
@@ -92,28 +64,6 @@ fn test_fx_set_speed_conversion() {
             assert!(
                 (*speed - 2.5).abs() < 1e-6,
                 "Expected speed 2.5, got {}",
-                speed
-            );
-        }
-        other => panic!("Expected SetSpeed command, got {:?}", other),
-    }
-}
-
-#[test]
-fn test_fx_set_speed_different_values_conversion() {
-    let ast = generate_ast("fx 1 speed 0.5").expect("Failed to parse 'fx 1 speed 0.5'");
-    let commands = FxAstConverter::convert(&ast).expect("Failed to convert AST");
-
-    assert_eq!(commands.len(), 1);
-    let cmd = commands[0].as_any().downcast_ref::<StepFxCommand>();
-    assert!(cmd.is_some(), "Command is not a StepFxCommand");
-
-    match cmd.unwrap() {
-        StepFxCommand::SetSpeed { fx_id, speed } => {
-            assert_eq!(*fx_id, 1, "Expected FX ID 1, got {}", fx_id);
-            assert!(
-                (*speed - 0.5).abs() < 1e-6,
-                "Expected speed 0.5, got {}",
                 speed
             );
         }

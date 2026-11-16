@@ -13,6 +13,7 @@ import {
   fx,
   fxModules,
   stepFx,
+  stepFxPreviews,
 } from "../../state/appStores";
 import type * as types from "../../types";
 import { setStoreAction } from "../nanostore-action";
@@ -50,6 +51,10 @@ export function registerFxHandlers(
       "Receive StepFxDefinitions",
       arrayToUidMap(message.data),
     );
+  });
+
+  registry.register("StepFxPreviews", (message) => {
+    setStoreAction(stepFxPreviews, "Receive StepFxPreviews", message.data);
   });
 
   registry.register("FxModuleDefinitions", (message) => {

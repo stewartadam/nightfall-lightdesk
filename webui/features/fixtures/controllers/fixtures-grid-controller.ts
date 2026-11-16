@@ -8,6 +8,8 @@
 
 import { useStore } from "@nanostores/solid";
 import { LayoutIcon } from "@squidlab/phosphor-solid/layout";
+import { LockIcon } from "@squidlab/phosphor-solid/lock";
+import { LockOpenIcon } from "@squidlab/phosphor-solid/lock-open";
 import type { Setter } from "solid-js";
 import {
   type ContextMenuEntry,
@@ -23,6 +25,14 @@ import type {
 import { CompactSelection } from "../../../lib/data-grid-types";
 import { emptyGridSelection } from "../../../lib/datagrid";
 import { EMPTY_TABLE_FILTERS } from "../../../lib/datagrid-filtering";
+import { commandClient } from "../../../lib/engine-commands";
+import { focusOrAddPanel } from "../../../lib/panel-open-command";
+import {
+  type ParkedParameterLookup,
+  parkCommandForRefs,
+  parkedEntriesForCell,
+  parkedParameterKeys,
+} from "../../../lib/parked-parameters";
 import type { LayerState } from "../../../lib/ws/types";
 import { dockApi, requestLayerNavigation } from "../../../state/appStores";
 import type {
@@ -44,6 +54,7 @@ interface FixturesGridControllerOptions {
   columns: () => readonly FixtureGridColumn[];
   layerStack: () => readonly LayerState[];
   showReleasedOutput: () => boolean;
+  parkedLookup: () => ParkedParameterLookup;
   setTableFilters: (filters: typeof EMPTY_TABLE_FILTERS) => void;
   setSelection: Setter<GridSelection>;
   setScrollRequest: Setter<DataGridScrollRequest | undefined>;
@@ -111,13 +122,7 @@ export function createFixturesGridController(
     const api = $dockApi();
     if (!api) return;
 
-    const panel = api.getPanel("panel-LayerStack");
-    if (panel) {
-      panel.focus();
-      return;
-    }
-
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: "panel-LayerStack",
       component: "LayerStack",
       title: "Layers",
@@ -182,7 +187,7 @@ export function createFixturesGridController(
     }
   };
 
-  /** Opens right-click affordances for asserting-layer navigation. */
+  /** Opens right-click affordances for asserting-layer navigation, parking and unparking. */
   const onCellContextMenu = (cell: Item, event: MouseEvent) => {
     const [col, row] = cell;
     const rowData = options.rows()[row];
@@ -193,6 +198,16 @@ export function createFixturesGridController(
 
     event.preventDefault();
     const channelKind = options.showReleasedOutput() ? "Out" : "Value";
+    const fixtureUid =
+      rowData.type === "parent" ? rowData.uid : rowData.fixtureUid;
+    const elementIndex =
+      rowData.type === "element" ? rowData.elementIndex : undefined;
+    const parkedEntries = parkedEntriesForCell(
+      options.parkedLookup(),
+      fixtureUid,
+      elementIndex,
+      attribute,
+    );
     const items: ContextMenuEntry[] = [
       {
         id: "show-asserting-layer",
@@ -210,6 +225,37 @@ export function createFixturesGridController(
           navigateToAssertingLayerForCell(rowData, attribute, channelKind),
       },
     ];
+    const parkCommand = parkCommandForRefs(
+      [{ fixture_uid: fixtureUid, index: elementIndex }],
+      [attribute],
+    );
+    const partlyParked =
+      rowData.type === "parent" &&
+      rowData.hasElements &&
+      parkedEntries.length > 0;
+    if (parkCommand && (parkedEntries.length === 0 || partlyParked)) {
+      items.push({
+        id: "park-parameter",
+        label: partlyParked ? "Park all elements" : "Park",
+        icon: LockIcon,
+        onSelect: () => {
+          commandClient.emit("ParkCommand", parkCommand);
+        },
+      });
+    }
+    if (parkedEntries.length > 0) {
+      items.push({
+        id: "unpark-parameter",
+        label: parkedEntries.length > 1 ? "Unpark all elements" : "Unpark",
+        icon: LockOpenIcon,
+        onSelect: () => {
+          commandClient.emit("ParkCommand", {
+            type: "UnparkParameters",
+            data: parkedParameterKeys(parkedEntries),
+          });
+        },
+      });
+    }
 
     openContextMenu({ x: event.clientX, y: event.clientY, items });
   };

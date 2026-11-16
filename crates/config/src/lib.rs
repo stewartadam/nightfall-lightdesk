@@ -48,6 +48,7 @@ const FATAL_SHUTDOWN_GRACE_ENV: &str = "NIGHTFALL_FATAL_SHUTDOWN_GRACE_MS";
 const DISABLE_WATCHDOG_ENV: &str = "NIGHTFALL_DISABLE_FATAL_SHUTDOWN_WATCHDOG";
 const ERROR_REPORTS_DSN_ENV: &str = "NIGHTFALL_ERROR_REPORTS_DSN";
 const USAGE_REPORTS_URL_ENV: &str = "NIGHTFALL_USAGE_REPORTS_URL";
+const SYSTEM_KEYCHAIN_ENV: &str = "NIGHTFALL_SYSTEM_KEYCHAIN";
 const RUST_LOG_ENV: &str = "RUST_LOG";
 
 /// Fully resolved startup configuration consumed by Nightfall binaries.
@@ -73,6 +74,10 @@ pub struct RuntimeConfig {
     pub timeline_audio_enabled: bool,
     /// Whether incomplete flow authoring and execution are explicitly enabled.
     pub experimental_flows: bool,
+    /// Whether saved accounts (such as the GDTF Share sign-in) live in the operating system's
+    /// keychain. When off they are kept in memory for the run only, so automated test backends
+    /// never read the developer's keychain or trigger its access prompts.
+    pub system_keychain_enabled: bool,
     /// Fatal process-shutdown behavior.
     pub shutdown: ShutdownConfig,
     /// Optional tracing filter sourced from `RUST_LOG`.
@@ -149,6 +154,7 @@ impl RuntimeConfig {
             },
             timeline_audio_enabled: layer.timeline_audio_enabled.unwrap_or(true),
             experimental_flows: layer.experimental_flows.unwrap_or(false),
+            system_keychain_enabled: layer.system_keychain_enabled.unwrap_or(true),
             shutdown: ShutdownConfig {
                 grace_period: layer
                     .fatal_shutdown_grace
@@ -218,6 +224,8 @@ pub struct RuntimeConfigOverrides {
     pub timeline_audio_enabled: Option<bool>,
     /// Overrides the experimental flow feature when present.
     pub experimental_flows: Option<bool>,
+    /// Overrides use of the operating system's keychain when present.
+    pub system_keychain_enabled: Option<bool>,
     /// Overrides the fatal shutdown grace period when present.
     pub fatal_shutdown_grace: Option<Duration>,
     /// Overrides fatal shutdown watchdog behavior when present.
@@ -333,6 +341,7 @@ struct ConfigLayer {
     startup_commands: Option<String>,
     timeline_audio_enabled: Option<bool>,
     experimental_flows: Option<bool>,
+    system_keychain_enabled: Option<bool>,
     fatal_shutdown_grace: Option<Duration>,
     watchdog_disabled: Option<bool>,
     log_filter: Option<String>,
@@ -362,6 +371,7 @@ impl ConfigLayer {
             startup_commands: optional_string(values, STARTUP_COMMANDS_ENV),
             timeline_audio_enabled: parse_optional_bool(values, TIMELINE_AUDIO_ENABLED_ENV)?,
             experimental_flows: parse_optional_bool(values, EXPERIMENTAL_FLOWS_ENV)?,
+            system_keychain_enabled: parse_optional_bool(values, SYSTEM_KEYCHAIN_ENV)?,
             fatal_shutdown_grace: parse_optional::<u64>(
                 values,
                 FATAL_SHUTDOWN_GRACE_ENV,
@@ -382,6 +392,10 @@ impl ConfigLayer {
     /// Applies highest-precedence typed overrides to this partial layer.
     fn apply_overrides(&mut self, overrides: RuntimeConfigOverrides) {
         apply_override(&mut self.experimental_flows, overrides.experimental_flows);
+        apply_override(
+            &mut self.system_keychain_enabled,
+            overrides.system_keychain_enabled,
+        );
         apply_override(&mut self.data_dir, overrides.data_dir);
         apply_override(&mut self.server_port, overrides.server_port);
         apply_override(&mut self.websocket_url, overrides.websocket_url);
@@ -531,6 +545,20 @@ mod tests {
             RuntimeConfig::from_values([(EXPERIMENTAL_FLOWS_ENV, "maybe")], Default::default())
                 .is_err()
         );
+    }
+
+    /// The system keychain is used unless `NIGHTFALL_SYSTEM_KEYCHAIN` turns it off, which is
+    /// how test backends keep away from the developer's saved accounts.
+    #[test]
+    fn system_keychain_defaults_on_and_can_be_turned_off() {
+        let default =
+            RuntimeConfig::from_values(std::iter::empty::<(&str, &str)>(), Default::default())
+                .unwrap();
+        assert!(default.system_keychain_enabled);
+        let disabled =
+            RuntimeConfig::from_values([(SYSTEM_KEYCHAIN_ENV, "false")], Default::default())
+                .unwrap();
+        assert!(!disabled.system_keychain_enabled);
     }
 
     /// An unset usage service keeps the built-in one, while an empty value is kept so it can

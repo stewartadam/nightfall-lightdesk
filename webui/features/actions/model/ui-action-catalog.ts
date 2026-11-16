@@ -6,13 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { type Accessor, createMemo } from "solid-js";
 import {
   type UiActionDescriptor,
   $uiActionCatalog as uiActionCatalogStore,
   uiActionId,
 } from "../../../components/providers/command-registry";
+import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import { actionCatalog } from "../../../state/appStores";
 import * as types from "../../../types";
 
@@ -54,12 +54,18 @@ export function bindableActionCatalogSnapshot(): types.ActionCatalogEntry[] {
 /**
  * Tracks every action this client can bind: the backend catalog plus every UI action seen
  * this session, including those whose panel is currently closed.
+ *
+ * With `enabled`, the catalog is only tracked while it returns true, so controls that need
+ * it in one mode, such as controller mapping, hold no subscriptions the rest of the time.
  */
-export function useBindableActionCatalog(): Accessor<
-  types.ActionCatalogEntry[]
-> {
-  const $backendCatalog = useStore(actionCatalog);
-  const $uiActionCatalog = useStore(uiActionCatalogStore);
+export function useBindableActionCatalog(
+  enabled: Accessor<boolean> = () => true,
+): Accessor<types.ActionCatalogEntry[]> {
+  const $backendCatalog = useConditionalShallowStore(actionCatalog, enabled);
+  const $uiActionCatalog = useConditionalShallowStore(
+    uiActionCatalogStore,
+    enabled,
+  );
   return createMemo(() => [
     ...$backendCatalog(),
     ...uiActionCatalogEntries($uiActionCatalog()),

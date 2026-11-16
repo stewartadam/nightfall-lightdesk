@@ -10,6 +10,7 @@ import {
   applyActiveInstancesSnapshot,
   applyFadersSnapshot,
   applyMetricsSnapshot,
+  applyNetworkOutputSendFailuresSnapshot,
   applyUndoStateSnapshot,
 } from "../../state/runtime-snapshots";
 import type { WsMessageHandlerRegistry } from "./message-registry";
@@ -21,6 +22,10 @@ export function registerRuntimeSnapshotHandlers(
 ): void {
   registry.register("Metrics", (message) => {
     applyMetricsSnapshot(message.data);
+  });
+
+  registry.register("NetworkOutputSendFailures", (message) => {
+    applyNetworkOutputSendFailuresSnapshot(message.data);
   });
 
   registry.register("ActiveInstances", (message) => {

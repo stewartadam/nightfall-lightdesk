@@ -130,6 +130,30 @@ test("positionMsForBeatPosition resolves from detected beatgrid anchors", () => 
   assert.equal(positionMsForBeatPosition({ bar: 1, beat: 1 }, config), 1_000);
 });
 
+/**
+ * Verifies a bar:beat jump lands on a position that reads back as the same bar and beat when the
+ * beat length is fractional, with and without beatgrid markers.
+ */
+test("bar beat positions round-trip at fractional beat lengths", () => {
+  const configs = [
+    { bpm: 130, beatsPerBar: 4 },
+    {
+      bpm: 130,
+      beatsPerBar: 4,
+      markers: [{ time: msToDuration(250), beat_index: 0, is_downbeat: true }],
+    },
+  ];
+  for (const config of configs) {
+    for (let bar = 1; bar <= 120; bar++) {
+      for (let beat = 1; beat <= 4; beat++) {
+        const positionMs = positionMsForBeatPosition({ bar, beat }, config);
+        assert.ok(positionMs !== undefined);
+        assert.deepEqual(beatPositionAtMs(positionMs, config), { bar, beat });
+      }
+    }
+  }
+});
+
 /** Verifies marker rows can disambiguate duplicate labels with beat positions. */
 test("beatPositionAtMs exposes duplicate-label disambiguation metadata", () => {
   const config = {

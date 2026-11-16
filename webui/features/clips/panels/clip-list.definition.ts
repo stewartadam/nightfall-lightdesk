@@ -17,7 +17,7 @@ export default definePanel({
   panelId: "panel-ClipList",
   componentName: "ClipList",
   title: "Clips",
-  minWidth: 515,
+  minWidth: 360,
   minHeight: 400,
   icon: PlayCircleIcon,
   loadComponent: () => import("./clip-list-panel"),

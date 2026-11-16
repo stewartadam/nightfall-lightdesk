@@ -15,12 +15,12 @@
 use std::collections::BTreeSet;
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall_actions::BindingDiagnostic;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
-use serde_json::Value;
 
-use crate::command::{MidiCommand, MidiLastEvent, MidiMapping};
+use crate::command::{MidiLastEvent, MidiMapping};
 use crate::detected::DetectedMidiDevices;
 use crate::mapping::MidiMappings;
 use crate::profile::{self, MidiDeviceProfile};
@@ -65,58 +65,81 @@ enum MidiWsMessage<'a> {
     MidiDeviceDetected(&'a [String]),
 }
 
-/// Deserialize and dispatch MidiCommand from JSON
-pub fn deserialize_midi_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: MidiCommand =
-        serde_json::from_value(json).map_err(|e| format!("Failed to parse MidiCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
+/// The connected and mapped MIDI devices that the device list and profile feeds describe.
+#[derive(SystemParam)]
+pub(crate) struct MidiDevicesFeed<'w> {
+    devices: Res<'w, MidiDevices>,
+    mappings: Res<'w, MidiMappings>,
 }
 
-/// System to send MIDI state on resync
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    devices: Res<MidiDevices>,
-    mappings: Res<MidiMappings>,
-    diagnostics: Res<MidiMappingDiagnostics>,
-    last_event: Res<LastMidiEvent>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    send_device_list(&devices, &mappings, &broadcaster);
-    send_device_profiles(&profiled_device_names(&devices, &mappings), &broadcaster);
-    send_mappings(&mappings, &broadcaster);
-    send_diagnostics(&diagnostics, &broadcaster);
-    if let Some(ref event) = last_event.0 {
-        send_last_event(event, &broadcaster);
+impl ClientFeed for MidiDevicesFeed<'static> {
+    /// Publishes the connected devices with whether each one has feedback enabled.
+    fn publish(feed: &MidiDevicesFeed<'_>, sink: &ClientEventSink) {
+        send_device_list(&feed.devices, &feed.mappings, sink);
     }
 }
 
-/// System to periodically send MIDI state updates
-pub fn send_midi_state(
+/// The controller profiles of every connected or mapped device that has one.
+#[derive(SystemParam)]
+pub(crate) struct MidiDeviceProfilesFeed<'w> {
+    devices: MidiDevicesFeed<'w>,
+}
+
+impl ClientFeed for MidiDeviceProfilesFeed<'static> {
+    /// Publishes the profile of every profiled device.
+    fn publish(feed: &MidiDeviceProfilesFeed<'_>, sink: &ClientEventSink) {
+        let names = profiled_device_names(&feed.devices.devices, &feed.devices.mappings);
+        send_device_profiles(&names, sink);
+    }
+}
+
+/// Run condition that passes when the devices or mappings change the set of profiled devices.
+pub(crate) fn profiled_devices_changed(
     devices: Res<MidiDevices>,
     mappings: Res<MidiMappings>,
-    diagnostics: Res<MidiMappingDiagnostics>,
-    last_event: Res<LastMidiEvent>,
+    mut last_passed: Local<Option<Vec<String>>>,
+) -> bool {
+    if !devices.is_changed() && !mappings.is_changed() {
+        return false;
+    }
+    let names = profiled_device_names(&devices, &mappings);
+    if last_passed.as_ref() == Some(&names) {
+        return false;
+    }
+    *last_passed = Some(names);
+    true
+}
+
+impl ResourceFeed for MidiMappings {
+    /// Publishes the configured MIDI mappings.
+    fn publish(&self, sink: &ClientEventSink) {
+        send_mappings(self, sink);
+    }
+}
+
+impl ResourceFeed for MidiMappingDiagnostics {
+    /// Publishes the MIDI mappings that cannot currently invoke their action.
+    fn publish(&self, sink: &ClientEventSink) {
+        send_diagnostics(self, sink);
+    }
+}
+
+impl ResourceFeed for LastMidiEvent {
+    /// Publishes the last MIDI event, if any.
+    fn publish(&self, sink: &ClientEventSink) {
+        if let Some(event) = &self.0 {
+            send_last_event(event, sink);
+        }
+    }
+}
+
+/// Announces newly connected unmapped devices and sends the messages received while controller
+/// mapping mode is active, draining both.
+pub fn send_midi_announcements(
+    mappings: Res<MidiMappings>,
     mut touches: ResMut<MidiControlTouches>,
     mut detected: ResMut<DetectedMidiDevices>,
     broadcaster: Res<ClientEventSink>,
-    mut last_profiled_devices: Local<Vec<String>>,
 ) {
     if detected.has_pending() {
         let names = detected.take_unmapped(&mappings);
@@ -134,34 +157,6 @@ pub fn send_midi_state(
             &MidiWsMessage::MidiControlTouched(&touches.0),
         );
         touches.0.clear();
-    }
-
-    // Only send if resources have changed
-    if devices.is_changed() || mappings.is_changed() {
-        send_device_list(&devices, &mappings, &broadcaster);
-        let names = profiled_device_names(&devices, &mappings);
-        if *last_profiled_devices != names {
-            send_device_profiles(&names, &broadcaster);
-            *last_profiled_devices = names;
-        }
-    }
-
-    if mappings.is_changed() {
-        tracing::debug!(
-            "MIDI mappings changed, broadcasting {} mappings",
-            mappings.mappings().len()
-        );
-        send_mappings(&mappings, &broadcaster);
-    }
-
-    if diagnostics.is_changed() {
-        send_diagnostics(&diagnostics, &broadcaster);
-    }
-
-    if last_event.is_changed() {
-        if let Some(ref event) = last_event.0 {
-            send_last_event(event, &broadcaster);
-        }
     }
 }
 
@@ -240,38 +235,4 @@ fn send_last_event(event: &MidiLastEvent, broadcaster: &ClientEventSink) {
         DISCRIMINATOR_DROPPABLE,
         &MidiWsMessage::MidiLastEvent(event),
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Verifies MIDI commands queue through the pending buffer so undo can capture them.
-    #[test]
-    fn deserialize_midi_command_queues_for_undo_capture() {
-        let mut world = World::new();
-        world.init_resource::<PendingCommandBuffer>();
-
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-        deserialize_midi_command(
-            &mut world,
-            serde_json::json!({
-                "type": "DeleteMapping",
-                "data": "00000000000000000000000000000003"
-            }),
-            command_id,
-            undo_id,
-        )
-        .expect("midi command should deserialize");
-
-        let messages = world.resource_mut::<PendingCommandBuffer>().drain();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].command_id, command_id);
-        assert_eq!(messages[0].undo_id, undo_id);
-        assert!(matches!(
-            messages[0].payload.as_any().downcast_ref::<MidiCommand>(),
-            Some(MidiCommand::DeleteMapping(id)) if *id == uuid::Uuid::from_u128(3)
-        ));
-    }
 }

@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import { dockApi } from "../../../state/appStores";
 
 /** Dockview ID of the Properties panel. */
@@ -25,7 +26,7 @@ export function revealPropertiesPanel(sourcePanelId: string): void {
 
   const propertiesPanel = api.getPanel(PROPERTIES_PANEL_ID);
   if (!propertiesPanel) {
-    api.addPanel({
+    focusOrAddPanel(api, {
       id: PROPERTIES_PANEL_ID,
       component: "PropertiesInspector",
       title: "Properties",

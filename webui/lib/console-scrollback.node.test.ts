@@ -14,6 +14,7 @@ import {
   createImmediateErrorConsoleScrollbackEntry,
   createPendingConsoleScrollbackEntry,
   decodeCorrelationId,
+  markPendingConsoleScrollbackEntriesUnknown,
   normalizeCorrelationId,
   resolveConsoleScrollbackEntryByCorrelation,
   upsertPendingConsoleScrollbackEntry,
@@ -138,4 +139,66 @@ test("upsertPendingConsoleScrollbackEntry updates existing entries by correlatio
   assert.equal(next.length, 1);
   assert.equal(next[0].command, "clip 1 stop");
   assert.equal(next[0].source, "OSC 127.0.0.1:9000");
+});
+
+/**
+ * A resync flags only rows still waiting on a result, leaves settled rows untouched, and a result
+ * that arrives afterwards still settles the flagged row.
+ */
+test("markPendingConsoleScrollbackEntriesUnknown flags only pending rows", () => {
+  const pendingId = "a0b1c2d3e4f56789abcdef0123456789";
+  const pending = createPendingConsoleScrollbackEntry("go 1", pendingId, 10);
+  const settled = createImmediateErrorConsoleScrollbackEntry("noop", "x", 5);
+
+  const marked = markPendingConsoleScrollbackEntriesUnknown(
+    [settled, pending],
+    "Result lost",
+    undefined,
+    20,
+  );
+
+  assert.equal(marked[0], settled);
+  assert.equal(marked[1].status, "unknown");
+  assert.equal(marked[1].completedAt, 20);
+  assert.equal(marked[1].warningMessage, "Result lost");
+
+  const late = resolveConsoleScrollbackEntryByCorrelation(
+    marked,
+    pendingId,
+    { type: "Succeeded", data: {} },
+    30,
+  );
+  assert.equal(late[1].status, "success");
+  assert.equal(late[1].warningMessage, undefined);
+});
+
+/**
+ * The row parked behind the selection-flatten dialog already has its result, so it stays pending
+ * while other pending rows are flagged; the kept id may arrive in UUID form.
+ */
+test("markPendingConsoleScrollbackEntriesUnknown keeps the row awaiting the user", () => {
+  const kept = createPendingConsoleScrollbackEntry(
+    "fixture 1 at 50",
+    "a0b1c2d3e4f56789abcdef0123456789",
+    10,
+  );
+  const other = createPendingConsoleScrollbackEntry("go 1", "1111", 11);
+
+  const marked = markPendingConsoleScrollbackEntriesUnknown(
+    [kept, other],
+    "Result lost",
+    "A0B1C2D3-E4F5-6789-ABCD-EF0123456789",
+  );
+
+  assert.equal(marked[0], kept);
+  assert.equal(marked[1].status, "unknown");
+});
+
+/** Marking with nothing pending keeps the same array so the store does not notify. */
+test("markPendingConsoleScrollbackEntriesUnknown returns the same array when nothing is pending", () => {
+  const entries = [createImmediateErrorConsoleScrollbackEntry("noop", "x", 5)];
+  assert.equal(
+    markPendingConsoleScrollbackEntriesUnknown(entries, "Result lost"),
+    entries,
+  );
 });

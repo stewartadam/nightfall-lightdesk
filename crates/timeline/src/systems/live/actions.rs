@@ -176,6 +176,7 @@ fn evaluate_isolated_action(
                 &sources.source_data.cue_data_provider,
                 None,
                 &sources.source_data.fixture_data_provider,
+                sources.source_data.blueprint_data_provider.as_deref(),
                 &sources.selection_resolver,
                 1.0,
             ),
@@ -346,6 +347,7 @@ fn stop_clip(
                 &sources.source_data.cue_data_provider,
                 sources.source_data.sequence_data_provider.as_deref(),
                 &sources.source_data.fixture_data_provider,
+                sources.source_data.blueprint_data_provider.as_deref(),
                 &sources.selection_resolver,
                 scan.beats_per_second,
             )
@@ -411,6 +413,7 @@ fn navigate_sequence(
                 &sources.source_data.cue_data_provider,
                 sources.source_data.sequence_data_provider.as_deref(),
                 &sources.source_data.fixture_data_provider,
+                sources.source_data.blueprint_data_provider.as_deref(),
                 &sources.selection_resolver,
                 navigation.intervention,
                 scan.beats_per_second,

@@ -46,6 +46,7 @@ import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { Button } from "../../components/ui/visual-language/button";
 import { durationToMs, msToDuration } from "../../lib/duration";
 import { commandClient } from "../../lib/engine-commands";
+import { getLogger } from "../../lib/logger";
 import { setStoreAction } from "../../lib/nanostore-action";
 import {
   routeValidationSettings,
@@ -71,6 +72,7 @@ import {
 import { compactViewport } from "../../state/viewport";
 import type {
   InputSignalLossPolicy,
+  IoSettingsCommand,
   NetworkInterfaceInfo,
   NetworkInterfaceStatus,
   RouteValidationMode,
@@ -99,10 +101,30 @@ import {
 import { AppearanceSettings } from "./appearance-settings";
 import { PrivacySettings } from "./privacy-settings";
 
+const log = getLogger(import.meta.url);
 const DEFAULT_INPUT_SIGNAL_LOSS_TIMEOUT_MS = 2000;
 const DEFAULT_SHOWFILE_BACKUP_RETENTION = 20;
 /** Largest value a Rust `u32` command field accepts. */
 const U32_MAX = 4_294_967_295;
+const U16_MAX = 65_535;
+
+/**
+ * Sends an IO setting that the backend clamps into range and waits for it to finish, logging a
+ * failure. The backend sends no settings change when it clamps back to the value it already
+ * had, so callers rewrite their field from the stored setting once this resolves. `undefined`
+ * (an empty or invalid field) sends nothing.
+ */
+async function sendClampedIoSetting(
+  command: IoSettingsCommand | undefined,
+  description: string,
+): Promise<void> {
+  if (!command) return;
+  await commandClient
+    .invoke("IoSettingsCommand", command)
+    .catch((error: unknown) =>
+      log.warn(`Could not set the ${description}`, error),
+    );
+}
 const QUALITY_OPTIONS: { value: QualityPreset; label: string }[] = [
   { value: "low", label: "Low (faster)" },
   { value: "medium", label: "Medium" },
@@ -286,25 +308,32 @@ export function SettingsOverlay() {
       </Show>
     );
   };
-  /** Refreshes backend-provided device choices whenever settings becomes visible. */
-  createEffect(() => {
-    if (!isSettingsOpen()) return;
-    commandClient.emit("SettingsCommand", {
-      type: "GetAvailableNetworkInterfaces",
-    });
-    commandClient.emit("SettingsCommand", { type: "GetAvailableAudioDevices" });
-  });
-
   let dmxOutputRateInput: HTMLInputElement | undefined;
-  // Rewrites the rate field from every IO settings snapshot, even an unchanged one, so a value the
-  // backend clamped back to the rate it already had still replaces what the user typed.
-  onCleanup(
-    $ioSettings.listen((settings) => {
-      if (dmxOutputRateInput) {
-        dmxOutputRateInput.value = String(settings.dmx_output_rate_hz);
-      }
-    }),
-  );
+  /** Writes the saved DMX output rate into the rate field, replacing whatever the user typed. */
+  const showDmxOutputRate = () => {
+    if (dmxOutputRateInput) {
+      dmxOutputRateInput.value = String($ioSettings.get().dmx_output_rate_hz);
+    }
+  };
+  onCleanup($ioSettings.listen(showDmxOutputRate));
+  let sacnSyncUniverseInput: HTMLInputElement | undefined;
+  /** Writes the saved sACN sync universe into its field, replacing whatever the user typed. */
+  const showSacnSyncUniverse = () => {
+    if (sacnSyncUniverseInput) {
+      sacnSyncUniverseInput.value = String(
+        $ioSettings.get().sacn_sync_universe,
+      );
+    }
+  };
+  onCleanup($ioSettings.listen(showSacnSyncUniverse));
+  let sacnPriorityInput: HTMLInputElement | undefined;
+  /** Writes the saved sACN priority into its field, replacing whatever the user typed. */
+  const showSacnPriority = () => {
+    if (sacnPriorityInput) {
+      sacnPriorityInput.value = String($ioSettings.get().sacn_priority);
+    }
+  };
+  onCleanup($ioSettings.listen(showSacnPriority));
 
   /** Refresh cached model information on entry and stop polling when settings closes. */
   createEffect(() => {
@@ -316,36 +345,36 @@ export function SettingsOverlay() {
   });
 
   const setProgrammerAutoSelect = (value: boolean) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetProgrammerAutoSelect",
+    commandClient.emit("ProgrammingSettingsCommand", {
+      type: "SetAutoSelect",
       data: value,
     });
   };
 
   /** Chooses whether clients receive only changed parameter values or every value each frame. */
   const setParameterKeyframesOnly = (value: boolean) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetParameterKeyframesOnly",
+    commandClient.emit("ParameterStreamSettingsCommand", {
+      type: "SetKeyframesOnly",
       data: value,
     });
   };
 
   const setNetworkInterface = (value: string | null) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("IoSettingsCommand", {
       type: "SetNetworkInterface",
       data: value,
     });
   };
 
   const setAudioDevice = (value: string | null) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetAudioDevice",
+    commandClient.emit("AudioSettingsCommand", {
+      type: "SetOutputDevice",
       data: value,
     });
   };
 
   const setInputSignalLossPolicy = (value: InputSignalLossPolicy) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("IoSettingsCommand", {
       type: "SetInputSignalLossPolicy",
       data: value,
     });
@@ -354,7 +383,7 @@ export function SettingsOverlay() {
   const setInputUniverseVisibilityMode = (
     value: InputUniverseVisibilityMode,
   ) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("IoSettingsCommand", {
       type: "SetInputUniverseVisibilityMode",
       data: value,
     });
@@ -363,22 +392,22 @@ export function SettingsOverlay() {
   const setSequenceReorderRenumberPolicy = (
     value: SequenceReorderRenumberPolicy,
   ) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("UiPreferencesCommand", {
       type: "SetSequenceReorderRenumberPolicy",
       data: value,
     });
   };
 
   const setSelectionFlattenPolicy = (value: SelectionFlattenPolicy) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("ProgrammingSettingsCommand", {
       type: "SetSelectionFlattenPolicy",
       data: value,
     });
   };
 
   const setTimeDisplayPreference = (value: TimeDisplayPreference) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetTimeDisplayPreference",
+    commandClient.emit("UiPreferencesCommand", {
+      type: "SetTimeDisplay",
       data: value,
     });
   };
@@ -386,8 +415,8 @@ export function SettingsOverlay() {
   const setTimelinePlacementPreference = (
     value: TimelinePlacementPreference,
   ) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetTimelinePlacementPreference",
+    commandClient.emit("UiPreferencesCommand", {
+      type: "SetTimelinePlacement",
       data: value,
     });
   };
@@ -397,15 +426,15 @@ export function SettingsOverlay() {
     const retention = Number.isFinite(value)
       ? Math.max(0, Math.trunc(value))
       : DEFAULT_SHOWFILE_BACKUP_RETENTION;
-    commandClient.emit("SettingsCommand", {
-      type: "SetShowfileBackupRetention",
+    commandClient.emit("ShowfileSettingsCommand", {
+      type: "SetBackupRetention",
       data: retention,
     });
   };
 
   const setRouteValidationMode = (value: RouteValidationMode) => {
-    commandClient.emit("SettingsCommand", {
-      type: "SetRouteValidationMode",
+    commandClient.emit("RouteValidationCommand", {
+      type: "SetMode",
       data: value,
     });
   };
@@ -414,7 +443,7 @@ export function SettingsOverlay() {
     ioSettings().input_signal_loss_policy ?? { type: "Hold" };
 
   const sequenceReorderRenumberPolicy = (): SequenceReorderRenumberPolicy =>
-    settings().sequence_reorder_renumber_policy ??
+    settings().ui.sequence_reorder_renumber_policy ??
     SequenceReorderRenumberPolicy.Preserve;
 
   const inputUniverseVisibilityMode = (): InputUniverseVisibilityMode =>
@@ -422,18 +451,18 @@ export function SettingsOverlay() {
     InputUniverseVisibilityMode.ExternalOnly;
 
   const selectionFlattenPolicy = (): SelectionFlattenPolicy =>
-    settings().selection_flatten_policy ?? SelectionFlattenPolicy.Silent;
+    settings().programming.selection_flatten_policy ??
+    SelectionFlattenPolicy.Silent;
 
   const timeDisplayPreference = (): TimeDisplayPreference =>
-    settings().time_display_preference ?? TimeDisplayPreference.Auto;
+    settings().ui.time_display ?? TimeDisplayPreference.Auto;
 
   const timelinePlacementPreference = (): TimelinePlacementPreference =>
-    settings().timeline_placement_preference ??
-    TimelinePlacementPreference.Playhead;
+    settings().ui.timeline_placement ?? TimelinePlacementPreference.Playhead;
 
   /** Returns the current showfile backup retention count for the settings input. */
   const showfileBackupRetention = (): number =>
-    settings().showfile_backup_retention ?? DEFAULT_SHOWFILE_BACKUP_RETENTION;
+    settings().showfile.backup_retention ?? DEFAULT_SHOWFILE_BACKUP_RETENTION;
 
   const inputSignalLossTimeoutMs = (): number => {
     const timeout = ioSettings().input_signal_loss_timeout;
@@ -453,21 +482,65 @@ export function SettingsOverlay() {
   };
 
   /** Sends the requested network DMX output rate; the backend clamps it to its supported range. */
-  const setDmxOutputRate = (value: number) => {
-    if (!Number.isFinite(value)) {
-      if (dmxOutputRateInput) {
-        dmxOutputRateInput.value = String(ioSettings().dmx_output_rate_hz);
-      }
-      return;
-    }
-    commandClient.emit("SettingsCommand", {
-      type: "SetDmxOutputRate",
-      data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
+  const setDmxOutputRate = async (value: number) => {
+    await sendClampedIoSetting(
+      Number.isFinite(value)
+        ? {
+            type: "SetDmxOutputRate",
+            data: Math.min(Math.max(Math.trunc(value), 0), U32_MAX),
+          }
+        : undefined,
+      "DMX output rate",
+    );
+    showDmxOutputRate();
+  };
+
+  /** Turns ArtSync on or off for Art-Net output. */
+  const setArtNetSyncEnabled = (enabled: boolean) => {
+    commandClient.emit("IoSettingsCommand", {
+      type: "SetArtNetSyncEnabled",
+      data: enabled,
     });
   };
 
+  /** Turns universe synchronization on or off for sACN output. */
+  const setSacnSyncEnabled = (enabled: boolean) => {
+    commandClient.emit("IoSettingsCommand", {
+      type: "SetSacnSyncEnabled",
+      data: enabled,
+    });
+  };
+
+  /** Sends the requested sACN sync universe; the backend clamps it to 1-63999. */
+  const setSacnSyncUniverse = async (value: number) => {
+    await sendClampedIoSetting(
+      Number.isFinite(value)
+        ? {
+            type: "SetSacnSyncUniverse",
+            data: Math.min(Math.max(Math.trunc(value), 0), U16_MAX),
+          }
+        : undefined,
+      "sACN sync universe",
+    );
+    showSacnSyncUniverse();
+  };
+
+  /** Sends the requested sACN priority; the backend clamps it to 1-200. */
+  const setSacnPriority = async (value: number) => {
+    await sendClampedIoSetting(
+      Number.isFinite(value)
+        ? {
+            type: "SetSacnPriority",
+            data: Math.min(Math.max(Math.trunc(value), 0), 255),
+          }
+        : undefined,
+      "sACN priority",
+    );
+    showSacnPriority();
+  };
+
   const setInputSignalLossTimeout = (value: number) => {
-    commandClient.emit("SettingsCommand", {
+    commandClient.emit("IoSettingsCommand", {
       type: "SetInputSignalLossTimeout",
       data: msToDuration(value),
     });
@@ -554,7 +627,7 @@ export function SettingsOverlay() {
                         describedBy={field.describedBy}
                         ariaLabel="Auto-select on attribute set"
                         layout="switch-only"
-                        checked={settings().programmer_auto_select}
+                        checked={settings().programming.auto_select}
                         onChange={setProgrammerAutoSelect}
                       />
                     )}
@@ -580,31 +653,33 @@ export function SettingsOverlay() {
                     )}
                   </SettingsRow>
                 </SettingsSection>
-                <SettingsSection title="Audio">
-                  <SettingsRow
-                    label="Output Device"
-                    description="Where timeline audio plays."
-                  >
-                    {(field) => (
-                      <NativeSelect
-                        id={field.id}
-                        aria-describedby={field.describedBy}
-                        value={settings().audio_device ?? ""}
-                        onChange={(e) =>
-                          setAudioDevice(e.currentTarget.value || null)
-                        }
-                      >
-                        <option value="">System Default</option>
-                        <For
-                          each={Object.entries(audioDevices())}
-                          fallback={null}
+                <Show when={capabilities()?.runtime_mode !== "EmbeddedDemo"}>
+                  <SettingsSection title="Audio">
+                    <SettingsRow
+                      label="Output Device"
+                      description="Where timeline audio plays."
+                    >
+                      {(field) => (
+                        <NativeSelect
+                          id={field.id}
+                          aria-describedby={field.describedBy}
+                          value={settings().audio.output_device ?? ""}
+                          onChange={(e) =>
+                            setAudioDevice(e.currentTarget.value || null)
+                          }
                         >
-                          {([id, name]) => <option value={id}>{name}</option>}
-                        </For>
-                      </NativeSelect>
-                    )}
-                  </SettingsRow>
-                </SettingsSection>
+                          <option value="">System Default</option>
+                          <For
+                            each={Object.entries(audioDevices())}
+                            fallback={null}
+                          >
+                            {([id, name]) => <option value={id}>{name}</option>}
+                          </For>
+                        </NativeSelect>
+                      )}
+                    </SettingsRow>
+                  </SettingsSection>
+                </Show>
                 <SettingsSection title="Showfile">
                   <SettingsRow
                     label="Backups to keep"
@@ -887,8 +962,82 @@ export function SettingsOverlay() {
                         step="1"
                         value={ioSettings().dmx_output_rate_hz}
                         onChange={(e) =>
-                          setDmxOutputRate(e.currentTarget.valueAsNumber)
+                          void setDmxOutputRate(e.currentTarget.valueAsNumber)
                         }
+                      />
+                    )}
+                  </SettingsRow>
+                  <SettingsRow
+                    label="Art-Net sync"
+                    description="Sends ArtSync after each round of universes, so nodes that support it update all their outputs at once. Nodes without sync support ignore it."
+                  >
+                    {(field) => (
+                      <ToggleSwitch
+                        id={field.id}
+                        describedBy={field.describedBy}
+                        ariaLabel="Art-Net sync"
+                        layout="switch-only"
+                        checked={ioSettings().artnet_sync_enabled ?? false}
+                        onChange={setArtNetSyncEnabled}
+                      />
+                    )}
+                  </SettingsRow>
+                  <SettingsRow
+                    label="sACN sync"
+                    description="Uses E1.31 universe synchronization, so receivers that support it update all their universes at once. Receivers that support sync hold new data until the sync packet arrives."
+                  >
+                    {(field) => (
+                      <ToggleSwitch
+                        id={field.id}
+                        describedBy={field.describedBy}
+                        ariaLabel="sACN sync"
+                        layout="switch-only"
+                        checked={ioSettings().sacn_sync_enabled ?? false}
+                        onChange={setSacnSyncEnabled}
+                      />
+                    )}
+                  </SettingsRow>
+                  <SettingsRow
+                    label="sACN sync universe"
+                    description="Universe the sync packets are sent on. Receivers join it on their own."
+                  >
+                    {(field) => (
+                      <Input
+                        ref={sacnSyncUniverseInput}
+                        id={field.id}
+                        aria-describedby={field.describedBy}
+                        type="number"
+                        min="1"
+                        max="63999"
+                        step="1"
+                        disabled={!ioSettings().sacn_sync_enabled}
+                        value={ioSettings().sacn_sync_universe}
+                        onChange={(e) =>
+                          void setSacnSyncUniverse(
+                            e.currentTarget.valueAsNumber,
+                          )
+                        }
+                      />
+                    )}
+                  </SettingsRow>
+                  <SettingsRow
+                    label="sACN priority"
+                    description="Receivers follow the source with the highest priority. A backup server sends one step lower."
+                  >
+                    {(field) => (
+                      <Input
+                        ref={sacnPriorityInput}
+                        id={field.id}
+                        aria-describedby={field.describedBy}
+                        type="number"
+                        min="1"
+                        max="200"
+                        step="1"
+                        value={ioSettings().sacn_priority}
+                        onChange={(e) =>
+                          void setSacnPriority(e.currentTarget.valueAsNumber)
+                        }
+                        data-testid="settings-sacn-priority"
                       />
                     )}
                   </SettingsRow>
@@ -971,7 +1120,7 @@ export function SettingsOverlay() {
                         describedBy={field.describedBy}
                         ariaLabel="Send only changed parameters (recommended)"
                         layout="switch-only"
-                        checked={!settings().parameter_keyframes_only}
+                        checked={!settings().parameterStream.keyframes_only}
                         onChange={(enabled) =>
                           setParameterKeyframesOnly(!enabled)
                         }

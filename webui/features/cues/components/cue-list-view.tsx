@@ -47,19 +47,19 @@ function CueCard(props: CueCardProps) {
   const controller = props.controller;
   const cueUid = props.cue.identifiers.uid.toString();
   /** Reports whether this cue belongs to the current selection. */
-  const isSelected = () => controller.selectedCueUidSet().has(cueUid);
+  const isSelected = () => controller.crud.selectedUidSet().has(cueUid);
   return (
     <button
       type="button"
       data-crud-select-id={cueUid}
-      draggable={!controller.selectionMode()}
+      draggable={!controller.crud.selectionMode()}
       onClick={(event) => {
-        if (controller.gridDragSelection.consumeSuppressedClick()) {
+        if (controller.crud.gridDragSelection.consumeSuppressedClick()) {
           event.preventDefault();
           event.stopPropagation();
           return;
         }
-        if (controller.gridClickSelection.handleCardClick(cueUid, event))
+        if (controller.crud.gridClickSelection.handleCardClick(cueUid, event))
           return;
         controller.handleCueItemClick(cueUid);
       }}
@@ -76,14 +76,14 @@ function CueCard(props: CueCardProps) {
       <span class="flex min-w-0 items-center gap-1 font-medium text-neutral-200">
         <span>{props.cue.identifiers.id}:</span>
         <Show
-          when={controller.editingCardLabelUid() === cueUid}
+          when={controller.crud.editingCardLabelUid() === cueUid}
           fallback={<span class="truncate">{props.cue.identifiers.label}</span>}
         >
           <InlineRenameField
             ariaLabel="Cue card label"
             allowEmpty
             value={props.cue.identifiers.label}
-            onClose={() => controller.setEditingCardLabelUid(null)}
+            onClose={() => controller.crud.finishCardLabelEdit()}
             onCommit={(label) => controller.updateCueLabel(props.cue, label)}
           />
         </Show>
@@ -155,8 +155,8 @@ function CueRowList(props: CueListViewProps) {
             ? `group:${row.groupKey}`
             : `cue:${row.cueUid}`
         }
-        editRequest={controller.labelEditRequest()}
-        selectionRequest={controller.listSelectionRequest()}
+        editRequest={controller.crud.labelEditRequest()}
+        selectionRequest={controller.crud.listSelectionRequest()}
         columns={[
           {
             id: "marker",
@@ -172,7 +172,7 @@ function CueRowList(props: CueListViewProps) {
                   }
                 : {
                     kind: GridCellKind.Boolean,
-                    data: controller.selectedCueUidSet().has(row.cueUid),
+                    data: controller.crud.selectedUidSet().has(row.cueUid),
                     allowOverlay: false,
                     readonly: true,
                   },
@@ -211,24 +211,24 @@ function CueRowList(props: CueListViewProps) {
         isRowSelectable={(row) => row.rowKind === "cue"}
         isRowSelected={(row) =>
           row.rowKind === "cue" &&
-          controller.selectedCueUidSet().has(row.cueUid)
+          controller.crud.selectedUidSet().has(row.cueUid)
         }
-        onDeleteRequested={controller.handleDeleteSelected}
+        onDeleteRequested={controller.crud.requestDelete}
         onActiveRowChange={controller.setActiveCueListRow}
         onSelectionChange={(rows: CueListDisplayRow[]) =>
-          controller.setSelectedCueUids(
+          controller.crud.select(
             rows.flatMap((row) => (row.rowKind === "cue" ? [row.cueUid] : [])),
           )
         }
-        multiSelectOnPlainClick={controller.selectionMode()}
+        multiSelectOnPlainClick={controller.crud.selectionMode()}
         onRowClick={(row, modifiers) => {
-          if (controller.isDeleteModalOpen()) return;
+          if (controller.crud.isDeleteModalOpen()) return;
           if (row.rowKind === "group")
             controller.toggleGroupCollapsed(row.groupKey);
           else if (modifiers.altKey) controller.openCueEditor(row.cueUid);
         }}
         onRowContextMenu={(row, _modifiers, position) => {
-          if (controller.isDeleteModalOpen()) return;
+          if (controller.crud.isDeleteModalOpen()) return;
           if (row.rowKind === "group")
             controller.openCueGroupContextMenu(row, position.x, position.y);
           else controller.openCueContextMenu(row.cue, position.x, position.y);
@@ -250,33 +250,33 @@ export function CueListView(props: CueListViewProps) {
               tooltip={"Edit selected cue (Enter)"}
               type="button"
               onClick={controller.handleEditSelected}
-              disabled={controller.selectedCount() !== 1}
+              disabled={controller.crud.selectedCount() !== 1}
               label="Edit selected cue"
             >
               <PencilSimpleLineIcon class="size-4" aria-hidden />
             </ToolbarButton>
             <ToolbarButton
               variant="danger"
-              count={controller.selectedCount()}
+              count={controller.crud.selectedCount()}
               tooltip={
-                controller.selectedCount() > 0
-                  ? `Delete selected cues (${controller.selectedCount()})`
+                controller.crud.selectedCount() > 0
+                  ? `Delete selected cues (${controller.crud.selectedCount()})`
                   : "Delete selected cues (Delete/Backspace)"
               }
               type="button"
-              onClick={controller.handleDeleteSelected}
-              disabled={controller.selectedCount() === 0}
+              onClick={controller.crud.requestDelete}
+              disabled={controller.crud.selectedCount() === 0}
               label="Delete selected cues"
             >
               <TrashIcon class="size-4" aria-hidden />
             </ToolbarButton>
-            <Show when={controller.viewMode() === "grid"}>
+            <Show when={controller.crud.viewMode() === "grid"}>
               <ToolbarSeparator />
               <ToggleToolbarButton
-                tooltip={`${controller.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
+                tooltip={`${controller.crud.selectionMode() ? "Exit" : "Enter"} selection mode (V)`}
                 type="button"
-                onClick={controller.handleToggleSelectionMode}
-                pressed={controller.selectionMode()}
+                onClick={controller.crud.handleToggleSelectionMode}
+                pressed={controller.crud.selectionMode()}
                 label="Toggle selection mode"
               >
                 <SelectionIcon class="size-4" aria-hidden />
@@ -287,44 +287,45 @@ export function CueListView(props: CueListViewProps) {
         right={
           <>
             <CrudPanelSearch
-              search={controller.search}
+              search={controller.crud.search}
               placeholder="Search cues"
             />
             <CrudViewModeToggle
-              viewMode={controller.viewMode()}
-              onViewModeChange={controller.setViewMode}
+              viewMode={controller.crud.viewMode()}
+              onViewModeChange={controller.crud.setViewMode}
             />
           </>
         }
       />
       <DeleteConfirmModal
-        isOpen={controller.isDeleteModalOpen()}
+        isOpen={controller.crud.isDeleteModalOpen()}
         title="Delete selected cues"
-        message={`Delete ${controller.selectedCount()} selected cue(s)? This action cannot be undone.`}
+        message={`Delete ${controller.crud.selectedCount()} selected cue(s)? This action cannot be undone.`}
         confirmLabel="Delete"
-        onCancel={() => controller.setIsDeleteModalOpen(false)}
+        onCancel={() => controller.crud.closeDeleteConfirm()}
         onConfirm={controller.confirmDeleteSelected}
       />
       <CrudScrollArea
-        viewMode={controller.viewMode()}
+        viewMode={controller.crud.viewMode()}
         aria-label="Cues scroll area"
         classList={{
-          "p-4": controller.viewMode() === "grid",
-          relative: controller.viewMode() === "grid",
+          "p-4": controller.crud.viewMode() === "grid",
+          relative: controller.crud.viewMode() === "grid",
           "select-none":
-            controller.selectionMode() && controller.viewMode() === "grid",
+            controller.crud.selectionMode() &&
+            controller.crud.viewMode() === "grid",
         }}
-        onPointerDown={controller.gridDragSelection.onPointerDown}
-        onPointerMove={controller.gridDragSelection.onPointerMove}
-        onPointerUp={controller.gridDragSelection.onPointerUp}
-        onPointerCancel={controller.gridDragSelection.onPointerCancel}
+        onPointerDown={controller.crud.gridDragSelection.onPointerDown}
+        onPointerMove={controller.crud.gridDragSelection.onPointerMove}
+        onPointerUp={controller.crud.gridDragSelection.onPointerUp}
+        onPointerCancel={controller.crud.gridDragSelection.onPointerCancel}
         onClick={(event) => {
-          if (controller.gridDragSelection.consumeSuppressedClick()) {
+          if (controller.crud.gridDragSelection.consumeSuppressedClick()) {
             event.preventDefault();
             event.stopPropagation();
             return;
           }
-          controller.gridClickSelection.handleBackgroundClick(event);
+          controller.crud.gridClickSelection.handleBackgroundClick(event);
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") return;
@@ -345,7 +346,7 @@ export function CueListView(props: CueListViewProps) {
           }
         >
           <Show
-            when={controller.viewMode() === "grid"}
+            when={controller.crud.viewMode() === "grid"}
             fallback={<CueRowList controller={controller} />}
           >
             <CueCardGrid controller={controller} />
@@ -353,8 +354,8 @@ export function CueListView(props: CueListViewProps) {
         </Show>
         <Show
           when={
-            controller.viewMode() === "grid" &&
-            controller.gridDragSelection.dragBox()
+            controller.crud.viewMode() === "grid" &&
+            controller.crud.gridDragSelection.dragBox()
           }
         >
           {(box) => (

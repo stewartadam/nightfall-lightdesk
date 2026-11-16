@@ -17,21 +17,31 @@
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use bevy_state::app::StatesPlugin;
 use bevy_state::prelude::*;
 use nightfall_cmd_parse::prelude::*;
 
 use crate::prelude::*;
 
-pub mod blueprint;
+pub mod assertions;
+pub mod ast_conv;
 mod client;
 pub mod client_bridge;
+pub mod client_feed;
 pub mod client_ingress;
+pub mod command_apply;
+pub mod command_forwarding;
 pub mod command_lifecycle;
 pub mod data_provider;
-pub mod diagnostic_paths;
+pub mod eval;
 pub mod eval_action;
 pub mod frame_waker;
+pub mod live_state;
+pub mod logging;
+mod metrics;
+pub mod object_changes;
+pub mod object_crud;
 pub mod object_registry;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod process_shutdown;
@@ -40,6 +50,9 @@ pub mod reference_index;
 pub mod render_pass;
 pub mod resync;
 pub mod runtime_capabilities;
+pub mod session_history;
+pub mod settings;
+pub mod ui_notification;
 pub mod variables;
 
 /// Backend lifecycle state for process initialization and showfile readiness.
@@ -82,7 +95,10 @@ pub mod prelude {
     pub use nightfall_engine_derive::EnginePayload;
 
     pub use crate::EnginePlugin;
-    pub use crate::blueprint::{BlueprintCommand, BlueprintDefinitionChange, BlueprintOperation};
+    pub use crate::assertions::{AssertionSet, BoundAssertionSet, FixtureAttributeTransition};
+    pub use crate::client::{
+        Undo, decode_client_command, register_client_command, submit_client_command,
+    };
     pub use crate::client_bridge::{
         Audience, ClientBridgeHost, ClientBridgePlugin, ClientDisconnectReport, ClientDisconnected,
         ClientEventSink, ClientPresenceSender, CommandDeserializerRegistry, CommandJsonEnvelope,
@@ -91,14 +107,36 @@ pub mod prelude {
         PendingReplies, SharedClientBridge, UpdateDeserializerRegistry, UpdateJsonEnvelope,
         encode_client_cbor,
     };
-    pub use crate::client_ingress::{CommandJsonEnvelopeReceiver, UpdateJsonEnvelopeReceiver};
+    pub use crate::client_feed::{
+        ClientFeed, ClientFeedAppExt, ClientFeedBuilder, ResourceFeed, ResourceFeedParam, every,
+        publish_client_feed, resync_client_feed,
+    };
+    pub use crate::client_ingress::{
+        ClientIngressGate, CommandJsonEnvelopeReceiver, READ_ONLY_COMMAND_ERROR,
+        UpdateJsonEnvelopeReceiver, allow_command_while_read_only, allow_update_while_read_only,
+    };
+    pub use crate::command_apply::{
+        ApplyCommands, CommandApplication, CommandRerun, add_apply_commands, run_apply_commands,
+    };
+    pub use crate::command_forwarding::{
+        CommandForwarding, CommandForwardingAppExt, FORWARDED_COMMAND_SOURCE, ForwardedEntry,
+        RecordedEntry, apply_forwarded_entry, is_forwarded_origin, latest_forwarded_sequence,
+    };
     pub use crate::command_lifecycle::{
         ActiveCommand, CommandLifecycleError, CommandNoticeReply, CommandRegistrationError,
         CommandReply, CommandResponder, CommandTracker, FinishedCommand, finish_command_in_world,
     };
     pub use crate::data_provider::{DataChanges, DataProvider, DataRevision, DataStoreError};
+    pub use crate::eval::INTERNAL_ACTION_ORIGIN;
     pub use crate::eval_action::EvalOperation;
     pub use crate::frame_waker::FrameWaker;
+    pub use crate::live_state::{
+        LiveStateAppExt, LiveStateRegistry, LiveStateRestore, LiveStateSnapshot,
+        capture_live_state, restore_live_state,
+    };
+    pub use crate::logging::{LogCommand, LogConfig, LogFilterError, LoggingPlugin, TracingTarget};
+    pub use crate::object_changes::{ObjectChangePublication, ObjectChanged, ObjectChangesAppExt};
+    pub use crate::object_crud::{ObjectCrud, apply_object_crud_command};
     pub use crate::parse_command_string;
     #[cfg(not(target_arch = "wasm32"))]
     pub use crate::process_shutdown::{
@@ -128,11 +166,31 @@ pub mod prelude {
     };
     pub use crate::register_command_deserializer;
     pub use crate::register_ingress_command;
-    pub use crate::render_pass::{Render, RenderPass, add_render_schedule};
+    pub use crate::render_pass::{Render, RenderPass, add_render_schedule, render_output_instant};
     pub use crate::resync::{ResyncReplies, ResyncRequested, resync_audience};
     pub use crate::runtime_capabilities::{
         FxModuleCapability, LibraryCapability, RuntimeCapabilities, RuntimeMode,
         TimelineAudioCapability, disk_storage_available,
+    };
+    pub use crate::session_history::{
+        SessionHistoryCommand, SessionHistoryEntry, SessionHistoryKind, SessionHistoryOutcome,
+        SessionHistoryPage, record_session_command, record_session_event,
+    };
+    pub use crate::settings::{
+        SettingsAppExt, SettingsCommandHandling, SettingsPlugin, SettingsRegistry, SettingsSection,
+        SettingsSync, SettingsUpdate, SettingsValue, SettingsValues, load_saved_settings,
+        panel_layouts::{
+            PanelLayoutArrangement, PanelLayoutCommand, PanelLayoutRename, PanelLayoutVisibility,
+            PanelLayouts, StoredPanelLayout, StoredPanelLayoutPanel,
+        },
+        register_settings_section, sync_settings_values,
+        ui_preferences::{
+            SequenceReorderRenumberPolicy, TimeDisplayPreference, TimelinePlacementPreference,
+            UiPreferences, UiPreferencesCommand,
+        },
+    };
+    pub use crate::ui_notification::{
+        ToastAction, ToastLevel, UiNotification, UiNotificationState,
     };
     pub use crate::variables::GlobalVariables;
     pub use crate::{
@@ -158,16 +216,8 @@ impl Plugin for EnginePlugin {
         app.init_resource::<StartupFrameCounter>();
         app.init_resource::<RuntimeCapabilities>();
         render_pass::add_render_schedule(app);
-        app.configure_sets(
-            Update,
-            (
-                InputHandling,
-                PendingCommandExpansion.after(InputHandling),
-                PendingCommandProcessing.after(PendingCommandExpansion),
-                EventHandling.after(PendingCommandProcessing),
-                ResyncHandling.after(EventHandling),
-            ),
-        );
+        command_apply::add_apply_commands(app);
+        app.configure_sets(Update, ResyncHandling.after(CommandApplication));
         app.configure_sets(
             Render,
             (
@@ -179,6 +229,7 @@ impl Plugin for EnginePlugin {
                 DmxOutput.after(VdimProcessing),
             ),
         );
+        app.init_resource::<ClientIngressGate>();
         app.configure_sets(PostUpdate, ClientFeedback.before(CommandFeedbackEgress));
         app.init_resource::<CommandDeserializerRegistry>();
         app.init_resource::<UpdateDeserializerRegistry>();
@@ -189,6 +240,7 @@ impl Plugin for EnginePlugin {
         app.add_message::<command_lifecycle::CommandReply>();
         app.add_message::<command_lifecycle::FinishedCommand>();
         app.add_message::<CommandNoticeReply>();
+        session_history::register(app);
         // Add startup transition system
         app.add_systems(
             Update,
@@ -202,7 +254,7 @@ impl Plugin for EnginePlugin {
         app.add_systems(
             Update,
             (
-                send_app_state_on_resync.before(ResyncHandling),
+                resync_client_feed::<AppStateFeed>.before(ResyncHandling),
                 send_runtime_capabilities_on_resync.before(ResyncHandling),
                 send_attribute_metadata_on_resync.before(ResyncHandling),
                 send_resync_complete.after(ResyncHandling),
@@ -210,16 +262,61 @@ impl Plugin for EnginePlugin {
         );
         app.add_systems(
             PostUpdate,
-            broadcast_app_state_on_change.in_set(ClientFeedback),
+            publish_client_feed::<AppStateFeed>
+                .run_if(state_changed::<AppState>)
+                .in_set(ClientFeedback),
+        );
+        app.add_client_feed::<metrics::MetricsFeed>()
+            .on_interval(metrics::SEND_INTERVAL);
+        app.init_resource::<GlobalVariables>();
+        app.register_live_state(
+            variables::VARIABLES_LIVE_STATE,
+            variables::capture_live_variables,
+            variables::follow_live_variables,
         );
 
         register_ingress_command::<EngineCommand>(app);
+        register_command_deserializer::<EngineCommand>(app, eval::deserialize_engine_command);
+        allow_command_while_read_only(app, EngineCommand::COMMAND_MODULE, "ResyncState");
+        protocol::dispatch_ast::register_converter::<ast_conv::EngineAstConverter>();
         app.add_message::<ResyncRequested>();
-        register_command_deserializer::<EngineCommand>(
-            app,
-            crate::client::deserialize_engine_commands,
-        );
         app.add_systems(Update, resync::begin_resync.in_set(InputHandling));
+
+        app.add_plugins(settings::SettingsPlugin);
+        settings::register_engine_sections(app);
+
+        app.add_message::<UiNotification>();
+        app.init_resource::<UiNotificationState>();
+        app.add_systems(
+            PostUpdate,
+            ui_notification::forward_ui_notifications.in_set(ClientFeedback),
+        );
+        // The retained showfile identity follows the state it describes.
+        app.add_systems(
+            Update,
+            ui_notification::send_pending_ui_notifications_on_resync
+                .after(ResyncHandling)
+                .before(send_resync_complete),
+        );
+
+        register_engine_operation::<EvalOperation>(app);
+        app.init_resource::<PendingCommandBuffer>();
+        app.init_resource::<DelayedCommandQueue>();
+        // Delayed commands coming due are input for this update, so they queue once per update
+        // and never between two reruns of the command schedule.
+        app.add_systems(
+            Update,
+            eval::process_scheduled_commands
+                .after(InputHandling)
+                .before(CommandApplication),
+        );
+        app.add_systems(
+            ApplyCommands,
+            eval::expand_pending_eval_commands
+                .in_set(DeskEventSet::EvalExpansion)
+                .in_set(PendingCommandExpansion),
+        );
+        app.add_systems(ApplyCommands, eval::handle_eval.in_set(EventHandling));
     }
 }
 
@@ -227,22 +324,30 @@ impl Plugin for EnginePlugin {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InputHandling;
 
-/// System set for systems that rewrite queued commands before undo capture and dispatch.
+/// [`ApplyCommands`] system set for systems that rewrite queued commands before undo capture and
+/// dispatch.
 ///
 /// Expanders replace wrapper commands in the pending buffer with the concrete commands they
-/// stand for, such as desk eval text or context-dependent transport commands, so the
+/// stand for, such as command-line eval text or context-dependent transport commands, so the
 /// concrete commands are captured and dispatched in the same frame.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PendingCommandExpansion;
 
-/// System set that drains queued ingress commands and engine operations for undo capture.
+/// [`ApplyCommands`] system set that drains queued ingress commands and engine operations for undo
+/// capture.
 ///
-/// Runs after [`InputHandling`] and before [`EventHandling`]; producers that queue commands
-/// outside input handling order themselves before this set to dispatch in the same frame.
+/// Runs before [`EventHandling`]. Producers in [`Update`] that queue commands outside input
+/// handling order themselves before [`CommandApplication`] to dispatch in the same update.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PendingCommandProcessing;
 
-/// System set for turning ingested events into engine operations.
+/// [`ApplyCommands`] system set for turning ingested events into engine operations.
+///
+/// Command handlers register here, in the [`ApplyCommands`] schedule. Ordering an [`Update`]
+/// system against this set has no effect; order it against [`CommandApplication`] instead.
+///
+/// A handler can run several times in one update and must be safe to rerun: it acts on each
+/// message it reads once and does nothing on a run with no new input. See [`ApplyCommands`].
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EventHandling;
 
@@ -279,7 +384,8 @@ pub struct ClientFeedback;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CommandFeedbackEgress;
 
-/// System set for plugin state resend handlers during a resync.
+/// [`Update`] system set for plugin state resend handlers during a resync. Runs after
+/// [`CommandApplication`].
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ResyncHandling;
 
@@ -297,13 +403,9 @@ pub enum DeskEventSet {
     ClipForwarding,
     /// Routes clip playback actions to the domain that owns each clip source.
     ClipRouting,
-    /// Applies blueprint create, update, and delete commands.
-    BlueprintCrud,
-    /// Applies blueprint engine actions.
-    BlueprintActions,
     /// Applies instance playback commands.
     InstancePlayback,
-    /// Replaces queued desk eval commands with the concrete commands they evaluate to.
+    /// Replaces queued command-line eval commands with the concrete commands they evaluate to.
     EvalExpansion,
 }
 
@@ -368,10 +470,16 @@ pub fn register_client_update_deserializer(
 #[typeshare::typeshare]
 #[serde(deny_unknown_fields)]
 pub enum EngineCommand {
+    /// Quit the application
+    Quit,
     /// Request that all plugins resend their full state
     ResyncState,
     /// Set the FPS upper-bound
     SetFps(u32),
+    /// Parse one command-language statement and run the commands it produces.
+    Eval(String),
+    /// Wait for a duration before the command that requested it completes.
+    Sleep(std::time::Duration),
 }
 
 impl EnginePayload for EngineCommand {}
@@ -416,31 +524,20 @@ fn check_startup_complete(
     }
 }
 
-/// System that sends the current backend lifecycle state to clients that resync.
-fn send_app_state_on_resync(mut resync: ResyncReplies, app_state: Res<State<AppState>>) {
-    let Some(sink) = resync.sink() else {
-        return;
-    };
-
-    sink.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &EngineClientMessage::AppState(app_state.get()),
-    );
+/// The backend lifecycle state feed, sent on every transition and before plugin state on resync.
+#[derive(SystemParam)]
+struct AppStateFeed<'w> {
+    app_state: Res<'w, State<AppState>>,
 }
 
-/// System that broadcasts backend lifecycle transitions as they happen.
-fn broadcast_app_state_on_change(
-    app_state: Res<State<AppState>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if !app_state.is_changed() {
-        return;
+impl ClientFeed for AppStateFeed<'static> {
+    /// Publishes the lifecycle state in order, so a client sees every transition.
+    fn publish(feed: &AppStateFeed<'_>, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &EngineClientMessage::AppState(feed.app_state.get()),
+        );
     }
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &EngineClientMessage::AppState(app_state.get()),
-    );
 }
 
 /// System that sends static attribute metadata to resyncing clients before plugin resync handlers.

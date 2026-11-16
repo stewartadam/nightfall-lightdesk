@@ -7,14 +7,33 @@
  */
 
 // Grid snapping functionality for timeline
-import { durationToMs, msToPixels, pixelsToMs } from "../../../lib/utils";
+import { durationToMs, pixelsToMs } from "../../../lib/utils";
 import type * as types from "../../../types";
 
 /**
- * Calculate the duration in milliseconds for one beat at a given BPM
+ * Returns the exact duration in milliseconds of one beat at `bpm`.
+ *
+ * The value is not rounded: rounding to whole milliseconds accumulates across beats, so the
+ * ruler, snapping and bar seeks would drift away from the engine's beat positions further into
+ * a show.
  */
 export function msPerBeat(bpm: number): number {
-  return Math.floor(60000 / bpm); // milliseconds per beat = (60 seconds * 1000) / BPM
+  return 60000 / bpm;
+}
+
+/**
+ * How far before a beat boundary, in milliseconds, a time still counts as that beat. Timeline
+ * positions are whole milliseconds while beats are fractional, so a beat's start rounded to a
+ * position can land up to half a millisecond before the exact boundary.
+ */
+const BEAT_BOUNDARY_TOLERANCE_MS = 0.5;
+
+/**
+ * Returns how many whole beats of `beatMs` fit in `elapsedMs`, counting a time within
+ * {@link BEAT_BOUNDARY_TOLERANCE_MS} before a boundary as the new beat.
+ */
+export function beatsElapsed(elapsedMs: number, beatMs: number): number {
+  return Math.floor((elapsedMs + BEAT_BOUNDARY_TOLERANCE_MS) / beatMs);
 }
 
 /** Calculates the timeline duration for a whole-bar jump. */
@@ -26,7 +45,7 @@ export function msPerBars(
   const beatDuration = msPerBeat(Math.max(1, bpm));
   const barBeats = Math.max(1, beatsPerBar);
   const barCount = Math.max(1, bars);
-  return Math.round(beatDuration * barBeats * barCount);
+  return beatDuration * barBeats * barCount;
 }
 
 /**
@@ -34,7 +53,7 @@ export function msPerBars(
  */
 function getBeatAtTime(ms: number, bpm: number): number {
   const beatDuration = msPerBeat(bpm);
-  return Math.floor(ms / beatDuration);
+  return beatsElapsed(ms, beatDuration);
 }
 
 /**
@@ -69,6 +88,7 @@ export interface SnapConfig {
   beatsPerBar?: number; // Number of beats per bar (for bar-level snapping)
   markers?: number[]; // Explicit marker positions in milliseconds
   anchorMs?: number; // Optional beat anchor offset in milliseconds
+  anchorBeatIndex?: number; // Beat number of the anchor, counted from the first downbeat
 }
 
 export interface SeekQuantizeConfig {
@@ -88,28 +108,74 @@ export interface BarSeekQuantizeConfig {
 
 export interface TimelineSeekPositionConfig extends SeekQuantizeConfig {
   x: number;
-  start: number;
   zoom: number;
 }
 
 const BAR_SEEK_EPSILON_MS = 0.001;
 
+/** Timeline state that decides how action drags and insertions snap; the timeline context provides it. */
+export interface TimelineSnapSource {
+  snapEnabled: () => boolean;
+  useBeatgrid: () => boolean;
+  bpm: () => number;
+  beatsPerBar: () => number;
+  beatgrid: () => types.BeatgridData | undefined;
+}
+
 /**
- * Snap a position value to the nearest grid point if it's within the threshold
+ * Builds the snap configuration shared by action drags and action insertion.
+ *
+ * In beat mode, actions snap to the detected beatgrid markers and, past them, to beats and
+ * bars extrapolated from the first marker, so every way of placing an action lands on the
+ * beats the ruler draws. Otherwise actions snap to whole seconds.
  */
-export function snapToGrid(
-  position: number, // in pixels
+export function timelineSnapConfig(source: TimelineSnapSource): SnapConfig {
+  if (!source.useBeatgrid()) {
+    return {
+      enabled: source.snapEnabled(),
+      interval: 1000,
+      threshold: 10,
+      isBeat: false,
+      beatsPerBar: 4,
+    };
+  }
+
+  const markers = source.beatgrid()?.markers ?? [];
+  const markerTimes = markers.map((marker) => durationToMs(marker.time));
+  return {
+    enabled: source.snapEnabled(),
+    interval: msPerBeat(source.bpm()),
+    threshold: 15,
+    isBeat: true,
+    beatsPerBar: source.beatsPerBar(),
+    markers: markerTimes.length > 1 ? markerTimes : undefined,
+    anchorMs: markerTimes[0] ?? 0,
+    anchorBeatIndex: markers[0]?.beat_index ?? 0,
+  };
+}
+
+/** Converts a distance in timeline pixels to exact milliseconds at `zoom` pixels per second. */
+function pixelDistanceToMs(pixels: number, zoom: number): number {
+  return (pixels * 1000) / zoom;
+}
+
+/**
+ * Snaps a timeline position in milliseconds to the nearest grid point within the threshold.
+ *
+ * The threshold is in pixels, so snapping feels the same at every zoom level, but the result
+ * is the exact grid time rather than a pixel position: a snapped action is stored precisely on
+ * its beat instead of up to a pixel after it. Positions too far from any grid point come back
+ * unchanged.
+ */
+export function snapPositionMs(
+  positionMs: number,
   zoom: number,
-  startOffset: number, // in milliseconds
   config: SnapConfig,
 ): number {
-  if (!config.enabled) return position;
-
-  // Convert position to milliseconds
-  const positionMs = startOffset + pixelsToMs(position, zoom);
+  if (!config.enabled) return positionMs;
 
   if (config.markers && config.markers.length > 0) {
-    const thresholdMs = pixelsToMs(config.threshold, zoom);
+    const thresholdMs = pixelDistanceToMs(config.threshold, zoom);
     let nearestMarker = config.markers[0];
     let nearestDistance = Math.abs(positionMs - nearestMarker);
 
@@ -123,57 +189,61 @@ export function snapToGrid(
     }
 
     if (nearestDistance <= thresholdMs) {
-      return msToPixels(nearestMarker - startOffset, zoom);
+      return nearestMarker;
     }
     const lastMarker = config.markers[config.markers.length - 1];
     if (positionMs <= lastMarker || !config.isBeat || !config.beatsPerBar) {
-      return position;
+      return positionMs;
     }
   }
 
   // Calculate snapping points based on mode
   if (config.isBeat && config.beatsPerBar) {
     // In BPM mode, we want to snap to beats and bars
+    // Beats and bars count from the first downbeat, as the ruler draws them, and no grid
+    // points exist before it.
     const beatMs = config.interval;
     const barMs = beatMs * config.beatsPerBar;
-    const anchorMs = config.anchorMs ?? 0;
-    const relativeMs = positionMs - anchorMs;
+    const firstDownbeatMs =
+      (config.anchorMs ?? 0) - (config.anchorBeatIndex ?? 0) * beatMs;
+    const relativeMs = positionMs - firstDownbeatMs;
 
     // First check if we're close to a bar boundary (higher priority)
-    const nearestBarMs = anchorMs + Math.round(relativeMs / barMs) * barMs;
-    const thresholdMs = pixelsToMs(config.threshold * 1.5, zoom); // Slightly higher threshold for bars
+    const nearestBarMs =
+      firstDownbeatMs + Math.max(0, Math.round(relativeMs / barMs)) * barMs;
+    const thresholdMs = pixelDistanceToMs(config.threshold * 1.5, zoom); // Slightly higher threshold for bars
 
     if (Math.abs(positionMs - nearestBarMs) <= thresholdMs) {
       // Snap to bar boundary
-      return msToPixels(nearestBarMs - startOffset, zoom);
+      return nearestBarMs;
     }
 
     // If not close to a bar boundary, try snapping to beat
-    const nearestBeatMs = anchorMs + Math.round(relativeMs / beatMs) * beatMs;
-    const beatThresholdMs = pixelsToMs(config.threshold, zoom);
+    const nearestBeatMs =
+      firstDownbeatMs + Math.max(0, Math.round(relativeMs / beatMs)) * beatMs;
+    const beatThresholdMs = pixelDistanceToMs(config.threshold, zoom);
 
     if (Math.abs(positionMs - nearestBeatMs) <= beatThresholdMs) {
       // Snap to beat
-      return msToPixels(nearestBeatMs - startOffset, zoom);
+      return nearestBeatMs;
     }
 
     // Not close enough to either
-    return position;
+    return positionMs;
   }
   // Regular time-based snapping
   const gridIntervalMs = config.interval;
   const nearestGridPointMs =
     Math.round(positionMs / gridIntervalMs) * gridIntervalMs;
-  const thresholdMs = pixelsToMs(config.threshold, zoom);
+  const thresholdMs = pixelDistanceToMs(config.threshold, zoom);
 
   // If we're close enough to a grid point, snap to it
   if (Math.abs(positionMs - nearestGridPointMs) <= thresholdMs) {
-    // Convert back to pixels
-    return msToPixels(nearestGridPointMs - startOffset, zoom);
+    return nearestGridPointMs;
   }
 
   // Return the original position if no snapping occurs
-  return position;
+  return positionMs;
 }
 export function quantizeSeekPositionMs(
   positionMs: number,
@@ -422,6 +492,6 @@ export function calculateBeatVisibility(
 export function seekPositionFromTimelineX(
   params: TimelineSeekPositionConfig,
 ): number {
-  const positionMs = params.start + pixelsToMs(params.x, params.zoom);
+  const positionMs = pixelsToMs(params.x, params.zoom);
   return quantizeSeekPositionMs(positionMs, params);
 }

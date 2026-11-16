@@ -41,7 +41,7 @@ const cue = (overrides: Partial<Cue> = {}): Cue => ({
   instructions: [
     {
       selection: {} as Cue["instructions"][number]["selection"],
-      cue_instruction: {
+      assertions: {
         values: {},
         transitions: {},
         transitions_by_attribute: {},
@@ -117,7 +117,7 @@ test("buildSequencePreviewCue removes transitions when preview transitions are d
       instructions: [
         {
           selection: {} as Cue["instructions"][number]["selection"],
-          cue_instruction: {
+          assertions: {
             values: {},
             transitions: { delay_in: fixed(7) },
             transitions_by_attribute: {
@@ -141,11 +141,11 @@ test("buildSequencePreviewCue removes transitions when preview transitions are d
 
   assert.deepEqual(previewCue.transitions_by_attribute, {});
   assert.deepEqual(
-    previewCue.instructions[0].cue_instruction.transitions_by_attribute,
+    previewCue.instructions[0].assertions.transitions_by_attribute,
     {},
   );
   assert.deepEqual(
-    previewCue.instructions[0].cue_instruction.transitions_by_fixture_attribute,
+    previewCue.instructions[0].assertions.transitions_by_fixture_attribute,
     [],
   );
   assert.deepEqual(previewCue.transitions.fade_in, fixed(0));
@@ -153,7 +153,7 @@ test("buildSequencePreviewCue removes transitions when preview transitions are d
   assert.deepEqual(previewCue.transitions.fade_out, fixed(0));
   assert.deepEqual(previewCue.transitions.delay_out, fixed(0));
   assert.deepEqual(
-    previewCue.instructions[0].cue_instruction.transitions,
+    previewCue.instructions[0].assertions.transitions,
     immediateTransition,
   );
 });
@@ -164,7 +164,7 @@ test("buildSequencePreviewCue keeps carried preview instructions immediate", () 
       instructions: [
         {
           selection: {} as Cue["instructions"][number]["selection"],
-          cue_instruction: {
+          assertions: {
             values: {},
             transitions: { fade_in: fixed(7) },
             transitions_by_attribute: {
@@ -193,7 +193,7 @@ test("buildSequencePreviewCue keeps carried preview instructions immediate", () 
         ...carriedCue.instructions,
         {
           selection: {} as Cue["instructions"][number]["selection"],
-          cue_instruction: {
+          assertions: {
             values: {},
             transitions: {},
             transitions_by_attribute: {},
@@ -207,10 +207,10 @@ test("buildSequencePreviewCue keeps carried preview instructions immediate", () 
   );
 
   assert.deepEqual(
-    activeCue.instructions[0].cue_instruction.transitions,
+    activeCue.instructions[0].assertions.transitions,
     immediateTransition,
   );
-  assert.deepEqual(activeCue.instructions[1].cue_instruction.transitions, {});
+  assert.deepEqual(activeCue.instructions[1].assertions.transitions, {});
   assert.deepEqual(activeCue.transitions.fade_in, fixed(9));
   assert.deepEqual(activeCue.transitions.delay_in, defaultTiming.delay_in);
 });
@@ -221,7 +221,7 @@ test("buildSequencePreviewPayload sends tracked previous cues and active transit
     instructions: [
       {
         selection: {} as Cue["instructions"][number]["selection"],
-        cue_instruction: {
+        assertions: {
           values: {},
           transitions: { fade_in: fixed(7) },
           transitions_by_attribute: {
@@ -238,7 +238,7 @@ test("buildSequencePreviewPayload sends tracked previous cues and active transit
     instructions: [
       {
         selection: {} as Cue["instructions"][number]["selection"],
-        cue_instruction: {
+        assertions: {
           values: {},
           transitions: {},
           transitions_by_attribute: {},
@@ -262,13 +262,10 @@ test("buildSequencePreviewPayload sends tracked previous cues and active transit
   assert.equal(payload.position, 2);
   assert.equal(payload.cues.length, 2);
   assert.deepEqual(
-    payload.cues[0].instructions[0].cue_instruction.transitions,
+    payload.cues[0].instructions[0].assertions.transitions,
     immediateTransition,
   );
-  assert.deepEqual(
-    payload.cues[1].instructions[0].cue_instruction.transitions,
-    {},
-  );
+  assert.deepEqual(payload.cues[1].instructions[0].assertions.transitions, {});
   assert.deepEqual(payload.cues[1].transitions.fade_in, fixed(9));
   assert.deepEqual(
     payload.cues[1].transitions.delay_in,
@@ -282,7 +279,7 @@ test("buildSequencePreviewPayload keeps disabled transitions immediate", () => {
     instructions: [
       {
         selection: {} as Cue["instructions"][number]["selection"],
-        cue_instruction: {
+        assertions: {
           values: {},
           transitions: { fade_in: fixed(7) },
           transitions_by_attribute: {},
@@ -309,11 +306,11 @@ test("buildSequencePreviewPayload keeps disabled transitions immediate", () => {
   assert.equal(payload.position, 2);
   assert.equal(payload.cues.length, 2);
   assert.deepEqual(
-    payload.cues[0].instructions[0].cue_instruction.transitions,
+    payload.cues[0].instructions[0].assertions.transitions,
     immediateTransition,
   );
   assert.deepEqual(
-    payload.cues[1].instructions[0].cue_instruction.transitions,
+    payload.cues[1].instructions[0].assertions.transitions,
     immediateTransition,
   );
 });
@@ -413,7 +410,7 @@ test("buildSequencePreviewCue removes cue part transitions when disabled", () =>
           instructions: [
             {
               selection: {} as Cue["instructions"][number]["selection"],
-              cue_instruction: {
+              assertions: {
                 values: {},
                 transitions: { fade_in: fixed(6) },
                 transitions_by_attribute: {
@@ -446,15 +443,15 @@ test("buildSequencePreviewCue removes cue part transitions when disabled", () =>
   assert.deepEqual(part.transitions.fade_out, fixed(0));
   assert.deepEqual(part.transitions.delay_out, fixed(0));
   assert.deepEqual(
-    part.instructions[0].cue_instruction.transitions,
+    part.instructions[0].assertions.transitions,
     immediateTransition,
   );
   assert.deepEqual(
-    part.instructions[0].cue_instruction.transitions_by_attribute,
+    part.instructions[0].assertions.transitions_by_attribute,
     {},
   );
   assert.deepEqual(
-    part.instructions[0].cue_instruction.transitions_by_fixture_attribute,
+    part.instructions[0].assertions.transitions_by_fixture_attribute,
     [],
   );
 });

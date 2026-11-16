@@ -12,9 +12,8 @@ use bevy_ecs::prelude::*;
 use nightfall_actions::BindingDiagnostic;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
-use serde_json::Value;
 
-use crate::command::{OscCommand, OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping};
+use crate::command::{OscExternalEval, OscLastEvent, OscListenerStatus, OscMapping};
 use crate::mapping::OscMappings;
 use crate::{LastOscEvent, OscControlTouches, OscMappingDiagnostics, OscRuntimeStatus, OscSources};
 
@@ -51,56 +50,9 @@ pub enum OscWsMessage<'a> {
     OscControlTouched(&'a [OscLastEvent]),
 }
 
-/// Deserialize and dispatch `OscCommand` from JSON.
-pub fn deserialize_osc_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: OscCommand =
-        serde_json::from_value(json).map_err(|e| format!("Failed to parse OscCommand: {e}"))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
-}
-
-/// Send OSC state on resync.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    sources: Res<OscSources>,
-    mappings: Res<OscMappings>,
-    diagnostics: Res<OscMappingDiagnostics>,
-    last_event: Res<LastOscEvent>,
-    status: Res<OscRuntimeStatus>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    send_sources(&sources, &broadcaster);
-    send_mappings(&mappings, &broadcaster);
-    send_diagnostics(&diagnostics, &broadcaster);
-    send_listener_status(&status, &broadcaster);
-    if let Some(ref event) = last_event.0 {
-        send_last_event(event, &broadcaster);
-    }
-}
-
-/// Send OSC state updates when resources change.
-pub fn send_osc_state(
-    sources: Res<OscSources>,
-    mappings: Res<OscMappings>,
-    diagnostics: Res<OscMappingDiagnostics>,
-    last_event: Res<LastOscEvent>,
-    status: Res<OscRuntimeStatus>,
+/// Sends the messages received while controller mapping mode is active, in order, draining
+/// them.
+pub fn send_control_touches(
     mut touches: ResMut<OscControlTouches>,
     broadcaster: Res<ClientEventSink>,
 ) {
@@ -110,23 +62,6 @@ pub fn send_osc_state(
             &OscWsMessage::OscControlTouched(&touches.0),
         );
         touches.0.clear();
-    }
-    if sources.is_changed() {
-        send_sources(&sources, &broadcaster);
-    }
-    if mappings.is_changed() {
-        send_mappings(&mappings, &broadcaster);
-    }
-    if diagnostics.is_changed() {
-        send_diagnostics(&diagnostics, &broadcaster);
-    }
-    if status.is_changed() {
-        send_listener_status(&status, &broadcaster);
-    }
-    if last_event.is_changed()
-        && let Some(ref event) = last_event.0
-    {
-        send_last_event(event, &broadcaster);
     }
 }
 
@@ -143,69 +78,51 @@ pub fn send_external_evals(
     }
 }
 
-fn send_sources(sources: &OscSources, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &OscWsMessage::OscSources(&sources.0),
-    );
+impl ResourceFeed for OscSources {
+    /// Publishes the known OSC sources.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &OscWsMessage::OscSources(&self.0),
+        );
+    }
 }
 
-fn send_mappings(mappings: &OscMappings, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &OscWsMessage::OscMappings(mappings.mappings()),
-    );
+impl ResourceFeed for OscMappings {
+    /// Publishes the configured OSC mappings.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &OscWsMessage::OscMappings(self.mappings()),
+        );
+    }
 }
 
-/// Sends the current OSC mapping diagnostics to websocket clients.
-fn send_diagnostics(diagnostics: &OscMappingDiagnostics, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &OscWsMessage::OscMappingDiagnostics(&diagnostics.0),
-    );
+impl ResourceFeed for OscMappingDiagnostics {
+    /// Publishes the OSC mappings that cannot currently invoke their action.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &OscWsMessage::OscMappingDiagnostics(&self.0),
+        );
+    }
 }
 
-fn send_last_event(event: &OscLastEvent, broadcaster: &ClientEventSink) {
-    broadcaster.publish(DISCRIMINATOR_DROPPABLE, &OscWsMessage::OscLastEvent(event));
+impl ResourceFeed for OscRuntimeStatus {
+    /// Publishes the listener bind status.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &OscWsMessage::OscListenerStatus(&self.0),
+        );
+    }
 }
 
-fn send_listener_status(status: &OscRuntimeStatus, broadcaster: &ClientEventSink) {
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &OscWsMessage::OscListenerStatus(&status.0),
-    );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Verifies OSC commands queue through the pending buffer so undo can capture them.
-    #[test]
-    fn deserialize_osc_command_queues_for_undo_capture() {
-        let mut world = World::new();
-        world.init_resource::<PendingCommandBuffer>();
-
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-        deserialize_osc_command(
-            &mut world,
-            serde_json::json!({
-                "type": "DeleteMapping",
-                "data": "00000000000000000000000000000004"
-            }),
-            command_id,
-            undo_id,
-        )
-        .expect("osc command should deserialize");
-
-        let messages = world.resource_mut::<PendingCommandBuffer>().drain();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].command_id, command_id);
-        assert_eq!(messages[0].undo_id, undo_id);
-        assert!(matches!(
-            messages[0].payload.as_any().downcast_ref::<OscCommand>(),
-            Some(OscCommand::DeleteMapping(id)) if *id == uuid::Uuid::from_u128(4)
-        ));
+impl ResourceFeed for LastOscEvent {
+    /// Publishes the last observed OSC event, if any, as a snapshot a newer event replaces.
+    fn publish(&self, sink: &ClientEventSink) {
+        if let Some(event) = &self.0 {
+            sink.publish(DISCRIMINATOR_DROPPABLE, &OscWsMessage::OscLastEvent(event));
+        }
     }
 }

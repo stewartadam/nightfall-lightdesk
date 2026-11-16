@@ -148,7 +148,7 @@ async function seedStickyEditorData(page: Page): Promise<void> {
                 },
                 clauses: [],
               },
-              cue_instruction: {
+              assertions: {
                 values,
                 transitions: {},
                 transitions_by_attribute: {},

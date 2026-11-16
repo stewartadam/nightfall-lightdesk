@@ -14,7 +14,7 @@ use std::{
 };
 
 use nightfall::{constants::APP_LOG_FILE_NAME, nightfall_data_dir, set_nightfall_data_dir};
-use nightfall_desk::resources::log_config::{LogConfig, TracingTarget};
+use nightfall_engine::logging::{LogConfig, TracingTarget};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
     EnvFilter, fmt::writer::BoxMakeWriter, layer::SubscriberExt, reload, util::SubscriberInitExt,

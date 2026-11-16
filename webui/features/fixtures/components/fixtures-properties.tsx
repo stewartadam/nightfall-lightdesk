@@ -7,6 +7,7 @@
  */
 
 import { Checkbox } from "../../../components/ui/form-controls";
+import { ParkedParametersSection } from "../../park";
 
 type FixturesPropertiesProps = {
   filterZero: boolean;
@@ -42,6 +43,9 @@ export default function FixturesProperties(props: FixturesPropertiesProps) {
         />
         Always show DMX values
       </label>
+      <div class="mt-4">
+        <ParkedParametersSection />
+      </div>
     </div>
   );
 }

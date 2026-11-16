@@ -13,13 +13,14 @@ mod linear;
 mod references;
 mod spatial;
 mod structure;
+mod subtraction;
 mod validation;
 
 #[cfg(test)]
 mod tests;
 
 pub use contracts::{
-    SelectionDataSource, SelectionFixture, SelectionGroup, SpatialSelectionResolution,
+    SelectionDataSource, SelectionFixture, SelectionGroup, SpatialSelectionResolution, ids_in_range,
 };
 pub use linear::SelectionResolver;
 pub use references::{

@@ -30,6 +30,10 @@ struct State {
     invalid_fixture_uid_mode: bool,
     elapsed_millis_mode: bool,
     delta_millis_mode: bool,
+    /// Spins forever in `render`, to exercise the host's time limit.
+    infinite_loop_mode: bool,
+    /// Allocates without bound in `render`, to exercise the host's memory limit.
+    grow_memory_mode: bool,
 }
 
 thread_local! {
@@ -42,24 +46,45 @@ impl Guest for TestGuest {
             *state.borrow_mut() = Some(State {
                 seed: input.random_seed.unwrap_or_default(),
                 renders: 0,
-                fixture_metadata_mode: input
-                    .config_json
-                    .contains("\"mode\":\"fixture-metadata\""),
+                fixture_metadata_mode: input.config_json.contains("\"mode\":\"fixture-metadata\""),
                 invalid_fixture_uid_mode: input
                     .config_json
                     .contains("\"mode\":\"invalid-fixture-uid\""),
                 elapsed_millis_mode: input.config_json.contains("\"mode\":\"elapsed-millis\""),
                 delta_millis_mode: input.config_json.contains("\"mode\":\"delta-millis\""),
+                infinite_loop_mode: input.config_json.contains("\"mode\":\"infinite-loop\""),
+                grow_memory_mode: input.config_json.contains("\"mode\":\"grow-memory\""),
             });
         });
         Ok(())
     }
 
     fn render(input: RenderInput) -> Result<FxModuleLayer, FxModuleError> {
-        let target = input.selection.into_iter().next().ok_or_else(|| FxModuleError {
-            code: ErrorCode::InvalidInput,
-            message: "selection is required".to_string(),
-        })?;
+        let (infinite_loop_mode, grow_memory_mode) = STATE.with(|state| {
+            let state = state.borrow();
+            let state = state.as_ref().expect("guest state should be initialized");
+            (state.infinite_loop_mode, state.grow_memory_mode)
+        });
+        if infinite_loop_mode {
+            loop {
+                std::hint::black_box(());
+            }
+        }
+        if grow_memory_mode {
+            let mut chunks: Vec<Vec<u8>> = Vec::new();
+            loop {
+                chunks.push(std::hint::black_box(vec![1u8; 1 << 20]));
+            }
+        }
+
+        let target = input
+            .selection
+            .into_iter()
+            .next()
+            .ok_or_else(|| FxModuleError {
+                code: ErrorCode::InvalidInput,
+                message: "selection is required".to_string(),
+            })?;
 
         let fixture_metadata_mode = STATE.with(|state| {
             state
@@ -165,10 +190,12 @@ impl Guest for TestGuest {
 fn render_fixture_metadata_layer(
     target: nightfall::fx_module::shared::SelectedTarget,
 ) -> Result<FxModuleLayer, FxModuleError> {
-    let fixture = nightfall::fx_module::host::get_fixture(&target.fixture_uid)?
-        .ok_or_else(|| FxModuleError {
-            code: ErrorCode::HostAccessFailed,
-            message: format!("fixture {} was not found", target.fixture_uid),
+    let fixture =
+        nightfall::fx_module::host::get_fixture(&target.fixture_uid)?.ok_or_else(|| {
+            FxModuleError {
+                code: ErrorCode::HostAccessFailed,
+                message: format!("fixture {} was not found", target.fixture_uid),
+            }
         })?;
     let selected_element = target
         .element_index

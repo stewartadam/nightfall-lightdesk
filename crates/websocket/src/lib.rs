@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
-use nightfall_io::{ExternalControlState, NetworkInterfaceState};
+use nightfall_io::NetworkInterfaceState;
 use tokio::sync::broadcast::Sender as BroadcastSender;
 
 use crate::websocket::create_axum_task;
@@ -32,7 +32,13 @@ pub mod routes;
 mod web_ui;
 pub mod websocket;
 
+pub use external_control::commands::ExternalControlCommand;
+pub use external_control::{ExternalControlSettings, ExternalControlState};
 pub use origin::is_local_client;
+pub use pairing::{
+    PUBLIC_API_PREFIX, RemotePairingAttempt, RemotePairingPin, RemotePairingStatus,
+    backup_pair_key, set_backup_pair_key,
+};
 pub use web_ui::{SharedWebUiAssets, WebUiAssets};
 
 /// Prelude for ergonomic imports
@@ -40,7 +46,7 @@ pub mod prelude {
     pub use crate::is_local_client;
     pub use crate::routes::HttpRouteRegistry;
     pub use crate::websocket::AxumAppState;
-    pub use crate::{SharedWebUiAssets, WebUiAssets, WebsocketHost, WebsocketPlugin};
+    pub use crate::{BackendPort, SharedWebUiAssets, WebUiAssets, WebsocketHost, WebsocketPlugin};
 }
 
 /// Resource used to signal axum task shutdown once we receive an AppExit event.
@@ -102,6 +108,10 @@ struct RunningServer {
     listener_control: external_control::ListenerControl,
 }
 
+/// Port the backend HTTP and WebSocket server listens on, as configured at startup.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BackendPort(pub u16);
+
 /// Plugin for adding WebSocket output on a configured backend port.
 pub struct WebsocketPlugin {
     bind_port: u16,
@@ -133,6 +143,7 @@ impl Plugin for WebsocketPlugin {
         app.insert_resource(AxumShutdownSignal {
             tx: host.shutdown_tx.clone(),
         });
+        app.insert_resource(BackendPort(self.bind_port));
         app.insert_resource(AxumTaskConfig {
             bind_port: self.bind_port,
             shutdown_tx: host.shutdown_tx.clone(),
@@ -141,9 +152,28 @@ impl Plugin for WebsocketPlugin {
 
         app.init_resource::<ExternalControlState>();
         app.init_resource::<NetworkInterfaceState>();
+        register_client_command::<ExternalControlCommand>(app, Undo::Skipped);
         app.add_systems(Startup, start_or_attach_axum_task);
-        app.add_systems(Update, external_control::sync_listener_control);
-        app.add_systems(Update, notify_axum_shutdown_on_exit.in_set(EventHandling));
+        app.add_systems(
+            ApplyCommands,
+            (
+                external_control::commands::handle_external_control_commands,
+                external_control::sync_listener_control,
+            )
+                .chain()
+                .in_set(EventHandling),
+        );
+        app.add_systems(
+            ApplyCommands,
+            external_control::alerts::announce_external_control_interface_changes
+                .in_set(EventHandling)
+                .after(nightfall_io::IoStateSync),
+        );
+        app.add_resource_feed::<ExternalControlState>();
+        app.add_systems(
+            Update,
+            notify_axum_shutdown_on_exit.after(CommandApplication),
+        );
     }
 }
 

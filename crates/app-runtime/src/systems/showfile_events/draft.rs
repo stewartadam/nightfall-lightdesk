@@ -124,6 +124,7 @@ pub(super) fn prepare_showfile_session(
 ) -> Result<ShowfileSnapshot, String> {
     let snapshot = read_showfile_snapshot_from_path(source_dir)?;
     validate_showfile_asset_versions(&snapshot)?;
+    super::paths::select_show_storage_for_source(source_dir);
     let draft_dir = showfile_draft_dir_path(showfile_name)?;
     if paths_refer_to_same_file(source_dir, &draft_dir) {
         nightfall::set_active_show_data_dir(draft_dir);
@@ -452,9 +453,10 @@ fn working_draft_matches_snapshot_hash(showfile_name: Option<&str>, snapshot_has
         .is_ok_and(|manifest| manifest.matches_clean_state_hash(&expected_state_hash))
 }
 
-/// Remove the draft folder for the target showfile when one exists.
+/// Remove the draft folder of one of this computer's own showfiles when one exists. Drafts of a
+/// failover pair's show are never discarded this way.
 pub(super) fn remove_draft_showfile(showfile_name: Option<&str>) -> Result<(), String> {
-    let draft_dir = showfile_draft_dir_path(showfile_name)?;
+    let draft_dir = super::paths::library_showfile_draft_dir_path(showfile_name)?;
     if !draft_dir.exists() {
         return Ok(());
     }

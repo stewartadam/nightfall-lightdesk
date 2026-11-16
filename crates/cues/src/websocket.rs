@@ -12,14 +12,14 @@
 //! owns all cue-related websocket forwarding logic.
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use moonshine_kind::InstanceRef;
-use nightfall::prelude::ColorPath;
+use nightfall::prelude::{Blueprint, ColorPath};
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_instances::InstanceOptions;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 
 use crate::CueCommand;
@@ -161,12 +161,17 @@ pub enum CueWsMessage<'a> {
 pub fn cue_duration_profile_message(
     cue: &Cue,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) -> CueDurationProfileMessage {
     CueDurationProfileMessage {
         cue_uid: cue.identifiers.uid,
         cue_id: cue.identifiers.id,
-        profile: fixture_data_provider.cue_duration_profile(cue, selection_resolver),
+        profile: fixture_data_provider.cue_duration_profile(
+            cue,
+            blueprint_data_provider,
+            selection_resolver,
+        ),
     }
 }
 
@@ -174,13 +179,19 @@ pub fn cue_duration_profile_message(
 pub fn cue_duration_profile_messages(
     cue_data_provider: &DataProvider<Cue>,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
 ) -> Vec<CueDurationProfileMessage> {
     cue_data_provider
         .iter()
         .map(|entry| {
             let cue = entry.value();
-            cue_duration_profile_message(cue, fixture_data_provider, selection_resolver)
+            cue_duration_profile_message(
+                cue,
+                fixture_data_provider,
+                blueprint_data_provider,
+                selection_resolver,
+            )
         })
         .collect()
 }
@@ -250,107 +261,110 @@ pub fn sequence_lookahead_state_messages(
         .collect()
 }
 
-/// Deserialize and dispatch CueCommand from JSON.
-///
-/// This function is registered with the `CommandDeserializerRegistry` to handle
-/// incoming cue commands from the UI. It deserializes the JSON payload into a
-/// `CueCommand` and queues it through pending command dispatch so undo can
-/// capture an inverse before domain handlers mutate cue state.
-///
-pub fn deserialize_cue_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: CueCommand =
-        serde_json::from_value(json).map_err(|e| format!("Failed to parse CueCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
+/// The cue definitions feed, replayed to clients that resync; edits go out as definition deltas.
+#[derive(SystemParam)]
+pub(crate) struct CuesFeed<'w> {
+    cues: Res<'w, DataProvider<Cue>>,
 }
 
-/// Deserializes and queues a cue preview command for semantic dispatch.
-pub fn deserialize_cue_preview_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: crate::events::CuePreviewCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse CuePreviewCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
+impl ClientFeed for CuesFeed<'static> {
+    /// Publishes every cue definition.
+    fn publish(feed: &CuesFeed<'_>, sink: &ClientEventSink) {
+        let cues: Vec<Cue> = feed
+            .cues
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &CueWsMessage::CueDefinitions(&cues),
+        );
+    }
 }
 
-/// Send cues to UI on DataProvider changes.
-///
-/// This system monitors the cue DataProvider for changes and broadcasts
-/// the full cue list to connected WebSocket clients.
-pub fn send_cues(
-    cue_data_provider: &DataProvider<Cue>,
-    fixture_data_provider: &FixtureDataProviderExt,
-    selection_resolver: &SpatialSelectionResolver,
-    broadcaster: &ClientEventSink,
-) {
-    let cues: Vec<Cue> = cue_data_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-    let profiles =
-        cue_duration_profile_messages(cue_data_provider, fixture_data_provider, selection_resolver);
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &CueWsMessage::CueDefinitions(&cues),
-    );
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &CueWsMessage::CueDurationProfiles(&profiles),
-    );
-    tracing::trace!("Sending cue definitions to websocket clients");
+/// The resolved cue duration profiles feed, resent when fixture or Blueprint data changes how cue
+/// timing resolves.
+#[derive(SystemParam)]
+pub(crate) struct CueDurationProfilesFeed<'w> {
+    cues: Res<'w, DataProvider<Cue>>,
+    fixture_data_provider: Res<'w, FixtureDataProviderExt>,
+    blueprint_data_provider: Option<Res<'w, DataProvider<Blueprint>>>,
+    selection_resolver: SpatialSelectionResolver<'w>,
 }
 
-/// Send resolved cue duration profiles to UI without sending cue definitions.
-pub fn send_cue_duration_profiles(
-    cue_data_provider: &DataProvider<Cue>,
-    fixture_data_provider: &FixtureDataProviderExt,
-    selection_resolver: &SpatialSelectionResolver,
-    broadcaster: &ClientEventSink,
-) {
-    let profiles =
-        cue_duration_profile_messages(cue_data_provider, fixture_data_provider, selection_resolver);
+impl ClientFeed for CueDurationProfilesFeed<'static> {
+    /// Publishes the resolved duration profile of every cue.
+    fn publish(feed: &CueDurationProfilesFeed<'_>, sink: &ClientEventSink) {
+        let profiles = cue_duration_profile_messages(
+            &feed.cues,
+            &feed.fixture_data_provider,
+            feed.blueprint_data_provider.as_deref(),
+            &feed.selection_resolver,
+        );
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &CueWsMessage::CueDurationProfiles(&profiles),
+        );
+    }
+}
 
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &CueWsMessage::CueDurationProfiles(&profiles),
-    );
-    tracing::trace!("Sending cue duration profiles to websocket clients");
+/// The sequence definitions feed, replayed to clients that resync; edits go out as definition
+/// deltas.
+#[derive(SystemParam)]
+pub(crate) struct SequencesFeed<'w> {
+    sequences: Res<'w, DataProvider<Sequence>>,
+}
+
+impl ClientFeed for SequencesFeed<'static> {
+    /// Publishes every sequence definition.
+    fn publish(feed: &SequencesFeed<'_>, sink: &ClientEventSink) {
+        let sequences: Vec<Sequence> = feed
+            .sequences
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &CueWsMessage::SequenceDefinitions(&sequences),
+        );
+    }
+}
+
+/// The color path definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct ColorPathsFeed<'w> {
+    color_paths: Res<'w, DataProvider<ColorPath>>,
+}
+
+impl ClientFeed for ColorPathsFeed<'static> {
+    /// Publishes every color path definition.
+    fn publish(feed: &ColorPathsFeed<'_>, sink: &ClientEventSink) {
+        let color_paths: Vec<ColorPath> = feed
+            .color_paths
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &CueWsMessage::ColorPathDefinitions(&color_paths),
+        );
+    }
 }
 
 /// Send one committed cue definition update and its resolved duration profile.
 pub fn send_cue_definition_update(
     cue: &Cue,
     fixture_data_provider: &FixtureDataProviderExt,
+    blueprint_data_provider: Option<&DataProvider<Blueprint>>,
     selection_resolver: &SpatialSelectionResolver,
     broadcaster: &ClientEventSink,
 ) {
-    let profile = cue_duration_profile_message(cue, fixture_data_provider, selection_resolver);
+    let profile = cue_duration_profile_message(
+        cue,
+        fixture_data_provider,
+        blueprint_data_provider,
+        selection_resolver,
+    );
 
     broadcaster.publish(
         DISCRIMINATOR_NON_DROPPABLE,
@@ -384,23 +398,6 @@ pub fn send_cue_definition_removal(uid: Uuid, broadcaster: &ClientEventSink) {
     );
 }
 
-/// Send sequences to UI on DataProvider changes.
-///
-/// This system monitors the sequence DataProvider for changes and broadcasts
-/// the full sequence list to connected WebSocket clients.
-pub fn send_sequences(seq_data_provider: &DataProvider<Sequence>, broadcaster: &ClientEventSink) {
-    let sequences: Vec<Sequence> = seq_data_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &CueWsMessage::SequenceDefinitions(&sequences),
-    );
-    tracing::trace!("Sending sequence definitions to websocket clients");
-}
-
 /// Send one committed sequence definition update.
 pub fn send_sequence_definition_update(sequence: &Sequence, broadcaster: &ClientEventSink) {
     broadcaster.publish(
@@ -425,23 +422,6 @@ pub fn send_sequence_definition_removal(uid: Uuid, broadcaster: &ClientEventSink
         sequence_uid = %uid,
         "Sending sequence definition removal to websocket clients"
     );
-}
-
-/// Send color paths to UI on DataProvider changes.
-pub fn send_color_paths(
-    color_path_data_provider: Res<DataProvider<ColorPath>>,
-    broadcaster: ClientEventSink,
-) {
-    let color_paths: Vec<ColorPath> = color_path_data_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &CueWsMessage::ColorPathDefinitions(&color_paths),
-    );
-    tracing::trace!("Sending color path definitions to websocket clients");
 }
 
 /// Send backend-authored sequence lookahead state to UI.
@@ -488,27 +468,11 @@ pub fn forward_commands(
     }
 }
 
-/// Send duration profiles when fixture data changes cue timing resolution.
-pub fn send_cues_on_change(
-    cue_data_provider: Res<DataProvider<Cue>>,
-    fixture_data_provider: Res<FixtureDataProviderExt>,
-    selection_resolver: SpatialSelectionResolver,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if fixture_data_provider.is_changed() {
-        send_cue_duration_profiles(
-            &cue_data_provider,
-            &fixture_data_provider,
-            &selection_resolver,
-            &broadcaster,
-        );
-    }
-}
-
 /// Send committed cue definition changes.
 pub fn send_cue_definition_changes(
     mut events: MessageReader<CueDefinitionChange>,
     fixture_data_provider: Res<FixtureDataProviderExt>,
+    blueprint_data_provider: Option<Res<DataProvider<Blueprint>>>,
     selection_resolver: SpatialSelectionResolver,
     broadcaster: Res<ClientEventSink>,
 ) {
@@ -517,6 +481,7 @@ pub fn send_cue_definition_changes(
             CueDefinitionChange::Updated(cue) => send_cue_definition_update(
                 cue,
                 &fixture_data_provider,
+                blueprint_data_provider.as_deref(),
                 &selection_resolver,
                 &broadcaster,
             ),
@@ -541,16 +506,6 @@ pub fn send_sequence_definition_changes(
                 send_sequence_definition_removal(*uid, &broadcaster);
             }
         }
-    }
-}
-
-/// Send color path definitions when DataProvider<ColorPath> changes.
-pub fn send_color_paths_on_change(
-    color_path_data_provider: Res<DataProvider<ColorPath>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if color_path_data_provider.is_changed() {
-        send_color_paths(color_path_data_provider, broadcaster.clone());
     }
 }
 
@@ -584,29 +539,15 @@ pub fn send_stale_sequence_lookahead_states(
     );
 }
 
-/// Handle ResyncState by sending cues and sequences immediately and queueing their lookahead projection
-pub fn handle_resync_state(
+/// Marks the sequence lookahead projection stale when a client resyncs, so client output sends
+/// it after `ResyncComplete` rather than on the resync's readiness boundary.
+pub(crate) fn mark_sequence_lookahead_stale_on_resync(
     mut resync: ResyncReplies,
-    cue_data_provider: Res<DataProvider<Cue>>,
-    fixture_data_provider: Res<FixtureDataProviderExt>,
-    selection_resolver: SpatialSelectionResolver,
-    seq_data_provider: Res<DataProvider<Sequence>>,
-    mut sequence_lookahead_dirty: ResMut<SequenceLookaheadStateDirty>,
-    color_path_data_provider: Res<DataProvider<ColorPath>>,
+    mut dirty: ResMut<SequenceLookaheadStateDirty>,
 ) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    send_cues(
-        &cue_data_provider,
-        &fixture_data_provider,
-        &selection_resolver,
-        &broadcaster,
-    );
-    send_sequences(&seq_data_provider, &broadcaster);
-    sequence_lookahead_dirty.mark();
-    send_color_paths(color_path_data_provider, broadcaster.clone());
+    if resync.sink().is_some() {
+        dirty.mark();
+    }
 }
 
 #[cfg(test)]
@@ -622,63 +563,17 @@ mod tests {
         TransitionMode, ValueSource,
     };
     use nightfall_dmx::prelude::{Attribute, ParameterValue};
+    use nightfall_engine::prelude::{AssertionSet, BoundAssertionSet};
     use nightfall_fixture_model::prelude::*;
     use nightfall_fixtures::prelude::{Fixture, FixtureElement, Parameter, ParameterValues};
     use serde::Serialize;
 
     use super::*;
-    use crate::cue::{BoundCueInstruction, CueInstruction};
 
     /// Serializes one websocket payload through the backend CBOR codec and decodes it for assertions.
     fn cbor_payload_value<T: Serialize>(payload: &T) -> serde_json::Value {
         let encoded = minicbor_serde::to_vec(payload).expect("payload should encode as CBOR");
         minicbor_serde::from_slice(&encoded).expect("payload should decode as JSON value")
-    }
-
-    #[test]
-    /// Verifies websocket cue commands pass through undo-aware pending dispatch.
-    fn deserialize_cue_command_queues_pending_command_with_undo_id() {
-        let mut world = World::new();
-        world.insert_resource(PendingCommandBuffer::default());
-
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-        deserialize_cue_command(
-            &mut world,
-            serde_json::json!({
-                "type": "RenameCue",
-                "data": {
-                    "sequence_id": 1,
-                    "cue_id": 2,
-                    "new_sequence_id": 3,
-                    "new_cue_id": 4
-                }
-            }),
-            command_id,
-            undo_id,
-        )
-        .expect("cue command should deserialize");
-
-        let pending_commands = world
-            .resource_mut::<PendingCommandBuffer>()
-            .drain()
-            .into_iter()
-            .collect::<Vec<_>>();
-        assert_eq!(pending_commands.len(), 1);
-        assert_eq!(pending_commands[0].command_id, command_id);
-        assert_eq!(pending_commands[0].undo_id, undo_id);
-        assert!(matches!(
-            pending_commands[0]
-                .payload
-                .as_any()
-                .downcast_ref::<CueCommand>(),
-            Some(CueCommand::RenameCue {
-                sequence_id: 1,
-                cue_id: 2,
-                new_sequence_id: 3,
-                new_cue_id: 4,
-            })
-        ));
     }
 
     /// Verifies direct UUID fields in cue websocket payloads serialize as UI string keys.
@@ -793,9 +688,9 @@ mod tests {
                 fade_out: Some(TransitionMode::Fixed(Duration::from_millis(300))),
                 ..Default::default()
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Intensity,
@@ -816,7 +711,7 @@ mod tests {
             .get(app.world_mut())
             .expect("test system parameters should be available");
         let profiles =
-            cue_duration_profile_messages(&cues, &fixture_data_provider, &selection_resolver);
+            cue_duration_profile_messages(&cues, &fixture_data_provider, None, &selection_resolver);
 
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].cue_uid, cue_uid);
@@ -906,11 +801,11 @@ mod tests {
                 uid: cue_one_uid,
                 label: "dark".to_owned(),
             },
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![
                     fixture_ref.clone(),
                 ])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Intensity,
@@ -929,9 +824,9 @@ mod tests {
                 label: "lookahead source".to_owned(),
             },
             lookahead: Some(true),
-            instructions: vec![BoundCueInstruction {
+            instructions: vec![BoundAssertionSet {
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
-                cue_instruction: CueInstruction {
+                assertions: AssertionSet {
                     blueprint_application: None,
                     values: HashMap::from([(
                         Attribute::Pan,

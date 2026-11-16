@@ -82,6 +82,7 @@ import { useMoveToolInteraction } from "../interactions/use-move-tool-interactio
 import { useRotateToolInteraction } from "../interactions/use-rotate-tool-interaction";
 import { useSelectionToolInteraction } from "../interactions/use-selection-tool-interaction";
 import { createPointerModeRouter } from "../interactions/use-visualizer-pointer-mode-router";
+import type { VisualizerRenderFailure } from "../rendering/renderers/render-failure";
 import type {
   CameraState,
   VisualizerScreenPoint,
@@ -108,6 +109,8 @@ export interface VisualizerCanvasProps {
   forceMainThread?: boolean;
   /** Camera pose inherited from a renderer this canvas replaces. */
   initialCameraState?: CameraState;
+  /** Receives the renderer's failure once; the canvas stops rendering after it. */
+  onRendererFailure?: (failure: VisualizerRenderFailure) => void;
 }
 
 type Axis = "x" | "y" | "z";
@@ -248,6 +251,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     containerRef: () => containerRef,
     forceMainThread: props.forceMainThread,
     initialCameraState: props.initialCameraState,
+    onFailure: (failure) => props.onRendererFailure?.(failure),
     getToolMode,
     getSelection: $programmerSelection,
     onStats: (stats) =>
@@ -740,6 +744,13 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
   });
 
   useKeyboardShortcut({
+    key: "o",
+    handler: () => context.setShowSceneObjects(!context.showSceneObjects()),
+    description: "Toggle scene object visibility",
+    componentId: COMPONENT_ID,
+  });
+
+  useKeyboardShortcut({
     key: "b",
     handler: () => renderer()?.toggleBeams(),
     description: "Toggle volumetric beams",
@@ -1003,6 +1014,7 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     highlightSelectionEnabled: $highlightSelection,
     showEmitters: context.showEmitters,
     showGrid: context.showGrid,
+    showSceneObjects: context.showSceneObjects,
     showOrbitTargetIndicator: $showOrbitTargetIndicator,
     darkness: $darkness,
     showLabels: context.showLabels,

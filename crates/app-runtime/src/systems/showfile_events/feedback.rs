@@ -12,7 +12,7 @@ use super::*;
 
 /// Emits successful save completion and its operator-facing toast.
 pub(super) fn write_showfile_saved_feedback(
-    event: &CommandEnvelope<DeskCommand>,
+    event: &CommandEnvelope<ShowfileCommand>,
     responder: &mut CommandResponder,
     ui_notifications: &mut MessageWriter<UiNotification>,
 ) {
@@ -30,7 +30,7 @@ pub(super) fn write_current_showfile_changed(
 
 /// Emits successful import completion and its operator-facing toast.
 pub(super) fn write_showfile_imported_feedback(
-    event: &CommandEnvelope<DeskCommand>,
+    event: &CommandEnvelope<ShowfileCommand>,
     responder: &mut CommandResponder,
     ui_notifications: &mut MessageWriter<UiNotification>,
 ) {

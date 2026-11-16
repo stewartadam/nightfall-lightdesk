@@ -70,6 +70,14 @@ function parseNonNegativeMs(value: string): number | undefined {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : undefined;
 }
 
+/**
+ * Rounds a millisecond time to three decimals for display, so a position snapped to a beat
+ * such as 461.538461538 ms shows as 461.538 rather than its full stored precision.
+ */
+function roundDisplayMs(ms: number): number {
+  return Math.round(ms * 1000) / 1000;
+}
+
 /** Parses a non-negative playback speed multiplier. */
 function parseSpeed(value: string): number | undefined {
   const parsed = Number.parseFloat(value);
@@ -337,7 +345,7 @@ export default function TimelineActionProperties(
                   type="number"
                   min="0"
                   step="10"
-                  value={durationToMs(record().action.position)}
+                  value={roundDisplayMs(durationToMs(record().action.position))}
                   onChange={(event) =>
                     updatePositionMs(event.currentTarget.value)
                   }
@@ -434,7 +442,7 @@ export default function TimelineActionProperties(
                               </div>
                               <Show when={blocker.positionMs !== undefined}>
                                 <div class="shrink-0 text-[11px] tabular-nums text-neutral-400">
-                                  {blocker.positionMs} ms
+                                  {roundDisplayMs(blocker.positionMs ?? 0)} ms
                                 </div>
                               </Show>
                             </div>

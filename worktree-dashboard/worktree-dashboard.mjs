@@ -8,26 +8,19 @@
  */
 
 import { execFile, spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, watch } from "node:fs";
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { loadEnvFile } from "node:process";
 import { parseEnv } from "node:util";
 import { expand } from "dotenv-expand";
 import { SERVICE_SELECTORS } from "./dashboard-client.mjs";
+import { createRequestGuard, parseAllowedOrigins } from "./request-guard.mjs";
+import { createStateStream } from "./state-stream.mjs";
+import { createWorktree } from "./worktree-create.mjs";
 import { removeWorktree } from "./worktree-remove.mjs";
-
-// Preserve launcher settings without inheriting the dashboard's dotenv file.
-const SERVICE_BASE_ENV = { ...process.env };
-
-try {
-  loadEnvFile();
-} catch (error) {
-  if (error.code !== "ENOENT") throw error;
-}
 
 const DASHBOARD_PORT = Number.parseInt(
   process.env.NIGHTFALL_WORKTREE_DASHBOARD_PORT ?? "4780",
@@ -36,6 +29,12 @@ const DASHBOARD_PORT = Number.parseInt(
 const DASHBOARD_HOST =
   process.env.NIGHTFALL_WORKTREE_DASHBOARD_HOST ?? "127.0.0.1";
 const DASHBOARD_ROOT = resolve(process.cwd());
+const checkRequest = createRequestGuard({
+  dashboardHost: DASHBOARD_HOST,
+  allowedOrigins: parseAllowedOrigins(
+    process.env.NIGHTFALL_WORKTREE_DASHBOARD_ALLOWED_ORIGINS,
+  ),
+});
 const LOG_DIR = join(tmpdir(), "nightfall-worktree-dashboard");
 const DEFAULT_BACKEND_STARTUP_CMDS = "fps 5";
 const FALLBACK_PRIMARY_BRANCHES = ["develop", "main"];
@@ -181,15 +180,16 @@ export function servicePortFromEnv(service, env) {
 
 /**
  * Builds a service's command line from the same environment used by the
- * child: Cargo services honor NIGHTFALL_CARGO_COMMAND, and services whose
- * arguments depend on the worktree (such as the docs ports) resolve them here.
+ * child: services whose arguments depend on the worktree (such as the docs
+ * ports) resolve them here.
  */
 export function commandForService(service, env) {
   const definition = SERVICE_DEFINITIONS[service];
   if (definition) {
     const command = definition.cargo
-      ? env.NIGHTFALL_CARGO_COMMAND?.trim() ||
-        (process.platform === "win32" ? "cargo.exe" : "cargo")
+      ? process.platform === "win32"
+        ? "cargo.exe"
+        : "cargo"
       : definition.command;
     const args =
       typeof definition.args === "function"
@@ -265,7 +265,7 @@ export function processEnvForService(
   worktreeEnv = {},
   options = {},
 ) {
-  const nextEnv = { ...SERVICE_BASE_ENV, ...worktreeEnv };
+  const nextEnv = { ...process.env, ...worktreeEnv };
   const isBackend = service === "backend";
   const isRootWorktree = isDashboardRootWorktree(worktreePath);
 
@@ -383,6 +383,7 @@ function startManagedService(
       state.pid = null;
       closeLogStream(state);
     }
+    stateStream.notify();
   });
 
   child.on("exit", (code, signal) => {
@@ -396,6 +397,7 @@ function startManagedService(
       `Exited with code=${code ?? "null"} signal=${signal ?? "null"}`,
     );
     closeLogStream(state);
+    stateStream.notify();
   });
 
   return {
@@ -543,7 +545,11 @@ function waitForServiceExit(worktreePath, service, timeoutMs = 5000) {
   });
 }
 
-/** Parses and expands worktree settings without importing dashboard dotenv values. */
+/**
+ * Parses a worktree's `.env` and expands `${VAR}` references against the
+ * dashboard's own environment, so a value such as `PATH="/extra:${PATH}"`
+ * extends the inherited value instead of referring to itself.
+ */
 export async function readEnvMap(worktreePath) {
   const envPath = join(worktreePath, ".env");
   if (!existsSync(envPath)) {
@@ -551,13 +557,13 @@ export async function readEnvMap(worktreePath) {
   }
 
   const values = parseEnv(await readFile(envPath, "utf8"));
-  const expansionEnv = { ...SERVICE_BASE_ENV, ...values };
+  const expansionEnv = { ...process.env, ...values };
   let resultKey = "__NIGHTFALL_EXPANSION_RESULT__";
   while (Object.hasOwn(expansionEnv, resultKey)) resultKey += "_";
   for (const [key, value] of Object.entries(values)) {
     const scope = { ...expansionEnv };
-    if (Object.hasOwn(SERVICE_BASE_ENV, key)) {
-      scope[key] = SERVICE_BASE_ENV[key];
+    if (Object.hasOwn(process.env, key)) {
+      scope[key] = process.env[key];
     } else {
       delete scope[key];
     }
@@ -1050,12 +1056,61 @@ function openServiceLog(worktreePath, service) {
   );
 }
 
+/** @type {Promise<Array<Record<string, string | boolean>>> | null} */
+let worktreeListPromise = null;
+/** Set once Git metadata watchers run; until then the worktree list isn't cached. */
+let worktreeMetadataWatched = false;
+
+/**
+ * Returns `git worktree list`, cached until `invalidateWorktreeList` runs. Git
+ * metadata watchers invalidate it when a worktree is added or removed or switches
+ * branch, so snapshots don't spawn Git each time. Without working watchers every
+ * call asks Git, and a failed listing is never cached.
+ */
+function listWorktrees() {
+  if (!worktreeMetadataWatched) invalidateWorktreeList();
+  worktreeListPromise ??= runGit(["worktree", "list", "--porcelain"])
+    .then(parseWorktreeList)
+    .catch((error) => {
+      worktreeListPromise = null;
+      throw error;
+    });
+  return worktreeListPromise;
+}
+
+/** Drops the cached worktree list, so the next snapshot asks Git again. */
+function invalidateWorktreeList() {
+  worktreeListPromise = null;
+}
+
+/** Listener PIDs by port, reused while the process lives so lookups don't spawn lsof. */
+const listenerPidCache = new Map();
+
+/** Reports whether a process exists; only a missing-process error (ESRCH) means it doesn't. */
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !isMissingProcessError(error);
+  }
+}
+
+/**
+ * Returns the listener PID on an open port, looking it up (a subprocess) only when
+ * the port has no cached PID or the cached process has exited.
+ */
+async function cachedListenerPid(port) {
+  const cached = listenerPidCache.get(port);
+  if (cached && processAlive(cached)) return cached;
+  const pid = (await findListeningPids(port)).pids[0] ?? null;
+  if (pid) listenerPidCache.set(port, pid);
+  else listenerPidCache.delete(port);
+  return pid;
+}
+
 async function collectWorktreeState() {
-  const raw = await runGit(["worktree", "list", "--porcelain"]);
-  const parsed = parseWorktreeList(raw);
-  /** Returns the first listener PID on an open port, or null when none resolves. */
-  const listenerPid = async (port) =>
-    (await findListeningPids(port)).pids[0] ?? null;
+  const parsed = await listWorktrees();
 
   const collected = await Promise.all(
     parsed.map(async (entry, index) => {
@@ -1080,9 +1135,14 @@ async function collectWorktreeState() {
         docsUserPortOpen,
         docsDevPortOpen,
       ] = portOpen;
+      for (const [index, port] of ports.entries()) {
+        if (port && !portOpen[index]) listenerPidCache.delete(port);
+      }
       const [backendPid, webUiPid, docsUserPid, docsDevPid] = await Promise.all(
         ports.map((port, index) =>
-          port && portOpen[index] ? listenerPid(port) : Promise.resolve(null),
+          port && portOpen[index]
+            ? cachedListenerPid(port)
+            : Promise.resolve(null),
         ),
       );
       // Reading without creating keeps a poll that overlaps a removal from
@@ -1204,11 +1264,13 @@ function textResponse(res, statusCode, text) {
   res.end(text);
 }
 
-function dashboardApiInfo() {
-  const backendPortRaw = Number.parseInt(
-    process.env.NIGHTFALL_PORT ?? "3030",
-    10,
-  );
+/**
+ * Describes the API and suggests the dashboard page URL, served by the web UI
+ * of the checkout running the dashboard, whose port comes from its `.env`.
+ */
+async function dashboardApiInfo() {
+  const { values } = await readEnvMap(DASHBOARD_ROOT);
+  const backendPortRaw = Number.parseInt(values.NIGHTFALL_PORT ?? "3030", 10);
   const backendPort = Number.isFinite(backendPortRaw) ? backendPortRaw : 3030;
   const uiPort = backendPort + 1;
   const suggestedUiUrl = `http://localhost:${uiPort}/worktree-dashboard.html`;
@@ -1317,16 +1379,119 @@ function forgetManagedRecord(worktreePath) {
   managedServices.delete(worktreePath);
 }
 
+/** Port-backed services and the snapshot field that says their port is open. */
+const PORT_OPEN_FIELDS = {
+  backend: "backendPortOpen",
+  ui: "webUiPortOpen",
+  "docs-user": "docsUserPortOpen",
+  "docs-dev": "docsDevPortOpen",
+};
+
+/** Builds the snapshot the page shows and the event stream sends. */
+async function dashboardSnapshot() {
+  return {
+    generatedAt: formatTimestamp(),
+    dashboardPid: process.pid,
+    worktrees: await collectWorktreeState(),
+  };
+}
+
+const stateStream = createStateStream({
+  collect: dashboardSnapshot,
+  /** Checks fast while a managed service runs but doesn't listen yet, i.e. is starting. */
+  needsFastChecks: (snapshot) =>
+    snapshot.worktrees.some((worktree) =>
+      Object.entries(PORT_OPEN_FIELDS).some(
+        ([service, field]) =>
+          worktree.managed[service]?.running && !worktree.observed[field],
+      ),
+    ),
+  /** Logs a failed snapshot; the stream retries on its next timed check. */
+  onError: (error) =>
+    console.error("Failed to refresh the dashboard event stream:", error),
+});
+
+/**
+ * Watches Git's metadata for worktrees being added or removed and for branch
+ * switches (each worktree's HEAD), dropping the cached worktree list and pushing a
+ * new snapshot. Index and ref updates are ignored, since they don't change the list.
+ * Linked worktrees live under `<common dir>/worktrees`, which Git creates with the
+ * first one, so that watch is retried whenever the top-level watch fires.
+ */
+async function watchWorktreeMetadata() {
+  const commonDir = resolve(
+    DASHBOARD_ROOT,
+    (await runGit(["rev-parse", "--git-common-dir"])).trim(),
+  );
+  /** Invalidates the worktree list and tells the stream something changed. */
+  const changed = () => {
+    invalidateWorktreeList();
+    stateStream.notify();
+  };
+  let worktreesWatcher = null;
+  /**
+   * (Re)starts the recursive watch on linked worktrees' metadata. Git deletes the
+   * folder with the last linked worktree and recreates it with the next, and a watch
+   * on a deleted folder goes silent, so each top-level event for it starts over.
+   */
+  const watchLinkedWorktrees = () => {
+    worktreesWatcher?.close();
+    worktreesWatcher = null;
+    try {
+      worktreesWatcher = watch(
+        join(commonDir, "worktrees"),
+        { recursive: true, persistent: false },
+        /** Reacts to worktree folders appearing or vanishing and to HEAD changes. */
+        (_event, filename) => {
+          const name = String(filename ?? "").replaceAll("\\", "/");
+          // `<name>` is a worktree being added or removed; `<name>/HEAD` a branch switch.
+          if (!name.includes("/") || name.endsWith("/HEAD")) changed();
+        },
+      );
+      /** Drops a broken watch; the next top-level event for the folder restarts it. */
+      worktreesWatcher.on("error", () => {
+        worktreesWatcher?.close();
+        worktreesWatcher = null;
+      });
+    } catch {
+      worktreesWatcher = null;
+    }
+  };
+  watch(
+    commonDir,
+    { persistent: false },
+    /** Follows the main worktree's HEAD and the linked-worktrees folder coming and going. */
+    (_event, filename) => {
+      if (filename === "worktrees") watchLinkedWorktrees();
+      if (filename === "HEAD" || filename === "worktrees") changed();
+    },
+  );
+  watchLinkedWorktrees();
+  worktreeMetadataWatched = true;
+}
+
+watchWorktreeMetadata().catch((error) => {
+  console.warn(
+    "Could not watch Git metadata; worktree changes appear on manual refresh:",
+    error,
+  );
+});
+
 const server = http.createServer(async (req, res) => {
   try {
     const method = req.method ?? "GET";
-    const url = new URL(
-      req.url ?? "/",
-      `http://${req.headers.host ?? "localhost"}`,
-    );
+    const access = checkRequest({
+      host: req.headers.host,
+      origin: req.headers.origin,
+    });
+    if (!access.allowed) {
+      textResponse(res, 403, access.reason ?? "Forbidden");
+      return;
+    }
+    const url = new URL(req.url ?? "/", "http://localhost");
 
     if (method === "GET" && url.pathname === "/") {
-      textResponse(res, 200, dashboardApiInfo());
+      textResponse(res, 200, await dashboardApiInfo());
       return;
     }
 
@@ -1336,12 +1501,28 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (method === "GET" && url.pathname === "/api/worktrees") {
-      const worktrees = await collectWorktreeState();
-      jsonResponse(res, 200, {
-        generatedAt: formatTimestamp(),
-        dashboardPid: process.pid,
-        worktrees,
+      jsonResponse(res, 200, await dashboardSnapshot());
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/api/events") {
+      await stateStream.addClient(req, res);
+      return;
+    }
+
+    if (method === "POST") {
+      // Every POST can change what the snapshot shows; report it once it's answered.
+      res.once("finish", () => stateStream.notify());
+    }
+
+    if (method === "POST" && url.pathname === "/api/worktrees") {
+      const result = await createWorktree({
+        branch: url.searchParams.get("branch") ?? "",
+        root: DASHBOARD_ROOT,
       });
+      invalidateWorktreeList();
+      const status = result.ok ? 200 : result.reason === "invalid" ? 400 : 409;
+      jsonResponse(res, status, result);
       return;
     }
 
@@ -1373,7 +1554,7 @@ const server = http.createServer(async (req, res) => {
         textResponse(
           res,
           400,
-          "Worktree is missing .env; run node scripts/setup-env.mjs in that worktree before managing services",
+          "Worktree is missing .env; run wt hook pre-start setup-env in that worktree before managing services",
         );
         return;
       }
@@ -1492,6 +1673,7 @@ const server = http.createServer(async (req, res) => {
         force: parseForce(url.searchParams),
         root: DASHBOARD_ROOT,
       });
+      invalidateWorktreeList();
       // A failed removal can still have deleted the worktree before erroring.
       if (result.ok || !(await isKnownWorktreePath(worktreePath))) {
         forgetManagedRecord(worktreePath);
@@ -1544,7 +1726,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(DASHBOARD_PORT, DASHBOARD_HOST, () => {
-  const url = `http://${DASHBOARD_HOST}:${DASHBOARD_PORT}`;
+  const url = `http://${DASHBOARD_HOST}:${server.address().port}`;
   console.log(`nightfall worktree dashboard listening on ${url}`);
   console.log(`API endpoint: ${url}/api/worktrees`);
   console.log(
@@ -1555,6 +1737,7 @@ server.listen(DASHBOARD_PORT, DASHBOARD_HOST, () => {
 
 function shutdown(signal) {
   console.log(`Received ${signal}, stopping managed processes...`);
+  stateStream.close();
 
   for (const [worktreePath, services] of managedServices.entries()) {
     for (const service of SERVICES) {

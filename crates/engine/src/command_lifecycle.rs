@@ -34,6 +34,10 @@ pub struct ActiveCommand {
     /// Whether the command is an undo or redo replaying captured inverses, which restore
     /// earlier state as it was rather than submit new edits.
     pub undo_replay: bool,
+    /// Whether a macro run issued the command as one of its statements. The command keeps the
+    /// origin of the surface that started the macro, so handlers that treat a person's input
+    /// differently from scripted input check this instead.
+    pub macro_statement: bool,
     /// Number of operation outcomes required before the command can finish.
     expected_completions: usize,
     /// Operation outcomes already received for this command.
@@ -44,6 +48,19 @@ pub struct ActiveCommand {
     first_error: Option<CommandError>,
     /// Per-operation outputs retained until the command-level success is complete.
     success_outputs: Vec<Option<CommandOutput>>,
+}
+
+impl ActiveCommand {
+    /// Number of delegated operation outcomes received so far, successful or not, so a
+    /// workflow can wait for one operation to settle before queuing work that depends on it.
+    pub fn received_completions(&self) -> usize {
+        self.received_completions
+    }
+
+    /// First delegated operation failure received so far, if any.
+    pub fn first_error(&self) -> Option<&CommandError> {
+        self.first_error.as_ref()
+    }
 }
 
 /// Terminal command data returned when the tracker accepts a finish operation.
@@ -147,6 +164,7 @@ impl CommandTracker {
                 reply_target,
                 started_at: Instant::now(),
                 undo_replay: false,
+                macro_statement: false,
                 expected_completions: 1,
                 received_completions: 0,
                 successful_completions: 0,
@@ -208,6 +226,20 @@ impl CommandTracker {
         if let Some(command) = self.active.get_mut(&command_id) {
             command.undo_replay = true;
         }
+    }
+
+    /// Marks an active command as a statement a macro run issued.
+    pub fn mark_macro_statement(&mut self, command_id: CommandId) {
+        if let Some(command) = self.active.get_mut(&command_id) {
+            command.macro_statement = true;
+        }
+    }
+
+    /// Returns whether an active command is a statement a macro run issued.
+    pub fn is_macro_statement(&self, command_id: CommandId) -> bool {
+        self.active
+            .get(&command_id)
+            .is_some_and(|command| command.macro_statement)
     }
 
     /// Returns whether an active command is an undo or redo replaying captured inverses.
@@ -440,6 +472,16 @@ impl CommandResponder<'_> {
             .register_context(command_id, undo_id, origin, reply_target)
     }
 
+    /// Marks an active command as a statement a macro run issued.
+    pub fn mark_macro_statement(&mut self, command_id: CommandId) {
+        self.tracker.mark_macro_statement(command_id);
+    }
+
+    /// Returns whether an active command is a statement a macro run issued.
+    pub fn is_macro_statement(&self, command_id: CommandId) -> bool {
+        self.tracker.is_macro_statement(command_id)
+    }
+
     /// Returns whether a command is currently awaiting a terminal outcome.
     pub fn is_active(&self, command_id: CommandId) -> bool {
         self.tracker.is_active(command_id)
@@ -448,6 +490,12 @@ impl CommandResponder<'_> {
     /// Returns the client session that submitted an active command, if one was identified.
     pub fn connection(&self, command_id: CommandId) -> Option<ClientId> {
         self.tracker.connection(command_id)
+    }
+
+    /// Returns the context of a command still awaiting its terminal outcome, including the
+    /// delegated outcomes it has received so far.
+    pub fn active_command(&self, command_id: CommandId) -> Option<&ActiveCommand> {
+        self.tracker.active_command(command_id)
     }
 
     /// Returns the surface that accepted an active command, such as the web UI or a MIDI

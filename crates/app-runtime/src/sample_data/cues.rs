@@ -61,9 +61,9 @@ pub(super) fn add_abs_128_cue(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -93,9 +93,9 @@ pub(super) fn add_abs_128_cue(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -125,9 +125,9 @@ pub(super) fn add_abs_128_cue(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -244,9 +244,9 @@ pub(super) fn add_abs_255_cue(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -276,9 +276,9 @@ pub(super) fn add_abs_255_cue(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -308,9 +308,9 @@ pub(super) fn add_abs_255_cue(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -340,9 +340,9 @@ pub(super) fn add_abs_255_cue(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -463,9 +463,9 @@ pub(super) fn add_rel_cue(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Red,
@@ -487,9 +487,9 @@ pub(super) fn add_rel_cue(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Green,
@@ -511,9 +511,9 @@ pub(super) fn add_rel_cue(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Blue,
@@ -625,9 +625,9 @@ pub(super) fn add_fanned_timing_cue(world: &mut World) {
             label: "Fanned Timing".to_owned(),
         },
         trigger: CueTriggerType::Manual,
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -659,9 +659,9 @@ pub(super) fn add_fanned_timing_cue(world: &mut World) {
             label: "Fanned Timing Release".to_owned(),
         },
         trigger: CueTriggerType::Manual,
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([
                     (
@@ -782,9 +782,9 @@ pub(super) fn add_color_fade_sequences(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: instant_transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Red,
@@ -804,9 +804,9 @@ pub(super) fn add_color_fade_sequences(world: &mut World) {
         },
         trigger: CueTriggerType::FollowPrevious,
         transitions: fade_out_transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,
@@ -855,9 +855,9 @@ pub(super) fn add_color_fade_sequences(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: instant_transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Green,
@@ -877,9 +877,9 @@ pub(super) fn add_color_fade_sequences(world: &mut World) {
         },
         trigger: CueTriggerType::FollowPrevious,
         transitions: fade_out_transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,
@@ -928,9 +928,9 @@ pub(super) fn add_color_fade_sequences(world: &mut World) {
         },
         trigger: CueTriggerType::Manual,
         transitions: instant_transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Blue,
@@ -950,9 +950,9 @@ pub(super) fn add_color_fade_sequences(world: &mut World) {
         },
         trigger: CueTriggerType::FollowPrevious,
         transitions: fade_out_transition.clone(),
-        instructions: vec![BoundCueInstruction {
+        instructions: vec![BoundAssertionSet {
             selection: selection.clone().into(),
-            cue_instruction: CueInstruction {
+            assertions: AssertionSet {
                 blueprint_application: None,
                 values: HashMap::from([(
                     Attribute::Intensity,

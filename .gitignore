@@ -1,5 +1,6 @@
 # Cargo
-.cargo/
+.cargo/*
+!.cargo/config.toml
 debug/
 target/
 
@@ -51,3 +52,4 @@ test-results/
 .dolt/
 *.db
 .beads-credential-key
+.beads.gate.lock

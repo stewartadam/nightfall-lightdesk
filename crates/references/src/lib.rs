@@ -280,16 +280,17 @@ impl Plugin for ReferencesPlugin {
             REFERENCE_WATCH_MODULE,
             deserialize_reference_watch,
         );
+        allow_update_while_read_only(app, REFERENCE_WATCH_MODULE);
+        // The report refreshes the reverse indexes that delete guards read, so it runs with the
+        // command handlers and is current before every rerun of the command schedule.
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 forget_disconnected_watchers.in_set(EventHandling),
-                update_reference_report
-                    .after(EventHandling)
-                    .before(ResyncHandling),
-                queue_health_on_resync.in_set(ResyncHandling),
+                update_reference_report.after(EventHandling),
             ),
         );
+        app.add_systems(Update, queue_health_on_resync.in_set(ResyncHandling));
         app.add_systems(Render, send_reference_report.in_set(ClientOutput));
     }
 }

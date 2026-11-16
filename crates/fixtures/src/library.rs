@@ -37,16 +37,20 @@ pub fn normalize_fixture_profile(fixture: &mut Fixture) {
 
 /// Creates an explicit built-in fixture for an exact make/model identifier.
 ///
-/// An empty mode selects the profile's default mode. Returns `None` for a mode the
-/// profile doesn't offer, and for identifiers owned by imported fixture-library
-/// sources or otherwise unknown to this registry.
+/// An empty mode selects the profile's default mode. A retired built-in model resolves to
+/// the mode of the profile that replaced it, so commands written for it keep working.
+/// Returns `None` for a mode the profile doesn't offer, and for identifiers owned by
+/// imported fixture-library sources or otherwise unknown to this registry.
 pub fn create_fixture_from_library(
     id: u32,
     make: &str,
     model: &str,
     mode: &str,
 ) -> Option<Fixture> {
-    let profile = catalog::find_builtin_fixture_profile(make, model)?;
+    let Some(profile) = catalog::find_builtin_fixture_profile(make, model) else {
+        let (profile, mode) = catalog::resolve_retired_builtin_model(make, model, mode)?;
+        return profile.create_fixture(id, mode);
+    };
     let mode = if mode.is_empty() {
         profile.default_mode()
     } else {

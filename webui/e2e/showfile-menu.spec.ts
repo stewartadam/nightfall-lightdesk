@@ -103,19 +103,23 @@ async function captureWorkerSends(
       };
       if (envelope?.type === "submit") {
         globalWindow.__nightfallWorkerSends?.push(envelope.data);
-        const blockedDeskCommands = new Set([
-          "DiscardDraftShowfile",
-          "Eval",
-          "LoadDraftShowfile",
-          "LoadNamedShowfile",
-          "LoadShowfile",
-          "LoadShowfileRevision",
-          "NewNamedShowfile",
-          "NewShowfile",
-        ]);
+        const blockedCommands: Record<string, Set<string>> = {
+          ShowfileCommand: new Set([
+            "DiscardDraftShowfile",
+            "LoadDraftShowfile",
+            "LoadNamedShowfile",
+            "LoadShowfile",
+            "LoadShowfileRevision",
+            "NewNamedShowfile",
+            "NewShowfile",
+          ]),
+          EngineCommand: new Set(["Eval"]),
+        };
         if (
-          envelope.data?.module === "DeskCommand" &&
-          blockedDeskCommands.has(envelope.data.command?.type ?? "")
+          envelope.data &&
+          blockedCommands[envelope.data.module ?? ""]?.has(
+            envelope.data.command?.type ?? "",
+          )
         ) {
           if (deferredCommands.has(envelope.data.command?.type ?? "")) {
             return;
@@ -480,7 +484,7 @@ test("prompts to load a newer startup draft", async ({ page }) => {
           .__nightfallWorkerSends ?? [];
       return sends.filter(
         (send) =>
-          send?.module === "DeskCommand" &&
+          send?.module === "ShowfileCommand" &&
           send?.command?.type === "LoadDraftShowfile" &&
           send?.command?.data === "default",
       ).length;
@@ -544,7 +548,7 @@ test("load draft sends one startup draft load", async ({ page }) => {
           .__nightfallWorkerSends ?? [];
       return sends.filter(
         (send) =>
-          send?.module === "DeskCommand" &&
+          send?.module === "ShowfileCommand" &&
           send?.command?.type === "LoadDraftShowfile" &&
           send?.command?.data === "default",
       ).length;
@@ -604,7 +608,9 @@ test("opens another showfile from the startup draft prompt", async ({
   });
   await expect(recoveryDialog).toBeVisible();
 
-  await recoveryDialog.getByRole("button", { name: "Open Other..." }).click();
+  await recoveryDialog
+    .getByRole("button", { name: "Manage showfiles" })
+    .click();
   await expect(recoveryDialog).toBeHidden();
 
   const pickerDialog = page.getByRole("dialog", { name: "Open Showfile" });
@@ -625,7 +631,7 @@ test("opens another showfile from the startup draft prompt", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile" &&
             send?.command?.data === "tour",
         );
@@ -635,7 +641,7 @@ test("opens another showfile from the startup draft prompt", async ({
   await expect(page.getByTestId("status-showfile-name")).toContainText("tour");
 });
 
-/** Verifies startup recovery can start a new show before revealing the app. */
+/** Verifies the startup draft prompt can reach a new show through Manage showfiles before revealing the app. */
 test("creates a new show from the startup draft prompt", async ({
   page,
 }, testInfo) => {
@@ -683,7 +689,13 @@ test("creates a new show from the startup draft prompt", async ({
   await recoveryDialog.screenshot({
     path: testInfo.outputPath("recovery-dialog.png"),
   });
-  await recoveryDialog.getByRole("button", { name: "New showfile" }).click();
+  await recoveryDialog
+    .getByRole("button", { name: "Manage showfiles" })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Open Showfile" })
+    .getByRole("button", { name: "New showfile" })
+    .click();
   const nameDialog = page.getByRole("dialog", {
     name: "New Showfile",
     exact: true,
@@ -712,7 +724,7 @@ test("creates a new show from the startup draft prompt", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "NewNamedShowfile" &&
             send?.command?.data?.name === "recovered-new",
         );
@@ -722,7 +734,7 @@ test("creates a new show from the startup draft prompt", async ({
 });
 
 /**
- * Verifies Enter in the show name field stacked over the startup draft prompt
+ * Verifies Enter in the show name field, reached from the startup draft prompt,
  * submits the new show instead of triggering the prompt's Load Draft default.
  */
 test("enter in the new show name over the startup draft prompt creates the show", async ({
@@ -764,7 +776,13 @@ test("enter in the new show name over the startup draft prompt creates the show"
     name: "Resume your work on default?",
   });
   await expect(recoveryDialog).toBeVisible();
-  await recoveryDialog.getByRole("button", { name: "New showfile" }).click();
+  await recoveryDialog
+    .getByRole("button", { name: "Manage showfiles" })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Open Showfile" })
+    .getByRole("button", { name: "New showfile" })
+    .click();
   const nameDialog = page.getByRole("dialog", {
     name: "New Showfile",
     exact: true,
@@ -774,7 +792,7 @@ test("enter in the new show name over the startup draft prompt creates the show"
   await nameInput.fill("recovered-enter");
   await nameInput.press("Enter");
 
-  /** Counts desk commands of one type captured from the worker bridge. */
+  /** Counts showfile commands of one type captured from the worker bridge. */
   const deskCommandCount = (type: string) =>
     page.evaluate((type) => {
       const sends =
@@ -782,7 +800,7 @@ test("enter in the new show name over the startup draft prompt creates the show"
           .__nightfallWorkerSends ?? [];
       return sends.filter(
         (send) =>
-          send?.module === "DeskCommand" &&
+          send?.module === "ShowfileCommand" &&
           send?.command?.type === type &&
           (type !== "NewNamedShowfile" ||
             send?.command?.data?.name === "recovered-enter"),
@@ -842,7 +860,7 @@ test("keeps startup shell hidden while another showfile load is pending", async 
     .getByRole("dialog", {
       name: "Resume your work on default?",
     })
-    .getByRole("button", { name: "Open Other..." })
+    .getByRole("button", { name: "Manage showfiles" })
     .click();
 
   const pickerDialog = page.getByRole("dialog", { name: "Open Showfile" });
@@ -902,7 +920,7 @@ test("prompts for a saved showfile when no startup draft is newer", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile",
         );
       }),
@@ -923,7 +941,7 @@ test("prompts for a saved showfile when no startup draft is newer", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile" &&
             send?.command?.data === "tour",
         );
@@ -965,7 +983,7 @@ test("creates a new startup show when no showfiles are available", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             (send?.command?.type === "LoadNamedShowfile" ||
               send?.command?.type === "LoadShowfile" ||
               send?.command?.type === "NewNamedShowfile" ||
@@ -986,7 +1004,7 @@ test("creates a new startup show when no showfiles are available", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "NewNamedShowfile" &&
             send?.command?.data?.name === "startup-new",
         );
@@ -1119,13 +1137,13 @@ test("keeps saved startup showfile by discarding draft and loading saved copy", 
             .__nightfallWorkerSends ?? [];
         const discardIndex = sends.findIndex(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "DiscardDraftShowfile" &&
             send?.command?.data === "tour",
         );
         const loadIndex = sends.findIndex(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile" &&
             send?.command?.data === "tour",
         );
@@ -1174,7 +1192,9 @@ test("explains the 1 GiB limit when opening an oversized showfile", async ({
   await dialog
     .getByRole("button", { name: "Open saved showfile oversized" })
     .click();
-  await expect(dialog.getByRole("alert")).toHaveText(`${message}Retry`);
+  await expect(dialog.getByRole("document").getByRole("alert")).toHaveText(
+    `${message}Retry`,
+  );
   await expect(
     dialog.getByRole("button", { name: "Retry", exact: true }),
   ).toBeVisible();
@@ -1240,7 +1260,8 @@ test("shows an error when keeping the saved startup showfile fails", async ({
 
   await dialog.getByRole("button", { name: "Keep Saved" }).click();
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("alert")).toContainText(
+  // The dialog's surface holds its inline alert; the matching error toast floats beside it.
+  await expect(dialog.getByRole("document").getByRole("alert")).toContainText(
     "failed to discard draft",
   );
   await expect(page.locator("button[title='Menu']")).toHaveCount(0);
@@ -1252,7 +1273,7 @@ test("shows an error when keeping the saved startup showfile fails", async ({
             .__nightfallWorkerSends ?? [];
         return sends.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile",
         );
       }),
@@ -1380,7 +1401,7 @@ test("opens a selected available showfile from the status bar menu", async ({
           .__nightfallWorkerSends;
         return sends?.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadNamedShowfile" &&
             send?.command?.data === "tour",
         );
@@ -1471,7 +1492,7 @@ test("badges and disables a showfile that failed to parse", async ({
         .__nightfallWorkerSends;
       return sends?.some(
         (send) =>
-          send?.module === "DeskCommand" &&
+          send?.module === "ShowfileCommand" &&
           send?.command?.type === "LoadNamedShowfile" &&
           send?.command?.data === "broken",
       );
@@ -1550,7 +1571,7 @@ test("expands a showfile and opens a backup revision", async ({ page }) => {
           .__nightfallWorkerSends;
         return sends?.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadShowfileRevision" &&
             send?.command?.data?.showfileName === "tour" &&
             send?.command?.data?.revisionName ===
@@ -1695,7 +1716,7 @@ test("expands a showfile and opens a draft", async ({ page }) => {
           .__nightfallWorkerSends;
         return sends?.some(
           (send) =>
-            send?.module === "DeskCommand" &&
+            send?.module === "ShowfileCommand" &&
             send?.command?.type === "LoadDraftShowfile" &&
             send?.command?.data === "tour",
         );

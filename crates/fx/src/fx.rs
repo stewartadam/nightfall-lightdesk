@@ -11,6 +11,7 @@ use std::{collections::HashMap, time::Duration};
 use nightfall::prelude::*;
 use nightfall_dmx::PercentageAsF64;
 use nightfall_dmx::prelude::*;
+use nightfall_fixture_model::prelude::ParameterMetadata;
 use nightfall_instances::Timebase;
 use nightfall_selection::{
     HeldReference, ReferenceSource, SelectionValidatedEntity, SpatialSelectionResolution,
@@ -66,15 +67,18 @@ impl ReferenceSource for Fx {
 }
 
 /// Waveform parameters for FX.
+#[serde_with::serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct FxWaveformParams {
     /// The waveform kind (shape)
     pub kind: WaveformKind,
-    /// The minimum output value (0-255 DMX)
-    pub min: ParameterDmxValue,
-    /// The maximum output value (0-255 DMX)
-    pub max: ParameterDmxValue,
+    /// The lowest output, as a fraction (0-1) of each parameter's range
+    #[serde_as(as = "PercentageAsF64")]
+    pub min: Percentage,
+    /// The highest output, as a fraction (0-1) of each parameter's range
+    #[serde_as(as = "PercentageAsF64")]
+    pub max: Percentage,
     /// The duty cycle (0.0-1.0, for Square/Pulse waves)
     #[serde(default = "default_duty_cycle")]
     pub duty_cycle: f32,
@@ -85,11 +89,14 @@ fn default_duty_cycle() -> f32 {
 }
 
 impl FxWaveformParams {
-    /// Sample the waveform at a given phase in radians.
-    pub fn sample(&self, phase_radians: f32) -> ParameterDmxValue {
+    /// Samples the waveform at a phase in radians, scaled between `min` and `max`.
+    ///
+    /// Returns a fraction (0-1) of the parameter range; [`FxWaveform::output_value`]
+    /// turns it into a value for a concrete parameter.
+    pub fn sample(&self, phase_radians: f32) -> f32 {
         let normalized = sample_waveform_radians(self.kind, phase_radians, self.duty_cycle);
-        let scaled = self.min + normalized * (self.max - self.min);
-        scaled.clamp(0.0, 255.0)
+        let (min, max) = (self.min.as_f32(), self.max.as_f32());
+        (min + normalized * (max - min)).clamp(0.0, 1.0)
     }
 }
 
@@ -114,27 +121,27 @@ pub struct FxWaveform {
     pub phase_range: (f32, f32),
     /// The duration one complete cycle of the waveform should take
     pub cycle_length: Duration,
-    /// The width of the waveform (0-100%), scales amplitude around midpoint (127.5).
+    /// The width of the waveform (0-100%), scales amplitude around the middle of the range.
     #[serde_as(as = "PercentageAsF64")]
     pub width: Percentage,
     /// Whether the waveform should output relative values instead of absolute values.
+    ///
+    /// A relative waveform is centred: the middle of its range leaves the parameter
+    /// unchanged, and the waveform swings it up and down from there.
     pub is_relative: bool,
 }
 
 impl FxWaveform {
-    /// Samples the waveform value at the phase offset indicated by the
-    /// percentage, for each fixture in the given selection.
-    /// The `width` field scales the amplitude around the midpoint (127.5).
+    /// Samples the waveform at the phase offset indicated by the percentage, for each fixture
+    /// in the given selection, as a fraction (0-1) of the parameter range.
+    ///
+    /// The `width` field scales the amplitude around the middle of the range (0.5).
     ///
     /// Fixtures are distributed across the `phase_range`:
     /// - `phase_range = (0, 2π)`: Full waveform distribution (default)
     /// - `phase_range = (0, π)`: Fixtures clustered in first half
     /// - `phase_range = (0, 4π)`: Fixtures spread over two cycles
-    pub fn sample(
-        &self,
-        selection: &ResolvedSelection,
-        percent: Percentage,
-    ) -> Vec<ParameterDmxValue> {
+    pub fn sample(&self, selection: &ResolvedSelection, percent: Percentage) -> Vec<f32> {
         let fixture_count = selection.indexes().len();
         if fixture_count == 0 {
             return Vec::new();
@@ -155,14 +162,30 @@ impl FxWaveform {
                 let phase = phase_start
                     + (index as f32 * spacing)
                     + 2.0 * std::f32::consts::PI * percent.as_f32();
-                let raw_value = self.params.sample(phase);
-                // Scale amplitude around midpoint (127.5)
-                let midpoint = 127.5_f32;
-                let deviation = raw_value - midpoint;
-                let scaled = midpoint + (deviation * width_scale);
-                scaled.clamp(0.0, 255.0)
+                let fraction = self.params.sample(phase);
+                (0.5 + (fraction - 0.5) * width_scale).clamp(0.0, 1.0)
             })
             .collect()
+    }
+
+    /// Converts a sampled fraction of the range into the value this waveform outputs for a
+    /// parameter, in that parameter's logical units.
+    ///
+    /// An absolute waveform maps the fraction across the parameter's logical range, so a
+    /// full-range waveform sweeps a signed Pan from its negative to its positive end. A
+    /// relative waveform outputs an offset centred on 0.5, so a full-range waveform moves the
+    /// parameter up to half its range either way.
+    pub fn output_value(&self, fraction: f32, metadata: &ParameterMetadata) -> ParameterValue {
+        let range = metadata.logical_range();
+        if self.is_relative {
+            ParameterValue::Relative {
+                offset: (fraction - 0.5) * range,
+            }
+        } else {
+            ParameterValue::Absolute {
+                value: metadata.logical_min() + fraction * range,
+            }
+        }
     }
 
     /// Calculate the phase for a specific fixture index given the phase_range and fixture count.
@@ -190,8 +213,8 @@ mod tests {
         FxWaveform {
             params: FxWaveformParams {
                 kind: WaveformKind::Sin,
-                min: 0.0,
-                max: 255.0,
+                min: Percentage::from(0.0),
+                max: Percentage::from(1.0),
                 duty_cycle: 1.0,
             },
             phase_range,
@@ -335,5 +358,83 @@ mod tests {
             (phase0_t50 - phase0_t0 - PI).abs() < 0.001,
             "Phase should advance by π at 50% time"
         );
+    }
+
+    /// Builds 8-bit metadata for `attribute` with its own polarity over raw `min..max`.
+    fn metadata(attribute: Attribute, min: f32, max: f32) -> ParameterMetadata {
+        ParameterMetadata {
+            value_polarity: attribute.value_polarity(),
+            native_unit: attribute.native_unit(),
+            attribute,
+            min,
+            max,
+            ..Default::default()
+        }
+    }
+
+    /// Verifies a full-range absolute waveform reaches both ends of a signed parameter, so a
+    /// Pan sweep covers the negative side instead of stopping at centre.
+    #[test]
+    fn absolute_output_spans_signed_logical_range() {
+        let waveform = make_test_waveform((0.0, 2.0 * PI));
+        let pan = metadata(Attribute::Pan, 0.0, 255.0);
+
+        assert_eq!(
+            waveform.output_value(0.0, &pan),
+            ParameterValue::Absolute { value: -127.5 }
+        );
+        assert_eq!(
+            waveform.output_value(0.5, &pan),
+            ParameterValue::Absolute { value: 0.0 }
+        );
+        assert_eq!(
+            waveform.output_value(1.0, &pan),
+            ParameterValue::Absolute { value: 127.5 }
+        );
+    }
+
+    /// Verifies an absolute waveform scales to a parameter whose range is not 0-255.
+    #[test]
+    fn absolute_output_scales_to_parameter_range() {
+        let waveform = make_test_waveform((0.0, 2.0 * PI));
+        let wide = metadata(Attribute::Intensity, 0.0, 65535.0);
+
+        assert_eq!(
+            waveform.output_value(0.5, &wide),
+            ParameterValue::Absolute { value: 32767.5 }
+        );
+    }
+
+    /// Verifies a relative waveform is centred, so it subtracts below the middle of its range
+    /// and adds above it.
+    #[test]
+    fn relative_output_is_centred_on_no_change() {
+        let mut waveform = make_test_waveform((0.0, 2.0 * PI));
+        waveform.is_relative = true;
+        let intensity = metadata(Attribute::Intensity, 0.0, 255.0);
+
+        assert_eq!(
+            waveform.output_value(0.0, &intensity),
+            ParameterValue::Relative { offset: -127.5 }
+        );
+        assert_eq!(
+            waveform.output_value(0.5, &intensity),
+            ParameterValue::Relative { offset: 0.0 }
+        );
+        assert_eq!(
+            waveform.output_value(1.0, &intensity),
+            ParameterValue::Relative { offset: 127.5 }
+        );
+    }
+
+    /// Verifies `min` and `max` bound the sampled fraction of the parameter range.
+    #[test]
+    fn sample_scales_between_min_and_max() {
+        let mut waveform = make_test_waveform((0.0, 2.0 * PI));
+        waveform.params.min = Percentage::from(0.2);
+        waveform.params.max = Percentage::from(0.6);
+        // Sine peaks at a quarter cycle and bottoms out at three quarters.
+        assert!((waveform.params.sample(PI / 2.0) - 0.6).abs() < 1e-6);
+        assert!((waveform.params.sample(3.0 * PI / 2.0) - 0.2).abs() < 1e-6);
     }
 }

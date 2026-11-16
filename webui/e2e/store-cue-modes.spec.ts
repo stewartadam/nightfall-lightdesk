@@ -211,7 +211,7 @@ function legacyAllElementInstruction(fixtureUid: string): object {
       },
       clauses: [],
     },
-    cue_instruction: {
+    assertions: {
       values: {
         Red: inlinePercent(0.7),
         Green: inlinePercent(0.7),
@@ -273,7 +273,7 @@ function cueWithFixtureValues(
           },
           clauses: [],
         },
-        cue_instruction: {
+        assertions: {
           values,
           transitions: {},
           transitions_by_attribute: {},
@@ -335,7 +335,7 @@ async function evalCommand(page: Page, command: string): Promise<void> {
       throw new Error("appStores.sendAndAwait did not initialize");
     }
     return stores.sendAndAwait({
-      module: "DeskCommand",
+      module: "EngineCommand",
       command: { type: "Eval", data: commandText },
     });
   }, command);
@@ -639,7 +639,7 @@ test("store cue replace updates an open cue editor with merged fixture attribute
       .poll(async () =>
         page.evaluate((targetCueUid) => {
           const cue = (window as any).appStores.cues.get()[targetCueUid];
-          const values = cue?.instructions?.[0]?.cue_instruction?.values ?? {};
+          const values = cue?.instructions?.[0]?.assertions?.values ?? {};
           return {
             rows: cue?.instructions?.length ?? 0,
             attrs: Object.keys(values).sort(),

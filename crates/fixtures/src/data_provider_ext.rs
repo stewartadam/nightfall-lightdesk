@@ -164,23 +164,12 @@ impl FixtureDataProviderExt {
         element_ref: &FixtureRef,
         attribute: &Attribute,
     ) -> Option<ResolvedElementParameter> {
-        let index = self.parameter_index();
-        let parameters = index.element_parameters(element_ref);
-        let find = |wanted: &Attribute| {
-            parameters
-                .iter()
-                .find(|(candidate, _)| candidate == wanted)
-                .map(|(attribute, instance)| ResolvedElementParameter {
-                    instance: *instance,
-                    attribute: attribute.clone(),
-                })
-        };
-
-        find(attribute).or_else(|| {
-            (*attribute == Attribute::Intensity)
-                .then(|| find(&Attribute::VirtualIntensity))
-                .flatten()
-        })
+        self.parameter_index()
+            .parameter_for_logical_attribute(element_ref, attribute)
+            .map(|(attribute, instance)| ResolvedElementParameter {
+                instance,
+                attribute: attribute.clone(),
+            })
     }
 
     /// Sets or clears the default color path for a fixture or fixture element.
@@ -243,6 +232,26 @@ impl FixtureDataProviderExt {
         self.inner.get(fixture_uid).ok().map(|f| f.elements.len())
     }
 
+    /// Expands a fixture or element reference to element references.
+    ///
+    /// An element reference expands to itself. A whole-fixture reference expands to one reference
+    /// per element, and to element 1 for a fixture that reports no elements. Returns `None` for a
+    /// whole-fixture reference to an unknown fixture.
+    pub fn element_refs(&self, fixture: &FixtureRef) -> Option<Vec<FixtureRef>> {
+        if fixture.index.is_some() {
+            return Some(vec![fixture.clone()]);
+        }
+        let element_count = u32::try_from(self.element_count(fixture.fixture_uid)?.max(1)).ok()?;
+        Some(
+            (1..=element_count)
+                .map(|index| FixtureRef {
+                    fixture_uid: fixture.fixture_uid,
+                    index: Some(index),
+                })
+                .collect(),
+        )
+    }
+
     /// Returns a read guard over the parameter index for batch lookups.
     /// Use this when performing many lookups to avoid repeated lock acquisitions.
     pub fn parameter_index(&self) -> RwLockReadGuard<'_, ParameterIndex> {
@@ -286,31 +295,37 @@ impl FixtureDataProviderExt {
         uuid: &Uuid,
     ) -> Result<(Fixture, Vec<Instance<Parameter>>), DataStoreError<Fixture>> {
         let fixture = self.inner.remove(uuid)?;
-        let mut removed_parameters = Vec::new();
+        let removed_parameters = self.forget_fixture_parameters(&fixture);
+        Ok((fixture, removed_parameters))
+    }
 
-        // Collect element refs for this fixture
-        let element_count = fixture.elements.len();
-        for idx in 0..element_count {
+    /// Drops the parameter map, parameter index and color path default entries of a fixture
+    /// already taken out of the store, and returns its parameter entities for despawning.
+    ///
+    /// Lets a batch take fixtures out of the store first, so their IDs are free, and only
+    /// forget their parameters once the batch is kept.
+    pub fn forget_fixture_parameters(&mut self, fixture: &Fixture) -> Vec<Instance<Parameter>> {
+        let uuid = fixture.identifiers.uid;
+        let mut removed_parameters = Vec::new();
+        for idx in 0..fixture.elements.len() {
             let element_ref = FixtureRef {
-                fixture_uid: *uuid,
+                fixture_uid: uuid,
                 index: Some(idx as u32 + 1),
             };
-
             if let Some((_, params)) = self.parameter_map.remove(&element_ref) {
                 removed_parameters.extend(params);
             }
         }
-        self.parameter_index.write().unwrap().remove_fixture(*uuid);
+        self.parameter_index.write().unwrap().remove_fixture(uuid);
         self.color_path_defaults
-            .retain(|fixture_ref, _| fixture_ref.fixture_uid != *uuid);
+            .retain(|fixture_ref, _| fixture_ref.fixture_uid != uuid);
 
         tracing::debug!(
             "Removed fixture {} with {} parameter entities",
             fixture.identifiers.id,
             removed_parameters.len()
         );
-
-        Ok((fixture, removed_parameters))
+        removed_parameters
     }
 
     /// Removes all fixtures and returns parameter entities for despawning.

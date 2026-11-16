@@ -12,8 +12,8 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use nightfall::prelude::{
-    cue_authored_duration, sequence_timing_summary, CueTriggerType, FixtureRef, PartialTransition,
-    SequenceStepTiming, Transition, ValueSource,
+    cue_authored_duration, resolve_fanned_parameter_value, sequence_timing_summary, CueTriggerType,
+    FixtureRef, PartialTransition, SequenceStepTiming, Transition, ValueSource,
 };
 use nightfall_dmx::prelude::ParameterValue;
 use serde::{Deserialize, Serialize};
@@ -328,8 +328,11 @@ fn track_instruction_values(
                     tracked_values.insert_value(key, *value);
                 }
                 ValueSource::Fanned { values } => {
-                    let value =
-                        resolve_fanned_value(values, selection_index, instruction.fixtures.len());
+                    let value = resolve_fanned_parameter_value(
+                        values,
+                        selection_index,
+                        instruction.fixtures.len(),
+                    );
                     tracked_values.insert_value(key, value);
                 }
                 ValueSource::Release => {
@@ -434,76 +437,12 @@ fn value_for_source(
 ) -> Option<ParameterValue> {
     match source {
         ValueSource::Inline(value) => Some(*value),
-        ValueSource::Fanned { values } => Some(resolve_fanned_value(
+        ValueSource::Fanned { values } => Some(resolve_fanned_parameter_value(
             values,
             selection_index,
             selection_size,
         )),
         ValueSource::Release | ValueSource::HoldPosition => None,
-    }
-}
-
-/// Resolves a fanned parameter value for a selection offset.
-fn resolve_fanned_value(
-    values: &[ParameterValue],
-    fixture_index: usize,
-    total_fixtures: usize,
-) -> ParameterValue {
-    if values.is_empty() {
-        return ParameterValue::AbsolutePercent { value: 0.0.into() };
-    }
-    if values.len() == 1 || total_fixtures <= 1 {
-        return values[0];
-    }
-
-    if values.len() == total_fixtures {
-        return values[fixture_index];
-    }
-
-    let t = fixture_index as f32 / (total_fixtures - 1).max(1) as f32;
-    let max_segment = values.len() - 1;
-    let segment_position = t * max_segment as f32;
-    let segment_idx = (segment_position as usize).min(max_segment - 1);
-    let segment_t = segment_position - segment_idx as f32;
-    interpolate_parameter_values(values[segment_idx], values[segment_idx + 1], segment_t)
-}
-
-/// Interpolates between two parameter values using materialized cue semantics.
-fn interpolate_parameter_values(
-    start: ParameterValue,
-    end: ParameterValue,
-    factor: f32,
-) -> ParameterValue {
-    match (start, end) {
-        (
-            ParameterValue::AbsolutePercent { value: start_value },
-            ParameterValue::AbsolutePercent { value: end_value },
-        ) => {
-            let start = start_value.as_f32();
-            let end = end_value.as_f32();
-            ParameterValue::AbsolutePercent {
-                value: (start + factor * (end - start)).into(),
-            }
-        }
-        (
-            ParameterValue::RelativePercent {
-                offset: start_offset,
-            },
-            ParameterValue::RelativePercent { offset: end_offset },
-        ) => {
-            let start = start_offset.as_f32();
-            let end = end_offset.as_f32();
-            ParameterValue::RelativePercent {
-                offset: (start + factor * (end - start)).into(),
-            }
-        }
-        (
-            ParameterValue::Absolute { value: start_value },
-            ParameterValue::Absolute { value: end_value },
-        ) => ParameterValue::Absolute {
-            value: (start_value + factor * (end_value - start_value)).round(),
-        },
-        _ => start,
     }
 }
 
@@ -980,7 +919,7 @@ mod tests {
         ];
         for (index, expected) in values.iter().enumerate() {
             assert_eq!(
-                resolve_fanned_value(&values, index, values.len()),
+                resolve_fanned_parameter_value(&values, index, values.len()),
                 *expected
             );
         }

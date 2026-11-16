@@ -8,7 +8,6 @@
 
 import { createSignal } from "solid-js";
 import { getBackendUrl } from "../../../lib/api";
-import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
 import {
@@ -16,52 +15,19 @@ import {
   resolveTimelineAudioUrl,
   uploadTimelineAudio,
 } from "../../../lib/timeline-audio";
-import { useShallowStore } from "../../../lib/use-shallow-store";
-import { pushToast, timelines } from "../../../state/appStores";
-import type * as types from "../../../types";
+import { pushToast } from "../../../state/appStores";
 import type { TimelineContextType } from "../context/timeline-context-contract";
 
 const log = getLogger(import.meta.url);
 
 /** Owns timeline audio drag depth, upload state, and persistence behavior. */
 export function createTimelineAudioDropController(ctx: TimelineContextType) {
-  const $timelines = useShallowStore(timelines);
   const [audioDragDepth, setAudioDragDepth] = createSignal(0);
   const [isUploadingAudio, setIsUploadingAudio] = createSignal(false);
 
   /** Returns whether the drag payload contains browser file entries. */
   const containsFiles = (event: DragEvent) =>
     Array.from(event.dataTransfer?.types ?? []).includes("Files");
-
-  /** Projects the current editor state into a timeline with an updated audio path. */
-  const buildTimelineForAudioPath = (
-    audioPath: string,
-  ): types.Timeline | undefined => {
-    const timeline = $timelines()[ctx.timelineUid];
-    if (!timeline) return undefined;
-    return {
-      ...timeline,
-      audio_path: audioPath,
-      tracks: ctx.tracks(),
-      bpm: ctx.bpm(),
-      beats_per_bar: ctx.beatsPerBar(),
-      use_beat_grid: ctx.useBeatgrid(),
-      scroll_mode: ctx.scrollMode() as types.TimelineScrollMode,
-    };
-  };
-
-  /** Persists an uploaded audio path through the timeline command channel. */
-  const persistTimelineAudioPath = (audioPath: string) => {
-    const timeline = buildTimelineForAudioPath(audioPath);
-    if (!timeline) {
-      throw new Error("Timeline state was unavailable while updating audio");
-    }
-    const command: types.TimelineCommand = {
-      type: "StoreTimeline",
-      data: timeline,
-    };
-    commandClient.emit("TimelineCommand", command);
-  };
 
   /** Uploads the first supported dropped audio file and updates timeline state. */
   const handleAudioDrop = async (event: DragEvent) => {
@@ -83,7 +49,8 @@ export function createTimelineAudioDropController(ctx: TimelineContextType) {
     setIsUploadingAudio(true);
     try {
       const { audioPath } = await uploadTimelineAudio(ctx.timelineUid, file);
-      persistTimelineAudioPath(audioPath);
+      const saved = await ctx.edits.editSettings({ audio_path: audioPath });
+      if (!saved) throw new Error("Timeline audio could not be saved");
       ctx.setAudioPath(resolveTimelineAudioUrl(audioPath, Date.now()));
       pushToast("success", `Updated timeline audio to ${file.name}`);
     } catch (error) {

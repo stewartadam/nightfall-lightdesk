@@ -50,6 +50,19 @@ export function getAttributeMetadata(
   );
 }
 
+/**
+ * Converts a displayed attribute name into the typed attribute commands take, treating a name with
+ * no known metadata as a custom attribute with that label.
+ */
+export function commandAttributeForName(attribute: string): types.Attribute {
+  return (
+    getAttributeMetadata(attribute)?.attribute ?? {
+      type: "Custom",
+      data: { label: attribute },
+    }
+  );
+}
+
 export function compareAttributes(a: string, b: string): number {
   const left = getAttributeMetadata(a);
   const right = getAttributeMetadata(b);

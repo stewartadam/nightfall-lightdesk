@@ -9,9 +9,9 @@
 //! WebSocket integration for scene object commands.
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::{SceneObject, SceneObjectCommand};
 
@@ -29,70 +29,25 @@ pub enum SceneObjectWsMessage<'a> {
     SceneObjectCommand(&'a SceneObjectCommand),
 }
 
-/// Deserialize and dispatch SceneObjectCommand from JSON.
-pub fn deserialize_scene_object_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: SceneObjectCommand = serde_json::from_value(json)
-        .map_err(|e| format!("Failed to parse SceneObjectCommand: {}", e))?;
-
-    world
-        .resource_mut::<PendingCommandBuffer>()
-        .push(PayloadEnvelope::with_context(
-            command_id,
-            undo_id,
-            Box::new(command),
-        ));
-
-    Ok(())
+/// The scene object definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct SceneObjectsFeed<'w> {
+    scene_objects: Res<'w, SceneObjectDataProvider>,
 }
 
-/// Send list of scene objects to websocket clients.
-pub fn send_scene_objects(
-    scene_object_provider: &SceneObjectDataProvider,
-    broadcaster: &ClientEventSink,
-) {
-    let scene_objects: Vec<SceneObject> = scene_object_provider
-        .iter()
-        .map(|e| e.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &SceneObjectWsMessage::SceneObjectDefinitions(&scene_objects),
-    );
-
-    tracing::trace!(
-        "Sending {} scene objects over websocket",
-        scene_objects.len()
-    );
-}
-
-/// Send scene objects when data provider changes
-pub fn send_scene_objects_on_change(
-    scene_object_provider: Res<SceneObjectDataProvider>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if !scene_object_provider.is_changed() {
-        return;
+impl ClientFeed for SceneObjectsFeed<'static> {
+    /// Publishes every scene object definition.
+    fn publish(feed: &SceneObjectsFeed<'_>, sink: &ClientEventSink) {
+        let scene_objects: Vec<SceneObject> = feed
+            .scene_objects
+            .iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &SceneObjectWsMessage::SceneObjectDefinitions(&scene_objects),
+        );
     }
-
-    send_scene_objects(&scene_object_provider, &broadcaster);
-}
-
-/// Handle ResyncState by sending scene objects.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    scene_object_provider: Res<SceneObjectDataProvider>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    send_scene_objects(&scene_object_provider, &broadcaster);
 }
 
 #[cfg(test)]
@@ -101,13 +56,10 @@ mod tests {
 
     use super::*;
 
+    /// Verifies the client's single-axis placement payload decodes into a
+    /// placement update for that axis only.
     #[test]
-    fn deserialize_scene_object_command_preserves_command_and_undo_identity() {
-        let mut world = World::new();
-        world.init_resource::<PendingCommandBuffer>();
-
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
+    fn placement_update_payload_decodes_single_axis() {
         let command_json = json!({
             "type": "UpdateSceneObjectPlacement",
             "data": {
@@ -117,24 +69,9 @@ mod tests {
             }
         });
 
-        let result =
-            deserialize_scene_object_command(&mut world, command_json, command_id, undo_id);
-        assert!(result.is_ok());
-
-        let mut pending = world.resource_mut::<PendingCommandBuffer>();
-        let drained = pending.drain();
-        assert_eq!(drained.len(), 1);
-
-        let cmd = &drained[0];
-        assert_eq!(cmd.command_id, command_id);
-        assert_eq!(cmd.undo_id, undo_id);
-
-        let scene_object_cmd = cmd
-            .payload
-            .as_any()
-            .downcast_ref::<SceneObjectCommand>()
-            .expect("expected SceneObjectCommand");
-        match scene_object_cmd {
+        let scene_object_cmd: SceneObjectCommand =
+            serde_json::from_value(command_json).expect("placement update should decode");
+        match &scene_object_cmd {
             SceneObjectCommand::UpdateSceneObjectPlacement { id, position, .. } => {
                 assert_eq!(*id, 42);
                 match position {

@@ -180,49 +180,132 @@ fn accepted_input_sets_console_channels_for_transport_console_mapping() {
     assert_eq!(universe[511], 99);
 }
 
-/// Verifies accepted frames preserve sets transport channels for transport mapping.
-#[test]
-fn accepted_input_sets_transport_channels_for_transport_mapping() {
-    let mut app = App::new();
-    add_render_schedule(&mut app);
-    app.add_plugins(TransportInputPlugin);
-
-    app.init_resource::<ResolvedInputRoutes>();
-    app.init_resource::<InputDmxUniverses>();
-    app.init_resource::<ConsoleDmxUniverses>();
-
-    app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![ResolvedInputRoute {
+/// Builds a resolved passthrough from Art-Net `source_universe` (address 1) onto sACN multicast
+/// universe 11 (address 1).
+fn artnet_to_sacn_passthrough(source_universe: u16, priority: i32) -> ResolvedInputRoute {
+    ResolvedInputRoute {
         source: ResolvedInputSource::Transport {
             transport: RouteTransport::ArtNet,
-            universe: 2,
+            universe: source_universe,
             address: 1,
         },
-        priority: 0,
+        priority,
         destination: ResolvedInputDestination::Transport {
             target: ResolvedTransportTarget {
                 target: "sacn".to_string(),
-                protocol: RouteTransport::Sacn,
-                transport: OutputTransport::Sacn {
-                    mode: SacnDelivery::Multicast,
-                },
+                transport: sacn_multicast(),
                 universe: 11,
                 address: 1,
             },
         },
-    }];
+    }
+}
+
+/// Returns the sACN multicast output transport used by passthrough tests.
+fn sacn_multicast() -> OutputTransport {
+    OutputTransport::Sacn {
+        mode: SacnDelivery::Multicast,
+    }
+}
+
+/// Verifies a passthrough route leaves the received input universes as each source sent
+/// them: the target universe's own input is not overwritten, and no input universe is
+/// invented for a target that never sent.
+#[test]
+fn transport_mapping_leaves_received_input_untouched() {
+    let mut app = App::new();
+    add_render_schedule(&mut app);
+    app.add_plugins(TransportInputPlugin);
+    app.world_mut().resource_mut::<ResolvedInputRoutes>().routes =
+        vec![artnet_to_sacn_passthrough(2, 0)];
 
     app.world_mut()
-        .write_message(make_frame(2, &[(1, 17), (200, 66), (512, 99)]));
+        .write_message(make_frame(2, &[(1, 17), (200, 66)]));
     app.update();
-
     let input_universes = app.world().resource::<InputDmxUniverses>();
-    let target = input_universes.get_universe(RouteTransport::Sacn, 11);
-    assert_eq!(target[0], 17);
-    assert_eq!(target[199], 66);
-    assert_eq!(target[511], 99);
+    assert!(
+        input_universes
+            .active_universe(RouteTransport::Sacn, 11)
+            .is_none()
+    );
+    assert!(
+        input_universes
+            .frame_age_ms(RouteTransport::Sacn, 11, Instant::now())
+            .is_none()
+    );
 
-    let universes = app.world().resource::<ConsoleDmxUniverses>();
-    assert!(!universes.has_universe(11));
+    let mut received_sacn = make_frame(11, &[(1, 5), (512, 9)]);
+    received_sacn.transport = RouteTransport::Sacn;
+    let received_data = received_sacn.data;
+    app.world_mut().write_message(received_sacn);
+    app.world_mut()
+        .write_message(make_frame(2, &[(1, 17), (200, 66)]));
+    app.update();
+    assert_eq!(
+        app.world()
+            .resource::<InputDmxUniverses>()
+            .active_universe(RouteTransport::Sacn, 11),
+        Some(&received_data)
+    );
+}
+
+/// Verifies that when two sources pass through onto one wire channel, the composed output
+/// frame carries the higher-priority source's value no matter which frame arrived last, falls
+/// back to the lower-priority source once the owner is released as stale, and returns to the
+/// owner when it sends again.
+#[test]
+fn passthrough_wire_frame_keeps_highest_priority_source_across_frames() {
+    for arrival_order in [[(1, 17), (2, 66)], [(2, 66), (1, 17)]] {
+        let mut app = App::new();
+        add_render_schedule(&mut app);
+        app.add_plugins(TransportInputPlugin);
+        app.init_resource::<OutputRouting>();
+        app.init_resource::<OutputDmxFrames>();
+        app.add_systems(
+            Render,
+            (
+                nightfall_fixtures::output_frames::update_input_routing,
+                nightfall_fixtures::output_frames::compose_output_frames,
+            )
+                .chain()
+                .after(LayerGeneration),
+        );
+        app.world_mut().resource_mut::<ResolvedInputRoutes>().routes = vec![
+            artnet_to_sacn_passthrough(1, 10),
+            artnet_to_sacn_passthrough(2, 1),
+        ];
+        let wire_channel_one = |app: &App| {
+            app.world()
+                .resource::<OutputDmxFrames>()
+                .get(&sacn_multicast(), 11)
+                .expect("passthrough frame is composed")
+                .channels[0]
+        };
+
+        let mut app = deliver_frames_in_separate_updates(app, &arrival_order);
+        assert_eq!(
+            wire_channel_one(&app),
+            17,
+            "arrival order {arrival_order:?}"
+        );
+
+        app.world_mut()
+            .resource_mut::<InputDmxUniverses>()
+            .release_stale(Instant::now(), std::time::Duration::ZERO);
+        let app = deliver_frames_in_separate_updates(app, &[(2, 66)]);
+        assert_eq!(
+            wire_channel_one(&app),
+            66,
+            "arrival order {arrival_order:?}"
+        );
+
+        let app = deliver_frames_in_separate_updates(app, &[(1, 17)]);
+        assert_eq!(
+            wire_channel_one(&app),
+            17,
+            "arrival order {arrival_order:?}"
+        );
+    }
 }
 
 /// Frames queued by one protocol adapter before routing in this update.

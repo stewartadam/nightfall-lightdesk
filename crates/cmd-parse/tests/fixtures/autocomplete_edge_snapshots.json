@@ -61,6 +61,6 @@
     "status": "error",
     "furthest_pos": 0,
     "expected_rules": ["command"],
-    "expected_inserts": ["parameter", "patch"]
+    "expected_inserts": ["parameter", "park", "patch"]
   }
 ]

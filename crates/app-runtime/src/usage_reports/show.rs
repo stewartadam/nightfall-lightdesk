@@ -107,6 +107,7 @@ impl ShowSummary {
             ("clips", snapshot.clips.len()),
             ("boards", snapshot.boards.len()),
             ("macros", snapshot.macros.len()),
+            ("parked", snapshot.parked.len()),
             ("input_routes", snapshot.routes.input.len()),
             ("output_routes", snapshot.routes.output.len()),
             ("console_universes", outputs.console_universes.len()),
@@ -149,11 +150,11 @@ impl ShowSummary {
             ),
             (
                 "output_usb_dmx",
-                output_uses(|transport| matches!(transport, OutputTransport::Udmx { .. })),
+                output_uses(|transport| matches!(transport, OutputTransport::Usb { .. })),
             ),
             ("input_sacn", input_uses(RouteTransport::Sacn)),
             ("input_artnet", input_uses(RouteTransport::ArtNet)),
-            ("input_usb_dmx", input_uses(RouteTransport::Udmx)),
+            ("input_usb_dmx", input_uses(RouteTransport::Usb)),
             (
                 "timecode_midi",
                 timecode_uses(|source| matches!(source, TimecodeSource::MidiMtc)),
@@ -176,7 +177,8 @@ impl ShowSummary {
         features.extend(network.features());
 
         let mut interfaces = BTreeSet::new();
-        for target in &snapshot.io_settings.usb_dmx_outputs.targets {
+        let io_settings = snapshot.settings_section(&nightfall_io::IO_SETTINGS_SECTION);
+        for target in &io_settings.usb_dmx_outputs.targets {
             let Some(label) = &target.device_label else {
                 continue;
             };
@@ -290,7 +292,7 @@ impl NetworkOutputs {
                         }
                     }
                 }
-                OutputTransport::Udmx { .. } => {
+                OutputTransport::Usb { .. } => {
                     network.usb_dmx_universes.insert(*universe);
                 }
                 OutputTransport::Disabled => {}
@@ -396,7 +398,8 @@ mod tests {
             priority: 0,
             clone: false,
         });
-        snapshot.io_settings.usb_dmx_outputs.targets = vec![
+        let mut io_settings = nightfall_io::IoRuntimeSettings::default();
+        io_settings.usb_dmx_outputs.targets = vec![
             UsbDmxOutputTarget {
                 id: "udmx".into(),
                 device: "id-16c0:05dc".into(),
@@ -408,6 +411,10 @@ mod tests {
                 device_label: Some("Unused interface".into()),
             },
         ];
+        snapshot.settings.insert(
+            nightfall_io::IO_SETTINGS_SECTION.key().to_string(),
+            serde_json::to_value(io_settings).unwrap(),
+        );
         let outputs = PatchedOutputs {
             console_universes: BTreeSet::from([1, 2]),
             transport_universes: HashSet::from([
@@ -418,7 +425,7 @@ mod tests {
                     1,
                 ),
                 (
-                    OutputTransport::Udmx {
+                    OutputTransport::Usb {
                         device: "id-16c0:05dc".into(),
                     },
                     1,

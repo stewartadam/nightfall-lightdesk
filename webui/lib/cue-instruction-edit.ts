@@ -14,7 +14,7 @@ import { parameterValueForValueSource } from "./value-source";
 /** Creates an empty cue instruction that can receive values for one fixture ref. */
 export function createCueInstructionForFixtureRef(
   ref: types.FixtureRef,
-): types.BoundCueInstruction {
+): types.BoundAssertionSet {
   return {
     selection: {
       source: {
@@ -26,7 +26,7 @@ export function createCueInstructionForFixtureRef(
       },
       clauses: [],
     },
-    cue_instruction: {
+    assertions: {
       values: {},
       transitions: {},
       transitions_by_attribute: {},
@@ -37,7 +37,7 @@ export function createCueInstructionForFixtureRef(
 
 /** Returns the single fixture ref for a simple resolved instruction row. */
 export function singleResolvedInstructionFixtureRef(
-  instruction: types.BoundCueInstruction,
+  instruction: types.BoundAssertionSet,
 ): types.FixtureRef | undefined {
   if (instruction.selection.clauses.length > 0) return undefined;
   if (instruction.selection.source.type !== "Resolved") return undefined;
@@ -50,13 +50,13 @@ export function singleResolvedInstructionFixtureRef(
  * Existing values become one fan waypoint per target so other fixtures keep their values.
  */
 export function editGroupedInstructionValue(
-  instruction: types.BoundCueInstruction | undefined,
+  instruction: types.BoundAssertionSet | undefined,
   fixtureRef: types.FixtureRef,
   attribute: string,
   source: types.ValueSource,
 ): boolean {
   if (!instruction || source.type !== "Inline") return false;
-  const { selection, cue_instruction } = instruction;
+  const { selection, assertions } = instruction;
   if (
     selection.source.type !== "Resolved" ||
     selection.source.data.length <= 1 ||
@@ -73,26 +73,26 @@ export function editGroupedInstructionValue(
   const key = fixtureRefKey(fixtureRef);
   const position = refs.findIndex((ref) => fixtureRefKey(ref) === key);
   if (position < 0) return false;
-  const valueKey = Object.keys(cue_instruction.values).find(
+  const valueKey = Object.keys(assertions.values).find(
     (key) => normalizeAttributeName(key) === normalizeAttributeName(attribute),
   );
   if (!valueKey) return false;
-  const previous = cue_instruction.values[valueKey];
+  const previous = assertions.values[valueKey];
   const values: types.ParameterValue[] = [];
   for (let index = 0; index < refs.length; index++) {
     const value = parameterValueForValueSource(previous, index, refs.length);
     if (!value) return false;
     values.push(fixtureRefKey(refs[index]) === key ? source.data : value);
   }
-  cue_instruction.values[valueKey] = { type: "Fanned", data: { values } };
+  assertions.values[valueKey] = { type: "Fanned", data: { values } };
   return true;
 }
 
 /** Finds an existing cue instruction that targets exactly one fixture ref. */
 export function findInstructionForFixtureRef(
-  instructions: readonly types.BoundCueInstruction[],
+  instructions: readonly types.BoundAssertionSet[],
   fixtureRef: types.FixtureRef,
-): types.BoundCueInstruction | undefined {
+): types.BoundAssertionSet | undefined {
   const targetKey = fixtureRefKey(fixtureRef);
   return instructions.find((instruction) => {
     const instructionRef = singleResolvedInstructionFixtureRef(instruction);
@@ -102,9 +102,9 @@ export function findInstructionForFixtureRef(
 
 /** Returns an existing fixture instruction or appends a new empty one. */
 export function ensureInstructionForFixtureRef(
-  instructions: types.BoundCueInstruction[],
+  instructions: types.BoundAssertionSet[],
   fixtureRef: types.FixtureRef,
-): types.BoundCueInstruction {
+): types.BoundAssertionSet {
   const existing = findInstructionForFixtureRef(instructions, fixtureRef);
   if (existing) return existing;
   const instruction = createCueInstructionForFixtureRef(fixtureRef);

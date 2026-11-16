@@ -177,3 +177,81 @@ test("header command input keeps a command that fails to parse", async ({
   await expect(input).toHaveAttribute("aria-invalid", "true");
   await expect(input).toHaveValue(command);
 });
+
+/**
+ * Verifies a websocket resync releases the command line: a command still waiting on its result
+ * gets a warning in the Console instead of hanging, the rest of its sequence is listed as not sent,
+ * the command queued behind it is sent, and a result that does arrive afterwards still settles the
+ * entry.
+ */
+test("resync marks pending commands with a warning and releases the queue", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/?engine=embedded-demo&startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await page.waitForFunction(() =>
+    Boolean((window as any).appStores?.consoleScrollback),
+  );
+  const input = page.getByRole("textbox", {
+    name: "Command input",
+    exact: true,
+  });
+
+  await input.fill("sleep 6s; fixture 2");
+  await input.press("Enter");
+  await expect.poll(() => scrollbackStatus(page, "sleep 6s")).toBe("pending");
+  await input.fill("group 1");
+  await input.press("Enter");
+  expect(await scrollbackStatus(page, "group 1")).toBeUndefined();
+
+  await page
+    .locator(".nf-header-command-group")
+    .getByRole("button", { name: /queued\. Show in Console/ })
+    .click();
+  await expect(page.locator("[data-command-queued]")).toHaveText([
+    /fixture 2/,
+    /group 1/,
+  ]);
+
+  await page.evaluate(() => {
+    const { engineRuntime } = window.__nightfallTest.runtime;
+    engineRuntime.worker?.onmessage?.(
+      new MessageEvent("message", {
+        data: { type: "resyncRequired", reason: "e2e overflow" },
+      }),
+    );
+  });
+
+  await expect.poll(() => scrollbackStatus(page, "sleep 6s")).toBe("unknown");
+  await expect(
+    page.getByText(
+      "Result lost during resync; check that the command took effect",
+    ),
+  ).toBeVisible();
+  await expect
+    .poll(() => scrollbackStatus(page, "group 1"), { timeout: 3_000 })
+    .not.toBeUndefined();
+  expect(await scrollbackStatus(page, "fixture 2")).toBe("error");
+  await expect(
+    page.getByText(
+      "Not sent: the result of an earlier statement was lost during resync",
+    ),
+  ).toBeVisible();
+  const lostRow = page.getByText(
+    "Result lost during resync; check that the command took effect",
+  );
+  await lostRow.evaluate((note) =>
+    note.parentElement?.scrollIntoView({ block: "nearest" }),
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("resync-lost-result.png"),
+  });
+
+  await expect
+    .poll(() => scrollbackStatus(page, "sleep 6s"), { timeout: 10_000 })
+    .toBe("success");
+  await expect(lostRow).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath("resync-late-result.png"),
+  });
+});

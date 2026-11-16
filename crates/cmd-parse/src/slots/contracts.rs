@@ -83,6 +83,8 @@ pub enum SlotId {
     ChannelOverrideIdentifier,
     ChannelOverrideValue,
     ReleaseChannelExpr,
+    ParkTargetExpr,
+    ParkValue,
     RmObjectType,
     RmObjectIdentifier,
     StoreObjectType,
@@ -176,6 +178,10 @@ pub enum ClauseId {
     Release,
     ReleaseChannel,
     ReleaseAttributes,
+    Park,
+    ParkTarget,
+    ParkAttributes,
+    ParkValue,
     Clear,
     ClearAttributes,
     Flow,
@@ -460,6 +466,32 @@ const RELEASE_RULES: &ClauseRules = &ClauseRules {
         child_when(
             ClauseId::ReleaseAttributes,
             ClauseCondition::Not(&has(ClauseId::ReleaseStaleInputs)),
+        ),
+    ],
+    ..DEFAULT_RULES
+};
+
+const PARK_RULES: &ClauseRules = &ClauseRules {
+    children: &[
+        // The fixture target must come before the attribute list.
+        child_when(
+            ClauseId::ParkTarget,
+            ClauseCondition::Not(&ClauseCondition::Any(&[
+                has(ClauseId::ParkTarget),
+                has(ClauseId::ParkAttributes),
+            ])),
+        ),
+        child_when(
+            ClauseId::ParkAttributes,
+            ClauseCondition::Not(&ClauseCondition::Any(&[
+                has(ClauseId::ParkAttributes),
+                has(ClauseId::ParkValue),
+            ])),
+        ),
+        // The value comes last, once.
+        child_when(
+            ClauseId::ParkValue,
+            ClauseCondition::Not(&has(ClauseId::ParkValue)),
         ),
     ],
     ..DEFAULT_RULES
@@ -858,6 +890,7 @@ pub enum ClauseHookId {
     Clip,
     Channel,
     Release,
+    Park,
     Clear,
     Flow,
     Timecode,
@@ -890,6 +923,7 @@ const PATCH_HEADS: &[TokenId] = &[TokenId::Patch];
 const CLIP_HEADS: &[TokenId] = &[TokenId::Clip];
 const CHANNEL_HEADS: &[TokenId] = &[TokenId::Channel];
 const RELEASE_HEADS: &[TokenId] = &[TokenId::Release];
+const PARK_HEADS: &[TokenId] = &[TokenId::Park, TokenId::Unpark];
 const CLEAR_HEADS: &[TokenId] = &[TokenId::Clear];
 const FLOW_HEADS: &[TokenId] = &[TokenId::Flow];
 const TIMECODE_HEADS: &[TokenId] = &[TokenId::Timecode];
@@ -1189,6 +1223,29 @@ const RELEASE_ATTRIBUTES_SLOTS: &[ClauseSlotSpec] = &[
         cardinality: SlotCardinality::Repeated,
     },
 ];
+
+const PARK_CHILDREN: &[ClauseChildSpec] = &[
+    ClauseChildSpec {
+        clause: ClauseId::ParkTarget,
+        cardinality: ClauseCardinality::Optional,
+    },
+    ClauseChildSpec {
+        clause: ClauseId::ParkAttributes,
+        cardinality: ClauseCardinality::Optional,
+    },
+    ClauseChildSpec {
+        clause: ClauseId::ParkValue,
+        cardinality: ClauseCardinality::Optional,
+    },
+];
+const PARK_VALUE_SLOTS: &[ClauseSlotSpec] = &[ClauseSlotSpec {
+    slot: SlotId::ParkValue,
+    cardinality: SlotCardinality::Required,
+}];
+const PARK_TARGET_SLOTS: &[ClauseSlotSpec] = &[ClauseSlotSpec {
+    slot: SlotId::ParkTargetExpr,
+    cardinality: SlotCardinality::Required,
+}];
 
 const CLEAR_CHILDREN: &[ClauseChildSpec] = &[ClauseChildSpec {
     clause: ClauseId::ClearAttributes,
@@ -1555,6 +1612,7 @@ const ROOT_CLAUSES: &[ClauseId] = &[
     ClauseId::Clip,
     ClauseId::ChannelOverride,
     ClauseId::Release,
+    ClauseId::Park,
     ClauseId::Clear,
     ClauseId::Flow,
     ClauseId::Timecode,
@@ -1868,6 +1926,42 @@ const CLAUSE_SCHEMAS: &[ClauseSchema] = &[
         children: EMPTY_CHILDREN,
         slots: RELEASE_ATTRIBUTES_SLOTS,
         rules: QUALIFIER_RULES,
+        entry: ClauseEntryKind::Structural,
+    },
+    ClauseSchema {
+        id: ClauseId::Park,
+        label: "Park",
+        parent: None,
+        children: PARK_CHILDREN,
+        slots: EMPTY_SLOTS,
+        rules: PARK_RULES,
+        entry: ClauseEntryKind::RootCommandHead(PARK_HEADS),
+    },
+    ClauseSchema {
+        id: ClauseId::ParkTarget,
+        label: "Target",
+        parent: Some(ClauseId::Park),
+        children: EMPTY_CHILDREN,
+        slots: PARK_TARGET_SLOTS,
+        rules: NO_RULES,
+        entry: ClauseEntryKind::Structural,
+    },
+    ClauseSchema {
+        id: ClauseId::ParkAttributes,
+        label: "Attributes",
+        parent: Some(ClauseId::Park),
+        children: EMPTY_CHILDREN,
+        slots: RELEASE_ATTRIBUTES_SLOTS,
+        rules: QUALIFIER_RULES,
+        entry: ClauseEntryKind::Structural,
+    },
+    ClauseSchema {
+        id: ClauseId::ParkValue,
+        label: "Value",
+        parent: Some(ClauseId::Park),
+        children: EMPTY_CHILDREN,
+        slots: PARK_VALUE_SLOTS,
+        rules: NO_RULES,
         entry: ClauseEntryKind::Structural,
     },
     ClauseSchema {
@@ -2440,6 +2534,7 @@ pub fn clause_hook_id(clause: ClauseId) -> Option<ClauseHookId> {
         ClauseId::Release | ClauseId::ReleaseChannel | ClauseId::ReleaseAttributes => {
             ClauseHookId::Release
         }
+        ClauseId::Park => ClauseHookId::Park,
         ClauseId::Clear => ClauseHookId::Clear,
         ClauseId::Flow => ClauseHookId::Flow,
         ClauseId::Timecode => ClauseHookId::Timecode,
@@ -2477,6 +2572,7 @@ pub fn clause_trace_label(clause: ClauseId) -> String {
             ClauseId::Macro => "MacroCommand".to_owned(),
             ClauseId::Clear => "ClearCommand".to_owned(),
             ClauseId::Release => "ReleaseCommand".to_owned(),
+            ClauseId::Park => "ParkCommand".to_owned(),
             ClauseId::Rm => "RmCommand".to_owned(),
             ClauseId::Store => "StoreCommand".to_owned(),
             ClauseId::Rename => "RenameCommand".to_owned(),

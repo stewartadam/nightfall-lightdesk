@@ -1,0 +1,1184 @@
+// SPDX-License-Identifier: MPL-2.0
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+//! Imports hand-written MVR files with a synthetic GDTF, and the public samples when
+//! `NIGHTFALL_MVR_SAMPLES_DIR` is set.
+
+use std::io::{Cursor, Write};
+use std::path::Path;
+
+use bevy_app::prelude::*;
+use bevy_ecs::prelude::*;
+use nightfall::prelude::{Group, Identifiers};
+use nightfall_engine::prelude::*;
+use nightfall_fixture_library::FixtureLibraryManager;
+use nightfall_fixture_library::testing::{ChannelSpec, GdtfBuilder, GeometrySpec, ModeSpec};
+use nightfall_fixtures::fixture_events::crud_events;
+use nightfall_fixtures::placement::PlacementPosition;
+use nightfall_fixtures::prelude::*;
+use nightfall_fixtures::websocket::SuppressFixtureChangedSnapshot;
+use nightfall_fixtures::{FixtureCommand, RouteEndpoint};
+use nightfall_io::prelude::*;
+use nightfall_mvr_import::commands::{
+    DeferredGroupStores, expand_rig_import_commits, release_deferred_group_stores,
+};
+use nightfall_mvr_import::geometry::{Mesh, read_gltf};
+use nightfall_mvr_import::plan::{ShowFixture, ShowFixtures, ShowGroup, plan_import};
+use nightfall_mvr_import::prelude::*;
+use nightfall_mvr_import::rig::{RigPatch, RigTypeSource, read_rig};
+use nightfall_mvr_import::scenery::ShowSceneObject;
+use nightfall_programming::prelude::GroupCommand;
+use nightfall_scene_objects::prelude::*;
+use uuid::Uuid;
+use zip::write::SimpleFileOptions;
+
+/// UUID of the hung spot in the test rig.
+const SPOT_UUID: &str = "8BF13DD7-CBF4-415B-99E4-625FE4D2DAF6";
+/// UUID of the floor spot in the test rig.
+const FLOOR_UUID: &str = "4AB19462-A6E3-4C3B-B25A-D8099F78170C";
+/// UUID of the fixture whose type the file leaves out.
+const MISSING_UUID: &str = "77BCDE16-95A6-4725-9D04-16A0BD67CD1A";
+
+/// Builds a two-channel spot GDTF.
+fn spot_gdtf() -> Vec<u8> {
+    GdtfBuilder::new("Test", "Spot")
+        .geometry(GeometrySpec::generic("Base"))
+        .mode(
+            ModeSpec::new("Standard", "Base")
+                .channel(ChannelSpec::new("Base", "Dimmer", &[1]))
+                .channel(ChannelSpec::new("Base", "Pan", &[2])),
+        )
+        .to_bytes()
+}
+
+/// Builds an MVR archive with a hung spot patched at 1.1 with ID 101, a floor spot with no
+/// ID patched at 1.11, and a fixture whose GDTF is not in the file.
+fn rig_bytes() -> Vec<u8> {
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<GeneralSceneDescription verMajor="1" verMinor="6" provider="Test">
+  <Scene>
+    <AUXData><Position uuid="0E2DC6B1-7C42-4B3F-9D0B-7D1C8C2F2A11" name="LX 1"/></AUXData>
+    <Layers>
+      <Layer uuid="83A405B6-8378-482D-9F72-AAD2EE51AABE" name="Rig">
+        <ChildList>
+          <Fixture uuid="{SPOT_UUID}" name="Spot">
+            <Matrix>{{1,0,0}}{{0,-1,0}}{{0,0,-1}}{{1000,2000,6000}}</Matrix>
+            <GDTFSpec>Test@Spot</GDTFSpec>
+            <GDTFMode>Standard</GDTFMode>
+            <Position>0E2DC6B1-7C42-4B3F-9D0B-7D1C8C2F2A11</Position>
+            <FixtureID>101</FixtureID>
+            <Addresses><Address break="0">1.1</Address></Addresses>
+          </Fixture>
+          <Fixture uuid="{FLOOR_UUID}" name="Floor left">
+            <Matrix>{{1,0,0}}{{0,1,0}}{{0,0,1}}{{-3000,0,0}}</Matrix>
+            <GDTFSpec>Test@Spot.gdtf</GDTFSpec>
+            <GDTFMode>Standard</GDTFMode>
+            <FixtureID>0</FixtureID>
+            <Addresses><Address break="0">11</Address></Addresses>
+          </Fixture>
+          <Fixture uuid="{MISSING_UUID}" name="Unknown">
+            <GDTFSpec>Other@Wash.gdtf</GDTFSpec>
+            <GDTFMode>Mode 1</GDTFMode>
+            <Addresses><Address break="0">0</Address></Addresses>
+          </Fixture>
+        </ChildList>
+      </Layer>
+    </Layers>
+  </Scene>
+</GeneralSceneDescription>"#
+    );
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, contents) in [
+        ("GeneralSceneDescription.xml", xml.into_bytes()),
+        ("Test@Spot.gdtf", spot_gdtf()),
+    ] {
+        writer
+            .start_file(name, SimpleFileOptions::default())
+            .expect("start file");
+        writer.write_all(&contents).expect("write file");
+    }
+    writer.finish().expect("finish archive").into_inner()
+}
+
+/// Opens a fixture library on an empty folder with an empty show package folder.
+fn empty_library(root: &Path) -> FixtureLibraryManager {
+    std::fs::create_dir_all(root.join("show")).unwrap();
+    let mut library = FixtureLibraryManager::with_path(root.join("library")).unwrap();
+    library
+        .set_showfile_directory(Some(root.join("show")))
+        .unwrap();
+    library
+}
+
+/// Parses a UUID constant.
+fn uuid(text: &str) -> Uuid {
+    Uuid::parse_str(text).unwrap()
+}
+
+/// Reading finds both GDTF spellings as one type, converts placement and patch, and notes
+/// the type the file leaves out.
+#[test]
+fn reads_rig_fixtures_and_types() {
+    let rig = read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap();
+    assert_eq!(rig.provider.as_deref(), Some("Test"));
+    assert_eq!(rig.fixtures.len(), 3);
+    let spot = &rig.fixtures[0];
+    assert_eq!(spot.uid, uuid(SPOT_UUID));
+    assert_eq!(spot.file_id, Some(101));
+    assert_eq!(spot.hanging_position.as_deref(), Some("LX 1"));
+    assert_eq!(
+        spot.placement.position,
+        PlacementPosition {
+            x: 1.0,
+            y: 6.0,
+            z: -2.0
+        }
+    );
+    assert_eq!(spot.placement.rotation.x, 180.0);
+    assert_eq!(rig.fixtures[1].file_id, None);
+    assert_eq!(rig.fixtures[1].patch[0].address, 11);
+    assert!(rig.fixtures[2].patch.is_empty());
+
+    let specs: Vec<_> = rig
+        .fixture_types
+        .iter()
+        .map(|ty| ty.spec.as_str())
+        .collect();
+    assert_eq!(specs, ["Test@Spot", "Test@Spot.gdtf", "Other@Wash.gdtf"]);
+    match &rig.fixture_types[0].source {
+        RigTypeSource::Embedded(gdtf) => {
+            assert_eq!((gdtf.make.as_str(), gdtf.model.as_str()), ("Test", "Spot"));
+            assert_eq!(gdtf.modes, ["Standard"]);
+        }
+        other => panic!("expected an embedded GDTF, got {other:?}"),
+    }
+    assert!(matches!(
+        rig.fixture_types[2].source,
+        RigTypeSource::Missing
+    ));
+}
+
+/// The preview numbers fixtures, takes types from the file and flags the missing one.
+#[test]
+fn preview_numbers_and_flags_fixtures() {
+    let root = tempfile::tempdir().unwrap();
+    let library = empty_library(root.path());
+    let rig = read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap();
+    let show = ShowFixtures {
+        ids: [101].into_iter().collect(),
+        ..Default::default()
+    };
+    let plan = plan_import(
+        Uuid::new_v4(),
+        &rig,
+        &library,
+        &show,
+        &RigImportOptions::default(),
+    );
+    let preview = &plan.preview;
+    assert_eq!(preview.new_fixtures, 2);
+    assert_eq!(preview.fixture_types[0].status, FixtureTypeStatus::Embedded);
+    assert_eq!(preview.fixture_types[2].status, FixtureTypeStatus::Missing);
+    let statuses: Vec<_> = preview.fixtures.iter().map(|f| f.status).collect();
+    assert_eq!(
+        statuses,
+        [
+            FixtureImportStatus::New,
+            FixtureImportStatus::New,
+            FixtureImportStatus::NeedsFixtureType
+        ]
+    );
+    // 101 is taken, so both fixtures are numbered after it.
+    assert_eq!(preview.fixtures[0].fixture_id, Some(102));
+    assert_eq!(preview.fixtures[1].fixture_id, Some(103));
+    assert_eq!(
+        preview.fixtures[0].label, "",
+        "the name only repeats the model"
+    );
+    assert_eq!(preview.fixtures[1].label, "Floor left");
+}
+
+/// A type the file leaves out resolves to the library fixture with the same manufacturer
+/// and name, so its fixture imports; with no such fixture the preview keeps the file's names
+/// for looking the type up elsewhere.
+#[test]
+fn missing_types_resolve_from_the_library_by_name() {
+    let root = tempfile::tempdir().unwrap();
+    let rig = read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap();
+    let mut library = empty_library(root.path());
+    let plan_with = |library: &FixtureLibraryManager| {
+        plan_import(
+            Uuid::new_v4(),
+            &rig,
+            library,
+            &ShowFixtures::default(),
+            &RigImportOptions::default(),
+        )
+        .preview
+    };
+
+    let missing = &plan_with(&library).fixture_types[2];
+    assert_eq!(missing.status, FixtureTypeStatus::Missing);
+    assert_eq!(missing.make.as_deref(), Some("Other"));
+    assert_eq!(missing.model.as_deref(), Some("Wash"));
+
+    let wash = GdtfBuilder::new("other", "WASH")
+        .geometry(GeometrySpec::generic("Base"))
+        .mode(ModeSpec::new("Mode 1", "Base").channel(ChannelSpec::new("Base", "Dimmer", &[1])))
+        .to_bytes();
+    std::fs::write(root.path().join("library/other@WASH.gdtf"), wash).unwrap();
+    library.scan().unwrap();
+
+    let preview = plan_with(&library);
+    let found = &preview.fixture_types[2];
+    assert_eq!(found.status, FixtureTypeStatus::FoundInLibrary);
+    assert_eq!(
+        (found.make.as_deref(), found.model.as_deref()),
+        (Some("other"), Some("WASH"))
+    );
+    assert_eq!(found.modes, ["Mode 1"]);
+    assert_eq!(preview.fixtures[2].status, FixtureImportStatus::New);
+    assert_eq!(preview.fixtures[2].mode.as_deref(), Some("Mode 1"));
+}
+
+/// Builds the show as it is after importing the test rig, with the spot since moved and
+/// repatched by hand and a group already named "LX 1".
+fn show_after_import(rig: &nightfall_mvr_import::rig::RigFile) -> ShowFixtures {
+    let spot = rig
+        .fixtures
+        .iter()
+        .find(|fixture| fixture.uid == uuid(SPOT_UUID))
+        .unwrap();
+    let floor = rig
+        .fixtures
+        .iter()
+        .find(|fixture| fixture.uid == uuid(FLOOR_UUID))
+        .unwrap();
+    let mut moved = spot.placement.clone();
+    moved.position.y -= 0.5;
+    let show_fixture = |id: u32, fixture: &nightfall_mvr_import::rig::RigFixture| ShowFixture {
+        id,
+        label: String::new(),
+        make: "Test".into(),
+        model: "Spot".into(),
+        mode: "Standard".into(),
+        placement: fixture.placement.clone(),
+        patch: fixture.patch.clone(),
+        shared_patch: false,
+        rig_source: Some("test.mvr".into()),
+    };
+    let mut show = ShowFixtures::default();
+    show.ids.extend([101, 102]);
+    show.fixtures.insert(
+        spot.uid,
+        ShowFixture {
+            placement: moved,
+            patch: vec![RigPatch {
+                dmx_break: 1,
+                universe: 2,
+                address: 1,
+            }],
+            ..show_fixture(101, spot)
+        },
+    );
+    show.fixtures.insert(
+        floor.uid,
+        ShowFixture {
+            label: "Floor left".into(),
+            ..show_fixture(102, floor)
+        },
+    );
+    show.groups.push(ShowGroup {
+        id: 7,
+        uid: Uuid::new_v4(),
+        label: "LX 1".into(),
+        members: Some(Vec::new()),
+        rig_source: None,
+        used_by: Vec::new(),
+    });
+    show
+}
+
+/// Importing the same file again matches fixtures by UUID: a fixture moved and repatched
+/// since is updated back to the file, an untouched one is unchanged, and the group with the
+/// hanging position's name is refreshed in place.
+#[test]
+fn reimport_updates_changed_fixtures() {
+    let root = tempfile::tempdir().unwrap();
+    let library = empty_library(root.path());
+    let rig = read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap();
+    let show = show_after_import(&rig);
+    let plan = plan_import(
+        Uuid::new_v4(),
+        &rig,
+        &library,
+        &show,
+        &RigImportOptions::default(),
+    );
+    let preview = &plan.preview;
+    let statuses: Vec<_> = preview.fixtures.iter().map(|f| f.status).collect();
+    assert_eq!(
+        statuses,
+        [
+            FixtureImportStatus::Update,
+            FixtureImportStatus::Unchanged,
+            FixtureImportStatus::NeedsFixtureType
+        ]
+    );
+    assert_eq!(preview.fixtures[0].changes, ["moved", "repatched"]);
+    assert_eq!(preview.fixtures[0].fixture_id, Some(101));
+    assert_eq!((preview.new_fixtures, preview.updated_fixtures), (0, 1));
+    assert_eq!(plan.updates.len(), 1);
+    assert!(plan.updates[0].repatch);
+    assert_eq!(preview.group_source, RigGroupSource::HangingPositions);
+    assert_eq!(preview.groups.len(), 1);
+    assert_eq!(preview.groups[0].group_id, 7);
+    assert!(preview.groups[0].existing);
+
+    let options = RigImportOptions {
+        update_existing: false,
+        groups: RigGroupSource::Layers,
+        ..RigImportOptions::default()
+    };
+    let plan = plan_import(Uuid::new_v4(), &rig, &library, &show, &options);
+    assert_eq!(
+        plan.preview.fixtures[0].status,
+        FixtureImportStatus::AlreadyInShow
+    );
+    assert!(plan.updates.is_empty());
+    assert_eq!(plan.groups.len(), 1);
+    assert_eq!(plan.groups[0].name, "Rig");
+    assert_eq!(
+        plan.groups[0].id, 8,
+        "new groups go after the highest group ID"
+    );
+    assert_eq!(plan.groups[0].members.len(), 2);
+}
+
+/// Fixtures, scene objects and groups from an earlier rig file that this file no longer has
+/// or makes are listed by ID and kept unless picked; ones made in Nightfall are never listed,
+/// scene objects are left out when scenery is not imported, and groups when none are made.
+#[test]
+fn lists_what_the_file_dropped_and_removes_only_picked() {
+    let root = tempfile::tempdir().unwrap();
+    let library = empty_library(root.path());
+    let rig = read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap();
+    let mut show = show_after_import(&rig);
+    let dropped = Uuid::new_v4();
+    let spare = |label: &str, id: u32, rig_source: Option<String>| ShowFixture {
+        id,
+        label: label.into(),
+        make: "Test".into(),
+        model: "Spot".into(),
+        mode: "Standard".into(),
+        placement: FixturePlacement::default(),
+        patch: Vec::new(),
+        shared_patch: false,
+        rig_source,
+    };
+    show.fixtures
+        .insert(dropped, spare("Spare", 104, Some("plot v1.mvr".into())));
+    show.fixtures
+        .insert(Uuid::new_v4(), spare("Hand patched", 103, None));
+    let dropped_truss = Uuid::new_v4();
+    show.scenery.objects.insert(
+        dropped_truss,
+        ShowSceneObject {
+            id: 5,
+            label: "Old truss".into(),
+            placement: FixturePlacement::default(),
+            model_path: None,
+            rig_source: Some("plot v1.mvr".into()),
+        },
+    );
+    let group = |id: u32, label: &str, rig_source: Option<String>| ShowGroup {
+        id,
+        uid: Uuid::new_v4(),
+        label: label.into(),
+        members: Some(Vec::new()),
+        rig_source,
+        used_by: Vec::new(),
+    };
+    let dropped_group = group(9, "Old pipe", Some("plot v1.mvr".into()));
+    let dropped_group_uid = dropped_group.uid;
+    show.groups.push(dropped_group);
+    show.groups.push(group(10, "Hand group", None));
+    show.groups.push(ShowGroup {
+        used_by: vec!["Cue 1".into()],
+        ..group(11, "Old boom", Some("plot v1.mvr".into()))
+    });
+    show.groups[0].rig_source = Some("plot v1.mvr".into());
+    let plan_with =
+        |options: RigImportOptions| plan_import(Uuid::new_v4(), &rig, &library, &show, &options);
+
+    let kept = plan_with(RigImportOptions::default());
+    let rows: Vec<_> = kept
+        .preview
+        .dropped
+        .iter()
+        .map(|row| (row.kind, row.id, row.label.as_str(), row.remove))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (DroppedKind::Fixture, 104, "Spare", false),
+            (DroppedKind::SceneObject, 5, "Old truss", false),
+            (DroppedKind::Group, 9, "Old pipe", false)
+        ],
+        "LX 1 is still a hanging position in the file, so its group is not listed"
+    );
+    assert!(
+        kept.preview.warnings.iter().any(|warning| warning
+            == "Group \"Old boom\" is no longer in the file, but is kept because it is used by Cue 1"),
+        "a dropped group a cue uses can't be deleted, so it is kept with a warning: {:?}",
+        kept.preview.warnings
+    );
+    assert_eq!(kept.preview.dropped[0].source_file, "plot v1.mvr");
+    assert_eq!(kept.preview.removed, 0);
+    assert!(
+        kept.remove_fixtures.is_empty()
+            && kept.remove_scenery.is_empty()
+            && kept.remove_groups.is_empty()
+    );
+
+    let removed = plan_with(RigImportOptions {
+        remove: vec![dropped, dropped_truss, dropped_group_uid],
+        ..RigImportOptions::default()
+    });
+    assert!(removed.preview.dropped.iter().all(|row| row.remove));
+    assert_eq!(removed.preview.removed, 3);
+    assert_eq!(removed.remove_fixtures, [dropped]);
+    assert_eq!(removed.remove_scenery, [5]);
+    assert_eq!(removed.remove_groups, [9]);
+
+    let no_scenery_or_groups = plan_with(RigImportOptions {
+        scenery: false,
+        groups: RigGroupSource::None,
+        remove: vec![dropped_truss, dropped_group_uid],
+        ..RigImportOptions::default()
+    });
+    assert_eq!(no_scenery_or_groups.preview.dropped.len(), 1);
+    assert!(no_scenery_or_groups.remove_scenery.is_empty());
+    assert!(no_scenery_or_groups.remove_groups.is_empty());
+}
+
+/// A fixture picked for removal frees its ID, so a new fixture the file numbers the same
+/// takes it; while it stays, the new fixture is numbered after the highest ID.
+#[test]
+fn removed_fixture_frees_its_id() {
+    let root = tempfile::tempdir().unwrap();
+    let library = empty_library(root.path());
+    let rig = read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap();
+    let replaced = Uuid::new_v4();
+    let mut show = ShowFixtures {
+        ids: [101].into_iter().collect(),
+        ..Default::default()
+    };
+    show.fixtures.insert(
+        replaced,
+        ShowFixture {
+            id: 101,
+            label: "Old spot".into(),
+            make: "Test".into(),
+            model: "Spot".into(),
+            mode: "Standard".into(),
+            placement: FixturePlacement::default(),
+            patch: Vec::new(),
+            shared_patch: false,
+            rig_source: Some("plot v1.mvr".into()),
+        },
+    );
+    let spot_id = |options: RigImportOptions| {
+        plan_import(Uuid::new_v4(), &rig, &library, &show, &options)
+            .preview
+            .fixtures[0]
+            .fixture_id
+    };
+
+    assert_eq!(spot_id(RigImportOptions::default()), Some(102));
+    assert_eq!(
+        spot_id(RigImportOptions {
+            remove: vec![replaced],
+            ..RigImportOptions::default()
+        }),
+        Some(101)
+    );
+}
+
+/// Commands the test dispatcher received from expanded rig import commits.
+#[derive(Resource, Default)]
+struct Dispatched {
+    /// Fixture commands, in the order they were dispatched.
+    fixtures: Vec<FixtureCommand>,
+    /// Groups stored, in the order their stores were dispatched.
+    groups: Vec<Group>,
+    /// Scene objects stored for the rig's scenery, in the order they were dispatched.
+    scenery: Vec<SceneObject>,
+    /// IDs of scene objects deleted, in the order their deletes were dispatched.
+    deleted_scenery: Vec<u32>,
+    /// IDs of groups deleted, in the order their deletes were dispatched.
+    deleted_groups: Vec<u32>,
+}
+
+/// Makes the test dispatcher fail every fixture command instead of running it, standing in
+/// for a `PatchRig` the fixture handler rejects.
+#[derive(Resource, Default)]
+struct FailFixtureCommands(bool);
+
+/// Stands in for the engine's dispatch of queued commands: forwards fixture commands to the
+/// fixture handler under their commit's IDs, or fails them when [`FailFixtureCommands`] is
+/// set, and records group and scene object stores and deletes and reports them done.
+fn dispatch_pending(
+    mut pending: ResMut<PendingCommandBuffer>,
+    mut dispatched: ResMut<Dispatched>,
+    fail: Res<FailFixtureCommands>,
+    mut fixture_commands: MessageWriter<CommandEnvelope<FixtureCommand>>,
+    mut responder: CommandResponder,
+) {
+    for envelope in pending.drain() {
+        let payload = envelope.payload.as_any();
+        if let Some(command) = payload.downcast_ref::<FixtureCommand>() {
+            dispatched.fixtures.push(command.clone());
+            if fail.0 {
+                responder
+                    .fail(
+                        envelope.command_id,
+                        CommandError::new("fixture.route_invalid", "Address overlap"),
+                    )
+                    .unwrap();
+                continue;
+            }
+            fixture_commands.write(CommandEnvelope {
+                command_id: envelope.command_id,
+                undo_id: envelope.undo_id,
+                origin: CommandOrigin::Cli,
+                reply_target: ReplyTarget::Detached,
+                command: command.clone(),
+            });
+        } else if let Some(GroupCommand::StoreGroup(group)) = payload.downcast_ref::<GroupCommand>()
+        {
+            dispatched.groups.push(group.clone());
+            responder.succeed(envelope.command_id).unwrap();
+        } else if let Some(GroupCommand::DeleteGroup(id)) = payload.downcast_ref::<GroupCommand>() {
+            dispatched.deleted_groups.push(*id);
+            responder.succeed(envelope.command_id).unwrap();
+        } else if let Some(SceneObjectCommand::StoreSceneObject(object)) =
+            payload.downcast_ref::<SceneObjectCommand>()
+        {
+            dispatched.scenery.push(object.clone());
+            responder.succeed(envelope.command_id).unwrap();
+        } else if let Some(SceneObjectCommand::DeleteSceneObject(id)) =
+            payload.downcast_ref::<SceneObjectCommand>()
+        {
+            dispatched.deleted_scenery.push(*id);
+            responder.succeed(envelope.command_id).unwrap();
+        } else {
+            panic!("unexpected command");
+        }
+    }
+}
+
+/// Builds an app that expands rig import commits, dispatches the commands they turn into
+/// and runs fixture commands, all in one frame.
+fn import_app(library: FixtureLibraryManager, sessions: RigImportSessions) -> App {
+    let mut app = App::new();
+    app.add_message::<CommandEnvelope<FixtureCommand>>();
+    app.add_message::<CommandResult>();
+    app.add_message::<CommandReply>();
+    app.add_message::<FinishedCommand>();
+    app.add_message::<CommandNoticeReply>();
+    app.add_message::<SuppressFixtureChangedSnapshot>();
+    app.init_resource::<CommandTracker>();
+    app.init_resource::<PendingCommandBuffer>();
+    app.init_resource::<FixtureDataProviderExt>();
+    app.init_resource::<DataProvider<Group>>();
+    app.init_resource::<GroupReferenceIndex>();
+    app.init_resource::<nightfall_scene_objects::prelude::SceneObjectDataProvider>();
+    app.init_resource::<InputRoutes>();
+    app.init_resource::<OutputRoutes>();
+    app.init_resource::<DisabledRoutes>();
+    app.init_resource::<RouteValidationSettings>();
+    app.init_resource::<NetworkDmxOutputTargets>();
+    app.init_resource::<UsbDmxOutputTargets>();
+    app.init_resource::<ConsoleDmxAddresses>();
+    app.init_resource::<ConsoleDmxUniverses>();
+    app.init_resource::<DeferredGroupStores>();
+    app.init_resource::<Dispatched>();
+    app.init_resource::<FailFixtureCommands>();
+    let (sender, _receiver) = async_channel::unbounded();
+    app.insert_resource(ClientEventSink::new(sender));
+    app.insert_resource(library);
+    app.insert_resource(sessions);
+    app.add_systems(
+        Update,
+        (
+            release_deferred_group_stores,
+            expand_rig_import_commits,
+            dispatch_pending,
+            crud_events,
+        )
+            .chain(),
+    );
+    app
+}
+
+/// Queues a commit of `session` with the default options and returns its command ID.
+fn submit_commit(app: &mut App, session: Uuid) -> CommandId {
+    submit_commit_with(app, session, RigImportOptions::default())
+}
+
+/// Queues a commit of `session` with `options` and returns its command ID.
+fn submit_commit_with(app: &mut App, session: Uuid, options: RigImportOptions) -> CommandId {
+    let envelope = CommandEnvelope::new(
+        RigImportCommand::Commit { session, options },
+        CommandOrigin::Cli,
+        ReplyTarget::Detached,
+    );
+    app.world_mut()
+        .resource_mut::<CommandTracker>()
+        .register(&envelope)
+        .unwrap();
+    app.world_mut()
+        .resource_mut::<PendingCommandBuffer>()
+        .push(PayloadEnvelope::with_context(
+            envelope.command_id,
+            envelope.undo_id,
+            Box::new(envelope.command.clone()),
+        ));
+    envelope.command_id
+}
+
+/// Runs frames until the command `command_id` finishes, failing the test after ten.
+fn run_until_finished(app: &mut App, command_id: CommandId) {
+    for _ in 0..10 {
+        app.update();
+        if !app
+            .world()
+            .resource::<CommandTracker>()
+            .is_active(command_id)
+        {
+            return;
+        }
+    }
+    panic!("the commit never finished");
+}
+
+/// A commit installs the file's GDTF into the show package and turns into one `PatchRig`
+/// that adds the fixtures with their UUIDs, placements and patch. Only once that has
+/// succeeded is the LX 1 group stored, under the same commit.
+#[test]
+fn commit_adds_fixtures_with_patch_and_placement() {
+    let root = tempfile::tempdir().unwrap();
+    let sessions = RigImportSessions::default();
+    let session = sessions.insert(read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap());
+    let mut app = import_app(empty_library(root.path()), sessions);
+
+    let command_id = submit_commit(&mut app, session);
+    app.update();
+
+    let installed: Vec<_> = std::fs::read_dir(root.path().join("show/fixtures"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert_eq!(installed.len(), 1, "{installed:?}");
+    assert!(installed[0].starts_with("Test@Spot-"));
+
+    let dispatched = app.world().resource::<Dispatched>();
+    assert!(
+        dispatched.groups.is_empty(),
+        "groups wait for the fixtures to be imported"
+    );
+    let [command] = dispatched.fixtures.as_slice() else {
+        panic!(
+            "expected one fixture command, got {:?}",
+            dispatched.fixtures
+        );
+    };
+    let FixtureCommand::PatchRig {
+        add: fixtures,
+        update,
+        routes,
+        remove,
+    } = command
+    else {
+        panic!("expected PatchRig, got {command:?}");
+    };
+    assert!(update.is_empty());
+    assert!(remove.is_empty());
+    assert_eq!(fixtures.len(), 2);
+    assert_eq!(fixtures[0].identifiers.uid, uuid(SPOT_UUID));
+    assert_eq!(
+        fixtures[0]
+            .rig_source
+            .as_ref()
+            .map(|source| &*source.file_name),
+        Some("test.mvr")
+    );
+    assert_eq!(fixtures[0].identifiers.id, 101);
+    assert_eq!(fixtures[0].placement.rotation.x, 180.0);
+    assert_eq!(fixtures[1].identifiers.id, 102);
+    assert_eq!(routes.len(), 2);
+    assert_eq!(
+        routes[1].target,
+        RouteEndpoint::Console {
+            universe: Some(DmxRange::single(1)),
+            address: Some(11)
+        }
+    );
+    let provider = app.world().resource::<FixtureDataProviderExt>();
+    let spot = provider.inner.get(uuid(SPOT_UUID)).expect("spot imported");
+    assert_eq!(spot.make, "Test");
+    assert_eq!(spot.mode, "Standard");
+    drop(spot);
+    assert_eq!(app.world().resource::<OutputRoutes>().routes.len(), 2);
+
+    run_until_finished(&mut app, command_id);
+    let groups = &app.world().resource::<Dispatched>().groups;
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].identifiers.label, "LX 1");
+    assert_eq!(groups[0].identifiers.id, 1);
+}
+
+/// When `PatchRig` fails, the commit fails with its error and never stores the groups, so a
+/// failed import leaves no groups naming fixtures that were not added.
+#[test]
+fn failed_fixture_import_stores_no_groups() {
+    let root = tempfile::tempdir().unwrap();
+    let sessions = RigImportSessions::default();
+    let session = sessions.insert(read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap());
+    let mut app = import_app(empty_library(root.path()), sessions);
+    app.world_mut().resource_mut::<FailFixtureCommands>().0 = true;
+
+    let command_id = submit_commit(&mut app, session);
+    run_until_finished(&mut app, command_id);
+
+    let dispatched = app.world().resource::<Dispatched>();
+    assert_eq!(dispatched.fixtures.len(), 1);
+    assert!(dispatched.groups.is_empty());
+    let result = app
+        .world_mut()
+        .resource_mut::<Messages<CommandResult>>()
+        .drain()
+        .find(|result| result.command_id == command_id)
+        .expect("the commit reports a result");
+    let CommandOutcome::Failed(error) = result.outcome else {
+        panic!("expected a failure, got {:?}", result.outcome);
+    };
+    assert_eq!(error.code, "fixture.route_invalid");
+    assert!(app.world().resource::<DeferredGroupStores>().is_empty());
+}
+
+/// Re-importing with dropped objects picked removes them: the fixture through the same
+/// `PatchRig` as the rest of the fixture change, and the scene object and group each with a
+/// delete, all under the commit.
+#[test]
+fn commit_removes_picked_dropped_objects() {
+    let root = tempfile::tempdir().unwrap();
+    let sessions = RigImportSessions::default();
+    let session = sessions.insert(read_rig(Cursor::new(rig_bytes()), "test.mvr").unwrap());
+    let mut app = import_app(empty_library(root.path()), sessions);
+    let first = submit_commit(&mut app, session);
+    run_until_finished(&mut app, first);
+
+    let source = Some(RigSource {
+        file_name: "plot v1.mvr".into(),
+    });
+    let dropped = Uuid::new_v4();
+    app.world_mut()
+        .resource_mut::<FixtureDataProviderExt>()
+        .inner
+        .add(Fixture {
+            identifiers: Identifiers {
+                id: 200,
+                uid: dropped,
+                label: "Spare".into(),
+            },
+            rig_source: source.clone(),
+            ..Default::default()
+        })
+        .unwrap();
+    let dropped_truss = Uuid::new_v4();
+    app.world_mut()
+        .resource_mut::<SceneObjectDataProvider>()
+        .add(SceneObject {
+            identifiers: Identifiers {
+                id: 50,
+                uid: dropped_truss,
+                label: "Old truss".into(),
+            },
+            rig_source: source.clone(),
+            ..Default::default()
+        })
+        .unwrap();
+    let dropped_group = Uuid::new_v4();
+    app.world_mut()
+        .resource_mut::<DataProvider<Group>>()
+        .add(Group {
+            identifiers: Identifiers {
+                id: 60,
+                uid: dropped_group,
+                label: "Old pipe".into(),
+            },
+            rig_source: source,
+            ..Default::default()
+        })
+        .unwrap();
+    *app.world_mut().resource_mut::<Dispatched>() = Dispatched::default();
+
+    let command_id = submit_commit_with(
+        &mut app,
+        session,
+        RigImportOptions {
+            remove: vec![dropped, dropped_truss, dropped_group],
+            ..RigImportOptions::default()
+        },
+    );
+    run_until_finished(&mut app, command_id);
+
+    let dispatched = app.world().resource::<Dispatched>();
+    let [FixtureCommand::PatchRig { add, remove, .. }] = dispatched.fixtures.as_slice() else {
+        panic!("expected one PatchRig, got {:?}", dispatched.fixtures);
+    };
+    assert!(
+        add.is_empty(),
+        "the file's fixtures are already in the show"
+    );
+    assert_eq!(remove, &[dropped]);
+    assert_eq!(dispatched.deleted_scenery, [50]);
+    assert_eq!(dispatched.deleted_groups, [60]);
+    let fixtures = app.world().resource::<FixtureDataProviderExt>();
+    assert!(fixtures.inner.get(dropped).is_err());
+    assert_eq!(fixtures.inner.iter().count(), 2);
+}
+
+/// UUID of the truss in the scenery rig.
+const TRUSS_UUID: &str = "1F0C7A52-3C9B-4E0D-8B5A-2B1E3D4C5F61";
+/// UUID of the venue layer in the scenery rig.
+const VENUE_UUID: &str = "6A7B8C9D-0E1F-4A2B-9C3D-4E5F6A7B8C9D";
+
+/// Builds an MVR archive with one unnamed truss, turned a quarter in plan and stretched to
+/// twice its model's length, and a venue layer holding a set piece and a video screen that
+/// share one model: a single triangle.
+fn scenery_rig_bytes() -> Vec<u8> {
+    let triangle = Mesh {
+        positions: vec![[0.0, 0.0, 0.0], [1000.0, 0.0, 0.0], [0.0, 0.0, 1000.0]],
+        indices: vec![0, 1, 2],
+    };
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<GeneralSceneDescription verMajor="1" verMinor="6" provider="Test">
+  <Scene>
+    <Layers>
+      <Layer uuid="83A405B6-8378-482D-9F72-AAD2EE51AABE" name="Rigging">
+        <ChildList>
+          <Truss uuid="{TRUSS_UUID}" name="">
+            <Matrix>{{0,2,0}}{{-1,0,0}}{{0,0,1}}{{1000,2000,6000}}</Matrix>
+            <Geometries><Geometry3D fileName="piece.glb"/></Geometries>
+          </Truss>
+        </ChildList>
+      </Layer>
+      <Layer uuid="{VENUE_UUID}" name="Venue">
+        <ChildList>
+          <SceneObject uuid="0B6E2E4A-1C77-4F55-A1F0-0F1E2D3C4B5A" name="Riser">
+            <Geometries><Geometry3D fileName="piece.glb"/></Geometries>
+          </SceneObject>
+          <VideoScreen uuid="5D4C3B2A-1F0E-4D9C-8B7A-6F5E4D3C2B1A" name="Screen">
+            <Matrix>{{1,0,0}}{{0,1,0}}{{0,0,1}}{{0,5000,0}}</Matrix>
+            <Geometries><Geometry3D fileName="piece.glb"/></Geometries>
+          </VideoScreen>
+        </ChildList>
+      </Layer>
+    </Layers>
+  </Scene>
+</GeneralSceneDescription>"#
+    );
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, contents) in [
+        ("GeneralSceneDescription.xml", xml.into_bytes()),
+        ("piece.glb", triangle.to_glb()),
+    ] {
+        writer
+            .start_file(name, SimpleFileOptions::default())
+            .expect("start file");
+        writer.write_all(&contents).expect("write file");
+    }
+    writer.finish().expect("finish archive").into_inner()
+}
+
+/// The truss becomes its own scene object, placed by its rotation with its stretch baked
+/// into the model, while the venue's two pieces merge into one object drawn in world space.
+/// A second import of the same file changes nothing, a moved truss is put back, and turning
+/// scenery off skips it all.
+#[test]
+fn plans_scenery_objects() {
+    let rig = read_rig(Cursor::new(scenery_rig_bytes()), "scenery.mvr").unwrap();
+    assert_eq!(rig.scenery.len(), 2, "{:#?}", rig.warnings);
+    let truss = &rig.scenery[0];
+    assert_eq!(truss.uid, uuid(TRUSS_UUID));
+    assert_eq!(truss.kind, RigSceneryKind::Truss);
+    assert_eq!(
+        truss.placement.position,
+        PlacementPosition {
+            x: 1.0,
+            y: 6.0,
+            z: -2.0
+        }
+    );
+    assert_eq!(truss.placement.rotation.y, 90.0);
+    let local = read_gltf(
+        &nightfall_object_library::manager::extract_model_from_bundle(
+            &truss.model.as_ref().unwrap().path,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let stretched = local.positions[1];
+    assert!(
+        (stretched[0] - 2000.0).abs() < 0.5 && stretched[1].abs() < 0.5,
+        "{stretched:?}"
+    );
+    let venue = &rig.scenery[1];
+    assert_eq!(venue.uid, uuid(VENUE_UUID));
+    assert_eq!(venue.kind, RigSceneryKind::Layer);
+    assert_eq!(venue.model.as_ref().unwrap().triangles, 2);
+
+    let root = tempfile::tempdir().unwrap();
+    let library = empty_library(root.path());
+    let mut show = ShowFixtures::default();
+    show.scenery.ids.insert(4);
+    let options = RigImportOptions::default();
+    let plan = plan_import(Uuid::new_v4(), &rig, &library, &show, &options);
+    let rows: Vec<_> = plan
+        .preview
+        .scenery
+        .iter()
+        .map(|row| (row.label.as_str(), row.scene_object_id, row.status))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("Truss 1", Some(5), SceneryImportStatus::New),
+            ("Venue", Some(6), SceneryImportStatus::New),
+        ]
+    );
+    assert_eq!(plan.preview.scenery_changes, 2);
+
+    show.apply(&rig, &plan);
+    let again = plan_import(Uuid::new_v4(), &rig, &library, &show, &options);
+    assert!(again.is_empty());
+    assert!(
+        again
+            .preview
+            .scenery
+            .iter()
+            .all(|row| row.status == SceneryImportStatus::Unchanged)
+    );
+
+    show.scenery
+        .objects
+        .get_mut(&truss.uid)
+        .unwrap()
+        .placement
+        .position
+        .x += 1.0;
+    let moved = plan_import(Uuid::new_v4(), &rig, &library, &show, &options);
+    assert_eq!(moved.scenery.objects.len(), 1);
+    assert_eq!(moved.preview.scenery[0].status, SceneryImportStatus::Update);
+    assert_eq!(moved.preview.scenery[0].changes, ["moved"]);
+
+    let skipped = plan_import(
+        Uuid::new_v4(),
+        &rig,
+        &library,
+        &ShowFixtures::default(),
+        &RigImportOptions {
+            scenery: false,
+            ..RigImportOptions::default()
+        },
+    );
+    assert!(skipped.scenery.objects.is_empty());
+    assert!(
+        skipped
+            .preview
+            .scenery
+            .iter()
+            .all(|row| row.status == SceneryImportStatus::Skipped)
+    );
+}
+
+/// Opens one of the public samples, or returns `None` when they were not downloaded.
+fn sample(name: &str) -> Option<nightfall_mvr_import::rig::RigFile> {
+    let dir = std::env::var_os("NIGHTFALL_MVR_SAMPLES_DIR")?;
+    let path = Path::new(&dir).join(name);
+    Some(nightfall_mvr_import::rig::read_rig_file(&path, name).expect("sample reads"))
+}
+
+/// The Capture demo show plans 76 new fixtures from five embedded types, keeping the
+/// file's unique IDs and patching every fixture.
+#[test]
+#[ignore = "requires NIGHTFALL_MVR_SAMPLES_DIR"]
+fn plans_capture_demo_show() {
+    let rig = sample("capture_demo_show.mvr").expect("NIGHTFALL_MVR_SAMPLES_DIR is set");
+    let root = tempfile::tempdir().unwrap();
+    let library = empty_library(root.path());
+    let plan = plan_import(
+        Uuid::new_v4(),
+        &rig,
+        &library,
+        &ShowFixtures::default(),
+        &RigImportOptions::default(),
+    );
+    let not_new: Vec<_> = plan
+        .preview
+        .fixtures
+        .iter()
+        .filter(|fixture| fixture.status != FixtureImportStatus::New)
+        .map(|fixture| (&fixture.name, fixture.status, &fixture.warnings))
+        .collect();
+    assert!(
+        not_new.is_empty(),
+        "{not_new:#?}\n{:#?}",
+        plan.preview.fixture_types
+    );
+    assert_eq!(plan.preview.new_fixtures, 76);
+    assert_eq!(plan.preview.fixture_types.len(), 5);
+    assert!(
+        plan.preview
+            .fixture_types
+            .iter()
+            .all(|ty| ty.status == FixtureTypeStatus::Embedded)
+    );
+    // The demo show's GDTFs are cut down to their descriptions, with no model files.
+    assert!(
+        plan.preview
+            .fixture_types
+            .iter()
+            .all(|ty| ty.missing_3d_model)
+    );
+    for (planned, fixture) in plan.fixtures.iter().zip(&rig.fixtures) {
+        assert_eq!(Some(planned.id), fixture.file_id);
+        assert!(!fixture.patch.is_empty());
+    }
+}
+
+/// The Vectorworks plan imports its 72 unnumbered, unpatched fixtures numbered from 1.
+#[test]
+#[ignore = "requires NIGHTFALL_MVR_SAMPLES_DIR"]
+fn plans_vectorworks_scene_objects() {
+    let rig = sample("scene_objects.mvr").expect("NIGHTFALL_MVR_SAMPLES_DIR is set");
+    let root = tempfile::tempdir().unwrap();
+    let library = empty_library(root.path());
+    let plan = plan_import(
+        Uuid::new_v4(),
+        &rig,
+        &library,
+        &ShowFixtures::default(),
+        &RigImportOptions::default(),
+    );
+    assert_eq!(
+        plan.preview.new_fixtures, 72,
+        "{:#?}",
+        plan.preview.warnings
+    );
+    let ids: Vec<u32> = plan.fixtures.iter().map(|planned| planned.id).collect();
+    assert_eq!(ids, (1..=72).collect::<Vec<_>>());
+}
+
+/// Both public samples carry trusses or scenery with readable models: Capture's trusses
+/// come out as separate objects of truss length, and every model converts without
+/// warnings.
+#[test]
+#[ignore = "requires NIGHTFALL_MVR_SAMPLES_DIR"]
+fn reads_sample_scenery() {
+    for name in ["capture_demo_show.mvr", "scene_objects.mvr"] {
+        let rig = sample(name).expect("NIGHTFALL_MVR_SAMPLES_DIR is set");
+        assert!(!rig.scenery.is_empty(), "{name} has scenery");
+        for scenery in &rig.scenery {
+            assert!(
+                scenery.model.is_some(),
+                "{name}: {} has a model",
+                scenery.name
+            );
+            assert!(
+                scenery.warnings.is_empty(),
+                "{name}: {:?}",
+                scenery.warnings
+            );
+        }
+    }
+}
+
+/// Commits `session` and runs it to the end. Returns the fixture command it dispatched, if
+/// any, the number of groups it stored and the scene objects it stored for the scenery.
+fn commit_session(
+    app: &mut App,
+    session: Uuid,
+) -> (Option<FixtureCommand>, usize, Vec<SceneObject>) {
+    *app.world_mut().resource_mut::<Dispatched>() = Dispatched::default();
+    let command_id = submit_commit(app, session);
+    run_until_finished(app, command_id);
+    let dispatched = std::mem::take(&mut *app.world_mut().resource_mut::<Dispatched>());
+    assert!(
+        dispatched.fixtures.len() <= 1,
+        "the commit expands into one fixture command"
+    );
+    (
+        dispatched.fixtures.into_iter().next(),
+        dispatched.groups.len(),
+        dispatched.scenery,
+    )
+}
+
+/// The whole Capture demo show imports: its five GDTFs convert, all 76 fixtures are stored
+/// with every break patched without route conflicts, and a group is made per layer.
+/// Importing it again finds every fixture unchanged and only refreshes the groups.
+#[test]
+#[ignore = "requires NIGHTFALL_MVR_SAMPLES_DIR"]
+fn imports_capture_demo_show() {
+    let rig = sample("capture_demo_show.mvr").expect("NIGHTFALL_MVR_SAMPLES_DIR is set");
+    let routes: usize = rig.fixtures.iter().map(|fixture| fixture.patch.len()).sum();
+    let root = tempfile::tempdir().unwrap();
+    let sessions = RigImportSessions::default();
+    let session = sessions.insert(rig);
+    let mut app = import_app(empty_library(root.path()), sessions);
+    nightfall::set_active_show_data_dir(root.path().join("show"));
+
+    let (command, groups, scenery) = commit_session(&mut app, session);
+    assert!(command.is_some());
+    assert!(groups > 0, "the layers become groups");
+    assert_eq!(scenery.len(), 17, "13 trusses and four layers of scenery");
+    let bundles = std::fs::read_dir(root.path().join("show/scene-objects"))
+        .unwrap()
+        .count();
+    assert_eq!(bundles, 17);
+    {
+        let mut stored = app.world_mut().resource_mut::<SceneObjectDataProvider>();
+        for object in scenery {
+            stored.add(object).unwrap();
+        }
+    }
+
+    assert_eq!(
+        app.world()
+            .resource::<FixtureDataProviderExt>()
+            .inner
+            .iter()
+            .count(),
+        76
+    );
+    assert_eq!(app.world().resource::<OutputRoutes>().routes.len(), routes);
+
+    let (command, regrouped, rescenery) = commit_session(&mut app, session);
+    assert!(rescenery.is_empty(), "the scenery is unchanged");
+    assert!(
+        command.is_none(),
+        "nothing changed, so no fixture is touched"
+    );
+    assert_eq!(regrouped, groups);
+}

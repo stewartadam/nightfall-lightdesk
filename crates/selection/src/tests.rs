@@ -82,8 +82,18 @@ impl SelectionDataSource for TestSelectionDataSource {
             .cloned()
     }
 
+    /// Lists the test fixture IDs inside `range` from the ordered fixture map.
+    fn fixture_ids_in(&self, range: std::ops::RangeInclusive<u32>) -> Vec<u32> {
+        self.fixtures.range(range).map(|(id, _)| *id).collect()
+    }
+
     fn groups_available(&self) -> bool {
         self.groups_available
+    }
+
+    /// Lists the test group IDs inside `range` from the ordered group map.
+    fn group_ids_in(&self, range: std::ops::RangeInclusive<u32>) -> Vec<u32> {
+        self.groups.0.range(range).map(|(id, _)| *id).collect()
     }
 
     fn group_by_uid(&self, uid: Uuid) -> Option<SelectionGroup> {
@@ -225,6 +235,7 @@ fn make_group_with_clauses(id: u32, start: u32, end: u32, clauses: Vec<SpatialCl
             clauses,
         ),
         description: String::new(),
+        rig_source: None,
     }
 }
 
@@ -504,6 +515,179 @@ fn initial_split_preserves_group_spatial_clauses() {
     .value;
 
     assert_eq!(index_fixture_ids(&resolved), vec![(false, vec![3, 2, 1])]);
+}
+
+/// A plain reference to a group with spatial clauses or union branches resolves the whole
+/// stored pipeline, matching what `Group N Split` already resolves, in both the span and
+/// flat paths.
+#[test]
+fn plain_group_reference_keeps_stored_clauses_and_union() {
+    let provider = make_data_source(1..=5);
+    let mut groups = TestGroupProvider::default();
+    let mut group = make_group_with_clauses(1, 1, 3, vec![SpatialClause::Mirror(Axis::X)]);
+    group.selection.union.push(SpatialSelection::pipeline(
+        fixture_range_expr(4, 5),
+        Vec::new(),
+    ));
+    let _ = groups.add(group);
+    let provider = provider.with_groups(&groups);
+    let group_ref = SelectionExpr::Group(GroupRefExpr::ById(1));
+    let ids = |refs: Vec<FixtureRef>| {
+        refs.into_iter()
+            .map(|fixture| fixture.fixture_uid.as_u128() as u32)
+            .collect::<Vec<_>>()
+    };
+
+    let spans = resolve_spans(&group_ref, &provider);
+    assert_eq!(
+        ids(spans.into_iter().flatten().collect()),
+        vec![3, 2, 1, 4, 5]
+    );
+
+    let mut visited = HashSet::new();
+    let mut warnings = Vec::new();
+    let flat = SelectionResolver::resolve(&group_ref, &provider, &mut visited, &mut warnings);
+    assert_eq!(ids(flat), vec![3, 2, 1, 4, 5]);
+    assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+}
+
+/// A group stored without clauses still resolves to its source's whole-fixture refs.
+#[test]
+fn plain_group_without_clauses_keeps_whole_fixture_refs() {
+    let provider = make_data_source(1..=3);
+    let mut groups = TestGroupProvider::default();
+    let _ = groups.add(make_group(1, 1, 3));
+    let provider = provider.with_groups(&groups);
+
+    let spans = resolve_spans(&SelectionExpr::Group(GroupRefExpr::ById(1)), &provider);
+    assert_eq!(spans, vec![vec![fref(1)], vec![fref(2)], vec![fref(3)]]);
+}
+
+/// Subtracting a whole fixture from a group that expands fixtures into elements removes all
+/// of that fixture's elements, in both selection and group subtraction.
+#[test]
+fn subtracting_a_fixture_removes_its_elements_from_an_expanded_group() {
+    let provider = make_data_source_with_elements(1..=2, 2);
+    let mut groups = TestGroupProvider::default();
+    let _ = groups.add(make_group_with_clauses(
+        1,
+        1,
+        2,
+        vec![SpatialClause::Expand { depth: Some(1) }],
+    ));
+    let provider = provider.with_groups(&groups);
+    let element = |id: u32, index: u32| FixtureRef {
+        fixture_uid: Uuid::from_u128(id as u128),
+        index: Some(index),
+    };
+
+    let without_fixture = resolve_spans(
+        &SelectionExpr::Sub {
+            lhs: Box::new(SelectionExpr::Group(GroupRefExpr::ById(1))),
+            rhs: Box::new(fixture_expr(2)),
+        },
+        &provider,
+    );
+    assert_eq!(without_fixture, vec![vec![element(1, 1), element(1, 2)]]);
+
+    let flat = SelectionResolver::new(&provider)
+        .resolve_expr(&SelectionExpr::Sub {
+            lhs: Box::new(SelectionExpr::Group(GroupRefExpr::ById(1))),
+            rhs: Box::new(fixture_expr(1)),
+        })
+        .value;
+    assert_eq!(flat, vec![element(2, 1), element(2, 2)]);
+}
+
+/// Returns each span's fixture IDs.
+fn span_fixture_ids(spans: &[Vec<FixtureRef>]) -> Vec<Vec<u32>> {
+    spans
+        .iter()
+        .map(|span| {
+            span.iter()
+                .map(|fixture| fixture.fixture_uid.as_u128() as u32)
+                .collect()
+        })
+        .collect()
+}
+
+/// Groups with block clauses keep their blocks as spans, also when combined with another
+/// group, and a descending group range reverses both the spans and their members.
+#[test]
+fn combined_group_references_keep_each_groups_spans() {
+    let provider = make_data_source(1..=6);
+    let mut groups = TestGroupProvider::default();
+    let blocks = |amount| SpatialClause::Blocks {
+        axis: Axis::X,
+        amount,
+    };
+    let _ = groups.add(make_group_with_clauses(1, 1, 4, vec![blocks(2)]));
+    let _ = groups.add(make_group_with_clauses(2, 5, 6, vec![blocks(2)]));
+    let provider = provider.with_groups(&groups);
+
+    let added = resolve_spans(
+        &SelectionExpr::Group(GroupRefExpr::Add {
+            lhs: Box::new(GroupRefExpr::ById(1)),
+            rhs: Box::new(GroupRefExpr::ById(2)),
+        }),
+        &provider,
+    );
+    assert_eq!(
+        span_fixture_ids(&added),
+        vec![vec![1, 2], vec![3, 4], vec![5, 6]]
+    );
+
+    let descending = resolve_spans(
+        &SelectionExpr::Group(GroupRefExpr::RangeById { start: 2, end: 1 }),
+        &provider,
+    );
+    assert_eq!(
+        span_fixture_ids(&descending),
+        vec![vec![6, 5], vec![4, 3], vec![2, 1]]
+    );
+}
+
+/// A bare spatial reference to a group whose clauses invert members keeps that inversion.
+#[test]
+fn plain_group_selection_keeps_stored_inversion() {
+    let provider = make_data_source(1..=8);
+    let mut groups = TestGroupProvider::default();
+    let _ = groups.add(make_group_with_clauses(
+        1,
+        1,
+        8,
+        vec![
+            SpatialClause::Blocks {
+                axis: Axis::X,
+                amount: 2,
+            },
+            SpatialClause::Invert {
+                mode: InvertMode::Block,
+                attrs: None,
+            },
+        ],
+    ));
+    let provider = provider.with_groups(&groups);
+    let mut visited = HashSet::new();
+    let mut warnings = Vec::new();
+
+    let resolved = SelectionResolver::resolve_spatial_to_resolved(
+        &SpatialSelection::pipeline(SelectionExpr::Group(GroupRefExpr::ById(1)), Vec::new()),
+        &provider,
+        &mut visited,
+        &mut warnings,
+    );
+
+    assert_eq!(
+        index_fixture_ids(&resolved),
+        vec![
+            (false, vec![1, 2]),
+            (true, vec![3, 4]),
+            (false, vec![5, 6]),
+            (true, vec![7, 8]),
+        ]
+    );
+    assert!(visited.is_empty());
 }
 
 /// Subtracting from a stored group preserves its spatial clauses before filtering.
@@ -2005,6 +2189,7 @@ fn group_label_selection_resolves_matching_group() {
         },
         selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture.clone()])),
         description: String::new(),
+        rig_source: None,
     };
     let mut groups = TestGroupProvider::default();
     groups.add(group).expect("group should add");
@@ -2039,6 +2224,7 @@ fn group_uid_selection_survives_numeric_id_change() {
             index: None,
         }])),
         description: String::new(),
+        rig_source: None,
     };
     let mut groups = TestGroupProvider::default();
     groups.add(group).expect("group should add");
@@ -2072,6 +2258,7 @@ fn group_id_selection_follows_current_numeric_alias() {
             index: None,
         }])),
         description: String::new(),
+        rig_source: None,
     };
     let mut groups = TestGroupProvider::default();
     groups.add(group).expect("group should add");
@@ -2109,6 +2296,7 @@ fn nested_group_uid_selection_resolves_nested_group() {
                 index: None,
             }])),
             description: String::new(),
+            rig_source: None,
         })
         .expect("nested group should add");
     groups
@@ -2122,6 +2310,7 @@ fn nested_group_uid_selection_resolves_nested_group() {
                 uid: nested_uid,
             })),
             description: String::new(),
+            rig_source: None,
         })
         .expect("parent group should add");
     let provider = make_data_source_with_elements(1..=1, 1).with_groups(&groups);
@@ -2153,6 +2342,7 @@ fn circular_group_uid_selection_reports_warning() {
                 uid: second_uid,
             })),
             description: String::new(),
+            rig_source: None,
         })
         .expect("first group should add");
     groups
@@ -2166,6 +2356,7 @@ fn circular_group_uid_selection_reports_warning() {
                 uid: first_uid,
             })),
             description: String::new(),
+            rig_source: None,
         })
         .expect("second group should add");
     let provider = make_data_source_with_elements(1..=1, 1).with_groups(&groups);
@@ -2197,6 +2388,7 @@ fn stabilize_group_range_by_id_expands_to_uid_refs() {
             },
             selection: SpatialSelection::default(),
             description: String::new(),
+            rig_source: None,
         })
         .expect("group should add");
     groups
@@ -2208,6 +2400,7 @@ fn stabilize_group_range_by_id_expands_to_uid_refs() {
             },
             selection: SpatialSelection::default(),
             description: String::new(),
+            rig_source: None,
         })
         .expect("group should add");
     let provider = make_data_source_with_elements(1..=2, 1).with_groups(&groups);
@@ -2257,6 +2450,7 @@ fn stabilize_missing_group_alias_does_not_bind_later() {
             },
             selection: SpatialSelection::identity(fixture_expr(1)),
             description: String::new(),
+            rig_source: None,
         })
         .expect("later group should add");
     let later_provider = make_data_source_with_elements(1..=1, 1).with_groups(&later_groups);
@@ -2280,6 +2474,7 @@ fn group_validation_hook_returns_selection_warnings() {
             index: Some(2),
         }])),
         description: String::new(),
+        rig_source: None,
     };
     let mut groups = TestGroupProvider::default();
     groups.add(group.clone()).expect("group should add");
@@ -2378,4 +2573,176 @@ fn filter_existing_selection_removes_missing_fixtures_and_compacts_indexes() {
         filtered.projection_bounds(),
         Some(ProjectionBounds::new(0, 1, 0, 1, 0, 0))
     );
+}
+
+/// A fixture range far wider than the rig resolves to the patched fixtures and reports the
+/// gap above them as one range, without walking every number in the range.
+#[test]
+fn huge_fixture_range_resolves_only_patched_fixtures() {
+    let provider = make_data_source(1..=4);
+
+    let mut warnings = Vec::new();
+    let resolved = SelectionResolver::resolve(
+        &fixture_range_expr(u32::MAX, 1),
+        &provider,
+        &mut HashSet::new(),
+        &mut warnings,
+    );
+
+    assert_eq!(resolved, vec![fref(4), fref(3), fref(2), fref(1)]);
+    assert_eq!(warnings, vec!["Could not find fixtures 5-4294967295"]);
+}
+
+/// A fixture map with a huge element range selects only the elements each fixture has and
+/// reports the rest as one range per fixture.
+#[test]
+fn huge_fixture_map_element_range_selects_existing_elements() {
+    let provider = make_data_source_with_elements(1..=2, 3);
+    let expr = SelectionExpr::FixtureMap {
+        fixtures: FixtureRangeExpr { start: 1, end: 2 },
+        elements: ElementSelectorExpr::Range {
+            start: 4_000_000_000,
+            end: 0,
+        },
+    };
+
+    let mut warnings = Vec::new();
+    let resolved = SelectionResolver::resolve(&expr, &provider, &mut HashSet::new(), &mut warnings);
+
+    let element = |fixture: u32, index: u32| FixtureRef {
+        fixture_uid: Uuid::from_u128(fixture as u128),
+        index: Some(index),
+    };
+    assert_eq!(
+        resolved,
+        vec![
+            element(1, 3),
+            element(1, 2),
+            element(1, 1),
+            element(2, 3),
+            element(2, 2),
+            element(2, 1),
+        ]
+    );
+    assert_eq!(
+        warnings,
+        vec![
+            "Fixture 1 elements 0, 4-4000000000 do not exist (fixture has 3 elements)",
+            "Fixture 2 elements 0, 4-4000000000 do not exist (fixture has 3 elements)",
+        ]
+    );
+}
+
+/// A fixture map over a huge fixture range visits only patched fixtures, and a single element
+/// past the end keeps the singular warning.
+#[test]
+fn huge_fixture_map_fixture_range_visits_patched_fixtures() {
+    let provider = make_data_source_with_elements(1..=2, 1);
+    let expr = SelectionExpr::FixtureMap {
+        fixtures: FixtureRangeExpr {
+            start: 1,
+            end: u32::MAX,
+        },
+        elements: ElementSelectorExpr::Single(2),
+    };
+
+    let mut warnings = Vec::new();
+    let resolved = SelectionResolver::resolve(&expr, &provider, &mut HashSet::new(), &mut warnings);
+
+    assert!(resolved.is_empty());
+    assert_eq!(
+        warnings,
+        vec![
+            "Fixture 1 element 2 does not exist (fixture has 1 elements)",
+            "Fixture 2 element 2 does not exist (fixture has 1 elements)",
+            "Could not find fixtures 3-4294967295",
+        ]
+    );
+}
+
+/// A group range far wider than the stored groups resolves the stored ones and reports the
+/// missing IDs as one range; stabilizing it keeps that run as a single frozen marker.
+#[test]
+fn huge_group_range_resolves_and_stabilizes_stored_groups() {
+    let mut groups = TestGroupProvider::default();
+    groups.add(make_group(1, 1, 1)).expect("group should add");
+    groups.add(make_group(3, 2, 2)).expect("group should add");
+    let provider = make_data_source(1..=2).with_groups(&groups);
+    let range = SelectionExpr::Group(GroupRefExpr::RangeById {
+        start: 1,
+        end: u32::MAX,
+    });
+
+    let resolved = SelectionResolver::new(&provider).resolve_expr(&range);
+    assert_eq!(resolved.value, vec![fref(1), fref(2)]);
+    assert_eq!(
+        resolved.issues,
+        vec!["Could not find groups 2, 4-4294967295"]
+    );
+
+    let stabilized = SelectionResolver::new(&provider).stabilize_group_refs_expr(&range);
+    let uid_ref = |id: u32| {
+        Box::new(GroupRefExpr::ByUid {
+            uid: Uuid::from_u128(10_000 + id as u128),
+        })
+    };
+    assert_eq!(
+        stabilized.value,
+        SelectionExpr::Group(GroupRefExpr::Add {
+            lhs: Box::new(GroupRefExpr::Add {
+                lhs: Box::new(GroupRefExpr::Add {
+                    lhs: uid_ref(1),
+                    rhs: Box::new(GroupRefExpr::MissingById(2)),
+                }),
+                rhs: uid_ref(3),
+            }),
+            rhs: Box::new(GroupRefExpr::MissingRangeById {
+                start: 4,
+                end: u32::MAX,
+            }),
+        })
+    );
+    assert_eq!(
+        stabilized.issues,
+        vec!["Could not find groups 2, 4-4294967295"]
+    );
+
+    let reresolved = SelectionResolver::new(&provider).resolve_expr(&stabilized.value);
+    assert_eq!(reresolved.value, vec![fref(1), fref(2)]);
+    assert_eq!(
+        reresolved.issues,
+        vec![
+            "Could not find group 2",
+            "Could not find groups 4-4294967295"
+        ]
+    );
+}
+
+/// Missing ID runs cover the gaps between present IDs, including at both ends of the `u32`
+/// range, without overflowing.
+#[test]
+fn missing_id_runs_cover_gaps_at_the_u32_bounds() {
+    use crate::validation::missing_id_runs;
+
+    assert_eq!(
+        missing_id_runs(0..=u32::MAX, &[0, u32::MAX]),
+        vec![1..=u32::MAX - 1]
+    );
+    assert_eq!(missing_id_runs(5..=9, &[]), vec![5..=9]);
+    assert_eq!(missing_id_runs(5..=9, &[5, 6, 7, 8, 9]), Vec::new());
+    assert_eq!(
+        missing_id_runs(1..=9, &[3, 4, 8]),
+        vec![1..=2, 5..=7, 9..=9]
+    );
+}
+
+/// `ids_in_range` gives the same IDs whether it probes the range or filters the listed IDs.
+#[test]
+fn ids_in_range_matches_for_narrow_and_wide_ranges() {
+    let ids = [2_u32, 7, 9, 4_000_000_000];
+    let lookup = |range| crate::ids_in_range(range, ids.len(), |id| ids.contains(&id), || ids);
+
+    assert_eq!(lookup(1..=3), vec![2]);
+    assert_eq!(lookup(1..=u32::MAX), vec![2, 7, 9, 4_000_000_000]);
+    assert_eq!(lookup(8..=8), Vec::<u32>::new());
 }

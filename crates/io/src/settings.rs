@@ -28,6 +28,27 @@ pub const MIN_DMX_OUTPUT_RATE_HZ: u32 = 1;
 /// network-native receivers such as pixel controllers and media servers.
 pub const MAX_DMX_OUTPUT_RATE_HZ: u32 = 60;
 
+/// Default sACN synchronization universe.
+///
+/// Receivers join the synchronization universe's multicast group on their own once data
+/// announces it, so a universe the show already sends needs no extra group on the network.
+pub const DEFAULT_SACN_SYNC_UNIVERSE: u16 = 1;
+
+/// Lowest sACN universe, and so the lowest synchronization universe.
+pub const MIN_SACN_UNIVERSE: u16 = 1;
+
+/// Highest sACN universe, and so the highest synchronization universe.
+pub const MAX_SACN_UNIVERSE: u16 = 63_999;
+
+/// sACN source priority a show transmits at unless it chooses another.
+pub const DEFAULT_SACN_PRIORITY: u8 = 100;
+
+/// Lowest sACN priority a show may choose, leaving 0 free for a backup one step below it.
+pub const MIN_SACN_PRIORITY: u8 = 1;
+
+/// Highest priority the sACN standard allows.
+pub const MAX_SACN_PRIORITY: u8 = 200;
+
 /// Process-scoped permissions that cap showfile transport preferences.
 ///
 /// This resource is intentionally not serialized. A showfile can preserve the
@@ -80,59 +101,6 @@ impl Default for TransportRuntimePolicy {
     }
 }
 
-/// Host-owned external control preferences, deliberately excluded from showfiles.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-#[serde(default)]
-pub struct ExternalControlSettings {
-    /// Whether other computers may connect to the backend.
-    pub enabled: bool,
-    /// Selected interface name, or `None` to listen on all IPv4 interfaces.
-    pub interface: Option<String>,
-}
-
-/// Host control preferences and the native listener's actual runtime state.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
-#[typeshare::typeshare]
-pub struct ExternalControlState {
-    /// Whether this runtime hosts a native network listener.
-    pub available: bool,
-    /// Preferences persisted independently from the active showfile.
-    pub settings: ExternalControlSettings,
-    /// Addresses on which the backend is currently listening.
-    pub listening_addresses: Vec<String>,
-    /// Binding or persistence failure requiring operator attention.
-    pub error: Option<String>,
-}
-
-/// Whether the requesting device must pair before it may control the backend.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-pub struct RemotePairingStatus {
-    /// Whether the device connects from another computer and so needs the pairing PIN.
-    pub required: bool,
-    /// Whether the device may control the backend now, either because it is local or
-    /// because it already paired during this app session.
-    pub paired: bool,
-}
-
-/// Pairing PIN entered by a device on the network.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-pub struct RemotePairingAttempt {
-    /// Digits the user typed or scanned.
-    pub pin: String,
-}
-
-/// Pairing PIN shown to the operator on the computer running Nightfall.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[typeshare::typeshare]
-pub struct RemotePairingPin {
-    /// Six-digit PIN other devices enter to pair for this app session.
-    pub pin: String,
-}
-
 /// Showfile-scoped runtime settings for network and USB transports.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
@@ -171,6 +139,26 @@ pub struct IoRuntimeSettings {
         deserialize_with = "deserialize_dmx_output_rate_hz"
     )]
     pub dmx_output_rate_hz: u32,
+    /// Whether Art-Net output follows each transmission with an ArtSync packet.
+    #[serde(default)]
+    pub artnet_sync_enabled: bool,
+    /// Whether sACN output marks its data for universe synchronization and sends a
+    /// synchronization packet after each transmission.
+    #[serde(default)]
+    pub sacn_sync_enabled: bool,
+    /// Universe sACN synchronization packets are sent on, clamped on load.
+    #[serde(
+        default = "default_sacn_sync_universe",
+        deserialize_with = "deserialize_sacn_sync_universe"
+    )]
+    pub sacn_sync_universe: u16,
+    /// sACN source priority for every output universe, clamped on load. A backup transmits one
+    /// step lower so receivers prefer the primary while both are sending.
+    #[serde(
+        default = "default_sacn_priority",
+        deserialize_with = "deserialize_sacn_priority"
+    )]
+    pub sacn_priority: u8,
 }
 
 impl Default for IoRuntimeSettings {
@@ -186,6 +174,10 @@ impl Default for IoRuntimeSettings {
             input_signal_loss_timeout: default_input_signal_loss_timeout(),
             input_universe_visibility_mode: InputUniverseVisibilityMode::default(),
             dmx_output_rate_hz: default_dmx_output_rate_hz(),
+            artnet_sync_enabled: false,
+            sacn_sync_enabled: false,
+            sacn_sync_universe: default_sacn_sync_universe(),
+            sacn_priority: default_sacn_priority(),
         }
     }
 }
@@ -194,6 +186,11 @@ impl IoRuntimeSettings {
     /// Returns the interval between network DMX output ticks for the sanitized output rate.
     pub fn dmx_output_interval(&self) -> Duration {
         dmx_output_interval(self.dmx_output_rate_hz)
+    }
+
+    /// Returns the universe sACN output synchronizes on, or `None` when sACN sync is off.
+    pub fn sacn_sync_address(&self) -> Option<u16> {
+        self.sacn_sync_enabled.then_some(self.sacn_sync_universe)
     }
 }
 
@@ -235,6 +232,74 @@ where
     u32::deserialize(deserializer).map(sanitize_dmx_output_rate_hz)
 }
 
+/// Returns the default sACN synchronization universe for serde defaults.
+pub fn default_sacn_sync_universe() -> u16 {
+    DEFAULT_SACN_SYNC_UNIVERSE
+}
+
+/// Clamps an sACN synchronization universe to [`MIN_SACN_UNIVERSE`]..=[`MAX_SACN_UNIVERSE`].
+pub fn sanitize_sacn_sync_universe(universe: u16) -> u16 {
+    universe.clamp(MIN_SACN_UNIVERSE, MAX_SACN_UNIVERSE)
+}
+
+/// Deserializes a showfile's sACN synchronization universe, clamping it to the sACN range.
+fn deserialize_sacn_sync_universe<'de, D>(deserializer: D) -> Result<u16, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    u16::deserialize(deserializer).map(sanitize_sacn_sync_universe)
+}
+
+/// Returns the default sACN source priority for serde defaults.
+pub fn default_sacn_priority() -> u8 {
+    DEFAULT_SACN_PRIORITY
+}
+
+/// Clamps a show's sACN priority to [`MIN_SACN_PRIORITY`]..=[`MAX_SACN_PRIORITY`].
+pub fn sanitize_sacn_priority(priority: u8) -> u8 {
+    priority.clamp(MIN_SACN_PRIORITY, MAX_SACN_PRIORITY)
+}
+
+/// Deserializes a showfile's sACN priority, clamping it to the supported range.
+fn deserialize_sacn_priority<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    u8::deserialize(deserializer).map(sanitize_sacn_priority)
+}
+
+/// Returns the sACN priority this node transmits at: the show's priority, or one step below it
+/// while the node is a standby backup, so receivers keep following the primary.
+pub fn effective_sacn_priority(settings: &IoRuntimeSettings, standby: DmxOutputStandby) -> u8 {
+    let priority = sanitize_sacn_priority(settings.sacn_priority);
+    if standby.is_standby() {
+        priority - 1
+    } else {
+        priority
+    }
+}
+
+/// Whether this node is a standby backup that must not take over DMX output yet.
+///
+/// A standby node keeps sACN running one priority step below the show's, so receivers fall back
+/// to it on their own when the primary's stream stops, and mutes Art-Net and USB DMX, which have
+/// no priority and would fight the primary. Timeline audio is muted on a standby node too.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
+pub struct DmxOutputStandby(pub bool);
+
+impl DmxOutputStandby {
+    /// Returns whether this node is currently a standby backup.
+    pub const fn is_standby(self) -> bool {
+        self.0
+    }
+
+    /// Returns whether Art-Net and USB DMX output may transmit.
+    pub const fn allows_unprioritized_output(self) -> bool {
+        !self.0
+    }
+}
+
 /// Returns the tick interval for a network DMX output rate after sanitizing it.
 pub fn dmx_output_interval(rate_hz: u32) -> Duration {
     Duration::from_secs_f64(1.0 / f64::from(sanitize_dmx_output_rate_hz(rate_hz)))
@@ -260,11 +325,6 @@ pub enum InputSignalLossPolicy {
     /// Clear input channels after the configured timeout duration.
     ClearAfterTimeout {},
 }
-
-/// Snapshot of compatible USB DMX devices currently surfaced to clients.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "ecs", derive(bevy_ecs::prelude::Resource))]
-pub struct AvailableUsbDmxDevices(pub Vec<UsbDmxDeviceInfo>);
 
 /// Compatible USB DMX device currently visible to the host OS.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -322,6 +382,24 @@ impl NetworkInterfaceState {
         Self {
             available_interfaces: get_available_interfaces(),
             default_interface: get_default_interface(),
+        }
+    }
+
+    /// Looks up an available interface by its system name.
+    pub fn find(&self, name: &str) -> Option<&NetworkInterfaceInfo> {
+        self.available_interfaces
+            .iter()
+            .find(|interface| interface.name == name)
+    }
+}
+
+impl NetworkInterfaceInfo {
+    /// Formats the interface as its friendly name with the system name in parentheses, or just
+    /// the system name when the platform reports no friendly name.
+    pub fn display_label(&self) -> String {
+        match self.friendly_name.as_deref() {
+            Some(friendly) if friendly != self.name => format!("{friendly} ({})", self.name),
+            _ => self.name.clone(),
         }
     }
 }
@@ -382,6 +460,28 @@ pub fn get_available_interfaces() -> Vec<NetworkInterfaceInfo> {
 #[cfg(target_arch = "wasm32")]
 pub fn get_available_interfaces() -> Vec<NetworkInterfaceInfo> {
     Vec::new()
+}
+
+/// Returns the directed broadcast address of the subnet a host interface holds `address` on,
+/// such as 192.168.1.255 for 192.168.1.20/24.
+///
+/// Art-Net asks controllers to broadcast to this address rather than to the limited broadcast
+/// address 255.255.255.255. Returns `None` when no interface holds `address`, or when its prefix
+/// is /31 or /32 and so has no broadcast address.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn ipv4_directed_broadcast(address: std::net::Ipv4Addr) -> Option<std::net::Ipv4Addr> {
+    netdev::get_interfaces()
+        .into_iter()
+        .flat_map(|interface| interface.ipv4)
+        .find(|network| network.addr() == address)
+        .filter(|network| network.prefix_len() < 31)
+        .map(|network| network.broadcast())
+}
+
+/// Returns no broadcast address when host interfaces cannot be read in WASM.
+#[cfg(target_arch = "wasm32")]
+pub fn ipv4_directed_broadcast(_address: std::net::Ipv4Addr) -> Option<std::net::Ipv4Addr> {
+    None
 }
 
 /// Gets the current default interface when it has a non-loopback IPv4 address.
@@ -458,7 +558,13 @@ pub fn usb_dmx_device_label(
         (Some(manufacturer), Some(product)) => format!("{manufacturer} {product}"),
         (Some(manufacturer), None) => manufacturer.to_string(),
         (None, Some(product)) => product.to_string(),
-        (None, None) => "uDMX adapter".to_string(),
+        (None, None) => match (vendor_id, product_id) {
+            (crate::UDMX_VENDOR_ID, crate::UDMX_PRODUCT_ID) => "uDMX adapter".to_string(),
+            (crate::FTDI_VENDOR_ID, crate::FTDI_FT232R_PRODUCT_ID) => {
+                "FTDI USB serial adapter".to_string()
+            }
+            _ => "USB DMX adapter".to_string(),
+        },
     };
     let identity = serial_number
         .map(str::trim)
@@ -480,6 +586,28 @@ pub fn usb_dmx_device_label(
 mod tests {
     use super::*;
     use crate::{UDMX_PRODUCT_ID, UDMX_VENDOR_ID};
+
+    /// The broadcast address comes from the subnet of the interface holding the address, and an
+    /// address no interface holds has none.
+    #[test]
+    fn directed_broadcast_follows_the_interface_subnet() {
+        use std::net::Ipv4Addr;
+
+        assert_eq!(
+            ipv4_directed_broadcast(Ipv4Addr::new(203, 0, 113, 77)),
+            None
+        );
+        let Some((address, network)) = netdev::get_interfaces()
+            .into_iter()
+            .flat_map(|interface| interface.ipv4)
+            .find(|network| network.prefix_len() < 31)
+            .map(|network| (network.addr(), network))
+        else {
+            // No interface with a broadcast-capable subnet on this host.
+            return;
+        };
+        assert_eq!(ipv4_directed_broadcast(address), Some(network.broadcast()));
+    }
 
     /// Verifies process permissions cap enabled showfile transport preferences.
     #[test]
@@ -588,6 +716,42 @@ mod tests {
         value["dmx_output_rate_hz"] = serde_json::json!(1000);
         let settings: IoRuntimeSettings = serde_json::from_value(value).unwrap();
         assert_eq!(settings.dmx_output_rate_hz, MAX_DMX_OUTPUT_RATE_HZ);
+    }
+
+    /// Showfiles without an sACN priority load at 100, and hand-edited values are clamped so a
+    /// backup always has a lower step left.
+    #[test]
+    fn sacn_priority_defaults_and_is_clamped_on_load() {
+        let mut value = serde_json::to_value(IoRuntimeSettings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("sacn_priority");
+        let settings: IoRuntimeSettings = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(settings.sacn_priority, DEFAULT_SACN_PRIORITY);
+        value["sacn_priority"] = serde_json::json!(0);
+        let settings: IoRuntimeSettings = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(settings.sacn_priority, MIN_SACN_PRIORITY);
+        value["sacn_priority"] = serde_json::json!(255);
+        let settings: IoRuntimeSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(settings.sacn_priority, MAX_SACN_PRIORITY);
+    }
+
+    /// A standby backup transmits one step below the show's priority, even at the lowest
+    /// priority a show may pick.
+    #[test]
+    fn standby_transmits_one_step_below_the_show_priority() {
+        let mut settings = IoRuntimeSettings::default();
+        assert_eq!(
+            effective_sacn_priority(&settings, DmxOutputStandby(false)),
+            100
+        );
+        assert_eq!(
+            effective_sacn_priority(&settings, DmxOutputStandby(true)),
+            99
+        );
+        settings.sacn_priority = 0;
+        assert_eq!(
+            effective_sacn_priority(&settings, DmxOutputStandby(true)),
+            0
+        );
     }
 
     /// Verifies automatic selection resolves to the host default interface.
@@ -703,6 +867,27 @@ mod tests {
                 Some("bus 20 port 1.2")
             ),
             "Anyma uDMX (16c0:05dc) - bus 20 port 1.2"
+        );
+    }
+
+    /// Verifies devices without USB name strings are labelled by the interface family their IDs
+    /// belong to.
+    #[test]
+    fn usb_dmx_device_label_names_family_when_descriptors_are_missing() {
+        assert_eq!(
+            usb_dmx_device_label(UDMX_VENDOR_ID, UDMX_PRODUCT_ID, None, None, None, None),
+            "uDMX adapter (16c0:05dc)"
+        );
+        assert_eq!(
+            usb_dmx_device_label(
+                crate::FTDI_VENDOR_ID,
+                crate::FTDI_FT232R_PRODUCT_ID,
+                None,
+                None,
+                Some("EN123456"),
+                None
+            ),
+            "FTDI USB serial adapter (0403:6001) - serial EN123456"
         );
     }
 }

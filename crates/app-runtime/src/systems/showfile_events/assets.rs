@@ -14,10 +14,10 @@ use std::{
 };
 
 use nightfall::prelude::*;
-use nightfall_desk::prelude::*;
 #[cfg(feature = "object-library")]
 use nightfall_object_library::showfile;
 use nightfall_scene_objects::prelude::*;
+use nightfall_showfile::{ShowfileImportOptions, ShowfileImportPolicy};
 use nightfall_timeline::prelude::*;
 use uuid::Uuid;
 

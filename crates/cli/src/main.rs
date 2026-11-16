@@ -13,12 +13,11 @@
 //! sending commands and receiving results.
 
 use std::collections::HashMap;
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Read};
 use std::sync::Arc;
 
 use futures_util::{SinkExt, StreamExt};
-use itertools::Itertools;
-use nightfall_cmd_parse::split_command_statements;
+use nightfall_cmd_parse::split_command_script;
 use nightfall_config::{RuntimeConfig, RuntimeConfigLoader};
 use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
 use serde_json::json;
@@ -137,7 +136,7 @@ impl CliApp {
 
     /// Splits one input into independent commands and awaits each terminal result in order.
     async fn send_command_string(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
-        for statement in split_command_statements(input) {
+        for statement in split_command_script(input) {
             let command_id = Uuid::new_v4();
             let command_json = create_eval_command_json(command_id, command_id, statement)?;
             let (result_sender, result_receiver) = oneshot::channel();
@@ -187,8 +186,10 @@ impl CliApp {
     /// Runs stdin or interactive terminal command processing until exit or disconnection.
     async fn run_interactive(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if !std::io::stdin().is_terminal() {
-            let input = std::io::stdin().lines().map_while(Result::ok).join("");
-            self.send_command_string(&input).await?;
+            let mut input = Vec::new();
+            std::io::stdin().read_to_end(&mut input)?;
+            self.send_command_string(&String::from_utf8_lossy(&input))
+                .await?;
             tracing::warn!("read commands from stdin; no further commands will be parsed");
             return Ok(());
         }
@@ -217,8 +218,7 @@ impl CliApp {
                         }
                     }
                 }
-                Ok(Signal::CtrlC) | Ok(Signal::CtrlD) => {
-                    // User wants to exit
+                Ok(signal) if ends_session(&signal) => {
                     return Ok(());
                 }
                 Ok(_) => {
@@ -231,6 +231,17 @@ impl CliApp {
                 }
             }
         }
+    }
+}
+
+/// Returns whether a line-editor signal should end the interactive session. Ctrl+D always ends
+/// it, while Ctrl+C ends it only on an empty line: with a half-typed command, Ctrl+C abandons that
+/// line and reedline starts the next read with an empty buffer.
+fn ends_session(signal: &Signal) -> bool {
+    match signal {
+        Signal::CtrlC(buffer) => buffer.is_empty(),
+        Signal::CtrlD => true,
+        _ => false,
     }
 }
 
@@ -278,7 +289,7 @@ fn decode_command_result_value(value: &serde_json::Value) -> Option<(Uuid, Resul
     Some((command_id, result))
 }
 
-/// Create a DeskCommand::Eval JSON envelope for the given command string.
+/// Create an EngineCommand::Eval JSON envelope for the given command string.
 ///
 /// The server will parse the command string and dispatch it to the appropriate module
 /// (Programmer, Cues, Timecode, etc.) based on the AST.
@@ -290,7 +301,7 @@ fn create_eval_command_json(
     let envelope = json!({
         "command_id": command_id.to_string(),
         "undo_id": undo_id.to_string(),
-        "module": "DeskCommand",
+        "module": "EngineCommand",
         "command": {
             "type": "Eval",
             "data": command_str
@@ -350,6 +361,16 @@ mod tests {
         assert_eq!(config.max_frame_size, Some(CLI_WEBSOCKET_MAX_PAYLOAD_SIZE));
     }
 
+    /// Verifies Ctrl+C clears a half-typed command without quitting, and quits on an empty line or
+    /// Ctrl+D.
+    #[test]
+    fn ctrl_c_quits_only_on_an_empty_line() {
+        assert!(!ends_session(&Signal::CtrlC("go 1".to_string())));
+        assert!(ends_session(&Signal::CtrlC(String::new())));
+        assert!(ends_session(&Signal::CtrlD));
+        assert!(!ends_session(&Signal::Success(String::new())));
+    }
+
     /// Verifies CLI envelopes use the semantic command and undo wire fields.
     #[test]
     fn eval_envelope_uses_command_identity() {
@@ -362,12 +383,13 @@ mod tests {
         assert!(envelope.get("correlation_id").is_none());
     }
 
-    /// Verifies CLI sequencing preserves semicolons embedded in quoted arguments.
+    /// Verifies CLI sequencing preserves semicolons embedded in quoted arguments and
+    /// treats each piped line as its own statement.
     #[test]
-    fn command_sequence_splits_only_unquoted_semicolons() {
+    fn command_sequence_splits_lines_and_unquoted_semicolons() {
         assert_eq!(
-            split_command_statements("fix 1 \"custom;attr\" @ 10; store cue 1.1"),
-            vec!["fix 1 \"custom;attr\" @ 10", "store cue 1.1"]
+            split_command_script("fix 1 \"custom;attr\" @ 10; store cue 1.1\nclear"),
+            vec!["fix 1 \"custom;attr\" @ 10", "store cue 1.1", "clear"]
         );
     }
 

@@ -78,11 +78,11 @@ export function createSequenceEditorMutationController(
     }
     const updatedSequence = { ...sequence, steps: nextSteps };
     const policy =
-      source.settings().sequence_reorder_renumber_policy ??
+      source.settings().ui.sequence_reorder_renumber_policy ??
       SequenceReorderRenumberPolicy.Preserve;
     if (shouldRenumberAfterReorder(policy)) {
       for (const [index, cueUid] of nextSteps.entries()) {
-        const cue = source.cueMap()[cueUid];
+        const cue = source.cue(cueUid);
         const nextCueId = index + 1;
         if (!cue || cue.identifiers.id === nextCueId) continue;
         sendCueUpdate({
@@ -177,7 +177,7 @@ export function createSequenceEditorMutationController(
       preview.stopPreviewSession();
       return;
     }
-    const nextCue = source.cueMap()[nextSelectedUid];
+    const nextCue = source.cue(nextSelectedUid);
     if (nextCue) preview.publishPreviewCue(nextCue);
   };
 

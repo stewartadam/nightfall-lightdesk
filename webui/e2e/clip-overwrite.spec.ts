@@ -181,3 +181,37 @@ test("clip creation requires Alt to overwrite the current owner", async ({
     deactivate_on_sequence_end: false,
   });
 });
+
+/** Verifies clearing the ID field to type a new ID keeps it blank, flags it, and accepts the new ID. */
+test("clip ID field can be cleared and retyped", async ({ page }, testInfo) => {
+  await page.goto("/?startup:draftRecovery=false&e2e=1");
+  await waitForDockviewApp(page);
+  await page.keyboard.press(
+    process.platform === "darwin" ? "Meta+Shift+P" : "Control+Shift+P",
+  );
+  const palette = page.getByPlaceholder("Type a command or search...");
+  await palette.fill("Open Clips");
+  await palette.press("Enter");
+  await page.getByRole("button", { name: "Add clip", exact: true }).click();
+  const create = page.getByRole("dialog", { name: "Create clip" });
+  const idInput = create.getByLabel("ID", { exact: true });
+  const submit = create.getByRole("button", { name: "Create", exact: true });
+
+  await idInput.selectText();
+  await idInput.press("Backspace");
+  await expect(idInput).toHaveValue("");
+  await expect(create.getByText("IDs are whole numbers from 1.")).toBeVisible();
+  await expect(submit).toBeDisabled();
+  await create.screenshot({
+    path: testInfo.outputPath("clip-id-cleared.png"),
+  });
+
+  // An ID no sample clip uses, so the dialog offers Create rather than Overwrite.
+  await idInput.pressSequentially("987");
+  await expect(idInput).toHaveValue("987");
+  await expect(create.getByText("IDs are whole numbers from 1.")).toHaveCount(
+    0,
+  );
+  await expect(submit).toBeEnabled();
+  await create.getByRole("button", { name: "Cancel", exact: true }).click();
+});

@@ -293,6 +293,20 @@ impl<T: HasIdentifiers> DataProvider<T> {
     ) -> Result<dashmap::mapref::one::Ref<'_, Uuid, T>, DataStoreError<T>> {
         self.store.item_by_id(&id)
     }
+
+    /// Returns the user-facing IDs of the stored items numbered within `range`, ascending.
+    ///
+    /// Costs no more than the smaller of the range width and the number of stored items, so a
+    /// range such as `1 thru 4000000000` is as cheap as listing every item.
+    pub fn ids_in(&self, range: std::ops::RangeInclusive<u32>) -> Vec<u32> {
+        let id_index = self.store.id_index.read().unwrap();
+        nightfall_selection::ids_in_range(
+            range,
+            id_index.len(),
+            |id| id_index.contains_right(&id),
+            || id_index.right_values().copied().collect::<Vec<_>>(),
+        )
+    }
 }
 
 impl<T: HasIdentifiers + Clone> Extend<T> for DataProvider<T> {
@@ -330,6 +344,20 @@ mod tests {
                 label: String::new(),
             },
         }
+    }
+
+    /// `ids_in` lists the stored IDs inside a range in ascending order, both for a range
+    /// narrower than the store and for one far wider.
+    #[test]
+    fn ids_in_lists_stored_ids_inside_a_range() {
+        let mut provider = DataProvider::<TestItem>::default();
+        for id in [9, 2, 5, 4_000_000_000] {
+            provider.add(item(id)).unwrap();
+        }
+
+        assert_eq!(provider.ids_in(3..=5), vec![5]);
+        assert_eq!(provider.ids_in(1..=u32::MAX), vec![2, 5, 9, 4_000_000_000]);
+        assert!(provider.ids_in(10..=11).is_empty());
     }
 
     /// Verifies the journal reports added, replaced and removed items after a revision, and

@@ -15,7 +15,6 @@
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::prelude::{Fixture, FixtureGeometry};
 
@@ -90,6 +89,34 @@ pub enum FixtureLibraryCommand {
         update_existing_ids: Vec<u32>,
     },
 
+    /// Describe one library revision for reviewing an update to it: each of its modes as
+    /// the fixture it builds, and the revision notes its GDTF archive records.
+    GetRevisionDetails {
+        /// Manufacturer name
+        make: String,
+        /// Model name
+        model: String,
+        /// Library revision to describe
+        asset_etag: String,
+    },
+
+    /// Move patched fixtures to another revision of their library fixture as one undoable
+    /// change.
+    ///
+    /// Each fixture is rebuilt from the revision's mode named for it and keeps its ID, UID,
+    /// label, placement and DMX patch. Fixtures left out keep their own revision, so a show
+    /// can hold several revisions of one make, model and mode.
+    UpdateFixturesToRevision {
+        /// Manufacturer name of the revision
+        make: String,
+        /// Model name of the revision
+        model: String,
+        /// Library revision to move the fixtures to
+        asset_etag: String,
+        /// Fixtures to update, each with the revision's mode to rebuild it from
+        fixtures: Vec<LibraryFixtureModeUpdate>,
+    },
+
     /// Upload a fixture file to the library
     UploadFixture {
         /// Original filename (used to determine format and as storage name)
@@ -132,6 +159,51 @@ pub struct LibraryFixtureInstance {
     pub label: Option<String>,
 }
 
+/// One fixture to move to another library revision, and the revision's mode to use for it
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare::typeshare]
+#[serde(deny_unknown_fields)]
+pub struct LibraryFixtureModeUpdate {
+    /// Fixture ID
+    pub id: u32,
+    /// DMX mode of the new revision to rebuild the fixture from
+    pub mode: String,
+}
+
+/// One library revision as an update review shows it
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct LibraryRevisionDetails {
+    /// Every mode the revision offers, in the order the file lists them
+    pub modes: Vec<LibraryRevisionMode>,
+    /// Revision notes the GDTF archive records, oldest first; empty for other formats
+    pub revision_notes: Vec<GdtfRevisionNote>,
+}
+
+/// One mode of a library revision and the fixture it builds
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct LibraryRevisionMode {
+    /// DMX mode name
+    pub name: String,
+    /// Fixture the mode builds, with ID 0; `None` when the mode can't be converted
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixture: Option<Fixture>,
+    /// Why the mode can't be converted, when it can't
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// One `Revision` entry of a GDTF archive: what changed, and when
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct GdtfRevisionNote {
+    /// What the editor wrote about the change
+    pub text: String,
+    /// When the revision was made, as the archive records it (usually ISO 8601)
+    pub date: String,
+}
+
 /// Information about an available fixture
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[typeshare::typeshare]
@@ -149,6 +221,24 @@ pub struct AvailableFixtureInfo {
     /// Lowercase GDTF `FixtureTypeID`, shared by every revision of a GDTF fixture type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gdtf_fixture_type_id: Option<String>,
+    /// Text of the GDTF archive's latest revision, which GDTF Share lists as the revision name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gdtf_revision: Option<String>,
+    /// Date of the GDTF archive's latest revision as the archive writes it, such as
+    /// `2024-03-01T12:00:00`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gdtf_revision_date: Option<String>,
+    /// GDTF specification version the archive is written against, such as `1.2`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gdtf_data_version: Option<String>,
+    /// Name of the definition file, in the library folder or the open show's package, or `None`
+    /// for a built-in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
+    /// Whether this is a GDTF fixture whose archive has no 3D model mesh, so the visualizer
+    /// draws it from primitive shapes or as a placeholder.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub missing_3d_model: bool,
 }
 
 /// Response for ListAvailableFixtures command
@@ -223,6 +313,8 @@ pub enum FixtureLibraryCommandSuccess {
     AvailableFixtures(ListAvailableFixturesResponse),
     /// The command produced one fixture profile.
     FixtureProfile(Box<GetFixtureProfileResponse>),
+    /// The command described one library revision.
+    RevisionDetails(LibraryRevisionDetails),
 }
 
 /// Domain-local outcome emitted after one fixture-library command has applied.
@@ -248,28 +340,11 @@ impl FixtureLibraryCommandResult {
 /// `CommandEnvelope<FixtureLibraryCommand>` handler, chained before
 /// [`finish_fixture_library_commands`].
 pub fn register_fixture_library_commands(app: &mut bevy_app::App) {
-    register_ingress_command::<FixtureLibraryCommand>(app);
+    register_client_command::<FixtureLibraryCommand>(app, Undo::Skipped);
+    for query in ["ListAvailableFixtures", "GetFixtureProfile"] {
+        allow_command_while_read_only(app, FixtureLibraryCommand::COMMAND_MODULE, query);
+    }
     app.add_message::<FixtureLibraryCommandResult>();
-    register_command_deserializer::<FixtureLibraryCommand>(
-        app,
-        deserialize_fixture_library_command,
-    );
-}
-
-/// Deserializes one fixture-library command into its semantic envelope.
-pub fn deserialize_fixture_library_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: FixtureLibraryCommand = serde_json::from_value(json)
-        .map_err(|error| format!("Failed to parse FixtureLibraryCommand: {error}"))?;
-    let envelope = world
-        .resource::<CommandTracker>()
-        .admitted_envelope(command_id, undo_id, command);
-    world.write_message(envelope);
-    Ok(())
 }
 
 /// Publishes terminal results after fixture mutations and deferred parameter spawns apply.
@@ -285,6 +360,9 @@ pub fn finish_fixture_library_commands(
             }
             Ok(FixtureLibraryCommandSuccess::FixtureProfile(response)) => {
                 responder.succeed_with_output(event.command_id, response)
+            }
+            Ok(FixtureLibraryCommandSuccess::RevisionDetails(details)) => {
+                responder.succeed_with_output(event.command_id, details)
             }
             Err(error) => responder.fail(event.command_id, error.clone()),
         };

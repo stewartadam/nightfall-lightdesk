@@ -18,9 +18,10 @@
 
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
+use nightfall_clips::{ClipSourceAppExt, ClipSourceDomain, ClipSourceKind};
 use nightfall_engine::prelude::*;
 use nightfall_instances::{
-    ClipInstanceAttachment, ClipInstanceRequest, DomainInstanceReconstructionRequest,
+    ClipInstanceAttachment, ClipInstanceRequest, DomainInstanceReconstructionRequest, InstanceKind,
 };
 use serde::{Deserialize, Serialize};
 
@@ -77,19 +78,25 @@ impl Plugin for FlowPlugin {
         app.init_resource::<nodes::FlowNodeRegistry>();
         app.add_message::<DomainInstanceReconstructionRequest>();
 
-        register_ingress_command::<FlowCommand>(app);
+        register_client_command::<FlowCommand>(app, Undo::Skipped);
         app.add_message::<events::FlowCommandResult>();
-        register_engine_operation::<events::FlowPlaybackOperation>(app);
+        app.register_clip_source(
+            ClipSourceKind::Flow,
+            ClipSourceDomain {
+                playback_kind: InstanceKind::Flow,
+                handles_clip_operations: false,
+                restarts_on_go: false,
+            },
+        );
         app.add_message::<EventEnvelope<ClipInstanceAttachment>>();
         app.add_message::<RequestEnvelope<ClipInstanceRequest>>();
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FlowAstConverter>(
         );
-        register_command_deserializer::<FlowCommand>(app, websocket::deserialize_flow_command);
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
-                events::handle_events,
+                events::handle_events.after(DeskEventSet::ClipRouting),
                 events::crud_events,
                 events::handle_playback_commands,
                 events::handle_domain_playback_reconstruction_requests,
@@ -100,7 +107,7 @@ impl Plugin for FlowPlugin {
                 .in_set(EventHandling),
         );
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 events::reject_disabled_commands.run_if(not(experimental_flows_enabled)),
                 events::finish_flow_commands,
@@ -108,14 +115,10 @@ impl Plugin for FlowPlugin {
                 .chain()
                 .in_set(EventHandling),
         );
-        app.add_systems(
-            Render,
-            (
-                runtime::publish_runtime_deltas,
-                websocket::send_flows_on_change,
-            )
-                .in_set(ClientOutput),
-        );
+        app.add_systems(Render, runtime::publish_runtime_deltas.in_set(ClientOutput));
+        app.add_client_feed::<websocket::FlowsFeed>()
+            .on_change(resource_changed::<DataProvider<definition::FlowDefinition>>);
+        app.add_resource_feed::<nodes::FlowNodeRegistry>();
         app.add_systems(
             PostUpdate,
             websocket::forward_flow_commands.in_set(ClientFeedback),
@@ -132,10 +135,6 @@ impl Plugin for FlowPlugin {
         app.add_systems(
             Render,
             events::cleanup_released_flow_instances.in_set(VdimProcessing),
-        );
-        app.add_systems(
-            Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
         );
 
         {

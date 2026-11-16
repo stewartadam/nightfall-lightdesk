@@ -8,6 +8,8 @@
 
 //! Schema 21 → 22: playback "rate" becomes "speed", and waveform "rate" becomes cycle length.
 
+use nightfall_cmd_parse::lexicon::aliases::canonicalize_alias_any_scope;
+use nightfall_cmd_parse::statement_ranges;
 use serde_json::{Map, Value};
 
 /// Renames persisted playback-rate and waveform-rate names to their speed and cycle-length names.
@@ -79,17 +81,34 @@ fn rename_object(object: &mut Map<String, Value>) {
     }
 }
 
-/// Rewrites the retired `rate` keyword of `clip` and `fx` command text to `speed`.
+/// Rewrites the retired `rate` keyword of `clip` and `fx` statements in command text to `speed`.
 ///
-/// Stored command text such as `clip 1 rate 0.5` would otherwise stop parsing. Only commands
-/// that start with `clip` or `fx` are touched, and only whole `rate` words in them.
+/// Stored command text such as `clip 1 rate 0.5` would otherwise stop parsing. The text may
+/// hold several `;`-separated statements, as `desk.eval` runs each in turn, so each statement
+/// is checked on its own and the separators and spacing between them are kept.
 fn speed_keyword_command(command: &str) -> String {
-    let first_word = command.split_whitespace().next().unwrap_or_default();
-    if !first_word.eq_ignore_ascii_case("clip") && !first_word.eq_ignore_ascii_case("fx") {
-        return command.to_string();
-    }
     let mut rewritten = String::with_capacity(command.len());
-    let mut rest = command;
+    let mut copied = 0;
+    for range in statement_ranges(command) {
+        rewritten.push_str(&command[copied..range.start]);
+        rewritten.push_str(&speed_keyword_statement(&command[range.start..range.end]));
+        copied = range.end;
+    }
+    rewritten.push_str(&command[copied..]);
+    rewritten
+}
+
+/// Rewrites whole `rate` words of one statement to `speed` when the statement starts with
+/// `clip` (or one of its aliases such as `exec`) or `fx`, and returns any other statement
+/// unchanged.
+fn speed_keyword_statement(statement: &str) -> String {
+    let first_word = statement.split_whitespace().next().unwrap_or_default();
+    let keyword = canonicalize_alias_any_scope(first_word).unwrap_or(first_word);
+    if !keyword.eq_ignore_ascii_case("clip") && !keyword.eq_ignore_ascii_case("fx") {
+        return statement.to_string();
+    }
+    let mut rewritten = String::with_capacity(statement.len());
+    let mut rest = statement;
     while let Some(start) = rest.find(|character: char| !character.is_whitespace()) {
         rewritten.push_str(&rest[..start]);
         rest = &rest[start..];
@@ -156,7 +175,8 @@ mod tests {
                 {"action": {"id": "clip.set-rate", "arguments": {"clip": "bb", "rate": 2.0}}},
                 {"action": {"id": "desk.eval", "arguments": {"command": "clip 3 rate 0.5"}}},
                 {"action": {"id": "desk.eval", "arguments": {"command": "FX 2  Rate 2"}}},
-                {"action": {"id": "desk.eval", "arguments": {"command": "group rate"}}}
+                {"action": {"id": "desk.eval", "arguments": {"command": "group rate"}}},
+                {"action": {"id": "desk.eval", "arguments": {"command": "group 1 at 50; exec 2 rate 0.5;fx 1 rate 2"}}}
             ]
         })
     }
@@ -202,6 +222,10 @@ mod tests {
         assert_eq!(
             showfile["midiMappings"][3]["action"]["arguments"]["command"],
             "group rate"
+        );
+        assert_eq!(
+            showfile["midiMappings"][4]["action"]["arguments"]["command"],
+            "group 1 at 50; exec 2 speed 0.5;fx 1 speed 2"
         );
     }
 

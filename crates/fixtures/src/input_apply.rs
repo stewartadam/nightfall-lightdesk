@@ -205,11 +205,9 @@ fn apply_transport_input_frame(
                     &mut assertions,
                 );
             }
-            ResolvedInputDestination::Transport {
-                target: transport_target,
-            } => {
-                apply_transport_input_mapping(input_universes, data, *address, transport_target);
-            }
+            // Output frame composition sends passthrough windows; input universes keep only
+            // what each source sent.
+            ResolvedInputDestination::Transport { .. } => {}
         }
     }
 
@@ -244,28 +242,6 @@ fn apply_parameter_targets(
         });
         updated_targets.insert(target.entity);
     }
-}
-
-/// Copies source transport DMX values into mapped transport universe channels.
-fn apply_transport_input_mapping(
-    input_universes: &mut InputDmxUniverses,
-    source_data: &[u8; MAX_CHANNELS_PER_UNIVERSE],
-    source_address: u16,
-    transport_target: &ResolvedTransportTarget,
-) {
-    let window = ChannelWindow {
-        source_address,
-        target_address: transport_target.address,
-    };
-    if window
-        .span(MAX_CHANNELS_PER_UNIVERSE, MAX_CHANNELS_PER_UNIVERSE)
-        .is_none()
-    {
-        return;
-    }
-    let target =
-        input_universes.get_universe_mut(transport_target.protocol, transport_target.universe);
-    window.overlay(source_data, target);
 }
 
 /// Copies source transport DMX values into mapped console universe channels once per channel,

@@ -192,8 +192,8 @@ fn reports_non_prunable_unresolved_fixture_issues() {
     );
 }
 
-/// Verifies a fixture map gets a row per fixture element, one issue per missing fixture, and one
-/// issue per missing element of a live fixture.
+/// Verifies a fixture map gets a row per element of a live fixture, with one issue per missing
+/// element, and a single row and issue for a missing fixture.
 #[test]
 fn reports_missing_fixture_map_targets() {
     let mut lookup = ReferenceLookup::default();
@@ -205,7 +205,7 @@ fn reports_missing_fixture_map_targets() {
 
     let report = audit(&lookup, &[(owner(ReferenceDomain::Fx, 1), source)]);
 
-    assert_eq!(report.summary.reference_count, 4);
+    assert_eq!(report.summary.reference_count, 3);
     assert_eq!(
         reasons(&report),
         vec![
@@ -527,7 +527,11 @@ fn lookup_setters_report_changed_entries() {
     let mut lookup = ReferenceLookup::default();
     assert_eq!(
         lookup.set_fixture(uid(1), Some((1, 4))),
-        vec![LookupKey::FixtureUid(uid(1)), LookupKey::FixtureId(1)]
+        vec![
+            LookupKey::FixtureUid(uid(1)),
+            LookupKey::FixtureId(1),
+            LookupKey::FixtureIds
+        ]
     );
     assert!(lookup.set_fixture(uid(1), Some((1, 4))).is_empty());
     assert_eq!(
@@ -535,12 +539,17 @@ fn lookup_setters_report_changed_entries() {
         vec![
             LookupKey::FixtureUid(uid(1)),
             LookupKey::FixtureId(1),
-            LookupKey::FixtureId(2)
+            LookupKey::FixtureId(2),
+            LookupKey::FixtureIds
         ]
     );
     assert_eq!(
         lookup.set_fixture(uid(1), None),
-        vec![LookupKey::FixtureUid(uid(1)), LookupKey::FixtureId(2)]
+        vec![
+            LookupKey::FixtureUid(uid(1)),
+            LookupKey::FixtureId(2),
+            LookupKey::FixtureIds
+        ]
     );
 
     lookup.add_group(uid(10), 1, "Front");
@@ -620,4 +629,143 @@ fn shared_group_labels_resolve_to_the_lowest_id() {
     assert!(before.lookups.iter().any(|lookup| changed.contains(lookup)));
     let after = audit_owner(&lookup, cue, &source);
     assert_eq!(after.group_dependencies, BTreeSet::from([uid(11)]));
+}
+
+/// Verifies a fixture range far wider than the rig audits the patched fixtures and one row per
+/// gap, and re-audits when any fixture ID is added or removed.
+#[test]
+fn audits_huge_fixture_range_by_patched_fixtures() {
+    let mut lookup = ReferenceLookup::default();
+    lookup.add_fixture(uid(1), 1, 1);
+    lookup.add_fixture(uid(3), 3, 1);
+    let source = TestSource::selection(SelectionExpr::FixtureRange {
+        start: fixture_id(1, None),
+        end: fixture_id(u32::MAX, None),
+    });
+    let owner = owner(ReferenceDomain::Cue, 1);
+
+    let book = audit_book(&lookup, &[(owner.clone(), source)]);
+    let report = Report::of(&book);
+
+    assert_eq!(report.summary.reference_count, 4);
+    assert_eq!(
+        report
+            .issues
+            .iter()
+            .map(|issue| issue.target.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            ReferenceTarget::Fixture {
+                fixture_id: 2,
+                element_index: None
+            },
+            ReferenceTarget::FixtureRange {
+                start: 4,
+                end: u32::MAX
+            },
+        ]
+    );
+
+    let changed = lookup.set_fixture(uid(9), Some((9, 1)));
+    assert!(book.readers(&changed).contains(&OwnerKey::of(&owner)));
+}
+
+/// Verifies element ranges far wider than a fixture audit its elements and one row for the
+/// indexes it lacks.
+#[test]
+fn audits_huge_element_ranges_by_existing_elements() {
+    let mut lookup = ReferenceLookup::default();
+    lookup.add_fixture(uid(1), 1, 2);
+    let map = TestSource::selection(SelectionExpr::FixtureMap {
+        fixtures: FixtureRangeExpr { start: 1, end: 1 },
+        elements: ElementSelectorExpr::Range {
+            start: 1,
+            end: 4_000_000_000,
+        },
+    });
+    let range = TestSource::selection(SelectionExpr::FixtureRange {
+        start: fixture_id(1, Some(1)),
+        end: fixture_id(1, Some(4_000_000_000)),
+    });
+
+    let report = audit(
+        &lookup,
+        &[
+            (owner(ReferenceDomain::Fx, 1), map),
+            (owner(ReferenceDomain::Fx, 2), range),
+        ],
+    );
+
+    assert_eq!(report.summary.reference_count, 6);
+    let missing = ReferenceTarget::FixtureElements {
+        fixture_id: 1,
+        start: 3,
+        end: 4_000_000_000,
+    };
+    assert_eq!(
+        report
+            .issues
+            .iter()
+            .map(|issue| (issue.target.clone(), issue.reason))
+            .collect::<Vec<_>>(),
+        vec![
+            (missing.clone(), ReferenceIssueReason::MissingFixtureElement),
+            (missing, ReferenceIssueReason::MissingFixtureElement),
+        ]
+    );
+}
+
+/// Verifies a huge group range and a frozen missing group range each audit as a few rows.
+#[test]
+fn audits_huge_group_ranges_by_stored_groups() {
+    let mut lookup = ReferenceLookup::default();
+    lookup.add_group(uid(10), 1, "Front");
+    let source = TestSource::selection(SelectionExpr::Add {
+        lhs: Box::new(SelectionExpr::Group(GroupRefExpr::RangeById {
+            start: u32::MAX,
+            end: 1,
+        })),
+        rhs: Box::new(SelectionExpr::Group(GroupRefExpr::MissingRangeById {
+            start: 5,
+            end: 9,
+        })),
+    });
+
+    let report = audit(&lookup, &[(owner(ReferenceDomain::Cue, 1), source)]);
+
+    assert_eq!(report.summary.reference_count, 3);
+    assert_eq!(
+        report
+            .issues
+            .iter()
+            .map(|issue| issue.target.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            ReferenceTarget::GroupRange {
+                start: 2,
+                end: u32::MAX
+            },
+            ReferenceTarget::GroupRange { start: 5, end: 9 },
+        ]
+    );
+}
+
+/// Verifies a narrow fixture range re-audits only when a fixture inside it changes, while
+/// patching a fixture elsewhere leaves it alone.
+#[test]
+fn narrow_fixture_range_reads_only_its_own_ids() {
+    let mut lookup = ReferenceLookup::default();
+    lookup.add_fixture(uid(1), 1, 1);
+    let source = TestSource::selection(SelectionExpr::FixtureRange {
+        start: fixture_id(1, None),
+        end: fixture_id(4, None),
+    });
+    let owner = owner(ReferenceDomain::Cue, 1);
+    let book = audit_book(&lookup, &[(owner.clone(), source)]);
+
+    let outside = lookup.set_fixture(uid(9), Some((9, 1)));
+    assert!(book.readers(&outside).is_empty());
+
+    let inside = lookup.set_fixture(uid(3), Some((3, 1)));
+    assert!(book.readers(&inside).contains(&OwnerKey::of(&owner)));
 }

@@ -7,6 +7,7 @@
  */
 
 import { prepareFreshBackendShowfile } from "./backend-showfile";
+import { revealPanel } from "./dock-panels";
 import { expect, type Page, test } from "./playwright-fixtures";
 import {
   prepareStoreSeededTestApp,
@@ -33,10 +34,8 @@ async function openSelectionInspector(page: Page): Promise<void> {
         params: {},
       });
     }
-    const panel = api.getPanel(panelId);
-    panel?.api.setActive();
-    panel?.focus();
   });
+  await revealPanel(page, "panel-SelectionVisualizer-e2e");
 }
 
 /** Opens Selection Inspector scenarios against a fresh blank backend. */

@@ -16,7 +16,6 @@ type TimelinePointerControllerOptions = {
 };
 
 type TimelineCursorProjection = {
-  start: number;
   zoom: number;
   setPosition: (position: number | undefined) => void;
 };
@@ -78,7 +77,7 @@ export function createTimelinePointerController(
 
     const timelineRect = timelinePlane.getBoundingClientRect();
     const positionPx = event.clientX - timelineRect.left;
-    cursor.setPosition(cursor.start + pixelsToMs(positionPx, cursor.zoom));
+    cursor.setPosition(pixelsToMs(positionPx, cursor.zoom));
   };
 
   /** Reprojects the most recent pointer after scrolling changes viewport geometry. */

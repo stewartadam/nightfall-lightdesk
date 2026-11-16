@@ -10,13 +10,13 @@ use std::time::Duration;
 
 use bevy::{
     app::{ScheduleRunnerPlugin, TaskPoolThreadAssignmentPolicy},
-    diagnostic::FrameTimeDiagnosticsPlugin,
+    diagnostic::{EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin},
     prelude::*,
 };
 use bevy_state::{app::AppExtStates, condition::in_state};
 use nightfall_actions::ActionInvocationHandling;
 use nightfall_config::RuntimeConfig;
-use nightfall_desk::resources::log_config::LogConfig;
+use nightfall_engine::logging::LogConfig;
 use nightfall_engine::prelude::*;
 use nightfall_framepace::prelude::*;
 use nightfall_io::{IoRuntimeSettings, TransportRuntimePolicy, sanitize_dmx_output_rate_hz};
@@ -145,15 +145,33 @@ pub(super) fn init_bevy_with_transport_policy(
     );
     app.add_plugins(EngineLogTimePlugin);
 
-    app.add_plugins(FrameTimeDiagnosticsPlugin::default());
+    app.add_plugins((
+        FrameTimeDiagnosticsPlugin::default(),
+        EntityCountDiagnosticsPlugin::default(),
+    ));
     app.add_plugins(FramepacePlugin);
     app.world_mut().resource_mut::<FramepaceSettings>().limiter =
         Limiter::Manual(engine_frame_interval(&IoRuntimeSettings::default()));
 
-    app.add_plugins(plugin_groups::CorePlugins {
+    app.add_plugins(plugin_groups::NativePlugins {
         websocket_port: runtime_config.server_port,
+        log_config,
+        timeline_audio_enabled: runtime_config.timeline_audio_enabled,
+        outputs: plugin_groups::OutputPlugins {
+            network_output_enabled: transport_policy.allow_network_output,
+        },
+        inputs: plugin_groups::InputPlugins {
+            network_input_enabled: transport_policy.allow_network_input,
+            osc_bind_addr: runtime_config.osc_bind_addr,
+            midi_input_port: runtime_config.midi_input_port.clone(),
+        },
     });
     systems::showfile_events::register_showfile_http_routes(
+        &mut app
+            .world_mut()
+            .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
+    );
+    systems::backup_mirror::register_backup_http_routes(
         &mut app
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
@@ -169,6 +187,7 @@ pub(super) fn init_bevy_with_transport_policy(
         &mut app
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
+        runtime_config.system_keychain_enabled,
     );
     crate::diagnostic_http::register_routes(
         &mut app
@@ -180,22 +199,11 @@ pub(super) fn init_bevy_with_transport_policy(
             .world_mut()
             .resource_mut::<nightfall_websocket::prelude::HttpRouteRegistry>(),
     );
-    app.add_plugins(plugin_groups::DeskPlugins { log_config });
-    app.add_plugins(plugin_groups::FxPlugins);
-    app.add_plugins(plugin_groups::TimecodePlugins {
-        timeline_audio_enabled: runtime_config.timeline_audio_enabled,
-    });
-    app.add_plugins(plugin_groups::OutputPlugins {
-        network_output_enabled: transport_policy.allow_network_output,
-    });
-    app.add_plugins(plugin_groups::InputPlugins {
-        network_input_enabled: transport_policy.allow_network_input,
-        osc_bind_addr: runtime_config.osc_bind_addr,
-        midi_input_port: runtime_config.midi_input_port.clone(),
-    });
 
     app.init_resource::<systems::showfile_events::ShowfileCleanSnapshotHash>();
     app.init_resource::<PeriodicDraftAutosaveTimer>();
+    app.init_resource::<systems::showfile_events::DraftSaveStatus>();
+    app.add_resource_feed::<systems::showfile_events::DraftSaveStatus>();
     app.insert_state(CommandProcessingState::Running);
     app.insert_state(RuntimeOutputState::Running);
 
@@ -206,12 +214,20 @@ pub(super) fn init_bevy_with_transport_policy(
             ActionInvocationHandling
                 .run_if(in_state(CommandProcessingState::Running))
                 .after(InputHandling)
-                .before(EventHandling),
-            EventHandling.run_if(in_state(CommandProcessingState::Running)),
+                .before(CommandApplication),
+            // Saves see settings changed by this frame's commands.
             ShowfileHandling
                 .run_if(in_state(CommandProcessingState::Running))
-                .after(EventHandling),
+                .after(CommandApplication)
+                .after(SettingsSync),
+            ObjectChangePublication
+                .run_if(in_state(CommandProcessingState::Running))
+                .after(ShowfileHandling),
         ),
+    );
+    app.configure_sets(
+        ApplyCommands,
+        EventHandling.run_if(in_state(CommandProcessingState::Running)),
     );
     app.configure_sets(
         Render,
@@ -232,15 +248,28 @@ pub(super) fn init_bevy_with_transport_policy(
         settings.usb_output_enabled = transport_policy.allow_usb_output;
     }
 
+    // A backup accepts opening a show, which ends its role, rather than leaving the operator
+    // stuck on the copied show.
+    for command_type in systems::backup_mirror::SHOW_LOAD_COMMANDS {
+        allow_command_while_read_only(
+            &mut app,
+            nightfall_showfile::ShowfileCommand::COMMAND_MODULE,
+            command_type,
+        );
+    }
+
     // event handling - plugins add more here
     app.add_systems(
         Update,
         (
             // event generation based on showfile
+            systems::backup_mirror::leave_backup_role_for_show_loads,
             systems::showfile_events::handle_events.run_if(disk_storage_available),
             bevy::ecs::schedule::ApplyDeferred,
             systems::deleted_object_instances::release_deleted_object_instances,
             systems::quit_event::handle_events,
+            systems::backup_mirror::load_mirrored_showfiles,
+            systems::backup_mirror::close_copied_shows,
             handle_periodic_draft_autosave,
             save_draft_when_last_client_disconnects,
             handle_process_shutdown_request,
@@ -250,9 +279,21 @@ pub(super) fn init_bevy_with_transport_policy(
     );
     app.add_systems(
         Update,
+        systems::backup_mirror::remember_failover_show
+            .run_if(disk_storage_available)
+            .run_if(in_state(AppState::Ready)),
+    );
+    app.add_systems(
+        Update,
         sync_frame_rate_with_dmx_output
             .after(ShowfileHandling)
             .run_if(resource_changed::<IoRuntimeSettings>),
+    );
+    app.add_systems(
+        Update,
+        systems::showfile_events::mirror_draft_save_status
+            .after(ShowfileHandling)
+            .run_if(resource_changed::<systems::showfile_events::DraftSaveStatus>),
     );
 
     app
@@ -289,9 +330,13 @@ fn engine_frame_interval(settings: &IoRuntimeSettings) -> Duration {
 /// Registers the GDTF Share routes, installing fixtures into the fixture library folder and
 /// saving the GDTF Share fixture list next to it.
 ///
-/// Without a library folder GDTF Share stays off and the UI reports it unavailable.
+/// Without a library folder GDTF Share stays off and the UI reports it unavailable. The sign-in
+/// is kept in the system keychain only when `system_keychain` is set.
 #[cfg(feature = "gdtf-share")]
-fn register_gdtf_share_routes(registry: &mut nightfall_websocket::prelude::HttpRouteRegistry) {
+fn register_gdtf_share_routes(
+    registry: &mut nightfall_websocket::prelude::HttpRouteRegistry,
+    system_keychain: bool,
+) {
     let library_dir = match nightfall_fixture_library::FixtureLibraryManager::get_library_path() {
         Ok(library_dir) => library_dir,
         Err(error) => {
@@ -306,6 +351,7 @@ fn register_gdtf_share_routes(registry: &mut nightfall_websocket::prelude::HttpR
                 .with_file_name(nightfall_gdtf_share::catalog::CATALOG_FILE_NAME),
             library_dir,
         },
+        system_keychain,
     );
 }
 
@@ -346,10 +392,14 @@ fn native_runtime_capabilities(
 }
 
 /// Persist a dirty working draft whenever the periodic autosave interval elapses.
+///
+/// The result is recorded in [`systems::showfile_events::DraftSaveStatus`], which clients
+/// follow to warn the operator while saves fail.
 pub(super) fn handle_periodic_draft_autosave(
     mut showfile_save_state: systems::showfile_events::ShowfileSaveState,
     current_showfile: Res<systems::showfile_events::CurrentShowfile>,
     mut clean_snapshot_hash: ResMut<systems::showfile_events::ShowfileCleanSnapshotHash>,
+    mut draft_save_status: ResMut<systems::showfile_events::DraftSaveStatus>,
     time: Res<Time>,
     mut autosave_timer: ResMut<PeriodicDraftAutosaveTimer>,
 ) {
@@ -357,11 +407,13 @@ pub(super) fn handle_periodic_draft_autosave(
         return;
     }
 
-    match systems::showfile_events::save_draft_showfile_if_dirty(
+    let result = systems::showfile_events::save_draft_showfile_if_dirty(
         &mut showfile_save_state,
         current_showfile.name(),
         &mut clean_snapshot_hash,
-    ) {
+    );
+    systems::showfile_events::record_draft_save_result(&mut draft_save_status, &result);
+    match result {
         Ok(systems::showfile_events::DraftSaveOutcome::SavedDirtyDraft) => {
             tracing::debug!("Periodic showfile draft autosave wrote a dirty draft");
         }
@@ -381,22 +433,27 @@ pub(super) fn handle_periodic_draft_autosave(
 ///
 /// With no client left, nobody can save from a UI, so the backend keeps the work in the draft
 /// itself. A tab closing while another stays open saves nothing. Saves use the panel layout
-/// from the showfile's last explicit save, because each client arranges its own panels.
+/// from the showfile's last explicit save, because each client arranges its own panels. The
+/// result is recorded in [`systems::showfile_events::DraftSaveStatus`], which the next client to
+/// connect receives.
 pub(super) fn save_draft_when_last_client_disconnects(
     mut showfile_save_state: systems::showfile_events::ShowfileSaveState,
     current_showfile: Res<systems::showfile_events::CurrentShowfile>,
     mut clean_snapshot_hash: ResMut<systems::showfile_events::ShowfileCleanSnapshotHash>,
+    mut draft_save_status: ResMut<systems::showfile_events::DraftSaveStatus>,
     mut disconnects: MessageReader<LastClientDisconnected>,
 ) {
     if disconnects.read().count() == 0 || is_process_shutdown_requested() {
         return;
     }
 
-    match systems::showfile_events::save_draft_showfile_if_dirty(
+    let result = systems::showfile_events::save_draft_showfile_if_dirty(
         &mut showfile_save_state,
         current_showfile.name(),
         &mut clean_snapshot_hash,
-    ) {
+    );
+    systems::showfile_events::record_draft_save_result(&mut draft_save_status, &result);
+    match result {
         Ok(outcome) => {
             tracing::info!(
                 ?outcome,

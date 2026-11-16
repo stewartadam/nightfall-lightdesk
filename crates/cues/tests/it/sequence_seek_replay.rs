@@ -10,6 +10,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use nightfall::prelude::*;
 use nightfall_clips::InstanceIndex;
+use nightfall_clips::playback::clocks::sync_active_state_on_instance_despawn;
 use nightfall_clips::{
     Clip, ClipCommand, ClipOperation, MaterializedClip, Source, clip_action_from_command,
 };
@@ -19,7 +20,6 @@ use nightfall_cues::materialized_sequence::{
     despawn_materialized_sequences, release_materialized_sequences,
 };
 use nightfall_cues::prelude::*;
-use nightfall_desk::instances::sync_active_state_on_instance_despawn;
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::FixtureDataProviderExt;
 use nightfall_instances::{InstanceId, PlaybackOperation};

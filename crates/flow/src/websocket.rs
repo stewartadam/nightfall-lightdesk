@@ -9,9 +9,9 @@
 //! WebSocket integration for flow commands and definitions.
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use nightfall_engine::prelude::*;
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::FlowCommand;
 use crate::definition::FlowDefinition;
@@ -41,29 +41,11 @@ pub enum FlowWsMessage<'a> {
     FlowTriggerDelta(&'a FlowTriggerDelta),
 }
 
-/// Deserialize and dispatch FlowCommand from JSON.
-pub fn deserialize_flow_command(
-    world: &mut World,
-    json: Value,
-    command_id: CommandId,
-    undo_id: UndoId,
-) -> Result<(), String> {
-    let command: FlowCommand = serde_json::from_str(&json.to_string())
-        .map_err(|e| format!("Failed to parse FlowCommand: {}", e))?;
-
-    let envelope = world
-        .resource::<CommandTracker>()
-        .admitted_envelope(command_id, undo_id, command);
-    world.write_message(envelope);
-
-    Ok(())
-}
-
 /// Forward flow commands to the UI for reactive handling.
 ///
 /// Note: CRUD commands (StoreFlow, RenameFlow, DeleteFlow) are intentionally NOT
 /// forwarded here because the command echo would be sent before we know if
-/// the operation succeeded. Instead, we rely on send_flows_on_change to send
+/// the operation succeeded. Instead, we rely on [`FlowsFeed`] to send
 /// full definitions after changes.
 pub fn forward_flow_commands(
     mut events: MessageReader<CommandEnvelope<FlowCommand>>,
@@ -71,109 +53,37 @@ pub fn forward_flow_commands(
 ) {
     // Drain the events to avoid them accumulating
     for _event in events.read() {
-        // CRUD commands are not forwarded - rely on send_flows_on_change instead
+        // CRUD commands are not forwarded; FlowsFeed sends the definitions instead
     }
 }
 
-/// Send flow definitions when DataProvider<FlowDefinition> changes.
-pub fn send_flows_on_change(
-    flow_provider: Res<DataProvider<FlowDefinition>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    if flow_provider.is_changed() {
-        send_flows(flow_provider, broadcaster);
-    }
+/// The flow definitions feed.
+#[derive(SystemParam)]
+pub(crate) struct FlowsFeed<'w> {
+    flows: Res<'w, DataProvider<FlowDefinition>>,
 }
 
-/// Send flow definitions on resync.
-pub fn send_flows(
-    flow_provider: Res<DataProvider<FlowDefinition>>,
-    broadcaster: Res<ClientEventSink>,
-) {
-    let flow_list: Vec<FlowDefinition> = flow_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FlowWsMessage::FlowDefinitions(&flow_list),
-    );
-}
-
-/// Handle ResyncState by sending flow definitions and node templates immediately.
-pub fn handle_resync_state(
-    mut resync: ResyncReplies,
-    flow_provider: Res<DataProvider<FlowDefinition>>,
-    registry: Res<FlowNodeRegistry>,
-) {
-    let Some(broadcaster) = resync.sink() else {
-        return;
-    };
-
-    // Send flow definitions
-    let flow_list: Vec<FlowDefinition> = flow_provider
-        .iter()
-        .map(|entry| entry.value().clone())
-        .collect();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FlowWsMessage::FlowDefinitions(&flow_list),
-    );
-
-    // Send node templates
-    let templates = registry.list();
-
-    broadcaster.publish(
-        DISCRIMINATOR_NON_DROPPABLE,
-        &FlowWsMessage::FlowNodeTemplates(&templates),
-    );
-}
-
-#[cfg(test)]
-mod tests {
-    use bevy_ecs::message::Messages;
-
-    use super::*;
-
-    /// Verifies deserialization preserves admitted command and undo context.
-    #[test]
-    fn deserialize_flow_command_writes_semantic_envelope() {
-        let mut world = World::new();
-        world.insert_resource(Messages::<CommandEnvelope<FlowCommand>>::default());
-        world.init_resource::<CommandTracker>();
-
-        let command_id = CommandId::new();
-        let undo_id = UndoId::new();
-        world
-            .resource_mut::<CommandTracker>()
-            .register_context(
-                command_id,
-                undo_id,
-                CommandOrigin::WebUi,
-                ReplyTarget::Client(ClientId(4)),
-            )
-            .unwrap();
-        deserialize_flow_command(
-            &mut world,
-            serde_json::json!({
-                "type": "StopFlow",
-                "data": 7
-            }),
-            command_id,
-            undo_id,
-        )
-        .expect("flow command should deserialize");
-
-        let messages: Vec<_> = world
-            .resource_mut::<Messages<CommandEnvelope<FlowCommand>>>()
-            .drain()
+impl ClientFeed for FlowsFeed<'static> {
+    /// Publishes every flow definition.
+    fn publish(feed: &FlowsFeed<'_>, sink: &ClientEventSink) {
+        let flow_list: Vec<FlowDefinition> = feed
+            .flows
+            .iter()
+            .map(|entry| entry.value().clone())
             .collect();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].command_id, command_id);
-        assert_eq!(messages[0].undo_id, undo_id);
-        assert_eq!(messages[0].reply_target, ReplyTarget::Client(ClientId(4)));
-        assert!(matches!(messages[0].command, FlowCommand::StopFlow(7)));
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FlowWsMessage::FlowDefinitions(&flow_list),
+        );
+    }
+}
+
+impl ResourceFeed for FlowNodeRegistry {
+    /// Publishes every registered node template.
+    fn publish(&self, sink: &ClientEventSink) {
+        sink.publish(
+            DISCRIMINATOR_NON_DROPPABLE,
+            &FlowWsMessage::FlowNodeTemplates(&self.list()),
+        );
     }
 }

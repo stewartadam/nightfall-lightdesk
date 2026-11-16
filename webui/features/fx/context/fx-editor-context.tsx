@@ -22,13 +22,15 @@ import {
   resyncComplete,
 } from "../../../lib/engine-runtime";
 import {
-  flowWaveformToFxWaveform,
-  fxWaveformToFlowWaveform,
   startFxPreview,
   stopFxPreview,
   storeFx,
   updateFxPreview,
 } from "../../../lib/fx-service";
+import {
+  flowWaveformToFxWaveform,
+  fxWaveformToFlowWaveform,
+} from "../../../lib/fx-waveform";
 import { getLogger } from "../../../lib/logger";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { fx } from "../../../state/appStores";

@@ -11,14 +11,15 @@
 use std::collections::HashMap;
 
 use nightfall::prelude::{FixtureRef, SpatialSelection, ValueSource};
-use nightfall_fixtures::selection::SpatialSelectionResolver;
+use nightfall_engine::prelude::BoundAssertionSet;
 use nightfall_lookahead_projection::{
     ProjectedLookaheadValue, ProjectionCue, ProjectionCuePart, ProjectionInstruction,
     SequenceLookaheadProjectionRequest, project_sequence_lookahead,
 };
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use uuid::Uuid;
 
-use crate::cue::{BoundCueInstruction, Cue, Sequence};
+use crate::cue::{Cue, Sequence};
 
 /// Projects authored sequence lookahead values through the shared pure evaluator.
 pub fn project_authored_sequence_lookahead(
@@ -75,7 +76,7 @@ fn projection_cue(cue: &Cue, selection_resolver: &SpatialSelectionResolver) -> P
 
 /// Converts an instruction list into pure projection DTOs.
 fn projection_instructions(
-    instructions: &[BoundCueInstruction],
+    instructions: &[BoundAssertionSet],
     selection_resolver: &SpatialSelectionResolver,
 ) -> Vec<ProjectionInstruction> {
     instructions
@@ -86,13 +87,13 @@ fn projection_instructions(
 
 /// Converts one cue instruction into a pure projection DTO.
 fn projection_instruction(
-    instruction: &BoundCueInstruction,
+    instruction: &BoundAssertionSet,
     selection_resolver: &SpatialSelectionResolver,
 ) -> ProjectionInstruction {
     ProjectionInstruction {
         fixtures: resolved_fixture_refs_for_selection(&instruction.selection, selection_resolver),
         values: instruction
-            .cue_instruction
+            .assertions
             .values
             .iter()
             .map(|(attribute, source)| (attribute.key(), source.clone()))

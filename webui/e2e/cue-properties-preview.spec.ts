@@ -28,14 +28,14 @@ test("cue transition slider scrubs output backward and steps through time", asyn
 }, testInfo) => {
   await openOwnedCuePropertiesApp(page, backendSlot.backendPort);
   await sendCommand(page, {
-    module: "DeskCommand",
+    module: "ShowfileCommand",
     command: {
       type: "SaveNamedShowfile",
       data: "scrub-output",
     },
   });
   await sendCommand(page, {
-    module: "DeskCommand",
+    module: "ShowfileCommand",
     command: { type: "LoadNamedShowfile", data: "scrub-output" },
   });
   await waitForDockviewApp(page);
@@ -151,8 +151,8 @@ test("cue transition backgrounds respect fixture element overrides", async ({
     instructions: [
       {
         ...ownedInstruction([1], {}),
-        cue_instruction: {
-          ...ownedInstruction([1], {}).cue_instruction,
+        assertions: {
+          ...ownedInstruction([1], {}).assertions,
           transitions_by_fixture_attribute: [
             {
               fixture: { fixture_uid: FIXTURE_UID, index: 1 },
@@ -174,21 +174,21 @@ test("cue transition backgrounds respect fixture element overrides", async ({
       },
       clauses: [],
     },
-    cue_instruction: ownedInstruction([1], {}).cue_instruction,
+    assertions: ownedInstruction([1], {}).assertions,
   });
   await sendCommand(page, {
     module: "CueCommand",
     command: { type: "StoreCue", data: cue },
   });
   await sendCommand(page, {
-    module: "DeskCommand",
+    module: "ShowfileCommand",
     command: {
       type: "SaveNamedShowfile",
       data: "override-progress",
     },
   });
   await sendCommand(page, {
-    module: "DeskCommand",
+    module: "ShowfileCommand",
     command: { type: "LoadNamedShowfile", data: "override-progress" },
   });
   await waitForDockviewApp(page);
@@ -361,7 +361,7 @@ function ownedSelection(elementIndexes: number[]): object {
 function ownedInstruction(elementIndexes: number[], transitions: object) {
   return {
     selection: ownedSelection(elementIndexes),
-    cue_instruction: {
+    assertions: {
       values: {
         Intensity: {
           type: "Inline",

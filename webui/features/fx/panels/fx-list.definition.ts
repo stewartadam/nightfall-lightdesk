@@ -17,7 +17,7 @@ export default definePanel({
   panelId: "panel-FxList",
   componentName: "FxList",
   title: "FX List",
-  minWidth: 515,
+  minWidth: 360,
   minHeight: 160,
   icon: WaveSineIcon,
   loadComponent: () => import("./fx-list-panel"),

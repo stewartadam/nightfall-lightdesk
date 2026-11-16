@@ -32,6 +32,11 @@ use crate::routes::{
 };
 use crate::wire_layout::WireLayout;
 
+mod command;
+
+pub use command::RouteValidationCommand;
+pub(crate) use command::handle_route_validation_commands;
+
 /// Last channel of a DMX universe, as an absolute 1-based address.
 const LAST_CHANNEL: u32 = MAX_CHANNELS_PER_UNIVERSE as u32;
 
@@ -1132,6 +1137,7 @@ mod tests {
             placement: Default::default(),
             layout: None,
             library_asset_etag: None,
+            rig_source: None,
         }
     }
 

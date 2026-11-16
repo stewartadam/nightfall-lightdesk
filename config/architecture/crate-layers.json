@@ -11,8 +11,8 @@
       "nightfall-dmx",
       "nightfall-engine-derive",
       "nightfall-fixture-model",
-      "nightfall-io",
       "nightfall-lookahead-projection",
+      "nightfall-mvr",
       "nightfall-instances",
       "nightfall-playback-planner",
       "nightfall-selection",
@@ -26,7 +26,9 @@
       "nightfall-clips",
       "nightfall-fixtures",
       "nightfall-framepace",
+      "nightfall-io",
       "nightfall-lookahead",
+      "nightfall-selection-runtime",
       "nightfall-service-host",
       "nightfall-tempo",
       "nightfall-timecode",
@@ -35,6 +37,8 @@
     ],
     "plugins": [
       "nightfall-audio",
+      "nightfall-backup",
+      "nightfall-controls",
       "nightfall-cues",
       "nightfall-fixture-library",
       "nightfall-flow",
@@ -50,16 +54,16 @@
       "nightfall-output-artnet",
       "nightfall-output-sacn",
       "nightfall-output-usb",
-      "nightfall-programmer",
+      "nightfall-programming",
       "nightfall-scene-objects",
       "nightfall-timeline"
     ],
     "cross-plugin": [
       "nightfall-boards",
-      "nightfall-desk",
-      "nightfall-desk-audio",
       "nightfall-macros",
+      "nightfall-park",
       "nightfall-references",
+      "nightfall-mvr-import",
       "nightfall-showfile",
       "nightfall-wasm-bridge"
     ],
@@ -67,7 +71,8 @@
       "app-runtime",
       "app-tauri",
       "nightfall-browser-runtime",
-      "nightfall-cli"
+      "nightfall-cli",
+      "nightfall-composition"
     ]
   }
 }

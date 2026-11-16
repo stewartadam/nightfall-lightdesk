@@ -12,6 +12,8 @@ import type { OpenPanelSettingsCapability } from "./open-settings";
 import { OPEN_PANEL_SETTINGS_CAPABILITY } from "./open-settings";
 import type { RenderPropertiesCapability } from "./properties";
 import { RENDER_PROPERTIES_CAPABILITY } from "./properties";
+import type { RevealLibraryFixtureCapability } from "./reveal-library-fixture";
+import { REVEAL_LIBRARY_FIXTURE_CAPABILITY } from "./reveal-library-fixture";
 import type { RevealObjectCapability } from "./reveal-object";
 import { REVEAL_OBJECT_CAPABILITY } from "./reveal-object";
 
@@ -29,6 +31,10 @@ export {
   type RenderPropertiesMetadata,
 } from "./properties";
 export {
+  REVEAL_LIBRARY_FIXTURE_CAPABILITY,
+  type RevealLibraryFixtureCapability,
+} from "./reveal-library-fixture";
+export {
   REVEAL_OBJECT_CAPABILITY,
   type RevealObjectCapability,
 } from "./reveal-object";
@@ -36,12 +42,14 @@ export type KnownPanelCapability =
   | OpenPanelSettingsCapability
   | PanelFocusCapability
   | RenderPropertiesCapability
+  | RevealLibraryFixtureCapability
   | RevealObjectCapability;
 export type PanelCapabilityId = KnownPanelCapability["id"];
 export const KNOWN_PANEL_CAPABILITY_IDS = [
   OPEN_PANEL_SETTINGS_CAPABILITY.id,
   PANEL_FOCUS_CAPABILITY.id,
   RENDER_PROPERTIES_CAPABILITY.id,
+  REVEAL_LIBRARY_FIXTURE_CAPABILITY.id,
   REVEAL_OBJECT_CAPABILITY.id,
 ] as const satisfies readonly PanelCapabilityId[];
 

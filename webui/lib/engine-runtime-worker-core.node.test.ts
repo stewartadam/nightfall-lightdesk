@@ -585,5 +585,42 @@ test("submits waiting on a socket that closes are not sent on reconnect", (t) =>
   reconnected.open();
 
   assert.deepEqual(reconnected.sent, []);
+  assert.deepEqual(
+    worker.publications.filter(
+      (publication) => publication.type === "submitDropped",
+    ),
+    [{ type: "submitDropped", commandId: "lost" }],
+    "the dropped submit is reported so its sender stops waiting",
+  );
+  worker.send({ type: "stop" });
+});
+
+/**
+ * A command submitted after the socket closes and before the reconnect has nowhere to go, so the
+ * worker reports it dropped with its command ID; untracked updates are reported without one.
+ */
+test("submits between a close and the reconnect are reported dropped", (t) => {
+  const worker = workerHarness(t);
+  installFakeSocket(t);
+  startEngineRuntimeWorker();
+  worker.send({
+    type: "start",
+    config: { mode: "remote", websocketUrl: "ws://backend/ws" },
+  });
+  FakeSocket.instances[0].open();
+  FakeSocket.instances[0].close();
+
+  worker.send({ type: "submit", data: { command_id: "gap" } });
+  worker.send({ type: "submit", data: { module: "Timeline", update: {} } });
+
+  assert.deepEqual(
+    worker.publications.filter(
+      (publication) => publication.type === "submitDropped",
+    ),
+    [
+      { type: "submitDropped", commandId: "gap" },
+      { type: "submitDropped", commandId: null },
+    ],
+  );
   worker.send({ type: "stop" });
 });

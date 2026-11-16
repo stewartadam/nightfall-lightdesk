@@ -29,7 +29,6 @@ use nightfall_cues::prelude::{
 };
 use nightfall_engine::prelude::*;
 use nightfall_fixtures::prelude::{FixtureDataProviderExt, Parameter};
-use nightfall_fixtures::selection::SpatialSelectionResolver;
 use nightfall_fx::prelude::{
     Fx, StepFx, spawn_reconstructed_fx_for_clip, spawn_reconstructed_step_fx_for_clip,
 };
@@ -45,10 +44,14 @@ use nightfall_playback_planner::{
     PlaybackReconstructionTiming,
 };
 use nightfall_selection::filter_existing_selection;
+use nightfall_selection_runtime::SpatialSelectionResolver;
 use nightfall_timecode::prelude::*;
 use uuid::Uuid;
 
-use crate::components::{MaterializedTimeline, SpawnedEntityType, TimelineActionCursor};
+use crate::components::{
+    ActionRangeStart, MaterializedTimeline, SpawnedEntityType, TimecodeTransport,
+    TimelineActionCursor,
+};
 use crate::planner::{TimelinePlanningAction, TimelinePlaybackSourceResolver, plan_timeline_at};
 use crate::prelude::{
     ActionKind, ParameterType, TimelineCommand, TimelineLookaheadMode,
@@ -56,6 +59,7 @@ use crate::prelude::{
     TimelineStopBehavior,
 };
 use crate::recording::{TimelineCommandOrigins, write_timeline_clip_action};
+use crate::timeline_events::TimelinePlayheadJumped;
 
 mod lifecycle;
 mod live;

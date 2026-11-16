@@ -101,34 +101,13 @@ pub(super) fn apply_color_path_samples(
             normalize_emitter_value(&green_parameter, green_target),
             normalize_emitter_value(&blue_parameter, blue_target),
         ]);
-        let parent_ratio = color_path_transition_ratio(layer, group, compositing_context);
-        let brightness_multiplier =
-            color_path_midpoint_brightness_multiplier(&group.path, parent_ratio);
-        let sampled = ColorPathRgb {
-            red: sample_color_path(
-                &group.path,
-                start,
-                end,
-                color_path_channel_ratio(&group.path, parent_ratio, &attributes[0]),
-            )
-            .red,
-            green: sample_color_path(
-                &group.path,
-                start,
-                end,
-                color_path_channel_ratio(&group.path, parent_ratio, &attributes[1]),
-            )
-            .green,
-            blue: sample_color_path(
-                &group.path,
-                start,
-                end,
-                color_path_channel_ratio(&group.path, parent_ratio, &attributes[2]),
-            )
-            .blue,
-        }
-        .scaled(brightness_multiplier)
-        .clamped();
+        let parent_ratio = color_path_transition_ratio(
+            layer,
+            [group.red, group.green, group.blue],
+            compositing_context,
+        );
+        let sampled =
+            sample_color_path_with_timing(&group.path, start, end, parent_ratio, &attributes);
         let (sampled, decomposed_emitters) = if group.model == MaterializedColorPathModel::Rgb {
             let decomposed_emitters =
                 sample_decomposed_rgb_emitters(group, start, end, parent_ratio);
@@ -181,63 +160,88 @@ pub(super) fn apply_color_path_samples(
             }
         }
 
-        for (attribute, parameter_ref) in &group.auxiliary_emitters {
-            let Ok(parameter) = param_query.get(parameter_ref.entity()) else {
-                continue;
-            };
-            let Some(target) = absolute_layer_target(layer, base, *parameter_ref, &parameter)
-            else {
-                continue;
-            };
-            let start = normalize_emitter_value(
-                &parameter,
-                base_absolute_value(base, *parameter_ref, &parameter),
-            );
-            let end = normalize_emitter_value(&parameter, target);
-            let sampled =
-                (sample_color_path_scalar(
-                    &group.path,
-                    start,
-                    end,
-                    color_path_channel_ratio(&group.path, parent_ratio, attribute),
-                ) * color_path_midpoint_brightness_multiplier(&group.path, parent_ratio))
-                .clamp(0.0, 1.0);
-
-            computed.absolute.insert(
-                *parameter_ref,
-                denormalize_emitter_value(&parameter, sampled),
-            );
-        }
+        apply_scalar_emitter_samples(
+            layer,
+            computed,
+            base,
+            &group.path,
+            parent_ratio,
+            &group.auxiliary_emitters,
+            param_query,
+        );
     }
 
     for group in scalar_groups {
-        let parent_ratio = color_path_scalar_transition_ratio(layer, group, compositing_context);
-        for (attribute, parameter_ref) in &group.emitters {
-            let Ok(parameter) = param_query.get(parameter_ref.entity()) else {
-                continue;
-            };
-            let Some(target) = absolute_layer_target(layer, base, *parameter_ref, &parameter)
-            else {
-                continue;
-            };
-            let start = normalize_emitter_value(
-                &parameter,
-                base_absolute_value(base, *parameter_ref, &parameter),
-            );
-            let end = normalize_emitter_value(&parameter, target);
-            let sampled =
-                (sample_color_path_scalar(
-                    &group.path,
-                    start,
-                    end,
-                    color_path_channel_ratio(&group.path, parent_ratio, attribute),
-                ) * color_path_midpoint_brightness_multiplier(&group.path, parent_ratio))
-                .clamp(0.0, 1.0);
+        let parent_ratio = color_path_transition_ratio(
+            layer,
+            group
+                .emitters
+                .iter()
+                .map(|(_, parameter_ref)| *parameter_ref),
+            compositing_context,
+        );
+        apply_scalar_emitter_samples(
+            layer,
+            computed,
+            base,
+            &group.path,
+            parent_ratio,
+            &group.emitters,
+            param_query,
+        );
+    }
+}
 
-            computed.absolute.insert(
-                *parameter_ref,
-                denormalize_emitter_value(&parameter, sampled),
-            );
+/// Samples independent scalar color emitters (amber, UV, or the color-mix emitters of a non-RGB
+/// fixture) from their base value to their layer target, each with its own channel timing.
+fn apply_scalar_emitter_samples(
+    layer: &Layer,
+    computed: &mut ComputedLayer,
+    base: &ComputedLayer,
+    path: &ColorPath,
+    parent_ratio: f32,
+    emitters: &[(Attribute, Instance<Parameter>)],
+    param_query: &Query<InstanceMut<Parameter>>,
+) {
+    for (attribute, parameter_ref) in emitters {
+        let Ok(parameter) = param_query.get(parameter_ref.entity()) else {
+            continue;
+        };
+        let Some(target) = absolute_layer_target(layer, base, *parameter_ref, &parameter) else {
+            continue;
+        };
+        let start = normalize_emitter_value(
+            &parameter,
+            base_absolute_value(base, *parameter_ref, &parameter),
+        );
+        let end = normalize_emitter_value(&parameter, target);
+        let timing = ChannelTiming::new(path, parent_ratio, attribute);
+        let sampled = (sample_color_path_scalar(path, start, end, timing.ratio)
+            * timing.brightness)
+            .clamp(0.0, 1.0);
+
+        computed.absolute.insert(
+            *parameter_ref,
+            denormalize_emitter_value(&parameter, sampled),
+        );
+    }
+}
+
+/// Where one emitter channel sits along a color path at a parent fade ratio: its own timed
+/// progress, and the midpoint brightness scale every channel shares at that ratio.
+struct ChannelTiming {
+    /// Channel progress after the path's per-attribute (or path-level) delay, time and curve.
+    ratio: f32,
+    /// Midpoint brightness multiplier for the parent fade ratio.
+    brightness: f32,
+}
+
+impl ChannelTiming {
+    /// Resolves the timed progress and brightness scale for one attribute's channel.
+    fn new(path: &ColorPath, parent_ratio: f32, attribute: &Attribute) -> Self {
+        Self {
+            ratio: color_path_channel_ratio(path, parent_ratio, attribute),
+            brightness: color_path_midpoint_brightness_multiplier(path, parent_ratio),
         }
     }
 }
@@ -291,17 +295,10 @@ fn sample_decomposed_rgb_emitters(
         .decomposed_emitters
         .iter()
         .filter_map(|(attribute, _)| {
-            let sampled = sample_color_path(
-                &group.path,
-                start,
-                end,
-                color_path_channel_ratio(&group.path, parent_ratio, attribute),
-            )
-            .scaled(color_path_midpoint_brightness_multiplier(
-                &group.path,
-                parent_ratio,
-            ))
-            .clamped();
+            let timing = ChannelTiming::new(&group.path, parent_ratio, attribute);
+            let sampled = sample_color_path(&group.path, start, end, timing.ratio)
+                .scaled(timing.brightness)
+                .clamped();
             decompose_rgb_color_mix(sampled, &group.decomposed_emitters)
                 .into_iter()
                 .find_map(|(sampled_attribute, value)| {
@@ -426,13 +423,14 @@ fn base_absolute_value(
         .unwrap_or_else(|| parameter.get_default_value())
 }
 
-/// Resolves normalized color path progress from the group's transition timing.
+/// Resolves normalized color path progress from the first transition authored on any of the
+/// group's emitters, or full progress when none of them is transitioning.
 fn color_path_transition_ratio(
     layer: &Layer,
-    group: &MaterializedColorPathGroup,
+    parameter_refs: impl IntoIterator<Item = Instance<Parameter>>,
     compositing_context: Option<nightfall_compositor::types::LayerCompositingContext>,
 ) -> f32 {
-    let transition = [group.red, group.green, group.blue]
+    let transition = parameter_refs
         .into_iter()
         .find_map(|parameter_ref| layer.absolute.get(parameter_ref)?.1.as_ref());
     let Some(transition) = transition else {
@@ -444,107 +442,6 @@ fn color_path_transition_ratio(
         transition.fade_in,
         transition.delay_in,
     )
-}
-
-/// Resolves normalized color path progress from scalar color emitter transition timing.
-fn color_path_scalar_transition_ratio(
-    layer: &Layer,
-    group: &MaterializedColorPathScalarGroup,
-    compositing_context: Option<nightfall_compositor::types::LayerCompositingContext>,
-) -> f32 {
-    let transition = group
-        .emitters
-        .iter()
-        .find_map(|(_, parameter_ref)| layer.absolute.get(parameter_ref)?.1.as_ref());
-    let Some(transition) = transition else {
-        return 1.0;
-    };
-    let context = compositing_context.unwrap_or_default();
-    MaterializedTransition::fade_ratio_at_elapsed(
-        transition.elapsed_from_start(context.position),
-        transition.fade_in,
-        transition.delay_in,
-    )
-}
-
-/// Resolves path progress after applying path-level and attribute-level timing controls.
-fn color_path_channel_ratio(path: &ColorPath, parent_ratio: f32, attribute: &Attribute) -> f32 {
-    path.timing
-        .attributes
-        .get(attribute)
-        .map(|timing| {
-            timed_ratio(
-                parent_ratio,
-                timing.delay_percent,
-                timing.time_percent,
-                timing.curve,
-            )
-        })
-        .unwrap_or_else(|| color_path_global_ratio(path, parent_ratio))
-}
-
-/// Resolves path-level timing from in-color and out-color controls.
-fn color_path_global_ratio(path: &ColorPath, parent_ratio: f32) -> f32 {
-    match (&path.timing.in_color, &path.timing.out_color) {
-        (Some(in_color), Some(out_color)) => {
-            (timed_ratio_linear(parent_ratio, in_color.delay_percent, in_color.time_percent)
-                + timed_ratio_linear(
-                    parent_ratio,
-                    out_color.delay_percent,
-                    out_color.time_percent,
-                ))
-                / 2.0
-        }
-        (Some(in_color), None) => {
-            timed_ratio_linear(parent_ratio, in_color.delay_percent, in_color.time_percent)
-        }
-        (None, Some(out_color)) => timed_ratio_linear(
-            parent_ratio,
-            out_color.delay_percent,
-            out_color.time_percent,
-        ),
-        (None, None) => parent_ratio,
-    }
-}
-
-/// Resolves a linear timing ratio from fractional delay and duration controls.
-fn timed_ratio_linear(parent_ratio: f32, delay_percent: f32, time_percent: f32) -> f32 {
-    let parent_ratio = parent_ratio.clamp(0.0, 1.0);
-    let delay_percent = delay_percent.clamp(0.0, 1.0);
-    let time_percent = time_percent.max(0.0);
-
-    if parent_ratio < delay_percent {
-        return 0.0;
-    }
-    if time_percent <= f32::EPSILON {
-        return 1.0;
-    }
-
-    ((parent_ratio - delay_percent) / time_percent).clamp(0.0, 1.0)
-}
-
-/// Resolves the midpoint brightness envelope multiplier for a parent fade ratio.
-fn color_path_midpoint_brightness_multiplier(path: &ColorPath, parent_ratio: f32) -> f32 {
-    let midpoint_brightness = path.timing.brightness_percent.unwrap_or(1.0).max(0.0);
-    let interior_weight = 1.0 - ((parent_ratio.clamp(0.0, 1.0) * 2.0) - 1.0).abs();
-    1.0 + (midpoint_brightness - 1.0) * interior_weight
-}
-
-/// Maps a parent transition ratio through one fractional delay/fade timing control.
-fn timed_ratio(parent_ratio: f32, delay_percent: f32, time_percent: f32, curve: FadeCurve) -> f32 {
-    let parent_ratio = parent_ratio.clamp(0.0, 1.0);
-    let delay_percent = delay_percent.clamp(0.0, 1.0);
-    let time_percent = time_percent.max(0.0);
-
-    if parent_ratio < delay_percent {
-        return 0.0;
-    }
-    if time_percent <= f32::EPSILON {
-        return 1.0;
-    }
-
-    let ratio = ((parent_ratio - delay_percent) / time_percent).clamp(0.0, 1.0);
-    curve.evaluate_at(ratio)
 }
 
 /// Samples a scalar color emitter through the color path curve and timing.

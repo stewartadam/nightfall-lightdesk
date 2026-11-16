@@ -30,6 +30,26 @@ export function harnessPageUrl(fixture?: HarnessName): string {
 export const servesE2eBuild =
   process.env.NIGHTFALL_PLAYWRIGHT_VITE_MODE === "e2e";
 
+/** Escapes a string for use inside a regular expression literal. */
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Matches the request for one lazily loaded app module, given its path under
+ * `webui/` (e.g. `features/groups/panel.tsx`): the source file on the dev
+ * server, or the chunk an e2e build names after it
+ * (`assets/features/groups/panel-<hash>.js`). Only modules that are their own
+ * dynamic import get a chunk; statically imported ones share their importer's.
+ */
+export function lazyModuleRequest(sourcePath: string): RegExp {
+  const extension = sourcePath.match(/\.[cm]?[jt]sx?$/)?.[0] ?? "";
+  const stem = sourcePath.slice(0, sourcePath.length - extension.length);
+  return new RegExp(
+    `/${escapeRegExp(stem)}(${escapeRegExp(extension)}|-[\\w-]+\\.js)(\\?|$)`,
+  );
+}
+
 /** Skip reason for specs that exercise Vite's hot module replacement. */
 export const REQUIRES_DEV_SERVER =
   "Exercises hot module replacement, which only the Vite dev server offers; run with --vite-mode dev";

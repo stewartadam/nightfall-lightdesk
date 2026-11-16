@@ -35,6 +35,8 @@ To create a worktree for a new branch:
 1. Wait for the hooks to finish. The pre-start hooks write `.env`, run `pnpm install`, and generate the TypeScript types before `wt` switches to the worktree. The post-start hooks then copy the data directory, web UI assets, and demo audio, and build the backend and WASM bridge in the background.
 1. Check the hook output before you start services. A background `cargo build` may still be running.
 
+With the dashboard running (see below), you can also type a branch name in the dashboard page's search box and press <kbd>Shift</kbd>+<kbd>Enter</kbd>, or choose **Create worktree** below the results. The button appears whenever no worktree has exactly that branch. The dashboard runs the same `wt switch`: a branch that exists locally or on `origin` is checked out, and any other name becomes a new branch from `origin/HEAD`. The worktree appears in the list once the pre-start hooks finish.
+
 `wt` reads these hooks from `.config/wt.toml`. They assume the tools from [Nightfall setup](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/CONTRIBUTING.md#nightfall-setup) are installed, including `pnpm run setup:tools` for mdBook.
 
 Claude Code creates worktrees for `claude --worktree`, desktop and Remote Control sessions, and isolated subagents. The `WorktreeCreate` and `WorktreeRemove` hooks in `.claude/settings.json` send those through `wt` too, so they get the same setup. Their branches are named `claude/<name>` and start from `origin/HEAD`.
@@ -51,7 +53,7 @@ You then manage services from the dashboard page, the terminal, or an agent.
 
 ### From the dashboard page
 
-Run `pnpm run dashboard:ui` in a second terminal. It opens `/worktree-dashboard.html` in a Vite dev server. The page lists every worktree with its branch, ports, and the state of each service, refreshes every 2 seconds, and has buttons to start, stop, and restart services and to open each service's log. Its **More actions** menu opens the worktree in VS Code, re-seeds its data directory from the main worktree, and deletes it.
+Run `pnpm run dashboard:ui` in a second terminal. It opens `/worktree-dashboard.html` in a Vite dev server. The page lists every worktree with its branch, ports, and the state of each service, updates as soon as anything changes, and has buttons to start, stop, and restart services and to open each service's log. The search box above the list filters it by branch name or path. Its **More actions** menu opens the worktree in VS Code, re-seeds its data directory from the main worktree, and deletes it. Delete and **Force delete** ask for confirmation first, with Cancel focused so a stray <kbd>Enter</kbd> keeps the worktree.
 
 ### From a terminal
 
@@ -85,7 +87,7 @@ A service appears in several places, and a change that misses one leaves a clien
 - `WORKTREE_MANAGED_SERVICES`, `SERVICE_SELECTORS`, `summarizeWorktree`, and `observedOpenForService` in `worktree-dashboard/dashboard-client.mjs`. The `wt service` alias and the MCP server both read these.
 - The list and status output in `worktree-dashboard/worktree-service.mjs`, and the tool descriptions in `worktree-dashboard/worktree-dashboard-mcp.mjs`.
 - The types, service options, and row cells in `webui/worktree-dashboard.tsx`.
-- The port block comment in `scripts/setup-env.mjs`, if you use a new offset.
+- The port block comment in `scripts/allocate-worktree-port.mjs`, if you use a new offset.
 - `.config/wt.toml`, if worktree setup must build or install something for the service.
 - The tests in `scripts/dashboard-env.node.test.mjs`, `scripts/worktree-service.node.test.mjs`, and `webui/e2e/worktree-dashboard.spec.ts`.
 - This page and the worktree section of CONTRIBUTING.md.
@@ -99,7 +101,7 @@ Restart the dashboard API after editing it. It has no hot reload, and restarting
 Run `wt service start -s <service>`. It prints the error and log tail. Every service writes its log to a new file under `nightfall-worktree-dashboard` in the system temporary directory, and the log button next to each service on the dashboard page opens it.
 
 - `spawn mdbook ENOENT` means mdBook isn't on the dashboard's `PATH`. Run `pnpm run setup:tools mdbook`, then restart the dashboard so it picks up the new `PATH`.
-- `needs a valid NIGHTFALL_PORT in .env` means the worktree has no `.env` or no port. Run `node scripts/setup-env.mjs` in that worktree.
+- `needs a valid NIGHTFALL_PORT in .env` means the worktree has no `.env` or no port. Run `wt hook pre-start setup-env` in that worktree.
 
 ### The status says "external process detected"
 

@@ -26,12 +26,14 @@ import {
   createSignal,
   Show,
 } from "solid-js";
+import { usePanelCapability } from "../../../components/providers/panel-capabilities/context-core";
 import {
   ToggleToolbarButton,
   ToolbarButton,
 } from "../../../components/ui/toolbar-button";
 import DataGrid, {
   createKeyedDataGridCellProvider,
+  type DataGridScrollRequest,
 } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
@@ -60,25 +62,30 @@ import {
   filterColumnsFromMetadata,
 } from "../../../lib/datagrid-filtering";
 import { commandClient } from "../../../lib/engine-commands";
+import { libraryDefinitionId } from "../../../lib/fixture-service";
 import {
-  libraryDefinitionId,
+  libraryRevisionDate,
   libraryRevisionLabel,
-} from "../../../lib/fixture-service";
+} from "../../../lib/library-revision";
 import { getLogger } from "../../../lib/logger";
+import { REVEAL_LIBRARY_FIXTURE_CAPABILITY } from "../../../lib/panel-capabilities";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import {
   fixtureLibrary,
+  fixtures as patchedFixtures,
   runtimeCapabilities,
   unloadableFixtureFiles,
 } from "../../../state/appStores";
 import type {
   AvailableFixtureInfo,
+  Fixture,
   FixtureLibraryCommand,
   FixtureLibraryEntry,
+  GdtfShareUpdate,
   UnloadableFixtureFile,
   UnloadableFixtureFileId,
 } from "../../../types";
-import { GdtfShareBrowser } from "../../gdtf-share";
+import { createGdtfShareUpdates, GdtfShareBrowser } from "../../gdtf-share";
 import { usePropertiesInspector } from "../../property-inspector";
 import FixtureLibraryProperties from "../components/fixture-library-properties";
 import {
@@ -107,11 +114,50 @@ function unloadableSourceFormat(file: UnloadableFixtureFile): string {
   return file.file_name.toLowerCase().endsWith(".gdtf") ? "GDTF" : "OFL";
 }
 
+/** Words a library file's GDTF Share update state for the GDTF Share column. */
+function updateText(update: GdtfShareUpdate | undefined): string {
+  if (!update) return "";
+  return update.library_copy ? "Newer copy in library" : "Update available";
+}
+
+/** Show state the library columns read beside each row's own fields. */
+interface LibraryRowContext {
+  /** Newer GDTF Share revisions found, by file fingerprint. */
+  updates: ReadonlyMap<string, GdtfShareUpdate>;
+  /** How many patched fixtures use each library revision, by {@link libraryDefinitionId}. */
+  patched: ReadonlyMap<string, number>;
+}
+
+/**
+ * Counts the patched fixtures created from each library revision, keyed like
+ * {@link libraryDefinitionId}. Fixtures with no recorded revision are left out.
+ */
+function countPatched(
+  fixtures: Record<string, Fixture>,
+): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const fixture of Object.values(fixtures)) {
+    if (!fixture.library_asset_etag) continue;
+    const key = libraryDefinitionId({
+      make: fixture.make,
+      model: fixture.model,
+      asset_etag: fixture.library_asset_etag,
+    });
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /**
  * Returns the text a column shows and filters on for one row. A file that failed to load
  * shows "Failed to load" as its make, its file name as the model and the error as its modes.
+ * A GDTF without 3D model files says so in its source.
  */
-function libraryRowText(row: FixtureLibraryRow, column: string): string {
+function libraryRowText(
+  row: FixtureLibraryRow,
+  column: string,
+  context: LibraryRowContext,
+): string {
   if (row.kind === "unloadable") {
     switch (column) {
       case "make":
@@ -135,9 +181,17 @@ function libraryRowText(row: FixtureLibraryRow, column: string): string {
     case "modes":
       return fixture.modes.join(", ");
     case "source":
-      return fixture.source_format;
+      return fixture.missing_3d_model
+        ? `${fixture.source_format}, no 3D model`
+        : fixture.source_format;
     case "revision":
-      return libraryRevisionLabel(fixture.asset_etag);
+      return libraryRevisionLabel(fixture);
+    case "revised":
+      return libraryRevisionDate(fixture);
+    case "patched":
+      return String(context.patched.get(libraryDefinitionId(fixture)) ?? 0);
+    case "gdtf-share":
+      return updateText(context.updates.get(fixture.asset_etag));
     default:
       return "";
   }
@@ -151,6 +205,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
   log.trace("mounting");
   const panelId = props.initialPanelId ?? props.id;
   const $fixtureLibrary = useStore(fixtureLibrary);
+  const $patchedFixtures = useStore(patchedFixtures);
   const $unloadableFiles = useStore(unloadableFixtureFiles);
   const $selection = useStore(fixtureLibrarySelection);
 
@@ -187,14 +242,79 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     Boolean(capabilities()?.gdtf_share),
   );
 
+  /** What GDTF Share says about library files: their revisions and newer ones. */
+  const gdtfShare = createGdtfShareUpdates(gdtfShareAvailable);
+
+  /** Newer GDTF Share revisions of library files, by file fingerprint. */
+  const updates = () => gdtfShare().updates;
+
+  /** The newer GDTF Share revision of the selected profile, if one was found. */
+  const selectedUpdate = createMemo(() => {
+    const fixture = selectedFixture();
+    return fixture ? updates().get(fixture.asset_etag) : undefined;
+  });
+
+  /** The GDTF Share revision the selected profile is, when GDTF Share lists it. */
+  const selectedListing = createMemo(() => {
+    const fixture = selectedFixture();
+    return fixture ? gdtfShare().listed.get(fixture.asset_etag) : undefined;
+  });
+
+  /** How many patched fixtures use each library revision. */
+  const patched = createMemo(() => countPatched($patchedFixtures()));
+
+  /** Show state every row's column text reads. */
+  const rowContext = createMemo(
+    (): LibraryRowContext => ({ updates: updates(), patched: patched() }),
+  );
+
+  /** How many patched fixtures use the selected profile's revision. */
+  const selectedPatchedCount = createMemo(() => {
+    const fixture = selectedFixture();
+    return fixture ? (patched().get(libraryDefinitionId(fixture)) ?? 0) : 0;
+  });
+
+  /** Latest request for the grid to scroll a row into view. */
+  const [scrollRequest, setScrollRequest] =
+    createSignal<DataGridScrollRequest>();
+  /** Numbers scroll requests so the grid acts on each one. */
+  let scrollRequestId = 0;
+
   /** Whether the panel shows GDTF Share search in place of the library list. */
   const [searchingOnline, setSearchingOnline] = createSignal(false);
   const [onlineQuery, setOnlineQuery] = createSignal("");
 
-  /** Leaves GDTF Share search and shows a library entry in the properties panel. */
+  /**
+   * Leaves GDTF Share search and shows a library entry in the properties panel, moving the
+   * grid's active cell to its row and scrolling it into view so the highlight follows, or
+   * clearing it when a filter hides the row.
+   */
   const showLibraryCopy = (fixture: AvailableFixtureInfo) => {
     setSearchingOnline(false);
     setFixtureLibrarySelectedFixture(fixture);
+    const row = fixtures().findIndex(
+      (entry) =>
+        entry.kind === "fixture" &&
+        entry.fixture.make === fixture.make &&
+        entry.fixture.model === fixture.model &&
+        entry.fixture.asset_etag === fixture.asset_etag,
+    );
+    if (row >= 0) {
+      scrollRequestId += 1;
+      setScrollRequest({ cell: [0, row], requestId: scrollRequestId });
+    }
+    setSelection(
+      row < 0
+        ? emptyGridSelection()
+        : {
+            ...emptyGridSelection(),
+            current: {
+              cell: [0, row],
+              range: { x: 0, y: row, width: 1, height: 1 },
+              rangeStack: [],
+            },
+          },
+    );
   };
 
   // Row selection state (for row checkboxes)
@@ -302,14 +422,19 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
       <FixtureLibraryProperties
         selectedFixture={selectedFixture}
         unloadableFile={selectedUnloadable}
+        update={selectedUpdate}
+        listing={selectedListing}
+        patchedCount={selectedPatchedCount}
+        onShowFixture={showLibraryCopy}
       />
     ),
     { priority: 10, autoActivate: true },
   );
 
   /**
-   * Lists library rows: loaded profiles sorted by make, model, then revision so revisions of
-   * one model keep a stable order, followed by the files that failed to load, by file name.
+   * Lists library rows: loaded profiles sorted by make, model, then revision date, oldest
+   * first, and fingerprint so revisions of one model keep a stable order, followed by the
+   * files that failed to load, by file name.
    */
   const sortedFixtures = createMemo((): FixtureLibraryRow[] => {
     const loaded = [...$fixtureLibrary()]
@@ -317,6 +442,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
         (a, b) =>
           a.make.localeCompare(b.make) ||
           a.model.localeCompare(b.model) ||
+          libraryRevisionDate(a).localeCompare(libraryRevisionDate(b)) ||
           a.asset_etag.localeCompare(b.asset_etag),
       )
       .map((fixture): FixtureLibraryRow => ({ kind: "fixture", fixture }));
@@ -327,7 +453,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
   });
 
   // Column definitions for data grid
-  const columns: FilterableGridColumn<
+  const allColumns: FilterableGridColumn<
     FixtureLibraryRow,
     VisibilityGridColumn
   >[] = [
@@ -335,14 +461,14 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
       title: "Make",
       id: "make",
       width: 150,
-      filter: { value: (row) => libraryRowText(row, "make") },
+      filter: { value: (row) => libraryRowText(row, "make", rowContext()) },
       ...alwaysVisibleColumnMeta("Identity", "Make"),
     },
     {
       title: "Model",
       id: "model",
       width: 150,
-      filter: { value: (row) => libraryRowText(row, "model") },
+      filter: { value: (row) => libraryRowText(row, "model", rowContext()) },
       ...columnVisibilityMeta("Metadata", "Model"),
     },
     {
@@ -354,18 +480,48 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     {
       title: "Source",
       id: "source",
-      width: 100,
+      width: 150,
       ...columnVisibilityMeta("Metadata", "Source"),
     },
     {
       title: "Revision",
       id: "revision",
-      width: 90,
+      width: 110,
+      filter: { value: (row) => libraryRowText(row, "revision", rowContext()) },
       ...columnVisibilityMeta("Metadata", "Revision"),
+    },
+    {
+      title: "Revised",
+      id: "revised",
+      width: 95,
+      ...columnVisibilityMeta("Metadata", "Revised"),
+    },
+    {
+      title: "Patched",
+      id: "patched",
+      width: 80,
+      ...columnVisibilityMeta("Metadata", "Patched"),
+    },
+    {
+      title: "GDTF Share",
+      id: "gdtf-share",
+      width: 150,
+      filter: {
+        value: (row) => libraryRowText(row, "gdtf-share", rowContext()),
+      },
+      ...columnVisibilityMeta("Metadata", "GDTF Share"),
     },
   ];
 
-  const filterColumns = createMemo(() => filterColumnsFromMetadata(columns));
+  /** The panel's columns, leaving out the GDTF Share column on runtimes without GDTF Share. */
+  const columns = createMemo(() =>
+    gdtfShareAvailable()
+      ? allColumns
+      : allColumns.filter((column) => column.id !== "gdtf-share"),
+  );
+
+  /** Filterable columns, following which columns the runtime offers. */
+  const filterColumns = createMemo(() => filterColumnsFromMetadata(columns()));
 
   const {
     filters: tableFilters,
@@ -386,23 +542,40 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     clearSelection();
   });
 
+  /**
+   * Shows a library revision another panel asked for, when the library lists it. A filter
+   * that hides its row is left alone; Properties still shows the revision.
+   */
+  usePanelCapability(panelId, REVEAL_LIBRARY_FIXTURE_CAPABILITY, (request) => {
+    const target = $fixtureLibrary().find(
+      (fixture) =>
+        fixture.make === request.make &&
+        fixture.model === request.model &&
+        fixture.asset_etag === request.asset_etag,
+    );
+    if (target) showLibraryCopy(target);
+  });
+
+  /** Columns the grid draws: the panel's columns minus the ones the user hid. */
   const displayColumns = createMemo(() => {
-    return filterVisibleColumns(columns, panelId);
+    return filterVisibleColumns(columns(), panelId);
   });
 
   /**
    * Provides cells from keyed row and column snapshots. Files that failed to load are greyed
-   * out, with a warning sign before the file name.
+   * out, with a warning sign before the file name. Rebuilt when patch counts or GDTF Share
+   * updates change, so those columns stay current.
    */
-  const cellProvider = createMemo(() =>
-    createKeyedDataGridCellProvider({
+  const cellProvider = createMemo(() => {
+    const context = rowContext();
+    return createKeyedDataGridCellProvider({
       rows: fixtures(),
       columns: displayColumns(),
       rowKey: libraryRowId,
       columnKey: (column) => String(column.id),
       getCellContent: ({ row, column }): GridCell => {
         const colId = String(column.id);
-        const cell = makeSafeTextCell(libraryRowText(row, colId));
+        const cell = makeSafeTextCell(libraryRowText(row, colId, context));
         if (row.kind === "fixture") return cell;
         return {
           ...cell,
@@ -411,8 +584,8 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
             colId === "make" ? [...UNLOADABLE_INDICATORS] : undefined,
         };
       },
-    }),
-  );
+    });
+  });
 
   /** Shows the clicked row, a profile or a file that failed to load, in the properties panel. */
   const handleCellClicked = (cell: Item) => {
@@ -440,7 +613,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
           totalRows={sortedFixtures().length}
           onFiltersChange={setTableFilters}
         />
-        <ColumnVisibilityMenu scope={panelId} columns={columns} />
+        <ColumnVisibilityMenu scope={panelId} columns={columns()} />
         <Show when={gdtfShareAvailable()}>
           <ToggleToolbarButton
             label="Search GDTF Share"
@@ -491,6 +664,7 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
             rowMarkers="checkbox"
             gridSelection={selection()}
             onGridSelectionChange={handleGridSelectionChange}
+            scrollRequest={scrollRequest()}
             width="100%"
             height="100%"
             freezeColumns={1}

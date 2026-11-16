@@ -37,17 +37,19 @@ The frame limiter, which the framepace crate provides, runs after `CommandFeedba
 
 ## Update applies commands and input
 
-`Update` runs in every frame, whether or not the frame renders. The engine orders its system sets so that commands pass through a fixed pipeline:
+`Update` runs in every frame, whether or not the frame renders. Commands pass through a fixed pipeline. The middle of it, from expansion to the domain handlers, is its own schedule, `ApplyCommands`, which `Update` runs from the `CommandApplication` set:
 
 ```mermaid
 flowchart TB
-  accTitle: System sets in the Update schedule
-  accDescr: InputHandling drains commands and input from the hosts. ActionInvocationHandling dispatches bound actions. PendingCommandExpansion rewrites wrapper commands. PendingCommandProcessing captures undo and dispatches commands as messages. EventHandling applies them to world state. ResyncHandling resends state to clients that asked for it.
+  accTitle: System sets in the Update and ApplyCommands schedules
+  accDescr: In Update, InputHandling drains commands and input from the hosts and ActionInvocationHandling dispatches bound actions. CommandApplication then runs the ApplyCommands schedule, where PendingCommandExpansion rewrites wrapper commands, PendingCommandProcessing captures undo and dispatches commands as messages, and EventHandling applies them to world state. Back in Update, ResyncHandling resends state to clients that asked for it.
   input[InputHandling] --> actions[ActionInvocationHandling]
-  actions --> expand[PendingCommandExpansion]
-  expand --> process[PendingCommandProcessing]
-  process --> events[EventHandling]
-  events --> resync[ResyncHandling]
+  actions --> apply
+  subgraph apply[CommandApplication runs ApplyCommands]
+    expand[PendingCommandExpansion] --> process[PendingCommandProcessing]
+    process --> events[EventHandling]
+  end
+  apply --> resync[ResyncHandling]
 ```
 
 Each set has one job:
@@ -56,17 +58,19 @@ Each set has one job:
 |------------|-----------------|
 | `InputHandling` | Drains the channels that hosts write to: command and update envelopes from the web UI, client disconnects, and MIDI and OSC events. Command JSON goes through the deserializer that its domain registered and lands in the pending command buffer. Updates, such as a fader drag, apply directly. |
 | `ActionInvocationHandling` | Dispatches actions that MIDI, OSC, keyboard, or timeline bindings invoked. Actions that lower to commands queue them in the pending command buffer. |
-| `PendingCommandExpansion` | Replaces wrapper commands with the concrete commands they stand for. For example, desk eval text such as `clip 1 go` becomes a typed clip command here, and scheduled commands that are now due move into the buffer. |
+| `PendingCommandExpansion` | Replaces wrapper commands with the concrete commands they stand for. For example, desk eval text such as `clip 1 go` becomes a typed clip command here. Scheduled commands that are now due move into the buffer just before, in `Update`. |
 | `PendingCommandProcessing` | Drains the pending command and operation buffers, captures undo inverses for registered command types, and writes each command as a typed message. |
 | `EventHandling` | Domain handlers read those messages and change world state: they spawn playbacks, store cues, change masters, and so on. |
 | `ResyncHandling` | Plugins resend their full state to clients that requested a resync. |
 
-The `ActionInvocationHandling` set belongs to the actions crate, which orders it after `InputHandling` and before `PendingCommandExpansion`. Several other sets hang off `EventHandling`, such as the desk's `DeskEventSet` clip and blueprint sets that domain plugins order their handlers against, and the app's showfile handling.
+The `ActionInvocationHandling` set belongs to the actions crate, which orders it after `InputHandling` and before `CommandApplication`. Inside `ApplyCommands`, the engine's `DeskEventSet` clip and blueprint sets hang off `EventHandling` for domain plugins to order their handlers against. Systems that finish commands, or keep state that handlers read, such as the reference index, run in `ApplyCommands` after `EventHandling`. Systems that only publish or save what commands changed, such as showfile handling, run in `Update` after `CommandApplication`.
+
+Ordering only applies within one schedule. An `Update` system that orders itself against `EventHandling` gets no ordering at all, so order `Update` systems against `CommandApplication`. A test in `app-runtime` fails when either schedule orders against a set whose systems live in the other.
 
 Resync runs in `Update` on purpose. The resync completion message goes out before clock and layer work starts, so a slow first render after a show load doesn't delay the moment a client knows it has the full state.
 
 > [!WARNING]
-> A system that queues commands outside `InputHandling` must order itself before `PendingCommandProcessing`. Otherwise its commands wait in the buffer until the next frame, and they miss undo capture for this frame.
+> A system in `Update` that queues commands outside `InputHandling` must order itself before `CommandApplication`. Otherwise its commands wait in the buffer until the next frame, and they miss undo capture for this frame.
 
 ### What happens to `Par 1` in `Update`
 
@@ -100,7 +104,7 @@ The stages map onto the journey from [how a show becomes light](../concepts/show
 |-------|-----------------|----------------------------------|
 | `ClockUpdate` | Adds a clock to new playbacks, applies rate masters, and advances every real-time clock by the wall-clock time since the previous render pass. The show tempo and timecode generators also advance here. | `First playback` gets its clock and moves up to one frame period into the `Red` cue's fade. |
 | `LayerGeneration` | Each playback type paints its layer: sequences, cues, FX, Step FX, FX modules, flows, timelines, and the programmer. Incoming DMX also lands in its input layer here. | `First playback` paints a priority 0 layer with intensity and red partway up the fade. The programmer paints a priority 127 layer with intensity at 50%. |
-| Between layers and compositing | The desk resolves held Flash and Swop buttons and scales each playback's intensity values by its level. These systems belong to no set. They order themselves after `LayerGeneration` and before `Compositing`. | If `First playback`'s fader sits at 50%, its intensity contribution halves. The programmer layer is unaffected. |
+| Between layers and compositing | `controls` resolves held Flash and Swop buttons and scales each playback's intensity values by its level. These systems belong to no set. They order themselves after `LayerGeneration` and before `Compositing`. | If `First playback`'s fader sits at 50%, its intensity contribution halves. The programmer layer is unaffected. |
 | `Compositing` | The compositor sorts layers by priority and activation time, merges them, and writes the final value into each fixture parameter. | Intensity comes out at 50% from the programmer, and red follows `First playback`'s fade. |
 | `VdimProcessing` | Applies intensity masters, then virtual dimmers, then virtual relations to the merged values. | An intensity master that targets `Par 1` scales its intensity. Virtual dimming does not apply, because `Par 1` has a real intensity channel. |
 | `DmxOutput` | Resolves patch bindings, packs parameter values into console universes, composes output frames, and hands them to the Art-Net, sACN, and USB outputs. | Intensity, red, green, and blue land in channels 1 to 4 of console universe 1. If a binding routes that universe to Art-Net, the Art-Net worker receives the new frame. |
@@ -221,11 +225,11 @@ Messages that a render system writes and another reads within the same render pa
 
 ### Messages from a render pass reach the next frame
 
-A render system can write messages for `Update` handlers. The timeline does this when its playhead crosses a clip action: it writes clip operations during `LayerGeneration`, and the clip handlers apply them in `EventHandling` of the next frame. The resulting layer appears one render pass later. Account for that delay when output timing matters.
+A render system can write messages for command handlers. The timeline does this when its playhead crosses a clip action: it writes clip operations during `LayerGeneration`, and the clip handlers apply them in `EventHandling` of the next frame. The resulting layer appears one render pass later. Account for that delay when output timing matters.
 
 ### Order command producers before processing
 
-Systems that queue commands must run before `PendingCommandProcessing`, in `InputHandling`, `ActionInvocationHandling`, or `PendingCommandExpansion`. That is where undo capture and dispatch happen. A command queued later waits a frame.
+Systems that queue commands must run before `PendingCommandProcessing`: in `Update`, in `InputHandling` or `ActionInvocationHandling` or otherwise before `CommandApplication`, or in `ApplyCommands`, in `PendingCommandExpansion`. That is where undo capture and dispatch happen. A command queued later waits a frame.
 
 ### Put feedback in the right set
 
@@ -234,6 +238,8 @@ Acknowledgements of input go in `ClientFeedback` in `PostUpdate`. Render-derived
 ### Don't assume every frame renders
 
 `Update` systems run in input-only frames too, so they must not assume time has passed since the last render. Clocks advance only in `ClockUpdate`, by the wall-clock time since the previous render pass, so playback timing stays correct however many input-only frames ran in between.
+
+`ApplyCommands` can run more than once in a frame. A system in it whose work waits on a handler's next run, such as an undo that replays a group one entry at a time, calls `CommandRerun::request`, and `CommandApplication` runs `ApplyCommands` again before the rest of `Update`, for at most 8 ms per frame. Nothing else reruns, so input, timers, publication and the render pass still run once. Every system in `ApplyCommands` must therefore be safe to rerun: a run with no new input changes nothing and publishes nothing. The `rerun_safety` test in `app-runtime` checks this on the sample show. For the design, see [ADR 5](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/adr/0005-undo-replays-step-by-step.md).
 
 ### Register the render schedule in plugin tests
 
@@ -254,9 +260,9 @@ Acknowledgements of input go in `ClientFeedback` in `PostUpdate`. Render-derived
 | Default, minimum, and maximum DMX output rate | `crates/io/src/settings.rs` |
 | Pausing input and output during show loads | `crates/app-runtime/src/swap_orchestrator.rs` |
 | Undo capture in `PendingCommandProcessing` | `crates/undo/src/lib.rs` |
-| Clock, playback level, and master systems | `crates/desk/src/lib.rs`, `crates/desk/src/instances.rs` |
+| Clock, playback level, and master systems | `crates/clips/src/playback.rs`, `crates/clips/src/playback/clocks.rs`, `crates/controls/src/lib.rs` |
 | Compositor and its removal observers | `crates/compositor/src/lib.rs`, `crates/compositor/src/system.rs` |
-| Virtual dimmers and virtual relations | `crates/desk/src/systems/vdim.rs`, `crates/desk/src/systems/relations.rs` |
+| Virtual dimmers and virtual relations | `crates/fixtures/src/vdim.rs`, `crates/fixtures/src/relations.rs` |
 | DMX packing and output frames | `crates/fixtures/src/lib.rs`, `crates/fixtures/src/output_frames.rs` |
 
 ## Related topics

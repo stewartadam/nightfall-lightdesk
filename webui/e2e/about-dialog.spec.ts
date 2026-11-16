@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { getNightfallDataDirectoryPath } from "../lib/tauri";
 import { expect, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
@@ -15,9 +14,6 @@ test("opens about dialog from the status bar menu", async ({
   context,
   page,
 }, testInfo) => {
-  const expectedDataDirectoryPath =
-    process.env.NIGHTFALL_DATA_DIR ?? getNightfallDataDirectoryPath();
-
   await page.goto("/?e2e=1");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
@@ -54,10 +50,15 @@ test("opens about dialog from the status bar menu", async ({
   await expect(
     dialog.getByText(/\u00A9 .* Stewart Adam, licensed under MPL-2\.0\./),
   ).toBeVisible();
-  await expect(dialog.getByText("Third-Party Notices")).toBeVisible();
+  await expect(
+    dialog.getByRole("tab", { name: "Third-Party Notices" }),
+  ).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Copy Path" })).toBeVisible();
   await dialog.getByRole("button", { name: "Copy Path" }).hover();
-  await expect(page.getByText(expectedDataDirectoryPath)).toBeVisible();
+  // A browser build shows the data directory its build was configured with.
+  const pathTooltip = page.getByRole("tooltip");
+  await expect(pathTooltip).toHaveText(/^(~|%APPDATA%|\/|[A-Za-z]:\\).+/);
+  const shownPath = (await pathTooltip.textContent()) ?? "";
   await expect(
     dialog.getByText("Copyright (c) 2026 SquidLab"),
   ).not.toBeVisible();
@@ -66,13 +67,12 @@ test("opens about dialog from the status bar menu", async ({
   await expect(
     page.getByText("Copied nightfall data directory path"),
   ).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    shownPath,
+  );
 
-  await dialog
-    .getByRole("button", { name: "View Third-Party Licenses" })
-    .click();
-  const licensesDialog = page.getByRole("dialog", {
-    name: "Third-Party Licenses",
-  });
+  await dialog.getByRole("tab", { name: "Third-Party Notices" }).click();
+  const licensesDialog = dialog.getByRole("tabpanel");
   const search = licensesDialog.getByRole("searchbox");
   await search.fill("@squidlab/phosphor-solid");
   await licensesDialog

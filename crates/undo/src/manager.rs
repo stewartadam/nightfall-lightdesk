@@ -7,23 +7,30 @@
  */
 
 use std::collections::{HashMap, VecDeque};
+use std::time::Duration;
 
 use bevy_ecs::prelude::*;
 use nightfall_engine::prelude::{CommandId, UndoId};
 use web_time::Instant;
 
-use crate::traits::Undoable;
+use crate::traits::{UndoCoalesceKey, Undoable};
 
 /// Configuration for undo manager behavior.
 #[derive(Clone, Debug)]
 pub struct UndoConfig {
     /// Maximum number of undo groups to retain. Default: 100.
     pub max_history: usize,
+    /// Longest pause between repeats of one edit that still joins them into one undo step,
+    /// see [`Undoable::coalesce_key`]. Default: 30 seconds.
+    pub coalesce_window: Duration,
 }
 
 impl Default for UndoConfig {
     fn default() -> Self {
-        Self { max_history: 100 }
+        Self {
+            max_history: 100,
+            coalesce_window: Duration::from_secs(30),
+        }
     }
 }
 
@@ -36,6 +43,9 @@ pub struct UndoEntry {
     pub description: String,
     /// User command that caused the operation, when one exists.
     pub command_id: Option<CommandId>,
+    /// Joins back-to-back repeats of the same edit into one undo step, see
+    /// [`Undoable::coalesce_key`].
+    pub coalesce_key: Option<UndoCoalesceKey>,
 }
 
 /// A group of commands that undo/redo together as a single unit.
@@ -51,6 +61,14 @@ pub struct UndoGroup {
     pub is_gurq_preserved: bool,
     /// Identity shared by operations that undo together.
     pub undo_id: UndoId,
+}
+
+/// A group waiting on the redo stack, kept with the undo group whose replay produced it.
+pub struct RedoGroup {
+    /// Commands that redo the undone work.
+    pub group: UndoGroup,
+    /// The undo group that was replayed, returned to history when GURQ collapses this redo.
+    pub undone: UndoGroup,
 }
 
 /// Operations accumulated until their owning command reaches a terminal outcome.
@@ -69,9 +87,17 @@ struct PendingUndoGroup {
 #[derive(Resource)]
 pub struct UndoManager {
     undo_stack: VecDeque<UndoGroup>,
-    redo_stack: Vec<UndoGroup>,
+    redo_stack: Vec<RedoGroup>,
     pending_groups: HashMap<UndoId, PendingUndoGroup>,
     next_insertion_order: u64,
+    /// Count of history clears, so work that spans frames can tell the history it started
+    /// from was replaced.
+    generation: u64,
+    /// Whether an undo or redo has taken a group off its stack and is still replaying it.
+    replay_in_flight: bool,
+    /// Groups finished while a replay was in flight, committed once it settles so they land
+    /// after the group it produces.
+    deferred_commits: Vec<(UndoId, PendingUndoGroup)>,
     config: UndoConfig,
 }
 
@@ -94,6 +120,9 @@ impl UndoManager {
             redo_stack: Vec::new(),
             pending_groups: HashMap::new(),
             next_insertion_order: 0,
+            generation: 0,
+            replay_in_flight: false,
+            deferred_commits: Vec::new(),
             config,
         }
     }
@@ -147,16 +176,33 @@ impl UndoManager {
         if group.entries.is_empty() {
             return;
         }
+        if self.replay_in_flight {
+            self.deferred_commits.push((undo_id, group));
+            return;
+        }
 
         // GURQ: If redo stack is not empty, collapse it into undo stack.
         // This preserves all previous states as reachable history.
-        if !self.redo_stack.is_empty() {
+        let collapsed_redo = !self.redo_stack.is_empty();
+        if collapsed_redo {
             self.collapse_redo_stack_for_gurq();
         }
 
         if let Some(last_group) = self.undo_stack.back_mut() {
             if last_group.undo_id == undo_id {
                 last_group.entries.extend(group.entries);
+                last_group.timestamp = Instant::now();
+                return;
+            }
+            // A repeat of the newest edit keeps that step's earlier inverse, which already
+            // restores the state from before the first repeat. An edit made after an undo never
+            // joins, so the undone states stay reachable on their own.
+            if !collapsed_redo
+                && last_group.timestamp.elapsed() <= self.config.coalesce_window
+                && standalone_coalesce_key(&group.entries, undo_id).is_some_and(|key| {
+                    standalone_coalesce_key(&last_group.entries, last_group.undo_id) == Some(key)
+                })
+            {
                 last_group.timestamp = Instant::now();
                 return;
             }
@@ -190,13 +236,25 @@ impl UndoManager {
 
     /// GURQ: Collapse redo stack into undo history before new changes.
     ///
-    /// This makes all previous states reachable via undo, implementing
-    /// the linear-time history model where no states are ever lost.
+    /// Every state the desk passed through stays reachable by undo. The undone groups go back
+    /// in the order they were first made, then the redo groups in the order they were undone,
+    /// so the most recently undone work is redone first. After `G1 G2 G3`, two undos and a new
+    /// edit `N`, the history reads `G1 G2 G3 R3 R2 N`: undo steps back through `N`, re-applies
+    /// `G2` then `G3`, and continues back through `G3`, `G2` and `G1`.
     fn collapse_redo_stack_for_gurq(&mut self) {
-        for redo_group in self.redo_stack.drain(..).rev() {
-            let mut instant_group = redo_group;
-            instant_group.is_gurq_preserved = true;
-            self.undo_stack.push_back(instant_group);
+        let (redo_groups, undone_groups): (Vec<_>, Vec<_>) = self
+            .redo_stack
+            .drain(..)
+            .map(|redo| (redo.group, redo.undone))
+            .unzip();
+        self.undo_stack.extend(undone_groups.into_iter().rev());
+        self.undo_stack
+            .extend(redo_groups.into_iter().map(|mut group| {
+                group.is_gurq_preserved = true;
+                group
+            }));
+        while self.undo_stack.len() > self.config.max_history {
+            self.undo_stack.pop_front();
         }
     }
 
@@ -217,7 +275,7 @@ impl UndoManager {
 
     /// Peek at the next group to redo without removing it.
     pub fn peek_redo(&self) -> Option<&UndoGroup> {
-        self.redo_stack.last()
+        self.redo_stack.last().map(|redo| &redo.group)
     }
 
     /// Iterate over undo groups from oldest to newest.
@@ -227,7 +285,7 @@ impl UndoManager {
 
     /// Iterate over redo groups from oldest to newest.
     pub fn redo_stack(&self) -> impl DoubleEndedIterator<Item = &UndoGroup> {
-        self.redo_stack.iter()
+        self.redo_stack.iter().map(|redo| &redo.group)
     }
 
     /// Pop and return the next group to undo.
@@ -247,12 +305,12 @@ impl UndoManager {
     }
 
     /// Push a group onto the redo stack.
-    pub fn push_redo(&mut self, group: UndoGroup) {
-        self.redo_stack.push(group);
+    pub fn push_redo(&mut self, redo: RedoGroup) {
+        self.redo_stack.push(redo);
     }
 
     /// Pop and return the next group to redo.
-    pub fn pop_redo(&mut self) -> Option<UndoGroup> {
+    pub fn pop_redo(&mut self) -> Option<RedoGroup> {
         self.redo_stack.pop()
     }
 
@@ -261,6 +319,35 @@ impl UndoManager {
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.pending_groups.clear();
+        self.deferred_commits.clear();
+        self.replay_in_flight = false;
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Holds back new history groups while an undo or redo replays a group over several
+    /// frames.
+    ///
+    /// An edit that finishes meanwhile is committed by [`Self::end_replay`], after the replay
+    /// has pushed the group it produced, so the usual rule applies in order: a new edit after
+    /// an undo moves the redo stack back into history.
+    pub fn begin_replay(&mut self) {
+        self.replay_in_flight = true;
+    }
+
+    /// Ends the replay started by [`Self::begin_replay`] and commits the groups that finished
+    /// while it ran, oldest first.
+    pub fn end_replay(&mut self) {
+        self.replay_in_flight = false;
+        for (undo_id, group) in std::mem::take(&mut self.deferred_commits) {
+            self.commit_group(undo_id, group);
+        }
+    }
+
+    /// Returns a value that changes every time the history is cleared, such as on a show
+    /// load, so an undo or redo still replaying can stop instead of writing its groups into
+    /// the new history.
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// Get the current undo stack depth.
@@ -272,6 +359,23 @@ impl UndoManager {
     pub fn redo_depth(&self) -> usize {
         self.redo_stack.len()
     }
+}
+
+/// Returns the coalesce key a step may join under: the key every entry carries, when every
+/// entry also came from a standalone command whose undo ID is its own command ID.
+///
+/// Steps shared by several commands (a macro run, a client batch) never join, since later
+/// commands of the same undo ID would extend whichever step absorbed the first one.
+fn standalone_coalesce_key(entries: &[UndoEntry], undo_id: UndoId) -> Option<&UndoCoalesceKey> {
+    let (first, _) = entries.split_first()?;
+    let key = first.coalesce_key.as_ref()?;
+    entries
+        .iter()
+        .all(|entry| {
+            entry.coalesce_key.as_ref() == Some(key)
+                && entry.command_id.map(UndoId::from) == Some(undo_id)
+        })
+        .then_some(key)
 }
 
 #[cfg(test)]
@@ -301,7 +405,24 @@ mod tests {
             command: Box::new(TestUndoCommand),
             description: description.to_string(),
             command_id: Some(CommandId::new()),
+            coalesce_key: None,
         }
+    }
+
+    /// Builds an entry for a repeatable edit carrying `key`.
+    fn coalescing_entry(description: &str, key: &UndoCoalesceKey) -> UndoEntry {
+        UndoEntry {
+            coalesce_key: Some(key.clone()),
+            ..test_entry(description)
+        }
+    }
+
+    /// Commits a repeatable edit as a standalone command, whose undo ID is its command ID.
+    fn commit_coalescing_edit(manager: &mut UndoManager, description: &str, key: &UndoCoalesceKey) {
+        let entry = coalescing_entry(description, key);
+        let undo_id = UndoId::from(entry.command_id.expect("test entries carry a command ID"));
+        manager.push(entry, undo_id, true);
+        manager.finish_group(undo_id, true);
     }
 
     #[test]
@@ -363,6 +484,84 @@ mod tests {
         assert!(!manager.has_pending_groups());
     }
 
+    /// Commits a one-entry group under a fresh undo ID, standing in for a finished edit.
+    fn commit_edit(manager: &mut UndoManager, description: &str) {
+        let undo_id = UndoId::new();
+        manager.push(test_entry(description), undo_id, true);
+        manager.finish_group(undo_id, true);
+    }
+
+    /// Moves the newest undo group to the redo stack the way the undo command does, with a
+    /// stand-in redo group described as `redo <description>`.
+    fn undo_once(manager: &mut UndoManager) {
+        let undone = manager.pop_undo().expect("expected a group to undo");
+        manager.push_redo(RedoGroup {
+            group: UndoGroup {
+                entries: vec![test_entry(&format!("redo {}", undone.description))],
+                description: format!("redo {}", undone.description),
+                timestamp: Instant::now(),
+                is_gurq_preserved: undone.is_gurq_preserved,
+                undo_id: UndoId::new(),
+            },
+            undone,
+        });
+    }
+
+    /// Lists the undo stack's descriptions from oldest to newest.
+    fn undo_descriptions(manager: &UndoManager) -> Vec<String> {
+        manager
+            .undo_stack()
+            .map(|group| group.description.clone())
+            .collect()
+    }
+
+    /// Verifies an edit after two undos keeps every state reachable in the order the desk
+    /// passed through them: back through the new edit, forward through the undone edits
+    /// oldest first, then back through the original history.
+    #[test]
+    fn new_edit_after_undos_keeps_history_in_order() {
+        let mut manager = UndoManager::new();
+        for description in ["g1", "g2", "g3"] {
+            commit_edit(&mut manager, description);
+        }
+        undo_once(&mut manager);
+        undo_once(&mut manager);
+
+        commit_edit(&mut manager, "n");
+
+        assert_eq!(
+            undo_descriptions(&manager),
+            ["g1", "g2", "g3", "redo g3", "redo g2", "n"]
+        );
+        assert_eq!(manager.redo_depth(), 0);
+        let preserved = manager
+            .undo_stack()
+            .map(|group| group.is_gurq_preserved)
+            .collect::<Vec<_>>();
+        assert_eq!(preserved, [false, false, false, true, true, false]);
+    }
+
+    /// Verifies the collapse that restores undone history still respects the history limit.
+    #[test]
+    fn collapse_keeps_history_within_its_limit() {
+        let mut manager = UndoManager::with_config(UndoConfig {
+            max_history: 4,
+            ..UndoConfig::default()
+        });
+        for description in ["g1", "g2", "g3", "g4"] {
+            commit_edit(&mut manager, description);
+        }
+        undo_once(&mut manager);
+        undo_once(&mut manager);
+
+        commit_edit(&mut manager, "n");
+
+        assert_eq!(
+            undo_descriptions(&manager),
+            ["g4", "redo g4", "redo g3", "n"]
+        );
+    }
+
     /// Verifies that a failed command discards inverses captured before its mutation attempt.
     #[test]
     fn failed_command_discards_its_pending_undo_group() {
@@ -374,5 +573,114 @@ mod tests {
 
         assert_eq!(manager.undo_depth(), 0);
         assert!(!manager.has_pending_groups());
+    }
+
+    /// Verifies back-to-back repeats of one edit share a single undo step that keeps the
+    /// first repeat's inverse, so undo returns to the state before the whole run.
+    #[test]
+    fn repeats_of_one_edit_join_the_newest_step() {
+        let mut manager = UndoManager::new();
+        let key = UndoCoalesceKey::new("test.shift", 1);
+        commit_edit(&mut manager, "earlier edit");
+
+        for description in ["shift 1", "shift 2", "shift 3"] {
+            commit_coalescing_edit(&mut manager, description, &key);
+        }
+
+        assert_eq!(manager.undo_depth(), 2);
+        let group = manager.peek_undo().expect("expected the joined step");
+        assert_eq!(group.entries.len(), 1);
+        assert_eq!(group.entries[0].description, "shift 1");
+    }
+
+    /// Verifies repeats join only when nothing else came between them and they edit the same
+    /// target.
+    #[test]
+    fn interrupted_or_different_edits_stay_separate() {
+        let mut manager = UndoManager::new();
+        let first = UndoCoalesceKey::new("test.shift", 1);
+        let second = UndoCoalesceKey::new("test.shift", 2);
+
+        commit_coalescing_edit(&mut manager, "shift 1", &first);
+        commit_edit(&mut manager, "other edit");
+        commit_coalescing_edit(&mut manager, "shift 1 again", &first);
+        commit_coalescing_edit(&mut manager, "shift 2", &second);
+
+        assert_eq!(
+            undo_descriptions(&manager),
+            ["shift 1", "other edit", "shift 1 again", "shift 2"]
+        );
+    }
+
+    /// Verifies a repeat made after an undo starts its own step, so the undone states the GURQ
+    /// collapse restores stay reachable.
+    #[test]
+    fn repeat_after_undo_does_not_join() {
+        let mut manager = UndoManager::new();
+        let key = UndoCoalesceKey::new("test.shift", 1);
+        commit_coalescing_edit(&mut manager, "shift 1", &key);
+        commit_coalescing_edit(&mut manager, "shift 2", &key);
+        undo_once(&mut manager);
+
+        commit_coalescing_edit(&mut manager, "shift 3", &key);
+
+        assert_eq!(
+            undo_descriptions(&manager),
+            ["shift 1", "redo shift 1", "shift 3"]
+        );
+    }
+
+    /// Verifies a step joins only when every entry carries the same key, so a multi-command
+    /// step that merely contains a repeatable edit is never extended.
+    #[test]
+    fn mixed_step_does_not_join() {
+        let mut manager = UndoManager::new();
+        let key = UndoCoalesceKey::new("test.shift", 1);
+        let mixed_undo_id = UndoId::new();
+        manager.push(coalescing_entry("shift", &key), mixed_undo_id, true);
+        manager.push(test_entry("other"), mixed_undo_id, true);
+        manager.finish_group(mixed_undo_id, true);
+
+        commit_coalescing_edit(&mut manager, "shift again", &key);
+
+        assert_eq!(manager.undo_depth(), 2);
+    }
+
+    /// Verifies repeats inside a multi-command run (a macro or client batch sharing one undo
+    /// ID) never join an earlier step, so the run still undoes as exactly its own commands.
+    #[test]
+    fn shared_undo_id_run_does_not_join() {
+        let mut manager = UndoManager::new();
+        let key = UndoCoalesceKey::new("test.shift", 1);
+        commit_coalescing_edit(&mut manager, "operator shift", &key);
+        let macro_undo_id = UndoId::new();
+
+        manager.push(coalescing_entry("macro shift", &key), macro_undo_id, true);
+        manager.finish_group(macro_undo_id, true);
+        manager.push(test_entry("macro rename"), macro_undo_id, true);
+        manager.finish_group(macro_undo_id, true);
+
+        assert_eq!(
+            undo_descriptions(&manager),
+            ["operator shift", "macro shift"]
+        );
+        let macro_group = manager.peek_undo().expect("expected the macro step");
+        assert_eq!(macro_group.entries.len(), 2);
+    }
+
+    /// Verifies a repeat after a pause longer than the coalesce window starts its own step.
+    #[test]
+    fn repeat_after_window_does_not_join() {
+        let mut manager = UndoManager::with_config(UndoConfig {
+            coalesce_window: Duration::ZERO,
+            ..UndoConfig::default()
+        });
+        let key = UndoCoalesceKey::new("test.shift", 1);
+        commit_coalescing_edit(&mut manager, "shift 1", &key);
+        std::thread::sleep(Duration::from_millis(2));
+
+        commit_coalescing_edit(&mut manager, "shift 2", &key);
+
+        assert_eq!(manager.undo_depth(), 2);
     }
 }

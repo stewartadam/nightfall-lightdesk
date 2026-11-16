@@ -33,6 +33,9 @@ const workflows = Object.fromEntries(
       parse(readFileSync(new URL(name, workflowDirectory), "utf8")),
     ]),
 );
+const actionsLock = parse(
+  readFileSync(new URL("actions.lock", workflowDirectory), "utf8"),
+);
 const release = workflows["release.yml"];
 const unpack = release.jobs.sign.steps.find((step) => step.id === "app").run;
 const inventory = release.jobs.publish.steps.find(
@@ -50,6 +53,26 @@ const releaseEnvironment = {
   GITHUB_REF_NAME: "v0.1.0-alpha.2",
   RELEASE_TAG: "v0.1.0-alpha.2",
 };
+
+/**
+ * Names the actions a job's steps use, without their refs. The workflow lockfile pins each ref to
+ * a commit, so assertions about which actions a privileged job may run compare names only.
+ */
+function stepActions(job) {
+  return job.steps
+    .filter((step) => step.uses)
+    .map((step) => step.uses.replace(/@.*$/, ""));
+}
+
+/**
+ * Lists the action refs actions.lock pins for one workflow file. gh-actions-lock records owners
+ * and repositories in lowercase, so callers compare lowercased `uses:` values.
+ */
+function lockedActions(file) {
+  return (actionsLock.workflows[`.github/workflows/${file}`] ?? []).map(
+    (uses) => uses.toLowerCase(),
+  );
+}
 
 /** Gives each attack fixture an empty directory and removes it after the test. */
 function fixtureDirectory(t) {
@@ -115,6 +138,8 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "ci.yml/release": { contents: "write" },
     "ci.yml/preview": { "pull-requests": "write" },
     "ci.yml/gate": { "pull-requests": "read" },
+    // Uses the permissionless job token only to look up public action commits.
+    "ci.yml/actions-lock": {},
     "pr-commands.yml/recheck-cla": {
       checks: "read",
       issues: "write",
@@ -136,6 +161,17 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
       contents: "read",
       "pull-requests": "read",
     },
+    "claude-review.yml/command": {
+      checks: "write",
+      issues: "write",
+      "pull-requests": "write",
+      statuses: "read",
+    },
+    "claude-review.yml/revoke": { issues: "write", "pull-requests": "write" },
+    "claude-review.yml/metadata": { contents: "read", "pull-requests": "read" },
+    "claude-review.yml/review": { contents: "read" },
+    "claude-review.yml/apply": { issues: "write", "pull-requests": "write" },
+    "claude-review.yml/finish": { checks: "write" },
     "release.yml/publish": { contents: "write" },
     "desktop-updates.yml/sign": { contents: "read" },
     "desktop-updates.yml/publish": { contents: "write" },
@@ -150,6 +186,11 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
         file !== "release.yml" &&
         key !== "desktop-updates.yml/sign" &&
         key !== "website-release.yml/notify" &&
+        ![
+          "claude-review.yml/revoke",
+          "claude-review.yml/review",
+          "claude-review.yml/apply",
+        ].includes(key) &&
         !["release", "preview", "symbols"].includes(id)
       ) {
         assert.doesNotMatch(JSON.stringify(job), /secrets\./);
@@ -164,8 +205,16 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
             /\b(?:node|npm|npx|pnpm|cargo|rustup)\s/,
           );
         }
-        if (step.uses && !step.uses.startsWith("./")) {
-          assert.match(step.uses, /@[a-f0-9]{40}$/, key);
+        // Same-repository actions use `$/`, which loads them from the workflow's own commit
+        // rather than from whatever the job restored into its workspace.
+        if (step.uses?.startsWith("./")) {
+          assert.fail(`${key} uses ${step.uses}; use $/ instead`);
+        }
+        if (step.uses && !step.uses.startsWith("$/")) {
+          assert.ok(
+            lockedActions(file).includes(step.uses.toLowerCase()),
+            `${key}: ${step.uses} is missing from actions.lock`,
+          );
         }
       }
     }
@@ -179,6 +228,40 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
   );
 });
 
+/**
+ * Composite actions name the same tags the lockfile pins: GitHub refuses to run a composite whose
+ * external action has no matching lockfile entry, so a raw commit hash there fails at job start.
+ */
+test("composite actions use refs the workflow lockfile pins", () => {
+  const locked = new Set(
+    Object.values(actionsLock.workflows)
+      .flat()
+      .map((uses) => uses.toLowerCase()),
+  );
+  const actionsDirectory = new URL("../.github/actions/", import.meta.url);
+  const manifests = readdirSync(actionsDirectory, { recursive: true }).filter(
+    (path) => /(^|\/)action\.ya?ml$/.test(path),
+  );
+  assert.ok(manifests.length > 0);
+  for (const path of manifests) {
+    const action = parse(readFileSync(new URL(path, actionsDirectory), "utf8"));
+    for (const step of action.runs.steps ?? []) {
+      if (step.uses?.startsWith("./")) {
+        assert.fail(`${path} uses ${step.uses}; use $/ instead`);
+      }
+      if (step.uses && !step.uses.startsWith("$/")) {
+        // Sub-path actions such as actions/cache/restore are locked under their repository.
+        const [action, ref] = step.uses.toLowerCase().split("@");
+        const repository = action.split("/").slice(0, 2).join("/");
+        assert.ok(
+          locked.has(`${repository}@${ref}`),
+          `${path}: ${step.uses} is missing from actions.lock`,
+        );
+      }
+    }
+  }
+});
+
 /** Credential-bearing runners cannot restore a checkout, build tools, or a local action. */
 test("signing and publishing only use pinned artifact actions and reviewed inline code", () => {
   for (const job of Object.values(release.jobs)) {
@@ -190,7 +273,7 @@ test("signing and publishing only use pinned artifact actions and reviewed inlin
       if (step.uses) {
         assert.match(
           step.uses,
-          /^actions\/(?:upload|download)-artifact@[a-f0-9]{40}$/,
+          /^actions\/(?:upload|download)-artifact@v\d+\.\d+\.\d+$/,
         );
       }
       assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
@@ -225,7 +308,7 @@ test("update signing holds only the updater key and verifies its tool", () => {
       if (step.uses) {
         assert.match(
           step.uses,
-          /^actions\/(?:upload|download)-artifact@[a-f0-9]{40}$/,
+          /^actions\/(?:upload|download)-artifact@v\d+\.\d+\.\d+$/,
         );
       }
       assert.doesNotMatch(step.run ?? "", /\b(?:npm|npx|pnpm|cargo|rustup)\b/);
@@ -246,14 +329,11 @@ test("browser previews deploy same-run artifacts without source or build tools",
     preview.if,
     "!cancelled() && needs.selection.outputs.browser_preview == 'true' && needs.browser-demo.result == 'success' && (needs.docs.result == 'success' || needs.docs.result == 'skipped')",
   );
-  assert.deepEqual(
-    preview.steps.filter((step) => step.uses).map((step) => step.uses),
-    [
-      "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-      "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-      "cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0",
-    ],
-  );
+  assert.deepEqual(stepActions(preview), [
+    "actions/download-artifact",
+    "actions/download-artifact",
+    "cloudflare/wrangler-action",
+  ]);
   const secrets = JSON.stringify(preview).match(/secrets\.[A-Z_]+/g);
   assert.deepEqual(secrets, ["secrets.CLOUDFLARE_PREVIEW_TOKEN"]);
   assert.match(
@@ -279,10 +359,7 @@ test("debug symbols upload same-run artifacts with a pinned, verified tool", () 
     "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')",
   );
   assert.deepEqual(symbols.permissions ?? {}, {});
-  assert.deepEqual(
-    symbols.steps.filter((step) => step.uses).map((step) => step.uses),
-    ["actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"],
-  );
+  assert.deepEqual(stepActions(symbols), ["actions/download-artifact"]);
   assert.deepEqual(JSON.stringify(symbols).match(/secrets\.[A-Z_]+/g), [
     "secrets.GLITCHTIP_AUTH_TOKEN",
   ]);
@@ -308,12 +385,7 @@ test("website notification dispatches a validated tag with a pinned token action
     "github.event.workflow_run.event == 'release' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')",
   );
   assert.deepEqual(notify.permissions ?? {}, {});
-  assert.deepEqual(
-    notify.steps.filter((step) => step.uses).map((step) => step.uses),
-    [
-      "actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510",
-    ],
-  );
+  assert.deepEqual(stepActions(notify), ["actions/create-github-app-token"]);
   assert.deepEqual(JSON.stringify(notify).match(/secrets\.[A-Z_]+/g), [
     "secrets.RELEASE_APP_PRIVATE_KEY",
   ]);
@@ -684,7 +756,7 @@ test("update manifest signs each package for the release version", (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(existsSync(join(directory, "updater.key")), false);
   const manifest = JSON.parse(
-    readFileSync(join(directory, "manifest/latest.json"), "utf8"),
+    readFileSync(join(directory, "manifest/release.json"), "utf8"),
   );
   assert.equal(manifest.version, "0.1.0-alpha.2");
   for (const [target, suffix] of Object.entries(suffixes)) {
@@ -734,7 +806,7 @@ test("update signing refuses incomplete releases and missing keys", (t) => {
     signUpdates(directory, { GITHUB_EVENT_NAME: "workflow_dispatch" }).status,
     0,
   );
-  assert.equal(existsSync(join(directory, "manifest/latest.json")), false);
+  assert.equal(existsSync(join(directory, "manifest/release.json")), false);
 });
 
 /** A signature that fails to encode stops the release instead of publishing an empty one. */
@@ -771,25 +843,33 @@ test("update signing fails when a signature cannot be encoded", (t) => {
     REAL_BASE64: realBase64,
   });
   assert.notEqual(result.status, 0);
-  assert.equal(existsSync(join(directory, "manifest/latest.json")), false);
+  assert.equal(existsSync(join(directory, "manifest/release.json")), false);
 });
 
 /**
- * Runs the actual updater-release step with a stand-in `gh` that records its arguments, and
- * reports whether the `updater` release already exists through `existing`.
+ * Runs the actual channel feed step with a stand-in `gh` that records its arguments. `current`
+ * maps each feed already on the `updater` release to the version it offers, and `existing`
+ * reports whether that release exists at all. Returns the step's exit status, the `gh` calls,
+ * and the feeds it wrote for upload.
  */
 function offerUpdate(
   directory,
   manifest,
-  { existing = true, current = "0.1.0-alpha.1", ...environment } = {},
+  {
+    existing = true,
+    current = { prerelease: "0.1.0-alpha.1", stable: "0.0.0" },
+    ...environment
+  } = {},
 ) {
   const step = updates.jobs.publish.steps.find(
     (candidate) =>
-      candidate.name === "Replace the manifest on the updater release",
+      candidate.name === "Update the channel feeds on the updater release",
   ).run;
+  rmSync(join(directory, "feeds"), { recursive: true, force: true });
+  rmSync(join(directory, "gh.log"), { force: true });
   mkdirSync(join(directory, "manifest"), { recursive: true });
   writeFileSync(
-    join(directory, "manifest/latest.json"),
+    join(directory, "manifest/release.json"),
     JSON.stringify(manifest),
   );
   const bin = join(directory, "bin");
@@ -799,8 +879,9 @@ function offerUpdate(
     [
       "#!/usr/bin/env bash",
       'printf "%s\\n" "$*" >> "$GH_LOG"',
-      `if [ "$2" = view ]; then exit ${existing ? 0 : 1}; fi`,
-      'if [ "$2" = download ]; then printf \'{"version":"%s"}\' "$CURRENT_VERSION" > "$7"; fi',
+      `if [ "$2" = view ] && [ "$#" = 3 ]; then exit ${existing ? 0 : 1}; fi`,
+      'if [ "$2" = view ]; then jq -r \'keys[] | . + ".json"\' <<< "$CURRENT_FEEDS"; exit; fi',
+      'if [ "$2" = download ]; then jq --arg feed "${5%.json}" \'{version: .[$feed]}\' <<< "$CURRENT_FEEDS" > "$7"; fi',
     ].join("\n"),
     { mode: 0o755 },
   );
@@ -811,7 +892,7 @@ function offerUpdate(
       ...updatesEnvironment,
       PATH: `${bin}:${process.env.PATH}`,
       GH_LOG: join(directory, "gh.log"),
-      CURRENT_VERSION: current,
+      CURRENT_FEEDS: JSON.stringify(current),
       GH_REPO: "owner/repo",
       RUNNER_TEMP: directory,
       GITHUB_STEP_SUMMARY: join(directory, "summary.md"),
@@ -820,9 +901,20 @@ function offerUpdate(
     encoding: "utf8",
   });
   const log = join(directory, "gh.log");
+  const feeds = join(directory, "feeds");
   return {
     status: result.status,
     calls: existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [],
+    feeds: existsSync(feeds)
+      ? Object.fromEntries(
+          readdirSync(feeds)
+            .sort()
+            .map((name) => [
+              name,
+              JSON.parse(readFileSync(join(feeds, name), "utf8")).version,
+            ]),
+        )
+      : {},
   };
 }
 
@@ -910,18 +1002,43 @@ function updateManifest(
   };
 }
 
-/** Publishing replaces the manifest on the updater release, creating that release only once. */
-test("published releases replace the manifest on the updater release", (t) => {
+/** A prerelease updates only the Prerelease feed, while a stable release updates Prerelease and Stable. */
+test("published releases update their channels' feeds", (t) => {
   const directory = fixtureDirectory(t);
-  const replaced = offerUpdate(directory, updateManifest());
-  assert.equal(replaced.status, 0);
-  assert.deepEqual(replaced.calls, [
+  const prerelease = offerUpdate(directory, updateManifest());
+  assert.equal(prerelease.status, 0);
+  assert.deepEqual(prerelease.calls, [
     "release view updater",
-    `release download updater --pattern latest.json --output ${directory}/current.json`,
-    "release upload updater manifest/latest.json --clobber",
+    "release view updater --json assets --jq .assets[].name",
+    `release download updater --pattern prerelease.json --output ${directory}/prerelease-current.json`,
+    "release upload updater feeds/prerelease.json --clobber",
   ]);
-  rmSync(join(directory, "gh.log"));
-  const created = offerUpdate(directory, updateManifest(), { existing: false });
+  assert.deepEqual(prerelease.feeds, { "prerelease.json": "0.1.0-alpha.2" });
+
+  const stable = offerUpdate(directory, updateManifest("0.1.0"), {
+    RELEASE_TAG: "v0.1.0",
+  });
+  assert.equal(stable.status, 0);
+  assert.equal(
+    stable.calls.at(-1),
+    "release upload updater feeds/prerelease.json feeds/stable.json --clobber",
+  );
+  assert.deepEqual(stable.feeds, {
+    "prerelease.json": "0.1.0",
+    "stable.json": "0.1.0",
+  });
+});
+
+/**
+ * The first publish creates the updater release, and Stable gets a feed that offers nothing
+ * until the first stable release, so its apps never fail to find it.
+ */
+test("the first publish creates the updater release and an empty Stable feed", (t) => {
+  const directory = fixtureDirectory(t);
+  const created = offerUpdate(directory, updateManifest(), {
+    existing: false,
+    current: {},
+  });
   assert.equal(created.status, 0);
   assert.match(
     created.calls[1],
@@ -929,13 +1046,40 @@ test("published releases replace the manifest on the updater release", (t) => {
   );
   assert.equal(
     created.calls[2],
-    "release upload updater manifest/latest.json --clobber",
+    "release upload updater feeds/prerelease.json feeds/stable.json --clobber",
   );
+  assert.deepEqual(created.feeds, {
+    "prerelease.json": "0.1.0-alpha.2",
+    "stable.json": "0.0.0",
+  });
+});
+
+/** Until Prerelease has its own feed, the single feed from before channels guards it against downgrades. */
+test("the Prerelease feed starts from the feed that came before channels", (t) => {
+  const directory = fixtureDirectory(t);
+  const upgraded = offerUpdate(directory, updateManifest(), {
+    current: { latest: "0.1.0-alpha.1" },
+  });
+  assert.equal(upgraded.status, 0);
+  assert.equal(
+    upgraded.calls[2],
+    `release download updater --pattern latest.json --output ${directory}/prerelease-current.json`,
+  );
+  assert.deepEqual(upgraded.feeds, {
+    "prerelease.json": "0.1.0-alpha.2",
+    "stable.json": "0.0.0",
+  });
+  const downgrade = offerUpdate(directory, updateManifest(), {
+    current: { latest: "0.1.0-alpha.3" },
+  });
+  assert.notEqual(downgrade.status, 0);
+  assert.doesNotMatch(downgrade.calls.join("\n"), /upload/);
 });
 
 /**
  * A manifest for another version or another release's files, a run outside a release event,
- * or an older release than the one already offered uploads nothing.
+ * or an older release than every feed already offers uploads nothing. A stable release older
+ * than the newest prerelease still updates Stable.
  */
 test("the updater release only accepts the published release's manifest", (t) => {
   const directory = fixtureDirectory(t);
@@ -961,19 +1105,28 @@ test("the updater release only accepts the published release's manifest", (t) =>
     assert.notEqual(result.status, 0);
     assert.deepEqual(result.calls, []);
   }
-  for (const current of ["0.1.0-alpha.10", "0.1.0", "0.2.0-alpha.1"]) {
-    const downgrade = offerUpdate(directory, updateManifest(), { current });
-    assert.notEqual(downgrade.status, 0, current);
-    assert.doesNotMatch(downgrade.calls.join("\n"), /upload/, current);
-    rmSync(join(directory, "gh.log"));
+  for (const prerelease of ["0.1.0-alpha.10", "0.1.0", "0.2.0-alpha.1"]) {
+    const downgrade = offerUpdate(directory, updateManifest(), {
+      current: { prerelease, stable: "0.0.0" },
+    });
+    assert.notEqual(downgrade.status, 0, prerelease);
+    assert.doesNotMatch(downgrade.calls.join("\n"), /upload/, prerelease);
   }
-  for (const current of ["0.1.0-alpha.2", "0.1.0-alpha.1", "0.1.0-1"]) {
+  for (const prerelease of ["0.1.0-alpha.2", "0.1.0-alpha.1", "0.1.0-1"]) {
     assert.equal(
-      offerUpdate(directory, updateManifest(), { current }).status,
+      offerUpdate(directory, updateManifest(), {
+        current: { prerelease, stable: "0.0.0" },
+      }).status,
       0,
-      current,
+      prerelease,
     );
   }
+  const hotfix = offerUpdate(directory, updateManifest("0.1.1"), {
+    current: { prerelease: "0.2.0-alpha.1", stable: "0.1.0" },
+    RELEASE_TAG: "v0.1.1",
+  });
+  assert.equal(hotfix.status, 0);
+  assert.deepEqual(hotfix.feeds, { "stable.json": "0.1.1" });
 });
 
 /** A build-generated metadata plan cannot turn authenticated API calls into arbitrary endpoints. */

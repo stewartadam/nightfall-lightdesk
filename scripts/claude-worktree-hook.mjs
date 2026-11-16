@@ -6,8 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { createWorktree } from "../worktree-dashboard/worktree-create.mjs";
 
 /**
  * The checkout Claude Code started from. Hook input carries it as `cwd`; Claude Code
@@ -17,10 +18,28 @@ function repoDir(input) {
   return process.env.CLAUDE_PROJECT_DIR || input.cwd;
 }
 
-/** Runs Git in the main checkout and returns trimmed stdout, or null when Git fails. */
-function git(cwd, args) {
-  const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
-  return result.status === 0 ? result.stdout.trim() : null;
+/**
+ * Runs a command for `createWorktree` without a terminal so approval prompts cannot
+ * block Claude Code. Worktrunk's progress and project hook output stream to stderr,
+ * which Claude Code shows on failure; stdout is captured for the JSON summary.
+ *
+ * @type {import("../worktree-dashboard/worktree-remove.mjs").ProcessRunner}
+ */
+function runWithLiveStderr(command, args, { cwd }) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    let stdout = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.once("error", reject);
+    child.once("close", (code) =>
+      resolve({ code: code ?? 1, stdout, stderr: "" }),
+    );
+  });
 }
 
 /**
@@ -41,44 +60,22 @@ function wt(args) {
 }
 
 /**
- * Creates the worktree Claude Code asked for through `wt switch`, so Worktrunk's
- * project hooks (`.env`, dependencies, build seeding) run exactly as they do for a
- * manually created worktree. Worktrunk picks the path from its own template, so the
- * path Claude Code proposed is ignored and the real one is printed for Claude Code.
- * New branches start from origin's default branch, matching Claude Code's own default.
+ * Creates the worktree Claude Code asked for through the dashboard's shared
+ * `createWorktree`, so Worktrunk's project hooks (`.env`, dependencies, build seeding)
+ * run exactly as they do for a manually created worktree. Worktrunk picks the path
+ * from its own template, so the path Claude Code proposed is ignored and the real one
+ * is printed for Claude Code. New branches start from origin's default branch,
+ * matching Claude Code's own default, and an existing branch is checked out again.
  * Claude Code only supplies a worktree slug (`name`), so the branch is `claude/<name>`.
  */
-function create(input) {
-  const basePath = repoDir(input);
-  const branch = `claude/${input.name}`;
-  const exists =
-    git(basePath, [
-      "show-ref",
-      "--verify",
-      "--quiet",
-      `refs/heads/${branch}`,
-    ]) !== null;
-  const args = [
-    "-C",
-    basePath,
-    "switch",
-    "--yes",
-    "--no-cd",
-    "--format",
-    "json",
-  ];
-  if (!exists) {
-    args.push("--create");
-    const remoteHead = git(basePath, [
-      "symbolic-ref",
-      "--quiet",
-      "--short",
-      "refs/remotes/origin/HEAD",
-    ]);
-    if (remoteHead) args.push("--base", remoteHead);
-  }
-  const { path } = JSON.parse(wt([...args, branch]));
-  process.stdout.write(`${path}\n`);
+async function create(input) {
+  const result = await createWorktree({
+    branch: `claude/${input.name}`,
+    root: repoDir(input),
+    run: runWithLiveStderr,
+  });
+  if (!result.ok) throw new Error(result.message);
+  process.stdout.write(`${result.path}\n`);
 }
 
 /**
@@ -92,13 +89,13 @@ function remove(input) {
 }
 
 /** Dispatches a Claude Code WorktreeCreate or WorktreeRemove hook payload from stdin. */
-function main() {
+async function main() {
   const input = JSON.parse(readFileSync(0, "utf8"));
   if (!repoDir(input)) throw new Error("hook input has no cwd");
   switch (input.hook_event_name) {
     case "WorktreeCreate":
       if (!input.name) throw new Error("WorktreeCreate input has no name");
-      create(input);
+      await create(input);
       break;
     case "WorktreeRemove":
       remove(input);
@@ -108,9 +105,7 @@ function main() {
   }
 }
 
-try {
-  main();
-} catch (error) {
+main().catch((error) => {
   process.stderr.write(`claude-worktree-hook: ${error.message}\n`);
   process.exit(1);
-}
+});

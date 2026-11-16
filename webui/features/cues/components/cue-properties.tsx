@@ -77,12 +77,12 @@ function summarizePartTimings(part: types.CuePart): string {
 function cueColorPathIds(cue: types.Cue): Set<number> {
   const ids = new Set<number>();
   for (const instruction of cue.instructions) {
-    const colorPathId = instruction.cue_instruction.color_path_id;
+    const colorPathId = instruction.assertions.color_path_id;
     if (colorPathId != null) ids.add(colorPathId);
   }
   for (const part of cue.parts ?? []) {
     for (const instruction of part.instructions) {
-      const colorPathId = instruction.cue_instruction.color_path_id;
+      const colorPathId = instruction.assertions.color_path_id;
       if (colorPathId != null) ids.add(colorPathId);
     }
   }

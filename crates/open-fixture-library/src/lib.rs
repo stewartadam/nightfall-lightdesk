@@ -29,11 +29,15 @@
 // Leaf crate: mark the cargo-hakari workspace-hack as used so cargo's unused_dependencies lint passes.
 use nightfall_workspace_hack as _;
 
+mod channel;
 pub mod fixture;
+mod matrix;
 pub mod schema;
 
+pub use channel::scale_dmx_value;
 pub use fixture::OflFixture;
-pub use schema::{OflCapability, OflChannel, OflMode, OflPhysical};
+pub use matrix::OflPixel;
+pub use schema::{OflCapability, OflChannel, OflMatrix, OflMode, OflModeChannel, OflPhysical};
 use thiserror::Error;
 
 /// Errors that can occur when parsing OFL fixtures

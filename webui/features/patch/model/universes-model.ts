@@ -16,7 +16,6 @@ import type {
   RouteConflictColumn,
   UniverseKey,
 } from "../../../lib/route-overlap";
-import type * as types from "../../../types";
 import type { RouteRow } from "./routes-model";
 export type UniverseGroupRow = {
   rowKind: "universe";
@@ -112,83 +111,6 @@ export const DEFAULT_COLUMNS: FilterableGridColumn<
     ...columnVisibilityMeta("Route", "Clone"),
   },
 ];
-
-export const MAX_UNIVERSE_RANGE_EXPANSION = 64;
-
-export function expandUniverseRange(
-  range?: types.DmxRange,
-): UniverseKey[] | "wildcard" | null {
-  if (!range) return "wildcard";
-  if (range.end < range.start) return null;
-
-  const size = range.end - range.start + 1;
-  if (size > MAX_UNIVERSE_RANGE_EXPANSION) return "wildcard";
-
-  const universes: UniverseKey[] = [];
-  for (let u = range.start; u <= range.end; u++) {
-    universes.push(u);
-  }
-  return universes;
-}
-
-export function collectUniversesFromInputSource(
-  source: types.InputSource,
-): UniverseKey[] {
-  switch (source.type) {
-    case "Transport":
-    case "Console": {
-      const expanded = expandUniverseRange(source.data.universe);
-      if (expanded === "wildcard") return ["*"];
-      return expanded ?? [];
-    }
-    case "Fixture":
-      return [];
-  }
-}
-
-export function collectUniversesFromInputTarget(
-  target: types.InputTarget,
-): UniverseKey[] {
-  switch (target.type) {
-    case "Transport":
-    case "Console": {
-      const expanded = expandUniverseRange(target.data.universe);
-      if (expanded === "wildcard") return ["*"];
-      return expanded ?? [];
-    }
-    case "Fixture":
-    case "Disabled":
-      return [];
-  }
-}
-
-export function collectUniversesFromOutputSource(
-  source: types.OutputSource,
-): UniverseKey[] {
-  switch (source.type) {
-    case "Console": {
-      const expanded = expandUniverseRange(source.data.universe);
-      if (expanded === "wildcard") return ["*"];
-      return expanded ?? [];
-    }
-    case "Fixture":
-    case "FixtureBreak":
-      return [];
-  }
-}
-
-export function collectUniversesFromOutputTarget(
-  target: types.OutputTarget,
-): UniverseKey[] {
-  switch (target.type) {
-    case "Transport":
-    case "Console": {
-      const expanded = expandUniverseRange(target.data.universe);
-      if (expanded === "wildcard") return ["*"];
-      return expanded ?? [];
-    }
-  }
-}
 
 export function formatUniverseLabel(key: UniverseKey): string {
   return key === "*" ? "Universe * (any)" : `Universe ${key}`;

@@ -90,7 +90,7 @@ test("don't show this again hides the prompt until settings resets it", async ({
   await page.screenshot({
     path: testInfo.outputPath("midi-device-detected-dont-show.png"),
   });
-  await toast.getByRole("button", { name: "Close" }).click();
+  await toast.getByRole("button", { name: "Dismiss notification" }).click();
   await expect(toast).toHaveCount(0);
 
   await announceDevices(page, ["X-Touch"]);

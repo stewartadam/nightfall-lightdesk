@@ -25,7 +25,7 @@ import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { TimebaseControl } from "../../../components/widgets/timebase-control";
-import { createDefaultFlowWaveform } from "../../../lib/fx-service";
+import { createDefaultFlowWaveform } from "../../../lib/fx-waveform";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {

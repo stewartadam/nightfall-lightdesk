@@ -43,6 +43,7 @@ export function startupPhaseForLifecycle(
       return "checking";
     case "startup-draft-prompt":
     case "startup-showfile-prompt":
+    case "startup-backup-prompt":
       return "prompting";
     case "startup-loading-draft":
       return "loading-draft";

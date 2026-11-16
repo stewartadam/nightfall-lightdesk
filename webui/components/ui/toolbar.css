@@ -38,6 +38,91 @@
   border-bottom: 0;
   border-top: 1px solid var(--line, #34383b);
 }
+/*
+ * Footer rows stack upward so the first row stays against the panel's edge.
+ * Low specificity lets layouts that keep toolbars on one row, such as the
+ * compact shell, still turn wrapping off.
+ */
+.nf-panel-toolbar:where([data-position="footer"]),
+:where(.nf-panel-toolbar[data-position="footer"]) > .nf-toolbar-group {
+  flex-wrap: wrap-reverse;
+}
+/*
+ * A toolbar too narrow for its controls keeps one row in the layout. The full
+ * toolbar lies over the panel, clipped to that row until "More actions"
+ * unfolds the rest, so the panel content never jumps.
+ */
+/* Layered so positioning utilities passed as `frameClass`, such as `sticky`, win. */
+@layer components {
+  .nf-panel-toolbar-frame {
+    position: relative;
+    flex-shrink: 0;
+  }
+}
+.nf-panel-toolbar-frame[data-overflowing] > .nf-panel-toolbar {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  clip-path: inset(0 0 calc(100% - var(--nf-toolbar-row)) 0);
+}
+/* Room for "More actions", left out while measuring whether controls fit without it. */
+.nf-panel-toolbar-frame[data-overflowing]:not([data-measuring])
+  > .nf-panel-toolbar {
+  padding-inline-end: 44px;
+}
+/* The folded toolbar's divider is clipped away with its later rows, so the frame redraws it. */
+.nf-panel-toolbar-frame[data-overflowing]:not([data-expanded])::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  border-bottom: var(--nf-toolbar-edge);
+  pointer-events: none;
+}
+.nf-panel-toolbar-frame[data-overflowing][data-position="footer"]:not(
+  [data-expanded]
+)::after {
+  top: 0;
+  bottom: auto;
+  border-bottom: 0;
+  border-top: var(--nf-toolbar-edge);
+}
+.nf-panel-toolbar-frame[data-overflowing][data-position="footer"]
+  > .nf-panel-toolbar {
+  top: auto;
+  bottom: 0;
+  clip-path: inset(calc(100% - var(--nf-toolbar-row)) 0 0 0);
+}
+/*
+ * Unfolded rows cover all of the panel's content, whatever layers it stacks
+ * (the Timeline's sticky ruler sits at 100). Docked panels isolate their own
+ * stacking, so this never rises above other panels or app overlays.
+ */
+.nf-panel-toolbar-frame[data-expanded] {
+  z-index: 1000;
+}
+.nf-panel-toolbar-frame[data-overflowing][data-expanded] > .nf-panel-toolbar {
+  clip-path: none;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 45%);
+}
+.nf-panel-toolbar-frame[data-overflowing][data-expanded][data-position="footer"]
+  > .nf-panel-toolbar {
+  clip-path: none;
+  box-shadow: 0 -10px 24px rgb(0 0 0 / 45%);
+}
+.nf-panel-toolbar-more {
+  position: absolute;
+  top: 0;
+  right: 7px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  height: var(--nf-toolbar-row);
+}
+.nf-panel-toolbar-frame[data-position="footer"] > .nf-panel-toolbar-more {
+  top: auto;
+  bottom: 0;
+}
 /* Non-interactive indicators beside toolbar buttons share their slot geometry. */
 .nf-toolbar-button,
 .nf-toolbar-slot {

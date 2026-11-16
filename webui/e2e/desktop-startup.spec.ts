@@ -106,7 +106,7 @@ test("desktop startup can access a backend on another origin", async ({
       headers: { Origin: origin },
     });
     expect(response.status()).toBe(200);
-    expect(response.headers()["access-control-allow-origin"]).toBe("*");
+    expect(response.headers()["access-control-allow-origin"]).toBe(origin);
   }
   await page.screenshot({
     path: testInfo.outputPath("desktop-startup-complete.png"),

@@ -21,29 +21,40 @@ pub mod compositor;
 pub mod data_provider_ext;
 pub mod events;
 pub mod fixture;
+pub mod fixture_events;
 pub mod geometry;
 pub mod input_apply;
+mod input_universe_settings;
+pub mod layer_stack;
 pub mod library;
+pub mod lookahead_assertions;
 pub mod output_frames;
 pub mod parameter;
 pub mod parameter_index;
 pub mod parameter_state;
+pub mod parameter_stream_settings;
 pub mod physical;
 pub mod placement;
+pub mod relations;
+pub mod route_overlap;
 pub mod route_resolution;
 pub mod route_validation;
 pub mod routes;
-pub mod selection;
+mod selection_source;
+pub mod stale_inputs;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
+pub mod trace;
 pub mod transport_holds;
 pub mod undo;
 pub mod universe;
 pub mod universe_stream;
+pub mod vdim;
 pub mod websocket;
 pub mod wire_layout;
 
 use bevy_app::prelude::*;
+use bevy_diagnostic::{Diagnostic, RegisterDiagnostic};
 use bevy_ecs::prelude::*;
 use nightfall::command_types::{DmxChannelExpr, DmxChannelRef};
 use nightfall::prelude::{ColorPathId, FixtureRef};
@@ -110,6 +121,7 @@ impl EngineOperation for DmxOperation {}
 
 /// Prelude for ergonomic imports
 pub mod prelude {
+    pub use nightfall::data::RigSource;
     pub use nightfall_dmx::prelude::ParameterValuePolarity;
 
     pub use crate::compositor::{
@@ -131,10 +143,13 @@ pub mod prelude {
     pub use crate::parameter::{Parameter, ParameterValues};
     pub use crate::parameter_index::{ParameterIndex, ParameterLocation};
     pub use crate::parameter_state::ParameterStateProjection;
+    pub use crate::parameter_stream_settings::{
+        ParameterStreamSettings, ParameterStreamSettingsCommand,
+    };
     pub use crate::physical::{BeamOptics, BeamType, DEFAULT_LUMENS, FixturePhysical};
     pub use crate::placement::FixturePlacement;
     pub use crate::route_validation::{
-        RouteValidationIssue, RouteValidationMode, RouteValidationSettings,
+        RouteValidationCommand, RouteValidationIssue, RouteValidationMode, RouteValidationSettings,
     };
     pub use crate::routes::{
         ConsoleDmxAddress, ConsoleDmxAddresses, ConsoleParameterAddress, DisabledRoute,
@@ -144,7 +159,6 @@ pub mod prelude {
         ResolvedInputRoute, ResolvedInputRoutes, ResolvedInputSource, ResolvedInputTarget,
         ResolvedOutputDestinations, ResolvedTransportTarget, retain_route_fixtures,
     };
-    pub use crate::selection::{SelectionResolver, SpatialSelectionResolver};
     pub use crate::universe::{
         ConsoleChannelOrigin, ConsoleDmxUniverses, DEFAULT_INPUT_UNIVERSE_STALE_TIMEOUT_MS,
         InputDmxUniverses, InputUniverseStaleTimeout,
@@ -153,23 +167,46 @@ pub mod prelude {
     pub use crate::{
         DmxOperation, FixtureCommand, FixturePlacementPositionUpdate,
         FixturePlacementRotationUpdate, FixturePlugin, HeldTransportDmxChannelState,
-        ManualDmxChannelState, RouteEndpoint,
+        ManualDmxChannelState, ParkedOutput, ParkedVirtualIntensity, RouteEndpoint,
+        VirtualIntensity,
     };
 }
+
+/// `Render` system set, inside [`VdimProcessing`], in which virtual dimmers and virtual relation
+/// masters scale the composited values.
+///
+/// Systems that must see the values before that scaling, such as inhibit masters, order
+/// themselves before this set.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct VirtualIntensity;
+
+/// `Render` system set, inside [`VdimProcessing`] and just before [`VirtualIntensity`], in which
+/// parked virtual intensity values replace the composited ones.
+///
+/// Virtual dimmers then scale their color parameters by the parked level. Inhibit masters order
+/// themselves before this set, so they never scale a parked value.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ParkedVirtualIntensity;
+
+/// `Render` system set, last in [`VdimProcessing`], in which parked parameters replace whatever
+/// compositing, masters, virtual dimmers and relations produced, so a parked value is exactly the
+/// value that goes out.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ParkedOutput;
 
 /// Plugin for fixtures
 pub struct FixturePlugin;
 impl Plugin for FixturePlugin {
     fn build(&self, app: &mut App) {
         tracing::debug!("Registering FixturePlugin");
+        assert!(
+            app.is_plugin_added::<nightfall_io::IoPlugin>(),
+            "FixturePlugin requires IoPlugin (provides the IO settings and output targets)"
+        );
         app.add_plugins(input_apply::TransportInputPlugin);
-        register_ingress_command::<FixtureCommand>(app);
+        register_client_command::<FixtureCommand>(app, Undo::Captured);
         register_engine_operation::<DmxOperation>(app);
         nightfall_engine::protocol::dispatch_ast::register_converter::<ast_conv::FixtureAstConverter>(
-        );
-        register_command_deserializer::<FixtureCommand>(
-            app,
-            websocket::deserialize_fixture_command,
         );
         register_client_update_deserializer(
             app,
@@ -181,6 +218,8 @@ impl Plugin for FixturePlugin {
             universe_stream::DMX_UNIVERSE_WATCH_MODULE,
             universe_stream::deserialize_dmx_universe_watch,
         );
+        allow_update_while_read_only(app, parameter_state::PARAMETER_KEYFRAME_REQUEST_MODULE);
+        allow_update_while_read_only(app, universe_stream::DMX_UNIVERSE_WATCH_MODULE);
 
         app.init_resource::<data_provider_ext::FixtureDataProviderExt>();
         app.init_resource::<routes::InputRoutes>();
@@ -190,6 +229,14 @@ impl Plugin for FixturePlugin {
         app.init_resource::<routes::ConsoleDmxAddresses>();
         app.init_resource::<route_validation::RouteValidationSettings>();
         app.init_resource::<parameter_state::ParameterStateProjection>();
+        app.register_settings_section(parameter_stream_settings::ParameterStreamSettings::SECTION);
+        app.add_settings_command(parameter_stream_settings::apply);
+        app.add_systems(
+            ApplyCommands,
+            parameter_stream_settings::sync_parameter_stream
+                .in_set(EventHandling)
+                .after(SettingsCommandHandling),
+        );
         app.init_resource::<websocket::ParameterStateRequests>();
         app.init_resource::<universe::ConsoleDmxUniverses>();
         app.init_resource::<universe::InputDmxUniverses>();
@@ -197,11 +244,30 @@ impl Plugin for FixturePlugin {
         app.init_resource::<universe_stream::DmxUniverseStream>();
         app.init_resource::<output_frames::OutputRouting>();
         app.init_resource::<output_frames::OutputDmxFrames>();
-        app.init_resource::<nightfall_io::NetworkDmxOutputTargets>();
-        app.init_resource::<nightfall_io::UsbDmxOutputTargets>();
-        app.init_resource::<nightfall_io::InputUniverseVisibilityMode>();
         app.add_message::<websocket::SuppressFixtureChangedSnapshot>();
         websocket::register_fixture_websocket_diagnostics(app);
+        layer_stack::register_diagnostics(app);
+        // A count reports its latest value rather than an average that lags behind it.
+        app.register_diagnostic(
+            Diagnostic::new(output_frames::OUTPUT_UNIVERSES)
+                .with_smoothing_factor(f64::MIN_POSITIVE),
+        );
+        app.init_resource::<layer_stack::LayerStackPublication>();
+        register_client_command::<trace::FixtureTraceCommand>(app, Undo::Skipped);
+        app.add_systems(
+            ApplyCommands,
+            trace::handle_trace_fixture.in_set(EventHandling),
+        );
+        register_client_command::<route_validation::RouteValidationCommand>(app, Undo::Skipped);
+        app.add_systems(
+            ApplyCommands,
+            (
+                route_validation::handle_route_validation_commands,
+                input_universe_settings::sync_input_universes_from_io_settings
+                    .after(nightfall_io::IoStateSync),
+            )
+                .in_set(EventHandling),
+        );
 
         // Register undoable commands
         {
@@ -210,6 +276,7 @@ impl Plugin for FixturePlugin {
             registry.register_operation::<undo::RestoreFixtureSnapshot>();
             registry.register_operation::<undo::RestoreFixtureRoutesSnapshot>();
             registry.register_operation::<undo::RestoreDmxRoutesSnapshot>();
+            registry.register_operation::<undo::RestorePatchedFixtures>();
             registry.register_operation::<undo::RestoreOffsetSnapshot>();
             registry.register_operation::<undo::RestoreColorPathDefaultsSnapshot>();
             registry.register_operation::<DmxOperation>();
@@ -219,11 +286,12 @@ impl Plugin for FixturePlugin {
         register_engine_operation::<undo::RestoreFixtureSnapshot>(app);
         register_engine_operation::<undo::RestoreFixtureRoutesSnapshot>(app);
         register_engine_operation::<undo::RestoreDmxRoutesSnapshot>(app);
+        register_engine_operation::<undo::RestorePatchedFixtures>(app);
         register_engine_operation::<undo::RestoreOffsetSnapshot>(app);
         register_engine_operation::<undo::RestoreColorPathDefaultsSnapshot>(app);
 
         app.add_systems(
-            Update,
+            ApplyCommands,
             (
                 events::handle_set_dmx_channels,
                 transport_holds::handle_set_transport_dmx_channels,
@@ -231,6 +299,7 @@ impl Plugin for FixturePlugin {
                     .after(nightfall_undo::systems::handle_undo_commands),
                 events::handle_restore_fixture_routes_snapshot,
                 events::handle_restore_dmx_routes_snapshot,
+                events::handle_restore_patched_fixtures,
                 events::handle_restore_offset_snapshot,
                 events::handle_restore_color_path_defaults_snapshot,
             )
@@ -238,10 +307,38 @@ impl Plugin for FixturePlugin {
                 .in_set(EventHandling),
         );
 
+        app.add_systems(
+            ApplyCommands,
+            fixture_events::crud_events.in_set(EventHandling),
+        );
+        // Expiring stale DMX input is time-driven, so it runs once per update, not per rerun.
+        app.add_systems(
+            Update,
+            stale_inputs::clear_stale_input_channels.after(CommandApplication),
+        );
+
+        app.configure_sets(
+            Render,
+            (
+                ParkedVirtualIntensity
+                    .in_set(VdimProcessing)
+                    .before(VirtualIntensity),
+                ParkedOutput.in_set(VdimProcessing).after(VirtualIntensity),
+            ),
+        );
+        // Virtual dimmers and virtual relation masters scale the composited values before output.
+        app.add_systems(
+            Render,
+            (vdim::apply_vdim, relations::apply_virtual_relations)
+                .chain()
+                .in_set(VdimProcessing)
+                .in_set(VirtualIntensity),
+        );
+
         // Runs after every event handler, like the console manual layer, so releases planned
         // by user commands in this update apply before the next render.
         app.add_systems(
-            Update,
+            ApplyCommands,
             transport_holds::handle_transport_dmx_operations.after(EventHandling),
         );
 
@@ -265,6 +362,7 @@ impl Plugin for FixturePlugin {
                 universe::dmx_universes,
                 transport_holds::resolve_transport_holds,
                 output_frames::compose_output_frames,
+                output_frames::record_output_universes,
                 universe::dmx_universes_debug,
             )
                 .chain()
@@ -274,32 +372,45 @@ impl Plugin for FixturePlugin {
         // WebSocket forwarding and sends owned by fixtures plugin
         app.add_systems(
             PostUpdate,
-            (
-                websocket::forward_fixture_commands,
-                // Reads the snapshot suppression messages written by fixture commands.
-                websocket::send_fixtures_on_change,
-            )
-                .in_set(ClientFeedback),
+            websocket::forward_fixture_commands.in_set(ClientFeedback),
         );
         app.add_systems(
             Render,
             (
                 universe_stream::send_dmx_universes.after(DmxOutput),
                 websocket::send_input_contribution_trace,
-                websocket::send_routes_on_change,
-                websocket::send_color_path_defaults_on_change,
-                websocket::send_route_validation_settings_on_change,
                 websocket::send_parameter_state.after(DmxOutput),
+                // Layer stack slots refer to the parameter layout published before it.
+                layer_stack::send_layer_stack_at_interval.after(websocket::send_parameter_state),
             )
                 .in_set(ClientOutput),
         );
 
         app.add_systems(
             Update,
-            websocket::handle_resync_state.in_set(ResyncHandling),
+            (
+                websocket::request_streams_on_resync,
+                layer_stack::handle_resync_state,
+            )
+                .in_set(ResyncHandling),
         );
+        // Geometry comes from the fixture library, which can change in the same frame as the
+        // fixtures it describes (a rig import adds both); republishing when the provider is
+        // replaced keeps new fixtures from staying without geometry.
+        app.add_client_feed::<websocket::FixturesFeed>().on_change(
+            websocket::fixtures_changed
+                .or_else(resource_exists_and_changed::<geometry::GeometryProviderResource>),
+        );
+        app.add_client_feed::<websocket::RoutesFeed>()
+            .resync_after(resync_client_feed::<websocket::FixturesFeed>)
+            .on_change(websocket::routes_changed);
+        app.add_client_feed::<websocket::ColorPathDefaultsFeed>()
+            .resync_after(resync_client_feed::<websocket::RoutesFeed>)
+            .on_change(resource_changed::<prelude::FixtureDataProviderExt>);
+        app.add_resource_feed::<prelude::RouteValidationSettings>()
+            .resync_after(resync_client_feed::<websocket::ColorPathDefaultsFeed>);
         app.add_systems(
-            Update,
+            ApplyCommands,
             // After update ingress, so a watch sent just before a disconnect cannot outlive it.
             universe_stream::forget_disconnected_watchers.in_set(EventHandling),
         );
@@ -389,6 +500,34 @@ pub enum RouteEndpoint {
     Disabled,
 }
 
+/// One route added by [`FixtureCommand::PatchRig`], with default priority and fixtures
+/// packed one after another.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[typeshare::typeshare]
+pub struct PatchRoute {
+    /// Route source endpoint.
+    pub source: RouteEndpoint,
+    /// Route target endpoint.
+    pub target: RouteEndpoint,
+}
+
+/// Changes [`FixtureCommand::PatchRig`] makes to a fixture already in the show.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[typeshare::typeshare]
+pub struct RigFixtureUpdate {
+    /// UID of the fixture to change.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub uid: uuid::Uuid,
+    /// New label, or `None` to keep it.
+    pub label: Option<String>,
+    /// New placement, or `None` to keep it.
+    pub placement: Option<crate::placement::FixturePlacement>,
+    /// Remove the fixture's console patch so the command's routes can patch it again.
+    pub repatch: bool,
+}
+
 /// Commands for fixture-related operations
 #[derive(Debug, Clone, Serialize, Deserialize, EnginePayload)]
 #[typeshare::typeshare]
@@ -408,6 +547,25 @@ pub enum FixtureCommand {
 
     /// Delete a fixture
     DeleteFixture(u32),
+
+    /// Add fixtures, change or remove fixtures already in the show and patch them, as one
+    /// change.
+    ///
+    /// Every fixture and route is checked before the change is kept, so one conflicting ID,
+    /// UID or address leaves the show unchanged. Used to bring in or refresh a whole rig at
+    /// once. Removed fixtures free their addresses for the added and repatched ones.
+    PatchRig {
+        /// Fixtures to add, each with an ID and UID no other fixture uses.
+        add: Vec<fixture::Fixture>,
+        /// Fixtures already in the show to change.
+        update: Vec<RigFixtureUpdate>,
+        /// Routes patching the added and repatched fixtures, applied in order.
+        routes: Vec<PatchRoute>,
+        /// UIDs of fixtures in the show to remove, with their routes.
+        #[serde(default)]
+        #[typeshare(serialized_as = "Vec<String>")]
+        remove: Vec<uuid::Uuid>,
+    },
 
     /// Set raw DMX channel values
     SetDmxChannels {
@@ -496,6 +654,9 @@ pub enum FixtureCommand {
         /// Color path ID to assign, or None to clear the default.
         color_path_id: Option<ColorPathId>,
     },
+
+    /// Clear transport input assertions whose source universes are stale.
+    ReleaseStaleInputs,
 }
 
 impl IngressCommand for FixtureCommand {}
