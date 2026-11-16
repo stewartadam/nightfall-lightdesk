@@ -61,6 +61,10 @@ import {
 } from "./gpu-frame-timer";
 import { type QualityProfile, resolveQualityProfile } from "./quality-profile";
 import {
+  describeRenderFailure,
+  type VisualizerRenderFailure,
+} from "./renderers/render-failure";
+import {
   createSceneEnvironment,
   type SceneEnvironment,
   updateFloorTransparency,
@@ -321,6 +325,11 @@ export interface RenderLoopCallbacks {
   onUpdate?: () => void;
   /** Called each frame with timing metrics for instrumentation */
   onFrame?: (metrics: FrameTimingMetrics) => void;
+  /**
+   * Called once when a frame throws. The loop has already stopped, so a broken
+   * renderer does not throw again on every frame.
+   */
+  onFailure?: (failure: VisualizerRenderFailure) => void;
 }
 
 /**
@@ -337,75 +346,89 @@ export function startRenderLoop(
   state.frameTiming.accumulator = 0;
 
   state.renderer.setAnimationLoop((time: number) => {
-    const startedAt = performance.now();
-    if (state.isPaused) {
-      return;
+    try {
+      renderLoopFrame(state, time, callbacks);
+    } catch (error) {
+      stopRenderLoop(state);
+      if (!callbacks?.onFailure) throw error;
+      callbacks.onFailure(describeRenderFailure("render-error", error));
     }
+  });
+}
 
-    // Calculate delta time
-    const deltaTime =
-      state.frameTiming.lastTime === 0 ? 0 : time - state.frameTiming.lastTime;
-    state.frameTiming.lastTime = time;
-    state.frameTiming.accumulator += deltaTime;
+/** Renders one frame of the main-thread loop once it is due. */
+function renderLoopFrame(
+  state: RendererState,
+  time: number,
+  callbacks: RenderLoopCallbacks | undefined,
+): void {
+  const startedAt = performance.now();
+  if (state.isPaused) {
+    return;
+  }
 
-    // Only render when enough time has accumulated (60 FPS cap)
-    const remainingFrameTime = consumeDueFrame(state.frameTiming.accumulator);
-    if (remainingFrameTime === null) return;
-    state.frameTiming.accumulator = remainingFrameTime;
+  // Calculate delta time
+  const deltaTime =
+    state.frameTiming.lastTime === 0 ? 0 : time - state.frameTiming.lastTime;
+  state.frameTiming.lastTime = time;
+  state.frameTiming.accumulator += deltaTime;
 
-    // Update controls
-    state.controls.update();
+  // Only render when enough time has accumulated (60 FPS cap)
+  const remainingFrameTime = consumeDueFrame(state.frameTiming.accumulator);
+  if (remainingFrameTime === null) return;
+  state.frameTiming.accumulator = remainingFrameTime;
 
-    // Update floor transparency based on camera position
-    updateFloorTransparency(state.environment, state.camera);
-    updateOrbitTargetIndicator(
-      state.environment,
-      state.camera,
-      state.controls.target,
+  // Update controls
+  state.controls.update();
+
+  // Update floor transparency based on camera position
+  updateFloorTransparency(state.environment, state.camera);
+  updateOrbitTargetIndicator(
+    state.environment,
+    state.camera,
+    state.controls.target,
+  );
+
+  // Update inspector stats after controls settle
+  state.updateInspector?.();
+
+  // Track update timing
+  const updateStart = performance.now();
+  callbacks?.onUpdate?.();
+  const updateEnd = performance.now();
+
+  // Render scene and track timing. @types/three omits the inspector's
+  // `frames`, guarded by scripts/three-timestamp-query.node.test.mjs.
+  const timedRenderer = state.renderer as unknown as TimestampRenderer;
+  const gpu = state.inspector
+    ? readInspectorGpuSample(
+        (state.inspector as unknown as { frames: InspectorGpuFrame[] }).frames,
+      )
+    : state.gpuTimer?.reading;
+  const renderStart = performance.now();
+  state.gpuTimer?.begin(timedRenderer);
+  if (state.postProcessing) {
+    // Render with post-processing (bloom, etc.)
+    renderWithPostProcessing(
+      state.postProcessing,
+      gpu ?? undefined,
+      updateEnd - updateStart,
     );
+  } else {
+    // Direct rendering without post-processing
+    state.renderer.render(state.scene, state.camera);
+  }
+  state.gpuTimer?.end(timedRenderer);
+  const renderEnd = performance.now();
 
-    // Update inspector stats after controls settle
-    state.updateInspector?.();
-
-    // Track update timing
-    const updateStart = performance.now();
-    callbacks?.onUpdate?.();
-    const updateEnd = performance.now();
-
-    // Render scene and track timing. @types/three omits the inspector's
-    // `frames`, guarded by scripts/three-timestamp-query.node.test.mjs.
-    const timedRenderer = state.renderer as unknown as TimestampRenderer;
-    const gpu = state.inspector
-      ? readInspectorGpuSample(
-          (state.inspector as unknown as { frames: InspectorGpuFrame[] })
-            .frames,
-        )
-      : state.gpuTimer?.reading;
-    const renderStart = performance.now();
-    state.gpuTimer?.begin(timedRenderer);
-    if (state.postProcessing) {
-      // Render with post-processing (bloom, etc.)
-      renderWithPostProcessing(
-        state.postProcessing,
-        gpu ?? undefined,
-        updateEnd - updateStart,
-      );
-    } else {
-      // Direct rendering without post-processing
-      state.renderer.render(state.scene, state.camera);
-    }
-    state.gpuTimer?.end(timedRenderer);
-    const renderEnd = performance.now();
-
-    // Report timing metrics
-    callbacks?.onFrame?.({
-      startedAt,
-      completedAt: renderEnd,
-      time,
-      updateMs: updateEnd - updateStart,
-      renderMs: renderEnd - renderStart,
-      gpu,
-    });
+  // Report timing metrics
+  callbacks?.onFrame?.({
+    startedAt,
+    completedAt: renderEnd,
+    time,
+    updateMs: updateEnd - updateStart,
+    renderMs: renderEnd - renderStart,
+    gpu,
   });
 }
 

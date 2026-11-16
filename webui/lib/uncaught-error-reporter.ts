@@ -236,6 +236,15 @@ export function reportFatalError(source: string, error: unknown): void {
   presentFatalError(report, false);
 }
 
+/**
+ * Sends a failure the application recovered from on its own to automatic
+ * error reporting without showing it, so recoveries cannot hide bugs.
+ */
+export function forwardHandledError(source: string, error: unknown): void {
+  const details = describeUncaughtError(error, "error");
+  uncaughtErrorForwarder?.({ ...details, source }, false);
+}
+
 /** Shows uncaught exceptions and unhandled rejections from the page itself. */
 export function reportWindowUncaughtErrors(target: Window): () => void {
   /** Reports a thrown exception; the browser still logs it to the console. */
