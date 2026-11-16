@@ -235,6 +235,7 @@ fn make_group_with_clauses(id: u32, start: u32, end: u32, clauses: Vec<SpatialCl
             clauses,
         ),
         description: String::new(),
+        rig_source: None,
     }
 }
 
@@ -2188,6 +2189,7 @@ fn group_label_selection_resolves_matching_group() {
         },
         selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture.clone()])),
         description: String::new(),
+        rig_source: None,
     };
     let mut groups = TestGroupProvider::default();
     groups.add(group).expect("group should add");
@@ -2222,6 +2224,7 @@ fn group_uid_selection_survives_numeric_id_change() {
             index: None,
         }])),
         description: String::new(),
+        rig_source: None,
     };
     let mut groups = TestGroupProvider::default();
     groups.add(group).expect("group should add");
@@ -2255,6 +2258,7 @@ fn group_id_selection_follows_current_numeric_alias() {
             index: None,
         }])),
         description: String::new(),
+        rig_source: None,
     };
     let mut groups = TestGroupProvider::default();
     groups.add(group).expect("group should add");
@@ -2292,6 +2296,7 @@ fn nested_group_uid_selection_resolves_nested_group() {
                 index: None,
             }])),
             description: String::new(),
+            rig_source: None,
         })
         .expect("nested group should add");
     groups
@@ -2305,6 +2310,7 @@ fn nested_group_uid_selection_resolves_nested_group() {
                 uid: nested_uid,
             })),
             description: String::new(),
+            rig_source: None,
         })
         .expect("parent group should add");
     let provider = make_data_source_with_elements(1..=1, 1).with_groups(&groups);
@@ -2336,6 +2342,7 @@ fn circular_group_uid_selection_reports_warning() {
                 uid: second_uid,
             })),
             description: String::new(),
+            rig_source: None,
         })
         .expect("first group should add");
     groups
@@ -2349,6 +2356,7 @@ fn circular_group_uid_selection_reports_warning() {
                 uid: first_uid,
             })),
             description: String::new(),
+            rig_source: None,
         })
         .expect("second group should add");
     let provider = make_data_source_with_elements(1..=1, 1).with_groups(&groups);
@@ -2380,6 +2388,7 @@ fn stabilize_group_range_by_id_expands_to_uid_refs() {
             },
             selection: SpatialSelection::default(),
             description: String::new(),
+            rig_source: None,
         })
         .expect("group should add");
     groups
@@ -2391,6 +2400,7 @@ fn stabilize_group_range_by_id_expands_to_uid_refs() {
             },
             selection: SpatialSelection::default(),
             description: String::new(),
+            rig_source: None,
         })
         .expect("group should add");
     let provider = make_data_source_with_elements(1..=2, 1).with_groups(&groups);
@@ -2440,6 +2450,7 @@ fn stabilize_missing_group_alias_does_not_bind_later() {
             },
             selection: SpatialSelection::identity(fixture_expr(1)),
             description: String::new(),
+            rig_source: None,
         })
         .expect("later group should add");
     let later_provider = make_data_source_with_elements(1..=1, 1).with_groups(&later_groups);
@@ -2463,6 +2474,7 @@ fn group_validation_hook_returns_selection_warnings() {
             index: Some(2),
         }])),
         description: String::new(),
+        rig_source: None,
     };
     let mut groups = TestGroupProvider::default();
     groups.add(group.clone()).expect("group should add");

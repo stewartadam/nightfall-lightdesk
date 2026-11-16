@@ -17,6 +17,10 @@ import { waitForDockviewApp } from "./showfile-startup";
 
 const FIRST_ID = 97_101;
 const SECOND_ID = 97_102;
+/** UUID of the LX 1 hanging position in the test rigs. */
+const LX1_UUID = "0E2DC6B1-7C42-4B3F-9D0B-7D1C8C2F2A11";
+/** UUID of the LX 2 hanging position, which only the right wash can hang on. */
+const LX2_UUID = "5B3E9A40-2D6C-4F1A-8E7B-3C9D0A1B2C3D";
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -167,7 +171,8 @@ function trussRig(): Buffer {
  * Builds an MVR file with two hung washes on the LX 1 truss whose fixture type is not in the
  * file, so the import has to borrow a stand-in from the library. The right wash's position
  * and address can be moved, or the wash left out with `withRight` false, to stand for the
- * designer's next revision of the rig.
+ * designer's next revision of the rig; `rightOnLx2` hangs it on a second truss instead, so
+ * leaving it out also leaves that truss's group without fixtures.
  */
 function washRig(
   rightX = 2000,
@@ -175,6 +180,7 @@ function washRig(
   extraLayers = "",
   extraFiles: Record<string, Buffer> = {},
   withRight = true,
+  rightOnLx2 = false,
 ): Buffer {
   const fixture = (
     uuid: string,
@@ -182,22 +188,31 @@ function washRig(
     id: number,
     x: number,
     address: string,
+    position = LX1_UUID,
   ) => `
           <Fixture uuid="${uuid}" name="${name}">
             <Matrix>{1,0,0}{0,-1,0}{0,0,-1}{${x},2000,6000}</Matrix>
             <GDTFSpec>Acme@Wash.gdtf</GDTFSpec>
             <GDTFMode>Standard</GDTFMode>
-            <Position>0E2DC6B1-7C42-4B3F-9D0B-7D1C8C2F2A11</Position>
+            <Position>${position}</Position>
             <FixtureID>${id}</FixtureID>
             <Addresses><Address break="0">${address}</Address></Addresses>
           </Fixture>`;
+  const right = fixture(
+    "9D1C0D7E-0000-4000-8000-000000000002",
+    "Wash right",
+    SECOND_ID,
+    rightX,
+    rightAddress,
+    rightOnLx2 ? LX2_UUID : LX1_UUID,
+  );
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <GeneralSceneDescription verMajor="1" verMinor="6" provider="Playwright">
   <Scene>
-    <AUXData><Position uuid="0E2DC6B1-7C42-4B3F-9D0B-7D1C8C2F2A11" name="LX 1"/></AUXData>
+    <AUXData><Position uuid="${LX1_UUID}" name="LX 1"/><Position uuid="${LX2_UUID}" name="LX 2"/></AUXData>
     <Layers>
       <Layer uuid="83A405B6-8378-482D-9F72-AAD2EE51AABE" name="Rig">
-        <ChildList>${fixture("9D1C0D7E-0000-4000-8000-000000000001", "Wash left", FIRST_ID, -2000, "200.1")}${withRight ? fixture("9D1C0D7E-0000-4000-8000-000000000002", "Wash right", SECOND_ID, rightX, rightAddress) : ""}
+        <ChildList>${fixture("9D1C0D7E-0000-4000-8000-000000000001", "Wash left", FIRST_ID, -2000, "200.1")}${withRight ? right : ""}
         </ChildList>
       </Layer>${extraLayers}
     </Layers>
@@ -367,11 +382,11 @@ test("imports a rig from an MVR file and updates it from a revision", async ({
 });
 
 /**
- * Imports the rig, then a revision that takes the right wash out of the plot. The review
- * lists the wash on its Not in file tab, kept until it is picked; picking it removes the
- * fixture with the import.
+ * Imports the rig with the right wash on its own truss, then a revision that takes the wash
+ * out of the plot. The review lists the wash and the truss's group on its Not in file tab,
+ * each kept until it is picked; picking them removes both with the import.
  */
-test("removes a fixture a newer revision dropped", async ({
+test("removes a fixture and group a newer revision dropped", async ({
   backendSlot,
   page,
 }) => {
@@ -393,7 +408,7 @@ test("removes a fixture a newer revision dropped", async ({
   await dialog.getByTestId("rig-import-file").setInputFiles({
     name: "wash-rig.mvr",
     mimeType: "application/octet-stream",
-    buffer: washRig(),
+    buffer: washRig(2000, "200.233", "", {}, true, true),
   });
   await dialog
     .getByLabel("Library fixture for Acme@Wash.gdtf")
@@ -404,6 +419,9 @@ test("removes a fixture a newer revision dropped", async ({
   await expect
     .poll(() => importedFixtureIds(page))
     .toEqual([FIRST_ID, SECOND_ID]);
+  await expect
+    .poll(() => groupNames(page))
+    .toEqual(expect.arrayContaining(["LX 1", "LX 2"]));
 
   await page.locator("button[title='Menu']").click();
   await page.getByRole("button", { name: "Import Rig from MVR" }).click();
@@ -413,7 +431,7 @@ test("removes a fixture a newer revision dropped", async ({
     buffer: washRig(2000, "200.233", "", {}, false),
   });
   await expect(summary).toContainText("0 of 1 fixtures will be added");
-  const droppedTab = dialog.getByRole("tab", { name: "Not in file (1)" });
+  const droppedTab = dialog.getByRole("tab", { name: "Not in file (2)" });
   await droppedTab.click();
   const dropped = dialog.getByRole("table", {
     name: "Imported objects not in this file",
@@ -422,31 +440,39 @@ test("removes a fixture a newer revision dropped", async ({
     dropped.getByRole("cell", { name: "Wash right", exact: true }),
   ).toBeVisible();
   await expect(
-    dropped.getByRole("cell", { name: "wash-rig.mvr" }),
+    dropped.getByRole("cell", { name: "LX 2", exact: true }),
   ).toBeVisible();
+  await expect(dropped.getByRole("cell", { name: "wash-rig.mvr" })).toHaveCount(
+    2,
+  );
   await expect(
     dropped.getByRole("cell", { name: "Keep", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(2);
   const removeRight = dropped.getByLabel("Remove Wash right");
+  const removeLx2 = dropped.getByLabel("Remove LX 2");
   await expect(
     removeRight,
     "nothing is removed unless picked",
   ).not.toBeChecked();
+  await expect(removeLx2, "nothing is removed unless picked").not.toBeChecked();
   await settleTabPanel(dialog);
   await page.screenshot({ path: test.info().outputPath("1-not-in-file.png") });
 
   await removeRight.check();
+  await removeLx2.check();
   await expect(
     dropped.getByRole("cell", { name: "Remove", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(2);
   await expect(summary).toContainText(
-    "1 object the file no longer has will be removed",
+    "2 objects the file no longer has will be removed",
   );
   await page.screenshot({ path: test.info().outputPath("2-picked.png") });
 
   await dialog.getByRole("button", { name: "Import", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect.poll(() => importedFixtureIds(page)).toEqual([FIRST_ID]);
+  await expect.poll(() => groupNames(page)).not.toContain("LX 2");
+  expect(await groupNames(page)).toContain("LX 1");
   await page.screenshot({ path: test.info().outputPath("3-removed.png") });
 });
 

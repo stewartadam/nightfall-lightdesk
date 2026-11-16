@@ -1129,6 +1129,7 @@ mod tests {
                 },
                 selection: SpatialSelection::default(),
                 description: String::new(),
+                rig_source: None,
             })
             .expect("group should insert cleanly");
         let mut flow = FlowDefinition::new(Identifiers {
@@ -1186,6 +1187,7 @@ mod tests {
                 },
                 selection: SpatialSelection::default(),
                 description: String::new(),
+                rig_source: None,
             })
             .expect("group should insert cleanly");
         app.world_mut()

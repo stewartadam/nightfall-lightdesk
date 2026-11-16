@@ -142,6 +142,11 @@ pub struct ShowGroup {
     /// Member fixture UIDs when the group is a plain list of fixtures, the form the import
     /// writes; `None` for a group defined any other way, which the import leaves alone.
     pub members: Option<Vec<Uuid>>,
+    /// Name of the rig file the group was made from, if it was.
+    pub rig_source: Option<String>,
+    /// Descriptions of the objects that use the group, such as cues, which keep it from
+    /// being deleted.
+    pub used_by: Vec<String>,
 }
 
 /// The show as the planner sees it.
@@ -171,6 +176,8 @@ impl ShowFixtures {
             .objects
             .retain(|_, object| !removed_scenery.contains(&object.id));
         self.scenery.ids.retain(|id| !removed_scenery.contains(id));
+        self.groups
+            .retain(|group| !plan.remove_groups.contains(&group.id));
         for planned in &plan.fixtures {
             let fixture = &rig.fixtures[planned.index];
             self.ids.insert(planned.id);
@@ -211,6 +218,8 @@ impl ShowFixtures {
                     uid: group.uid,
                     label: group.name.clone(),
                     members: Some(group.members.clone()),
+                    rig_source: Some(rig.file_name.clone()),
+                    used_by: Vec::new(),
                 }),
             }
         }
@@ -298,6 +307,9 @@ pub struct ImportPlan {
     pub remove_fixtures: Vec<Uuid>,
     /// IDs of scene objects from an earlier rig file to remove, for the same reason.
     pub remove_scenery: Vec<u32>,
+    /// IDs of groups made from an earlier rig file to remove, because this file no longer
+    /// makes them and the user picked them.
+    pub remove_groups: Vec<u32>,
 }
 
 impl ImportPlan {
@@ -309,25 +321,38 @@ impl ImportPlan {
             && self.scenery.objects.is_empty()
             && self.remove_fixtures.is_empty()
             && self.remove_scenery.is_empty()
+            && self.remove_groups.is_empty()
     }
 }
 
-/// Fixtures and scene objects imported from a rig file that this file no longer has, and
-/// which of them the import removes.
+/// Fixtures, scene objects and groups imported from a rig file that this file no longer has
+/// or makes, and which of them the import removes.
 struct DroppedPlan {
-    /// One row per dropped fixture, then per dropped scene object, each by ID.
+    /// One row per dropped fixture, then per dropped scene object, then per dropped group,
+    /// each by ID.
     previews: Vec<DroppedPreview>,
     /// UIDs of the fixtures to remove.
     fixtures: Vec<Uuid>,
     /// IDs of the scene objects to remove.
     scenery: Vec<u32>,
+    /// IDs of the groups to remove.
+    groups: Vec<u32>,
 }
 
-/// Finds the fixtures, and the scene objects when scenery is imported, that came from a rig
-/// file but are not in this one, and picks the ones the options ask to remove.
+/// Finds the fixtures, the scene objects when scenery is imported and the groups when groups
+/// are made, that came from a rig file but are not in this one, and picks the ones the
+/// options ask to remove.
 ///
-/// Objects made in Nightfall carry no rig source, so they are never listed.
-fn plan_dropped(rig: &RigFile, show: &ShowFixtures, options: &RigImportOptions) -> DroppedPlan {
+/// A group counts as dropped when no fixture in the file has its name under `group_source`.
+/// A dropped group that other objects use can't be deleted, so it is left out with a warning
+/// instead. Objects made in Nightfall carry no rig source, so they are never listed.
+fn plan_dropped(
+    rig: &RigFile,
+    show: &ShowFixtures,
+    options: &RigImportOptions,
+    group_source: RigGroupSource,
+    warnings: &mut Vec<String>,
+) -> DroppedPlan {
     let remove: HashSet<Uuid> = options.remove.iter().copied().collect();
     let in_file: HashSet<Uuid> = rig
         .fixtures
@@ -339,6 +364,7 @@ fn plan_dropped(rig: &RigFile, show: &ShowFixtures, options: &RigImportOptions) 
         previews: Vec::new(),
         fixtures: Vec::new(),
         scenery: Vec::new(),
+        groups: Vec::new(),
     };
     let mut fixtures: Vec<(&Uuid, &ShowFixture, &String)> = show
         .fixtures
@@ -361,13 +387,11 @@ fn plan_dropped(rig: &RigFile, show: &ShowFixtures, options: &RigImportOptions) 
             remove: picked,
         });
     }
-    if !options.scenery {
-        return plan;
-    }
     let mut objects: Vec<_> = show
         .scenery
         .objects
         .iter()
+        .filter(|_| options.scenery)
         .filter(|(uid, _)| !in_file.contains(uid))
         .filter_map(|(uid, object)| Some((uid, object, object.rig_source.as_ref()?)))
         .collect();
@@ -382,6 +406,41 @@ fn plan_dropped(rig: &RigFile, show: &ShowFixtures, options: &RigImportOptions) 
             kind: DroppedKind::SceneObject,
             id: object.id,
             label: object.label.clone(),
+            source_file: source.clone(),
+            remove: picked,
+        });
+    }
+    let made: HashSet<String> = rig
+        .fixtures
+        .iter()
+        .filter_map(|fixture| group_key(group_source, fixture))
+        .collect();
+    let mut groups: Vec<(&ShowGroup, &String)> = show
+        .groups
+        .iter()
+        .filter(|_| group_source != RigGroupSource::None)
+        .filter(|group| !made.contains(&group.label))
+        .filter_map(|group| Some((group, group.rig_source.as_ref()?)))
+        .collect();
+    groups.sort_by_key(|(group, _)| group.id);
+    for (group, source) in groups {
+        if !group.used_by.is_empty() {
+            warnings.push(format!(
+                "Group {:?} is no longer in the file, but is kept because it is used by {}",
+                group.label,
+                group.used_by.join(", ")
+            ));
+            continue;
+        }
+        let picked = remove.contains(&group.uid);
+        if picked {
+            plan.groups.push(group.id);
+        }
+        plan.previews.push(DroppedPreview {
+            uid: group.uid,
+            kind: DroppedKind::Group,
+            id: group.id,
+            label: group.label.clone(),
             source_file: source.clone(),
             remove: picked,
         });
@@ -511,7 +570,8 @@ pub fn plan_import(
         .map(|(index, _)| rig.fixtures[*index].file_id)
         .collect();
     // Fixtures picked for removal leave in the same change, so their IDs are free.
-    let dropped = plan_dropped(rig, show, options);
+    let group_source = resolve_group_source(rig, options.groups);
+    let dropped = plan_dropped(rig, show, options, group_source, &mut warnings);
     let mut used_ids = show.ids.clone();
     for uid in &dropped.fixtures {
         if let Some(fixture) = show.fixtures.get(uid) {
@@ -532,7 +592,6 @@ pub fn plan_import(
         });
     }
 
-    let group_source = resolve_group_source(rig, options.groups);
     let groups = plan_groups(rig, &previews, group_source, show, &mut warnings);
     let scenery = plan_scenery(rig, &show.scenery, options);
 
@@ -557,7 +616,7 @@ pub fn plan_import(
             fixtures: previews,
             scenery_changes: scenery.objects.len() as u32,
             scenery: scenery.previews.clone(),
-            removed: (dropped.fixtures.len() + dropped.scenery.len()) as u32,
+            removed: (dropped.fixtures.len() + dropped.scenery.len() + dropped.groups.len()) as u32,
             dropped: dropped.previews,
             warnings,
         },
@@ -567,6 +626,7 @@ pub fn plan_import(
         scenery,
         remove_fixtures: dropped.fixtures,
         remove_scenery: dropped.scenery,
+        remove_groups: dropped.groups,
     }
 }
 
@@ -659,6 +719,18 @@ fn resolve_group_source(rig: &RigFile, source: RigGroupSource) -> RigGroupSource
     }
 }
 
+/// Names the group a fixture belongs in: its hanging position, layer or class, depending on
+/// `source`, or `None` when it has no non-blank name there or groups are not made.
+fn group_key(source: RigGroupSource, fixture: &RigFixture) -> Option<String> {
+    match source {
+        RigGroupSource::HangingPositions => fixture.hanging_position.clone(),
+        RigGroupSource::Layers => Some(fixture.layer.clone()),
+        RigGroupSource::Classes => fixture.class.clone(),
+        RigGroupSource::Auto | RigGroupSource::None => None,
+    }
+    .filter(|name| !name.trim().is_empty())
+}
+
 /// Plans one group per hanging position, layer or class, holding the fixtures that are in
 /// the show after the import, in fixture ID order.
 ///
@@ -672,15 +744,6 @@ fn plan_groups(
     show: &ShowFixtures,
     warnings: &mut Vec<String>,
 ) -> Vec<PlannedGroup> {
-    let key = |fixture: &RigFixture| -> Option<String> {
-        match source {
-            RigGroupSource::HangingPositions => fixture.hanging_position.clone(),
-            RigGroupSource::Layers => Some(fixture.layer.clone()),
-            RigGroupSource::Classes => fixture.class.clone(),
-            RigGroupSource::Auto | RigGroupSource::None => None,
-        }
-        .filter(|name| !name.trim().is_empty())
-    };
     let mut members: Vec<(String, Vec<(u32, Uuid)>)> = Vec::new();
     for (fixture, preview) in rig.fixtures.iter().zip(previews) {
         let in_show = matches!(
@@ -690,7 +753,9 @@ fn plan_groups(
                 | FixtureImportStatus::Unchanged
                 | FixtureImportStatus::AlreadyInShow
         );
-        let (Some(name), Some(id), true) = (key(fixture), preview.fixture_id, in_show) else {
+        let (Some(name), Some(id), true) =
+            (group_key(source, fixture), preview.fixture_id, in_show)
+        else {
             continue;
         };
         match members.iter_mut().find(|(candidate, _)| *candidate == name) {

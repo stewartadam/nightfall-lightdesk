@@ -381,6 +381,7 @@ fn add_group(world: &mut World, fixture_ref: FixtureRef) -> Result<(), String> {
             },
             selection: SelectionExpr::Resolved(vec![fixture_ref]).into(),
             description: "Procedural showfile parser test group".to_owned(),
+            rig_source: None,
         })
         .map_err(|error| format!("failed to add parser group: {error}"))?;
     system_state.apply(world);

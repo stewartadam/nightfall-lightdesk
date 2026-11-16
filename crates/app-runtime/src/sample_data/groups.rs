@@ -78,6 +78,7 @@ pub(super) fn add_groups(world: &mut World) {
             },
             selection: SelectionExpr::Resolved(elements).into(),
             description: Default::default(),
+            rig_source: None,
         });
     }
 

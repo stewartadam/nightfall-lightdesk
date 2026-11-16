@@ -158,6 +158,7 @@ pub fn handle_group_events(
                             },
                             selection: SpatialSelection::default(),
                             description: String::new(),
+                            rig_source: None,
                         }
                     })
             };

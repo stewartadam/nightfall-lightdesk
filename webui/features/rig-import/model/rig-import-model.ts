@@ -232,11 +232,9 @@ type PreviewCounts = {
   groups: readonly unknown[];
 };
 
-/** Counts removed show objects in words: "1 fixture or scene object", "3 fixtures and scene objects". */
+/** Counts removed fixtures, scene objects and groups in words: "1 imported object", "3 imported objects". */
 function removedObjects(count: number): string {
-  return count === 1
-    ? "1 fixture or scene object"
-    : `${count} fixtures and scene objects`;
+  return count === 1 ? "1 imported object" : `${count} imported objects`;
 }
 
 /** Counts scenery objects in words: "1 scenery object", "17 scenery objects". */
@@ -339,6 +337,8 @@ export function droppedKindLabel(kind: types.DroppedKind): string {
       return "Fixture";
     case types.DroppedKind.SceneObject:
       return "Scene object";
+    case types.DroppedKind.Group:
+      return "Group";
   }
 }
 

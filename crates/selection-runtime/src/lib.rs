@@ -292,6 +292,7 @@ mod tests {
                 Vec::new(),
             ),
             description: String::new(),
+            rig_source: None,
         }
     }
 

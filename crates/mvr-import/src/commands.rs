@@ -79,6 +79,8 @@ pub struct ShowState<'w> {
     output_routes: Res<'w, OutputRoutes>,
     /// Groups in the show.
     groups: Res<'w, DataProvider<Group>>,
+    /// Objects that use each group, which keep it from being deleted.
+    group_references: Res<'w, GroupReferenceIndex>,
     scene_objects: Res<'w, SceneObjectDataProvider>,
 }
 
@@ -149,6 +151,19 @@ impl ShowState<'_> {
                 uid: entry.identifiers.uid,
                 label: entry.identifiers.label.clone(),
                 members: plain_members(&entry.selection),
+                rig_source: entry
+                    .rig_source
+                    .as_ref()
+                    .map(|source| source.file_name.clone()),
+                used_by: self
+                    .group_references
+                    .dependents(entry.identifiers.uid)
+                    .into_iter()
+                    .map(|dependent| match dependent.split_once(':') {
+                        Some((_, description)) => description.to_string(),
+                        None => dependent,
+                    })
+                    .collect(),
             })
             .collect();
         for entry in self.scene_objects.iter() {
@@ -401,14 +416,15 @@ struct ImportCommands {
     /// One `StoreSceneObject` per piece of scenery the import adds or moves.
     scenery: Vec<DynEnginePayload>,
     /// Commands that wait for the fixtures and scenery to be stored: one `StoreGroup` per
-    /// group the import makes or refreshes, then one `DeleteSceneObject` per scene object it
-    /// removes, so a failed import removes nothing.
+    /// group the import makes or refreshes, then one `DeleteSceneObject` per scene object and
+    /// one `DeleteGroup` per group it removes, so a failed import removes nothing.
     after_fixtures: Vec<DynEnginePayload>,
 }
 
 /// Installs the fixture types the plan needs and builds the commands that apply it: one
 /// `PatchRig` for the fixtures, when any change, one scene object store per piece of scenery,
-/// and one group store per group, followed by one delete per scene object to remove.
+/// and one group store per group, followed by one delete per scene object and group to
+/// remove.
 fn build_import(
     rig: &RigFile,
     plan: &ImportPlan,
@@ -510,6 +526,9 @@ fn build_import(
                 },
                 selection,
                 description: format!("Imported from {}", rig.file_name),
+                rig_source: Some(RigSource {
+                    file_name: rig.file_name.clone(),
+                }),
             },
         };
         stores.push(Box::new(GroupCommand::StoreGroup(group)));
@@ -528,6 +547,9 @@ fn build_import(
     }
     for id in &plan.remove_scenery {
         stores.push(Box::new(SceneObjectCommand::DeleteSceneObject(*id)));
+    }
+    for id in &plan.remove_groups {
+        stores.push(Box::new(GroupCommand::DeleteGroup(*id)));
     }
     Ok(ImportCommands {
         patch,

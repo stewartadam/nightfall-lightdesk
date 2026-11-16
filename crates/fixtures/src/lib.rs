@@ -121,6 +121,7 @@ impl EngineOperation for DmxOperation {}
 
 /// Prelude for ergonomic imports
 pub mod prelude {
+    pub use nightfall::data::RigSource;
     pub use nightfall_dmx::prelude::ParameterValuePolarity;
 
     pub use crate::compositor::{
@@ -129,7 +130,7 @@ pub mod prelude {
         clear_stale_parameter_assertions, clear_unbound_parameter_assertions,
     };
     pub use crate::data_provider_ext::{FixtureDataProviderExt, ResolvedElementParameter};
-    pub use crate::fixture::{Fixture, FixtureElement, FixtureLayout, RigSource};
+    pub use crate::fixture::{Fixture, FixtureElement, FixtureLayout};
     pub use crate::geometry::{
         AxisType, FixtureGeometry, GeometryModel, GeometryNode, GeometryProvider,
         GeometryProviderResource, GeometryType, MeshFormat, MeshResource, PrimitiveType, Transform,

@@ -62,6 +62,7 @@ fn group_with_selection(group_id: u32, selection: SpatialSelection) -> Group {
         },
         selection,
         description: String::new(),
+        rig_source: None,
     }
 }
 

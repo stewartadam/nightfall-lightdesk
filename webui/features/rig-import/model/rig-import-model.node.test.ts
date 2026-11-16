@@ -185,7 +185,7 @@ test("import done message", () => {
       updatedFixtures: 0,
       removed: 3,
     }),
-    "Added 1 fixture from rig.mvr and removed 3 fixtures and scene objects it no longer has",
+    "Added 1 fixture from rig.mvr and removed 3 imported objects it no longer has",
   );
   assert.equal(
     importDoneMessage({
@@ -194,7 +194,7 @@ test("import done message", () => {
       updatedFixtures: 0,
       removed: 1,
     }),
-    "Removed 1 fixture or scene object that rig.mvr no longer has",
+    "Removed 1 imported object that rig.mvr no longer has",
   );
 });
 

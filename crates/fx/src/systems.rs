@@ -783,6 +783,7 @@ mod tests {
                 },
                 selection: SpatialSelection::identity(SelectionExpr::Resolved(vec![fixture_ref])),
                 description: String::new(),
+                rig_source: None,
             })
             .expect("test group should be stored");
     }

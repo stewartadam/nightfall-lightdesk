@@ -90,8 +90,8 @@ pub struct RigImportOptions {
     /// Library fixtures standing in for types the file leaves out or that should be
     /// replaced.
     pub type_mappings: Vec<FixtureTypeMapping>,
-    /// UIDs of fixtures and scene objects imported from a rig file that this file no longer
-    /// has, picked to be removed. Anything else listed as not in the file stays.
+    /// UIDs of fixtures, scene objects and groups imported from a rig file that this file no
+    /// longer has or makes, picked to be removed. Anything else listed as not in the file stays.
     #[typeshare(serialized_as = "Vec<String>")]
     pub remove: Vec<Uuid>,
 }
@@ -324,8 +324,8 @@ pub struct RigImportPreview {
     pub scenery: Vec<SceneryPreview>,
     /// Number of scene objects the import adds or changes.
     pub scenery_changes: u32,
-    /// Fixtures and scene objects imported from a rig file that this file no longer has,
-    /// by fixture or scene object ID.
+    /// Fixtures, scene objects and groups imported from a rig file that this file no longer
+    /// has or makes, each kind by ID.
     pub dropped: Vec<DroppedPreview>,
     /// Number of them picked to be removed.
     pub removed: u32,
@@ -341,10 +341,12 @@ pub enum DroppedKind {
     Fixture,
     /// A scene object made from a truss, support or layer of scenery.
     SceneObject,
+    /// A group made from a hanging position, layer or class the file no longer has.
+    Group,
 }
 
-/// A fixture or scene object imported from a rig file that this file no longer has, such
-/// as one taken out of the plot in a newer revision.
+/// A fixture, scene object or group imported from a rig file that this file no longer has or
+/// makes, such as one taken out of the plot in a newer revision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[typeshare::typeshare]
@@ -353,9 +355,9 @@ pub struct DroppedPreview {
     #[serde(with = "nightfall::serde_uuid_simple")]
     #[typeshare(serialized_as = "String")]
     pub uid: Uuid,
-    /// Whether it is a fixture or a scene object.
+    /// Whether it is a fixture, a scene object or a group.
     pub kind: DroppedKind,
-    /// Fixture or scene object ID.
+    /// Fixture, scene object or group ID.
     pub id: u32,
     /// Label in the show.
     pub label: String,

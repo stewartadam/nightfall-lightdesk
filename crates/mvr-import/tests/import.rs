@@ -299,6 +299,8 @@ fn show_after_import(rig: &nightfall_mvr_import::rig::RigFile) -> ShowFixtures {
         uid: Uuid::new_v4(),
         label: "LX 1".into(),
         members: Some(Vec::new()),
+        rig_source: None,
+        used_by: Vec::new(),
     });
     show
 }
@@ -359,9 +361,9 @@ fn reimport_updates_changed_fixtures() {
     assert_eq!(plan.groups[0].members.len(), 2);
 }
 
-/// Fixtures and scene objects from an earlier rig file that this file no longer has are
-/// listed by ID and kept unless picked; ones made in Nightfall are never listed, and scene
-/// objects are left out when scenery is not imported.
+/// Fixtures, scene objects and groups from an earlier rig file that this file no longer has
+/// or makes are listed by ID and kept unless picked; ones made in Nightfall are never listed,
+/// scene objects are left out when scenery is not imported, and groups when none are made.
 #[test]
 fn lists_what_the_file_dropped_and_removes_only_picked() {
     let root = tempfile::tempdir().unwrap();
@@ -395,6 +397,23 @@ fn lists_what_the_file_dropped_and_removes_only_picked() {
             rig_source: Some("plot v1.mvr".into()),
         },
     );
+    let group = |id: u32, label: &str, rig_source: Option<String>| ShowGroup {
+        id,
+        uid: Uuid::new_v4(),
+        label: label.into(),
+        members: Some(Vec::new()),
+        rig_source,
+        used_by: Vec::new(),
+    };
+    let dropped_group = group(9, "Old pipe", Some("plot v1.mvr".into()));
+    let dropped_group_uid = dropped_group.uid;
+    show.groups.push(dropped_group);
+    show.groups.push(group(10, "Hand group", None));
+    show.groups.push(ShowGroup {
+        used_by: vec!["Cue 1".into()],
+        ..group(11, "Old boom", Some("plot v1.mvr".into()))
+    });
+    show.groups[0].rig_source = Some("plot v1.mvr".into());
     let plan_with =
         |options: RigImportOptions| plan_import(Uuid::new_v4(), &rig, &library, &show, &options);
 
@@ -409,29 +428,44 @@ fn lists_what_the_file_dropped_and_removes_only_picked() {
         rows,
         [
             (DroppedKind::Fixture, 104, "Spare", false),
-            (DroppedKind::SceneObject, 5, "Old truss", false)
-        ]
+            (DroppedKind::SceneObject, 5, "Old truss", false),
+            (DroppedKind::Group, 9, "Old pipe", false)
+        ],
+        "LX 1 is still a hanging position in the file, so its group is not listed"
+    );
+    assert!(
+        kept.preview.warnings.iter().any(|warning| warning
+            == "Group \"Old boom\" is no longer in the file, but is kept because it is used by Cue 1"),
+        "a dropped group a cue uses can't be deleted, so it is kept with a warning: {:?}",
+        kept.preview.warnings
     );
     assert_eq!(kept.preview.dropped[0].source_file, "plot v1.mvr");
     assert_eq!(kept.preview.removed, 0);
-    assert!(kept.remove_fixtures.is_empty() && kept.remove_scenery.is_empty());
+    assert!(
+        kept.remove_fixtures.is_empty()
+            && kept.remove_scenery.is_empty()
+            && kept.remove_groups.is_empty()
+    );
 
     let removed = plan_with(RigImportOptions {
-        remove: vec![dropped, dropped_truss],
+        remove: vec![dropped, dropped_truss, dropped_group_uid],
         ..RigImportOptions::default()
     });
     assert!(removed.preview.dropped.iter().all(|row| row.remove));
-    assert_eq!(removed.preview.removed, 2);
+    assert_eq!(removed.preview.removed, 3);
     assert_eq!(removed.remove_fixtures, [dropped]);
     assert_eq!(removed.remove_scenery, [5]);
+    assert_eq!(removed.remove_groups, [9]);
 
-    let no_scenery = plan_with(RigImportOptions {
+    let no_scenery_or_groups = plan_with(RigImportOptions {
         scenery: false,
-        remove: vec![dropped_truss],
+        groups: RigGroupSource::None,
+        remove: vec![dropped_truss, dropped_group_uid],
         ..RigImportOptions::default()
     });
-    assert_eq!(no_scenery.preview.dropped.len(), 1);
-    assert!(no_scenery.remove_scenery.is_empty());
+    assert_eq!(no_scenery_or_groups.preview.dropped.len(), 1);
+    assert!(no_scenery_or_groups.remove_scenery.is_empty());
+    assert!(no_scenery_or_groups.remove_groups.is_empty());
 }
 
 /// A fixture picked for removal frees its ID, so a new fixture the file numbers the same
@@ -488,6 +522,8 @@ struct Dispatched {
     scenery: Vec<SceneObject>,
     /// IDs of scene objects deleted, in the order their deletes were dispatched.
     deleted_scenery: Vec<u32>,
+    /// IDs of groups deleted, in the order their deletes were dispatched.
+    deleted_groups: Vec<u32>,
 }
 
 /// Makes the test dispatcher fail every fixture command instead of running it, standing in
@@ -497,8 +533,7 @@ struct FailFixtureCommands(bool);
 
 /// Stands in for the engine's dispatch of queued commands: forwards fixture commands to the
 /// fixture handler under their commit's IDs, or fails them when [`FailFixtureCommands`] is
-/// set, and records group and scene object stores and scene object deletes and reports them
-/// done.
+/// set, and records group and scene object stores and deletes and reports them done.
 fn dispatch_pending(
     mut pending: ResMut<PendingCommandBuffer>,
     mut dispatched: ResMut<Dispatched>,
@@ -530,6 +565,9 @@ fn dispatch_pending(
         {
             dispatched.groups.push(group.clone());
             responder.succeed(envelope.command_id).unwrap();
+        } else if let Some(GroupCommand::DeleteGroup(id)) = payload.downcast_ref::<GroupCommand>() {
+            dispatched.deleted_groups.push(*id);
+            responder.succeed(envelope.command_id).unwrap();
         } else if let Some(SceneObjectCommand::StoreSceneObject(object)) =
             payload.downcast_ref::<SceneObjectCommand>()
         {
@@ -560,6 +598,7 @@ fn import_app(library: FixtureLibraryManager, sessions: RigImportSessions) -> Ap
     app.init_resource::<PendingCommandBuffer>();
     app.init_resource::<FixtureDataProviderExt>();
     app.init_resource::<DataProvider<Group>>();
+    app.init_resource::<GroupReferenceIndex>();
     app.init_resource::<nightfall_scene_objects::prelude::SceneObjectDataProvider>();
     app.init_resource::<InputRoutes>();
     app.init_resource::<OutputRoutes>();
@@ -736,8 +775,8 @@ fn failed_fixture_import_stores_no_groups() {
 }
 
 /// Re-importing with dropped objects picked removes them: the fixture through the same
-/// `PatchRig` as the rest of the fixture change, and the scene object with a delete, all
-/// under the commit.
+/// `PatchRig` as the rest of the fixture change, and the scene object and group each with a
+/// delete, all under the commit.
 #[test]
 fn commit_removes_picked_dropped_objects() {
     let root = tempfile::tempdir().unwrap();
@@ -773,6 +812,19 @@ fn commit_removes_picked_dropped_objects() {
                 uid: dropped_truss,
                 label: "Old truss".into(),
             },
+            rig_source: source.clone(),
+            ..Default::default()
+        })
+        .unwrap();
+    let dropped_group = Uuid::new_v4();
+    app.world_mut()
+        .resource_mut::<DataProvider<Group>>()
+        .add(Group {
+            identifiers: Identifiers {
+                id: 60,
+                uid: dropped_group,
+                label: "Old pipe".into(),
+            },
             rig_source: source,
             ..Default::default()
         })
@@ -783,7 +835,7 @@ fn commit_removes_picked_dropped_objects() {
         &mut app,
         session,
         RigImportOptions {
-            remove: vec![dropped, dropped_truss],
+            remove: vec![dropped, dropped_truss, dropped_group],
             ..RigImportOptions::default()
         },
     );
@@ -799,6 +851,7 @@ fn commit_removes_picked_dropped_objects() {
     );
     assert_eq!(remove, &[dropped]);
     assert_eq!(dispatched.deleted_scenery, [50]);
+    assert_eq!(dispatched.deleted_groups, [60]);
     let fixtures = app.world().resource::<FixtureDataProviderExt>();
     assert!(fixtures.inner.get(dropped).is_err());
     assert_eq!(fixtures.inner.iter().count(), 2);
