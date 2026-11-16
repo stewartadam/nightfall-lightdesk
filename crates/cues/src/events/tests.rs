@@ -6,9 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use bevy_app::{App, Update};
+use bevy_ecs::schedule::graph::Direction;
+use bevy_ecs::schedule::{NodeId, ScheduleGraph};
 
 use super::*;
 
@@ -850,4 +853,78 @@ fn storing_a_step_cue_syncs_release_cue_rows() {
     app.update();
 
     assert_eq!(sequence_definition_change_count(&app), 0);
+}
+
+/// Returns whether the schedule's dependency graph orders `earlier` before `later`.
+///
+/// Follows the ordering edges of each node and of every set that contains it, and from a set
+/// that something is ordered before, the systems and sets inside it.
+fn ordered_before(graph: &ScheduleGraph, earlier: NodeId, later: NodeId) -> bool {
+    let dependency = graph.dependency().graph();
+    let hierarchy = graph.hierarchy().graph();
+    let mut seen = HashSet::new();
+    let mut pending = vec![earlier];
+    while let Some(node) = pending.pop() {
+        let mut with_ancestors = vec![node];
+        let mut index = 0;
+        while let Some(&current) = with_ancestors.get(index) {
+            with_ancestors.extend(hierarchy.neighbors_directed(current, Direction::Incoming));
+            index += 1;
+        }
+        let members = match node {
+            NodeId::Set(_) => hierarchy
+                .neighbors_directed(node, Direction::Outgoing)
+                .collect::<Vec<_>>(),
+            NodeId::System(_) => Vec::new(),
+        };
+        let next = with_ancestors
+            .iter()
+            .flat_map(|&current| dependency.neighbors_directed(current, Direction::Outgoing))
+            .chain(members);
+        for child in next {
+            if child == later {
+                return true;
+            }
+            if seen.insert(child) {
+                pending.push(child);
+            }
+        }
+    }
+    false
+}
+
+/// Verifies that the systems which follow cue and sequence definition changes run after a
+/// programmer store as well as after cue commands, so a stored cue's release-cue rows and
+/// rematerialized sequences land in the same update as the store instead of one frame later.
+#[test]
+fn definition_followers_run_after_programmer_stores() {
+    let mut app = App::new();
+    add_apply_commands(&mut app);
+    register_event_systems(&mut app);
+    app.world_mut()
+        .schedule_scope(ApplyCommands, |world, schedule| {
+            schedule
+                .initialize(world)
+                .expect("cue systems should build");
+            let node = |name: &str| {
+                let key = schedule
+                    .systems()
+                    .expect("schedule should be initialized")
+                    .find(|(_, system)| system.name().as_string().ends_with(name))
+                    .unwrap_or_else(|| panic!("{name} should be registered"))
+                    .0;
+                NodeId::System(key)
+            };
+            let store = node("::cue_store_operations");
+            for follower in [
+                "::sync_release_cue_rows",
+                "::rematerialize_sequences_after_cue_definition_change",
+                "::rematerialize_sequences_after_sequence_definition_change",
+            ] {
+                assert!(
+                    ordered_before(schedule.graph(), store, node(follower)),
+                    "{follower} should run after cue_store_operations"
+                );
+            }
+        });
 }

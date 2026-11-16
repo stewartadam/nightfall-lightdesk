@@ -72,7 +72,9 @@ pub(crate) fn register_event_systems(app: &mut App) {
         ApplyCommands,
         (
             handle_events.after(DeskEventSet::ClipForwarding),
-            cue_store_operations,
+            // Programmer stores write cues and sequences too, so the systems that follow cue
+            // definition changes must see them in the same run.
+            cue_store_operations.before(cue_crud_events),
             cue_action_events.before(cue_crud_events),
             cue_crud_events,
             crate::materialized_sequence::rematerialize_sequences_after_cue_definition_change
