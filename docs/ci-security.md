@@ -74,8 +74,11 @@ Publication (fresh runner; contents: write; no Apple credentials)
   system tools and one installed tool, an exact minisign release whose SHA-256 is
   pinned in the workflow and checked before use. It checks each signature against
   the `TAURI_SIGNING_PUBLIC_KEY` variable, removes the decoded key on exit, and
-  writes `latest.json`. A second runner, which never sees the key, checks that the
-  manifest names the published version and replaces it on the `updater` release.
+  writes the release's update manifest. A second runner, which never sees the key,
+  checks that the manifest names the published version and copies it to each
+  channel's feed on the `updater` release (`prerelease.json`, and `stable.json` for a
+  release without a prerelease tag), skipping a feed that already offers a newer
+  version.
 - **Website release:** when that workflow succeeds for a release, `website-release.yml`
   asks nightfall.live to publish the same tag. Its one job holds only the release bot's
   GitHub App key, mints a token limited to dispatching events to nightfall.live, checks

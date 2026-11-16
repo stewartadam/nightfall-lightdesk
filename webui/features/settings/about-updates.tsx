@@ -13,10 +13,12 @@ import { Alert } from "../../components/ui/alert";
 import { NativeSelect } from "../../components/ui/form-controls";
 import { ProgressBar } from "../../components/ui/progress-bar";
 import { SettingsRow } from "../../components/ui/settings-row";
+import Tooltip from "../../components/ui/tooltip";
 import { Button } from "../../components/ui/visual-language/button";
 import {
   $desktopUpdate,
   checkForDesktopUpdates,
+  type DesktopUpdateChannel,
   type DesktopUpdateError,
   type DesktopUpdateMode,
   type DesktopUpdatePhase,
@@ -24,6 +26,7 @@ import {
   downloadDesktopUpdate,
   openDownloadsPage,
   restartToUpdate,
+  setDesktopUpdateChannel,
   setDesktopUpdateMode,
 } from "../../lib/desktop-updates";
 
@@ -148,6 +151,35 @@ const UPDATE_MODE_OPTIONS: { value: DesktopUpdateMode; label: string }[] = [
   { value: "install", label: "Download and install on quit" },
 ];
 
+/**
+ * Saves the option picked in an update settings drop-down with `save`. When saving fails, the
+ * drop-down goes back to `current`: the store keeps the old value, so Solid won't write it back
+ * to the DOM on its own.
+ */
+function saveSelectChoice<T extends string>(
+  updates: AboutUpdates,
+  select: HTMLSelectElement,
+  current: T,
+  save: (value: T) => Promise<void>,
+): void {
+  const value = select.value as T;
+  updates.run(
+    () =>
+      save(value).catch((error) => {
+        select.value = current;
+        throw error;
+      }),
+    "Couldn't save your update settings.",
+  );
+}
+
+/** Choices for the Update channel drop-down. */
+const UPDATE_CHANNEL_OPTIONS: { value: DesktopUpdateChannel; label: string }[] =
+  [
+    { value: "stable", label: "Stable" },
+    { value: "prerelease", label: "Prerelease" },
+  ];
+
 /** Phases in which the desktop shell accepts a check: nothing is checking, downloading or installing. */
 const CHECKABLE_PHASES: ReadonlySet<DesktopUpdatePhase> = new Set([
   "idle",
@@ -156,10 +188,10 @@ const CHECKABLE_PHASES: ReadonlySet<DesktopUpdatePhase> = new Set([
 ]);
 
 /**
- * Shows a headline for the update status and when updates were last checked, beside Check for
- * Updates. The button stays in place in every state, so an operator holding a downloaded
- * update can still look for a newer one; it is disabled while update checks are off in Settings
- * > Privacy, and while a check, download or install is under way.
+ * Shows a headline for the update status and when updates were last checked, beside the update
+ * channel and Check for Updates. The button stays in place in every state, so an operator
+ * holding a downloaded update can still look for a newer one; it is disabled while update checks
+ * are off in Settings > Privacy, and while a check, download or install is under way.
  */
 function CheckRow(props: {
   update: DesktopUpdateState;
@@ -177,24 +209,44 @@ function CheckRow(props: {
         </p>
         <p class="text-xs text-gray-400">{describeLastCheck(props.update)}</p>
       </div>
-      <Button
-        size="compact"
-        type="button"
-        class="shrink-0 items-center gap-2"
-        disabled={
-          !props.update.checkForUpdates ||
-          !CHECKABLE_PHASES.has(props.update.phase)
-        }
-        onClick={() =>
-          props.updates.run(
-            checkForDesktopUpdates,
-            "Couldn't check for updates.",
-          )
-        }
-      >
-        <ArrowClockwiseIcon class="size-4" aria-hidden />
-        <span>Check for Updates</span>
-      </Button>
+      <div class="flex shrink-0 items-center gap-2">
+        <NativeSelect
+          density="compact"
+          aria-label="Update channel"
+          value={props.update.channel}
+          onChange={(event) =>
+            saveSelectChoice(
+              props.updates,
+              event.currentTarget,
+              props.update.channel,
+              setDesktopUpdateChannel,
+            )
+          }
+        >
+          <For each={UPDATE_CHANNEL_OPTIONS}>
+            {(option) => <option value={option.value}>{option.label}</option>}
+          </For>
+        </NativeSelect>
+        <Tooltip content={() => "Check for Updates"} position="top">
+          <Button
+            size="icon-compact"
+            type="button"
+            aria-label="Check for Updates"
+            disabled={
+              !props.update.checkForUpdates ||
+              !CHECKABLE_PHASES.has(props.update.phase)
+            }
+            onClick={() =>
+              props.updates.run(
+                checkForDesktopUpdates,
+                "Couldn't check for updates.",
+              )
+            }
+          >
+            <ArrowClockwiseIcon class="size-4" aria-hidden />
+          </Button>
+        </Tooltip>
+      </div>
     </div>
   );
 }
@@ -418,19 +470,14 @@ export function AboutUpdateStatus(props: { updates: AboutUpdates }) {
                   id={field.id}
                   value={update().updateMode}
                   aria-describedby={field.describedBy}
-                  onChange={(event) => {
-                    const select = event.currentTarget;
-                    const mode = select.value as DesktopUpdateMode;
-                    props.updates.run(
-                      () =>
-                        setDesktopUpdateMode(mode).catch((error) => {
-                          // The store keeps the old mode, so Solid won't write it back to the DOM.
-                          select.value = update().updateMode;
-                          throw error;
-                        }),
-                      "Couldn't save your update settings.",
-                    );
-                  }}
+                  onChange={(event) =>
+                    saveSelectChoice(
+                      props.updates,
+                      event.currentTarget,
+                      update().updateMode,
+                      setDesktopUpdateMode,
+                    )
+                  }
                 >
                   <For each={UPDATE_MODE_OPTIONS}>
                     {(option) => (

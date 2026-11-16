@@ -14,6 +14,7 @@ interface UpdateState {
   canInstall: boolean;
   checkForUpdates: boolean;
   updateMode: "notify" | "download" | "install";
+  channel: "stable" | "prerelease";
   phase:
     | "idle"
     | "checking"
@@ -36,6 +37,7 @@ const idle: UpdateState = {
   canInstall: true,
   checkForUpdates: true,
   updateMode: "download",
+  channel: "prerelease",
   phase: "idle",
   version: null,
   progress: null,
@@ -116,6 +118,14 @@ async function openDesktopApp(
             desktop.updateState = {
               ...desktop.updateState,
               updateMode: args.mode,
+            };
+            return desktop.updateState;
+          }
+          if (command === "set_update_channel") {
+            desktop.updateCalls.push(`set_update_channel:${args.channel}`);
+            desktop.updateState = {
+              ...desktop.updateState,
+              channel: args.channel,
             };
             return desktop.updateState;
           }
@@ -277,12 +287,13 @@ test("later snoozes the update notice for that version", async ({
   expect(await updateCalls(page)).toEqual([]);
 });
 
-/** Opens the About dialog from the app menu and returns it. */
-async function openAbout(page: Page) {
+/** Opens the About dialog from the app menu, selects the given tab (Updates unless null), and returns it. */
+async function openAbout(page: Page, tab: "Updates" | null = "Updates") {
   await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: "About", exact: true }).click();
   const about = page.getByRole("dialog", { name: "About nightfall" });
   await expect(about).toBeVisible();
+  if (tab) await about.getByRole("tab", { name: tab }).click();
   return about;
 }
 
@@ -462,6 +473,9 @@ test("updates wait to download in notify mode", async ({
   await expect(updates.getByTestId("update-alert")).toContainText(
     "Nightfall 0.1.0-alpha.4 is available",
   );
+  await expect(
+    about.getByRole("tab", { name: /^Updates\s*, update available$/ }),
+  ).toContainText("1");
   const notice = page
     .locator('[data-component="Toast"]')
     .filter({ hasText: "Update available" });
@@ -488,6 +502,32 @@ test("updates wait to download in notify mode", async ({
   await expect
     .poll(() => updateCalls(page))
     .toEqual(["set_update_mode:notify", "download_update"]);
+});
+
+/**
+ * Verifies the Update channel drop-down shows the channel the shell follows and asks the shell to
+ * switch, and that it stays available in builds that cannot install updates themselves.
+ */
+test("about dialog switches the update channel", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  await openDesktopApp(page, backendSlot.backendPort, {
+    ...idle,
+    canInstall: false,
+  });
+  const about = await openAbout(page);
+  const updates = about.getByRole("region", { name: "Updates" });
+  const channel = updates.getByRole("combobox", { name: "Update channel" });
+  await expect(channel).toHaveValue("prerelease");
+  await channel.selectOption("stable");
+  await expect
+    .poll(() => updateCalls(page))
+    .toEqual(["set_update_channel:stable"]);
+  await expect(channel).toHaveValue("stable");
+  await about.screenshot({
+    path: testInfo.outputPath("about-update-channel.png"),
+  });
 });
 
 /**
@@ -619,7 +659,11 @@ test("builds that cannot install updates check and link to downloads", async ({
   await expect(updates).toContainText(
     "This build of Nightfall can't install updates itself.",
   );
-  await expect(updates.getByRole("combobox")).toHaveCount(0);
+  // Only the channel can be picked: there is no download or install to choose.
+  await expect(updates.getByRole("combobox")).toHaveCount(1);
+  await expect(
+    updates.getByRole("combobox", { name: "Update channel" }),
+  ).toBeVisible();
   await updates.getByRole("button", { name: "Check for Updates" }).click();
   await expect.poll(() => updateCalls(page)).toEqual(["check_for_updates"]);
 
@@ -665,7 +709,9 @@ test("update controls stay hidden outside the desktop app", async ({
 }) => {
   await page.goto("/?e2e=1");
   await waitForDockviewApp(page);
-  const about = await openAbout(page);
+  const about = await openAbout(page, null);
+  await expect(about.getByRole("tab", { name: "Info" })).toBeVisible();
+  await expect(about.getByRole("tab", { name: "Updates" })).toHaveCount(0);
   await expect(about.getByRole("region", { name: "Updates" })).toHaveCount(0);
   await expect(
     about.getByRole("button", { name: "Check for Updates" }),

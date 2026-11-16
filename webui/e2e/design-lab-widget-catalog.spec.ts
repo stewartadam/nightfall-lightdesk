@@ -444,7 +444,7 @@ test("badges show tones, appearances and corner counts", async ({
     ).toHaveCount(appearance === "soft" ? 7 : 6);
   }
   const counts = panel.locator('[data-component="CountBadge"]');
-  await expect(counts).toHaveText(["3", "3", "99+"]);
+  await expect(counts).toHaveText(["3", "3", "99+", "3"]);
   const button = panel.getByRole("button", { name: "Delete selected" });
   const bubble = button.locator('[data-component="CountBadge"]');
   const buttonBox = await button.boundingBox();
@@ -462,7 +462,7 @@ test("badges show tones, appearances and corner counts", async ({
   }
   await expect(counts).toHaveCount(0);
   await panel.getByRole("button", { name: "Add", exact: true }).click();
-  await expect(counts).toHaveText(["1", "1", "40"]);
+  await expect(counts).toHaveText(["1", "1", "40", "1"]);
 });
 
 /** Confirms sparse metric histories remain blank and flat histories produce a valid visible line. */

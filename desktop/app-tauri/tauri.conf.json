@@ -37,7 +37,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://nightfall.live/api/v1/updates/alpha/{{target}}/{{arch}}/{{bundle_type}}/{{current_version}}"
+        "https://nightfall.live/api/v1/updates/{{channel}}/{{target}}/{{arch}}/{{bundle_type}}/{{current_version}}"
       ],
       "pubkey": "",
       "requireSignedVersion": true,

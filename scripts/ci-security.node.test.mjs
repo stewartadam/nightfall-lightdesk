@@ -756,7 +756,7 @@ test("update manifest signs each package for the release version", (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(existsSync(join(directory, "updater.key")), false);
   const manifest = JSON.parse(
-    readFileSync(join(directory, "manifest/latest.json"), "utf8"),
+    readFileSync(join(directory, "manifest/release.json"), "utf8"),
   );
   assert.equal(manifest.version, "0.1.0-alpha.2");
   for (const [target, suffix] of Object.entries(suffixes)) {
@@ -806,7 +806,7 @@ test("update signing refuses incomplete releases and missing keys", (t) => {
     signUpdates(directory, { GITHUB_EVENT_NAME: "workflow_dispatch" }).status,
     0,
   );
-  assert.equal(existsSync(join(directory, "manifest/latest.json")), false);
+  assert.equal(existsSync(join(directory, "manifest/release.json")), false);
 });
 
 /** A signature that fails to encode stops the release instead of publishing an empty one. */
@@ -843,25 +843,33 @@ test("update signing fails when a signature cannot be encoded", (t) => {
     REAL_BASE64: realBase64,
   });
   assert.notEqual(result.status, 0);
-  assert.equal(existsSync(join(directory, "manifest/latest.json")), false);
+  assert.equal(existsSync(join(directory, "manifest/release.json")), false);
 });
 
 /**
- * Runs the actual updater-release step with a stand-in `gh` that records its arguments, and
- * reports whether the `updater` release already exists through `existing`.
+ * Runs the actual channel feed step with a stand-in `gh` that records its arguments. `current`
+ * maps each feed already on the `updater` release to the version it offers, and `existing`
+ * reports whether that release exists at all. Returns the step's exit status, the `gh` calls,
+ * and the feeds it wrote for upload.
  */
 function offerUpdate(
   directory,
   manifest,
-  { existing = true, current = "0.1.0-alpha.1", ...environment } = {},
+  {
+    existing = true,
+    current = { prerelease: "0.1.0-alpha.1", stable: "0.0.0" },
+    ...environment
+  } = {},
 ) {
   const step = updates.jobs.publish.steps.find(
     (candidate) =>
-      candidate.name === "Replace the manifest on the updater release",
+      candidate.name === "Update the channel feeds on the updater release",
   ).run;
+  rmSync(join(directory, "feeds"), { recursive: true, force: true });
+  rmSync(join(directory, "gh.log"), { force: true });
   mkdirSync(join(directory, "manifest"), { recursive: true });
   writeFileSync(
-    join(directory, "manifest/latest.json"),
+    join(directory, "manifest/release.json"),
     JSON.stringify(manifest),
   );
   const bin = join(directory, "bin");
@@ -871,8 +879,9 @@ function offerUpdate(
     [
       "#!/usr/bin/env bash",
       'printf "%s\\n" "$*" >> "$GH_LOG"',
-      `if [ "$2" = view ]; then exit ${existing ? 0 : 1}; fi`,
-      'if [ "$2" = download ]; then printf \'{"version":"%s"}\' "$CURRENT_VERSION" > "$7"; fi',
+      `if [ "$2" = view ] && [ "$#" = 3 ]; then exit ${existing ? 0 : 1}; fi`,
+      'if [ "$2" = view ]; then jq -r \'keys[] | . + ".json"\' <<< "$CURRENT_FEEDS"; exit; fi',
+      'if [ "$2" = download ]; then jq --arg feed "${5%.json}" \'{version: .[$feed]}\' <<< "$CURRENT_FEEDS" > "$7"; fi',
     ].join("\n"),
     { mode: 0o755 },
   );
@@ -883,7 +892,7 @@ function offerUpdate(
       ...updatesEnvironment,
       PATH: `${bin}:${process.env.PATH}`,
       GH_LOG: join(directory, "gh.log"),
-      CURRENT_VERSION: current,
+      CURRENT_FEEDS: JSON.stringify(current),
       GH_REPO: "owner/repo",
       RUNNER_TEMP: directory,
       GITHUB_STEP_SUMMARY: join(directory, "summary.md"),
@@ -892,9 +901,20 @@ function offerUpdate(
     encoding: "utf8",
   });
   const log = join(directory, "gh.log");
+  const feeds = join(directory, "feeds");
   return {
     status: result.status,
     calls: existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [],
+    feeds: existsSync(feeds)
+      ? Object.fromEntries(
+          readdirSync(feeds)
+            .sort()
+            .map((name) => [
+              name,
+              JSON.parse(readFileSync(join(feeds, name), "utf8")).version,
+            ]),
+        )
+      : {},
   };
 }
 
@@ -982,18 +1002,43 @@ function updateManifest(
   };
 }
 
-/** Publishing replaces the manifest on the updater release, creating that release only once. */
-test("published releases replace the manifest on the updater release", (t) => {
+/** A prerelease updates only the Prerelease feed, while a stable release updates Prerelease and Stable. */
+test("published releases update their channels' feeds", (t) => {
   const directory = fixtureDirectory(t);
-  const replaced = offerUpdate(directory, updateManifest());
-  assert.equal(replaced.status, 0);
-  assert.deepEqual(replaced.calls, [
+  const prerelease = offerUpdate(directory, updateManifest());
+  assert.equal(prerelease.status, 0);
+  assert.deepEqual(prerelease.calls, [
     "release view updater",
-    `release download updater --pattern latest.json --output ${directory}/current.json`,
-    "release upload updater manifest/latest.json --clobber",
+    "release view updater --json assets --jq .assets[].name",
+    `release download updater --pattern prerelease.json --output ${directory}/prerelease-current.json`,
+    "release upload updater feeds/prerelease.json --clobber",
   ]);
-  rmSync(join(directory, "gh.log"));
-  const created = offerUpdate(directory, updateManifest(), { existing: false });
+  assert.deepEqual(prerelease.feeds, { "prerelease.json": "0.1.0-alpha.2" });
+
+  const stable = offerUpdate(directory, updateManifest("0.1.0"), {
+    RELEASE_TAG: "v0.1.0",
+  });
+  assert.equal(stable.status, 0);
+  assert.equal(
+    stable.calls.at(-1),
+    "release upload updater feeds/prerelease.json feeds/stable.json --clobber",
+  );
+  assert.deepEqual(stable.feeds, {
+    "prerelease.json": "0.1.0",
+    "stable.json": "0.1.0",
+  });
+});
+
+/**
+ * The first publish creates the updater release, and Stable gets a feed that offers nothing
+ * until the first stable release, so its apps never fail to find it.
+ */
+test("the first publish creates the updater release and an empty Stable feed", (t) => {
+  const directory = fixtureDirectory(t);
+  const created = offerUpdate(directory, updateManifest(), {
+    existing: false,
+    current: {},
+  });
   assert.equal(created.status, 0);
   assert.match(
     created.calls[1],
@@ -1001,13 +1046,40 @@ test("published releases replace the manifest on the updater release", (t) => {
   );
   assert.equal(
     created.calls[2],
-    "release upload updater manifest/latest.json --clobber",
+    "release upload updater feeds/prerelease.json feeds/stable.json --clobber",
   );
+  assert.deepEqual(created.feeds, {
+    "prerelease.json": "0.1.0-alpha.2",
+    "stable.json": "0.0.0",
+  });
+});
+
+/** Until Prerelease has its own feed, the single feed from before channels guards it against downgrades. */
+test("the Prerelease feed starts from the feed that came before channels", (t) => {
+  const directory = fixtureDirectory(t);
+  const upgraded = offerUpdate(directory, updateManifest(), {
+    current: { latest: "0.1.0-alpha.1" },
+  });
+  assert.equal(upgraded.status, 0);
+  assert.equal(
+    upgraded.calls[2],
+    `release download updater --pattern latest.json --output ${directory}/prerelease-current.json`,
+  );
+  assert.deepEqual(upgraded.feeds, {
+    "prerelease.json": "0.1.0-alpha.2",
+    "stable.json": "0.0.0",
+  });
+  const downgrade = offerUpdate(directory, updateManifest(), {
+    current: { latest: "0.1.0-alpha.3" },
+  });
+  assert.notEqual(downgrade.status, 0);
+  assert.doesNotMatch(downgrade.calls.join("\n"), /upload/);
 });
 
 /**
  * A manifest for another version or another release's files, a run outside a release event,
- * or an older release than the one already offered uploads nothing.
+ * or an older release than every feed already offers uploads nothing. A stable release older
+ * than the newest prerelease still updates Stable.
  */
 test("the updater release only accepts the published release's manifest", (t) => {
   const directory = fixtureDirectory(t);
@@ -1033,19 +1105,28 @@ test("the updater release only accepts the published release's manifest", (t) =>
     assert.notEqual(result.status, 0);
     assert.deepEqual(result.calls, []);
   }
-  for (const current of ["0.1.0-alpha.10", "0.1.0", "0.2.0-alpha.1"]) {
-    const downgrade = offerUpdate(directory, updateManifest(), { current });
-    assert.notEqual(downgrade.status, 0, current);
-    assert.doesNotMatch(downgrade.calls.join("\n"), /upload/, current);
-    rmSync(join(directory, "gh.log"));
+  for (const prerelease of ["0.1.0-alpha.10", "0.1.0", "0.2.0-alpha.1"]) {
+    const downgrade = offerUpdate(directory, updateManifest(), {
+      current: { prerelease, stable: "0.0.0" },
+    });
+    assert.notEqual(downgrade.status, 0, prerelease);
+    assert.doesNotMatch(downgrade.calls.join("\n"), /upload/, prerelease);
   }
-  for (const current of ["0.1.0-alpha.2", "0.1.0-alpha.1", "0.1.0-1"]) {
+  for (const prerelease of ["0.1.0-alpha.2", "0.1.0-alpha.1", "0.1.0-1"]) {
     assert.equal(
-      offerUpdate(directory, updateManifest(), { current }).status,
+      offerUpdate(directory, updateManifest(), {
+        current: { prerelease, stable: "0.0.0" },
+      }).status,
       0,
-      current,
+      prerelease,
     );
   }
+  const hotfix = offerUpdate(directory, updateManifest("0.1.1"), {
+    current: { prerelease: "0.2.0-alpha.1", stable: "0.1.0" },
+    RELEASE_TAG: "v0.1.1",
+  });
+  assert.equal(hotfix.status, 0);
+  assert.deepEqual(hotfix.feeds, { "stable.json": "0.1.1" });
 });
 
 /** A build-generated metadata plan cannot turn authenticated API calls into arbitrary endpoints. */

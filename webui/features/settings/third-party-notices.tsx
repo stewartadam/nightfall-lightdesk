@@ -41,12 +41,9 @@ async function fetchNotices(): Promise<NoticesDocument> {
 }
 
 /** Present searchable component attributions while keeping long license texts collapsed. */
-export default function ThirdPartyNotices(props: { active: boolean }) {
+export default function ThirdPartyNotices() {
   const [query, setQuery] = createSignal("");
-  const [document, { refetch }] = createResource(
-    () => props.active,
-    fetchNotices,
-  );
+  const [document, { refetch }] = createResource(fetchNotices);
   /** Keep recoverable loading failures inside the dialog instead of the app error boundary. */
   const loaded = createMemo(() => (document.error ? undefined : document()));
   /** Match package names, licenses, source URLs, and copyright holders. */
