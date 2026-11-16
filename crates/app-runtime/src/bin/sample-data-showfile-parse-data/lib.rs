@@ -792,7 +792,6 @@ fn add_timecode_and_timeline(world: &mut World) -> Result<(), String> {
             }],
             muted: false,
             solo: false,
-            expanded: true,
             automation_lanes: vec![AutomationLane {
                 id: "param-1".to_owned(),
                 name: "Intensity".to_owned(),

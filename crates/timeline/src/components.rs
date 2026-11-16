@@ -631,7 +631,6 @@ mod tests {
                 label: "Track".to_owned(),
                 muted: false,
                 solo: false,
-                expanded: false,
                 actions: vec![Action {
                     id: "at-zero".to_owned(),
                     label: "At zero".to_owned(),
@@ -710,7 +709,6 @@ mod tests {
                     label: "Track A".to_string(),
                     muted: false,
                     solo: false,
-                    expanded: false,
                     actions: vec![Action {
                         id: action_id.clone(),
                         label: "Start A".to_string(),
@@ -725,7 +723,6 @@ mod tests {
                     label: "Track B".to_string(),
                     muted: false,
                     solo: false,
-                    expanded: false,
                     actions: vec![Action {
                         id: action_id.clone(),
                         label: "Start B".to_string(),
@@ -801,7 +798,6 @@ mod tests {
                     label: "Track A".to_string(),
                     muted: false,
                     solo: false,
-                    expanded: false,
                     actions: vec![Action {
                         id: "late-start".to_string(),
                         label: "Late start".to_string(),
@@ -816,7 +812,6 @@ mod tests {
                     label: "Track B".to_string(),
                     muted: false,
                     solo: false,
-                    expanded: false,
                     actions: vec![Action {
                         id: "early-start".to_string(),
                         label: "Early start".to_string(),

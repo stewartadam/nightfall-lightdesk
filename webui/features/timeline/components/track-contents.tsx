@@ -520,7 +520,7 @@ const TrackContents = (props: TrackListProps) => {
               allActions={allActions()}
               actionTargetIndex={actionTargetIndex()}
               automationLanes={track().automation_lanes}
-              expanded={track().expanded}
+              expanded={ctx.track.isTrackExpanded(track().id)}
               dragPreviewPositionPx={
                 dragPreview()?.trackId === track().id
                   ? dragPreview()?.positionPx

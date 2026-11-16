@@ -97,7 +97,6 @@ function timeline(loopEnabled: boolean): object {
         label: "Offset",
         muted: false,
         solo: false,
-        expanded: false,
         automation_lanes: [],
         actions: [
           {

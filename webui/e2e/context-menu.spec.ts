@@ -301,7 +301,6 @@ function ownedTrack(id: string, label: string, actions: object[]): object {
     label,
     muted: false,
     solo: false,
-    expanded: false,
     automation_lanes: [],
     actions,
   };
@@ -1163,7 +1162,6 @@ test("timeline track header context menu can mute, solo, and remove tracks", asy
                 label: "E2E Remove Track",
                 muted: false,
                 solo: false,
-                expanded: false,
                 actions: [],
                 automation_lanes: [],
               },

@@ -167,7 +167,6 @@ export function createTimelineHydrationController(
           label: "Recorded Actions",
           muted: false,
           solo: false,
-          expanded: false,
           actions: preview.actions,
           automation_lanes: [],
         },

@@ -121,14 +121,13 @@ function ownedTimecode(): object {
   };
 }
 
-/** Builds the exact expanded track needed by targeting and parameter UI checks. */
+/** Builds the exact track, with a parameter lane, needed by targeting and parameter UI checks. */
 function ownedBaseTrack(): object {
   return {
     id: BASE_TRACK_ID,
     label: BASE_TRACK_LABEL,
     muted: false,
     solo: false,
-    expanded: true,
     actions: [],
     automation_lanes: [
       {
@@ -236,10 +235,15 @@ async function openOwnedRecordingApp(
   backendPort: number,
 ): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
-  await page.addInitScript(() => {
+  await page.addInitScript((trackId) => {
     window.localStorage.clear();
     window.localStorage.setItem("nightfall.currentShowfileName", "default");
-  });
+    // Show the base track's automation lanes, as this device's expand state.
+    window.localStorage.setItem(
+      "nightfall-timeline-expanded-tracks",
+      JSON.stringify([trackId]),
+    );
+  }, BASE_TRACK_ID);
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);

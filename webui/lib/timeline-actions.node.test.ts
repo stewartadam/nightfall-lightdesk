@@ -18,7 +18,6 @@ function track(id: string, actions: types.Action[]): types.Track {
     label: id,
     muted: false,
     solo: false,
-    expanded: false,
     actions,
     automation_lanes: [],
   };

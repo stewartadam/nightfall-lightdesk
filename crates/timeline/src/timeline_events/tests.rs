@@ -219,7 +219,6 @@ fn store_timeline_action_change_requests_reconstruction_event() {
         label: "Track 1".to_owned(),
         muted: false,
         solo: false,
-        expanded: false,
         actions: vec![Action {
             id: "action-start".to_owned(),
             label: "Start".to_owned(),
@@ -256,7 +255,6 @@ fn store_timeline_action_reorder_requests_reconstruction_event() {
         label: "Track 1".to_owned(),
         muted: false,
         solo: false,
-        expanded: false,
         actions: vec![
             Action {
                 id: "action-first".to_owned(),
@@ -297,7 +295,6 @@ fn store_timeline_start_action_duration_change_does_not_request_reconstruction_e
         label: "Track 1".to_owned(),
         muted: false,
         solo: false,
-        expanded: false,
         actions: vec![
             Action {
                 id: "action-start".to_owned(),
@@ -348,7 +345,6 @@ fn store_timeline_marker_change_does_not_request_reconstruction_event() {
         label: "Track 1".to_owned(),
         muted: false,
         solo: false,
-        expanded: false,
         actions: vec![Action {
             id: "action-desk".to_owned(),
             label: "Desk eval".to_owned(),
@@ -413,7 +409,6 @@ fn timeline_with_actions(actions: Vec<Action>) -> Timeline {
         label: "Track 1".to_owned(),
         muted: false,
         solo: false,
-        expanded: false,
         actions,
         automation_lanes: Vec::new(),
     }];

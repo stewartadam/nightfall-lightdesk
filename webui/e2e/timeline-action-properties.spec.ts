@@ -121,7 +121,6 @@ async function openActionPropertiesFixture(
               label: "Action Properties",
               muted: false,
               solo: false,
-              expanded: true,
               actions: [
                 {
                   id: speedActionId,

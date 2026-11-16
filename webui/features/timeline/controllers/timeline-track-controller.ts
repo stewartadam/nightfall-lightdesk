@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { useStore } from "@nanostores/solid";
 import { createSignal, untrack } from "solid-js";
 import { getLogger } from "../../../lib/logger";
 import {
@@ -19,6 +20,10 @@ import type {
   TimelineMutationOptions,
   TrackReorderPlacement,
 } from "../context/timeline-context-contract";
+import {
+  expandedTimelineTracks,
+  setTrackExpanded,
+} from "../state/expanded-tracks";
 import type { TimelineEdits } from "./timeline-edits";
 import type { createTimelineSelectionController } from "./timeline-selection-controller";
 
@@ -112,16 +117,21 @@ export function createTimelineTrackController(
     );
   };
 
-  /** Expands or collapses a track's automation lanes. */
+  /** IDs of the tracks this device shows expanded, tracked reactively. */
+  const $expandedTracks = useStore(expandedTimelineTracks);
+
+  /** Whether this device shows the track's automation lanes; reactive. */
+  const isTrackExpanded = (trackId: string) =>
+    $expandedTracks().includes(trackId);
+
+  /**
+   * Expands or collapses a track's automation lanes on this device only. It is a view choice,
+   * so nothing is sent to the engine and other clients keep their own.
+   */
   const toggleTrackExpanded = (trackId: string) => {
-    const track = findTrack(trackId);
-    if (!track) return;
-    const expanded = !track.expanded;
+    const expanded = !untrack(() => isTrackExpanded(trackId));
     log.debug(`setting expanded=${expanded} for track ${trackId}`);
-    updateTrack(trackId, [{ type: "Expanded", data: expanded }], (current) => ({
-      ...current,
-      expanded,
-    }));
+    setTrackExpanded(trackId, expanded);
   };
 
   /** Adds a uniquely labelled empty track at the end and returns its ID. */
@@ -144,7 +154,6 @@ export function createTimelineTrackController(
       label,
       muted: false,
       solo: false,
-      expanded: false,
       actions: [],
       automation_lanes: [],
     };
@@ -296,26 +305,10 @@ export function createTimelineTrackController(
       points: [],
     };
     edits.edit(
-      [
-        { type: "StoreAutomationLane", data: { track_id: trackId, lane } },
-        {
-          type: "UpdateTrack",
-          data: {
-            track_id: trackId,
-            settings: [{ type: "Expanded", data: true }],
-          },
-        },
-      ],
-      (timeline) =>
-        updateTrackIn(
-          storeLaneIn(timeline, trackId, lane),
-          trackId,
-          (current) => ({
-            ...current,
-            expanded: true,
-          }),
-        ),
+      [{ type: "StoreAutomationLane", data: { track_id: trackId, lane } }],
+      (timeline) => storeLaneIn(timeline, trackId, lane),
     );
+    setTrackExpanded(trackId, true);
   };
 
   /** Deletes a parameter lane and its points, keeping the track's other lanes. */
@@ -508,6 +501,7 @@ export function createTimelineTrackController(
     removePoint,
     toggleTrackMute,
     toggleTrackSolo,
+    isTrackExpanded,
     toggleTrackExpanded,
     repositionAction,
     repositionActions,

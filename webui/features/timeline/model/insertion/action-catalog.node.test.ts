@@ -105,7 +105,6 @@ test("resolveTrackCompatibility warns when inserting mismatched family", () => {
     label: "Track 1",
     muted: false,
     solo: false,
-    expanded: false,
     actions: [
       {
         id: "action-1",

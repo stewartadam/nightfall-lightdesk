@@ -246,7 +246,6 @@ function timeline(): object {
         label: "Owned Pixel Output",
         muted: false,
         solo: false,
-        expanded: false,
         automation_lanes: [],
         actions: [
           {

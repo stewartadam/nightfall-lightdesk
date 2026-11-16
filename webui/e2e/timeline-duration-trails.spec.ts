@@ -163,7 +163,6 @@ async function openFxModuleDurationTrailFixture(
             label: "Pattern",
             muted: false,
             solo: false,
-            expanded: false,
             actions: [
               {
                 id: actionId,
@@ -343,7 +342,6 @@ async function openDurationTrailFixture(
           label: "Duration Trail Track",
           muted: false,
           solo: false,
-          expanded: false,
           actions: [
             {
               id: durationItemId,
@@ -505,7 +503,6 @@ async function openSameTrackStepFxStopDurationTrailFixture(
       label: "Duration Trail Track",
       muted: false,
       solo: false,
-      expanded: false,
       actions: [
         {
           id: fixture.durationItemId,
@@ -578,7 +575,6 @@ async function openCrossTrackStopDurationTrailFixture(
           label: "Cross Track Stop",
           muted: false,
           solo: false,
-          expanded: false,
           actions: [
             {
               id: stopItemId,

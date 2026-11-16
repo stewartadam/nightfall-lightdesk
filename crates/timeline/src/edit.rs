@@ -153,8 +153,6 @@ pub enum TrackSetting {
     Muted(bool),
     /// Whether the track is soloed.
     Solo(bool),
-    /// Whether the track's automation lanes are shown expanded.
-    Expanded(bool),
 }
 
 /// One setting of a timeline, with its new value.
@@ -395,13 +393,10 @@ impl TimelineEdit {
         }
     }
 
-    /// Returns whether the edit only changes how the timeline is viewed (a track expanded or
-    /// collapsed, the scroll mode), which is saved with the show but isn't an undo step.
+    /// Returns whether the edit only changes how the timeline is viewed (the scroll mode),
+    /// which is saved with the show but isn't an undo step.
     pub fn is_view_only(&self) -> bool {
         match self {
-            TimelineEdit::UpdateTrack { settings, .. } => settings
-                .iter()
-                .all(|setting| matches!(setting, TrackSetting::Expanded(_))),
             TimelineEdit::UpdateSettings { settings } => settings
                 .iter()
                 .all(|setting| matches!(setting, TimelineSetting::ScrollMode(_))),
@@ -565,9 +560,6 @@ fn apply_track_setting(track: &mut Track, setting: &TrackSetting) -> TrackSettin
             TrackSetting::Muted(std::mem::replace(&mut track.muted, *muted))
         }
         TrackSetting::Solo(solo) => TrackSetting::Solo(std::mem::replace(&mut track.solo, *solo)),
-        TrackSetting::Expanded(expanded) => {
-            TrackSetting::Expanded(std::mem::replace(&mut track.expanded, *expanded))
-        }
     }
 }
 
@@ -791,7 +783,6 @@ mod tests {
             label: format!("Track {id}"),
             muted: false,
             solo: false,
-            expanded: false,
             actions: Vec::new(),
             automation_lanes: Vec::new(),
         }
@@ -919,23 +910,25 @@ mod tests {
         assert_eq!(json(&restored), json(&original));
     }
 
-    /// Expanding a track or changing the scroll mode is view-only; anything else is not.
+    /// Changing only the scroll mode is view-only; a track edit or any other setting is not.
     #[test]
     fn view_only_edits() {
-        let expand = TimelineEdit::UpdateTrack {
-            track_id: "a".to_owned(),
-            settings: vec![TrackSetting::Expanded(true)],
-        };
-        let expand_and_mute = TimelineEdit::UpdateTrack {
-            track_id: "a".to_owned(),
-            settings: vec![TrackSetting::Expanded(true), TrackSetting::Muted(true)],
-        };
         let scroll = TimelineEdit::UpdateSettings {
             settings: vec![TimelineSetting::ScrollMode(TimelineScrollMode::Follow)],
         };
-        assert!(expand.is_view_only());
-        assert!(!expand_and_mute.is_view_only());
+        let scroll_and_bpm = TimelineEdit::UpdateSettings {
+            settings: vec![
+                TimelineSetting::ScrollMode(TimelineScrollMode::Follow),
+                TimelineSetting::Bpm(128.0),
+            ],
+        };
+        let mute = TimelineEdit::UpdateTrack {
+            track_id: "a".to_owned(),
+            settings: vec![TrackSetting::Muted(true)],
+        };
         assert!(scroll.is_view_only());
+        assert!(!scroll_and_bpm.is_view_only());
+        assert!(!mute.is_view_only());
     }
 
     /// An edit to one track keeps a concurrent change elsewhere, such as a new marker.

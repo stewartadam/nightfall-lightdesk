@@ -105,7 +105,6 @@ async function openTimelinePreactivationFixture(
             label: "Preactivation Track",
             muted: false,
             solo: false,
-            expanded: true,
             actions: [
               {
                 id: actionId,

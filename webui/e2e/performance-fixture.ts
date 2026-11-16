@@ -210,7 +210,6 @@ export async function seedPerformanceTimeline(page: Page): Promise<{
           label: `Layer ${index + 1}`,
           muted: false,
           solo: false,
-          expanded: true,
           automation_lanes: [],
           actions: [16_500, 29_500, 169_210].map((position, window) => ({
             id: `load-${index}-${window}`,

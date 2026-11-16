@@ -99,7 +99,6 @@ fn seek_coalesces_multiple_timecode_events_per_frame() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Start exec".to_owned(),
@@ -190,7 +189,6 @@ fn seek_coalesces_distinct_timecodes_in_last_event_order() {
             label: "Track Start".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -217,7 +215,6 @@ fn seek_coalesces_distinct_timecodes_in_last_event_order() {
             label: "Track Stop".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-stop".to_owned(),
                 label: "Stop exec".to_owned(),
@@ -298,7 +295,6 @@ fn seek_coalesces_each_timeline_for_shared_timecode() {
             label: "Track Stop".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-stop".to_owned(),
                 label: "Stop exec".to_owned(),
@@ -323,7 +319,6 @@ fn seek_coalesces_each_timeline_for_shared_timecode() {
             label: "Track Start".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),

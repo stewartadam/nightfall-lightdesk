@@ -51,7 +51,6 @@ async function openTimelineFixture(page: Page): Promise<ConcurrentEditFixture> {
       label,
       muted: false,
       solo: false,
-      expanded: false,
       actions: [],
       automation_lanes: [],
     });

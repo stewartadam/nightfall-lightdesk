@@ -139,7 +139,6 @@ fn seek_fire_cue_attaches_elapsed_instance_clock() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Fire cue".to_owned(),
@@ -241,7 +240,6 @@ fn seek_fire_cue_with_duration_marks_release_window() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Fire cue".to_owned(),
@@ -346,7 +344,6 @@ fn seek_fire_cue_with_duration_skips_completed_release() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Fire cue".to_owned(),

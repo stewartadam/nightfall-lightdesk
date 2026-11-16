@@ -73,7 +73,6 @@ fn live_repeated_sequence_go_reaches_each_manual_cue() {
                 label: "Sequence".to_owned(),
                 muted: false,
                 solo: false,
-                expanded: false,
                 automation_lanes: Vec::new(),
                 actions: (1..=4)
                     .map(|cue| Action {
@@ -231,7 +230,6 @@ fn seek_timeline_sequence_materializes_setup_only_clip() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start setup-only sequence".to_owned(),
@@ -526,7 +524,6 @@ fn timeline_lookahead_preactivates_future_sequence_start() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start sequence".to_owned(),
@@ -1001,7 +998,6 @@ fn timeline_lookahead_preactivates_setup_and_first_sequence_cues() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start sequence".to_owned(),
@@ -1194,7 +1190,6 @@ fn timeline_lookahead_reports_future_sequence_status_while_stopped() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start sequence".to_owned(),
@@ -1424,7 +1419,6 @@ fn timeline_lookahead_blocks_future_source_behind_intervening_fixture_assertion(
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-blocker".to_owned(),
@@ -1699,7 +1693,6 @@ fn timeline_lookahead_reports_bounded_blockers_for_dense_intervening_actions() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions,
             automation_lanes: Vec::new(),
         }],
@@ -1914,7 +1907,6 @@ fn timeline_lookahead_blocks_future_source_behind_intervening_fx_selection() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-blocker".to_owned(),
@@ -2142,7 +2134,6 @@ fn timeline_lookahead_rebuilds_when_intervening_fx_group_selection_changes() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-blocker".to_owned(),
@@ -2359,7 +2350,6 @@ fn timeline_lookahead_blocks_future_source_behind_unknown_intervening_action() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-unknown".to_owned(),
@@ -3270,7 +3260,6 @@ fn live_timeline_sequence_auto_end_holds_ltp_until_htp_release_completes() {
                 label: "Track 1".to_owned(),
                 muted: false,
                 solo: false,
-                expanded: false,
                 actions: vec![Action {
                     id: "action-start".to_owned(),
                     label: "Start sequence".to_owned(),
@@ -3450,7 +3439,6 @@ fn live_timeline_sequence_auto_end_scoped_release_holds_ltp_until_htp_release_co
                 label: "Track 1".to_owned(),
                 muted: false,
                 solo: false,
-                expanded: false,
                 actions: vec![Action {
                     id: "action-start".to_owned(),
                     label: "Start sequence".to_owned(),
@@ -3657,7 +3645,6 @@ fn seek_timeline_sequence_release_delay_keeps_boundary_cue_and_tracked_values() 
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),

@@ -72,7 +72,6 @@ test("copySelectedTimelineActions preserves selected track order and spacing", (
       label: "Track A",
       muted: false,
       solo: false,
-      expanded: false,
       actions: [action("a-late", 4000), action("a-early", 1000)],
       automation_lanes: [],
     },

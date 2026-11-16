@@ -61,7 +61,6 @@ fn seek_tracks_clip_autostarted_by_jump_to_cue_after_cleanup() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-jump".to_owned(),
                 label: "Jump exec".to_owned(),
@@ -192,7 +191,6 @@ fn seek_replay_direct_materializes_jump_to_cue_autostart() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-jump".to_owned(),
                 label: "Jump exec".to_owned(),
@@ -334,7 +332,6 @@ fn seek_replay_direct_materializes_go_autostart() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-go".to_owned(),
                 label: "Go exec".to_owned(),
@@ -458,7 +455,6 @@ fn seek_replay_ignores_desk_eval_go_autostart_by_default() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-desk-go".to_owned(),
                 label: "Desk go".to_owned(),
@@ -637,7 +633,6 @@ fn seek_replay_tracks_sequence_navigation_desk_eval_and_running_jump_clips() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-advance".to_owned(),
@@ -754,7 +749,6 @@ fn seek_replay_ignores_desk_eval_clip_go_by_default() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-desk".to_owned(),
                 label: "Desk eval exec".to_owned(),
@@ -852,7 +846,6 @@ fn seek_replay_dispatches_desk_eval_clip_back_when_configured() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-desk".to_owned(),
                 label: "Desk eval exec".to_owned(),
@@ -938,7 +931,6 @@ fn seek_replay_dispatches_registered_desk_eval_when_configured() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-registered-desk".to_owned(),
                 label: "Registered desk eval".to_owned(),
@@ -1054,7 +1046,6 @@ fn seek_replay_direct_materializes_sequence_without_desk_eval_go() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),
@@ -1210,7 +1201,6 @@ fn seek_replay_direct_materializes_sequence_with_unrelated_clip_cleanup() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -1379,7 +1369,6 @@ fn seek_replay_direct_materializes_sequence_with_same_clip_cleanup() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -1489,7 +1478,6 @@ fn seek_replay_skips_opaque_desk_eval_commands() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-desk".to_owned(),
                 label: "Desk eval".to_owned(),
@@ -1574,7 +1562,6 @@ fn seek_replay_skips_started_clip_with_missing_sequence_data() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -1690,7 +1677,6 @@ fn seek_replay_materializes_autonomous_sequence_progression() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -1837,7 +1823,6 @@ fn seek_replay_applies_autonomous_progression_before_planned_intervention() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),
@@ -1966,7 +1951,6 @@ fn seek_replay_materializes_stopped_sequence_release_directly() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),
@@ -2103,7 +2087,6 @@ fn seek_replay_skips_timed_stop_with_missing_sequence_data() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),
@@ -2207,7 +2190,6 @@ fn seek_replay_skips_advanced_sequence_with_missing_cue_data() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),
@@ -2328,7 +2310,6 @@ fn seek_replay_skips_back_sequence_with_missing_cue_data() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-jump".to_owned(),

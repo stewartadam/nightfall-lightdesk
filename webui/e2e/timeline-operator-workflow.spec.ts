@@ -637,7 +637,6 @@ function ownedOperatorBaseTrack(): object {
     label: "Owned Operator Track",
     muted: false,
     solo: false,
-    expanded: true,
     actions: [
       {
         id: BASE_ITEM_ID,
@@ -695,10 +694,15 @@ async function prepareOwnedOperatorBackend(
   backendPort: number,
 ): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
-  await page.addInitScript(() => {
+  await page.addInitScript((trackId) => {
     window.localStorage.clear();
     window.localStorage.setItem("nightfall.currentShowfileName", "default");
-  });
+    // Show the base track's automation lanes, as this device's expand state.
+    window.localStorage.setItem(
+      "nightfall-timeline-expanded-tracks",
+      JSON.stringify([trackId]),
+    );
+  }, BASE_TRACK_ID);
   await page.goto("/?startup:draftRecovery=false&e2e=1");
   await expect(page.locator("main#app")).toBeVisible();
   await waitForDockviewApp(page);
@@ -936,7 +940,6 @@ async function seedDraggableTimelineItem(
             label: "E2E Drag Cleanup",
             muted: false,
             solo: false,
-            expanded: false,
             actions: [
               {
                 id: actionId,
@@ -1010,7 +1013,6 @@ async function seedDenseTimelineItems(
             label: "E2E Dense Track",
             muted: false,
             solo: false,
-            expanded: false,
             actions: items,
             automation_lanes: [],
           },
@@ -1965,7 +1967,6 @@ test("timeline keeps chrome fixed while track rows scroll", async ({
         muted: false,
         solo: false,
         actions: items,
-        expanded: false,
         automation_lanes: [],
       };
     });
@@ -2781,7 +2782,6 @@ test("shift-click multi-selects timeline action flags", async ({ page }) => {
             label: "E2E Shift Selection",
             muted: false,
             solo: false,
-            expanded: false,
             actions: items,
             automation_lanes: [],
           },
@@ -2966,7 +2966,6 @@ test("timeline actions can be dragged between tracks", async ({
             label: "E2E Drag Source",
             muted: false,
             solo: false,
-            expanded: false,
             actions: [
               {
                 id: actionId,
@@ -2983,7 +2982,6 @@ test("timeline actions can be dragged between tracks", async ({
             label: "E2E Drag Target",
             muted: false,
             solo: false,
-            expanded: false,
             actions: [],
             automation_lanes: [],
           },
