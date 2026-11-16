@@ -127,7 +127,7 @@ export function parseNoteEntry(entry) {
 /** Longest entry, in characters, that the PR check accepts; see docs/contributing/writing-release-notes.md. */
 export const MAX_ENTRY_LENGTH = 160;
 /** Most entries one PR may declare, so notes stay on the headline changes. */
-export const MAX_ENTRIES = 5;
+export const MAX_ENTRIES = 3;
 
 /**
  * Lists the ways a parsed declaration breaks the release notes guide's mechanical rules: a missing
@@ -334,20 +334,32 @@ function titleType(title) {
   return "change";
 }
 
-/** Renders reviewed prose and exposes unmatched commits so direct pushes cannot silently disappear. */
+/**
+ * Renders the merged entries as one section per feature area, in the order of NOTE_AREAS, with
+ * features before improvements, fixes and changes inside each area. Untagged entries from PRs
+ * merged before tags existed fall under Other. Unmatched commits are listed so direct pushes
+ * cannot silently disappear. The editorial pass described in the writing guide starts from this.
+ */
 export function renderReleaseNotes(report, installationNotes) {
-  const sections = ["## What's changed"];
-  for (const [type, heading] of Object.entries(NOTE_TYPES)) {
-    const entries = report.notes.flatMap((note) =>
-      note.entries
-        .filter((entry) => entry.type === type)
-        .map(
-          (entry) =>
-            `- ${entry.text} ([#${note.number}](https://github.com/${report.repository}/pull/${note.number}))`,
-        ),
-    );
-    if (entries.length)
-      sections.push(`### ${heading}\n\n${entries.join("\n")}`);
+  const sections = [];
+  const typeOrder = Object.keys(NOTE_TYPES);
+  const entries = report.notes.flatMap((note) =>
+    note.entries.map((entry) => ({
+      ...entry,
+      area: entry.area ?? "other",
+      number: note.number,
+    })),
+  );
+  for (const [area, heading] of Object.entries(NOTE_AREAS)) {
+    const lines = entries
+      .filter((entry) => entry.area === area)
+      .sort(
+        (a, b) =>
+          typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type) ||
+          a.number - b.number,
+      )
+      .map((entry) => `- ${entry.text} (#${entry.number})`);
+    if (lines.length) sections.push(`## ${heading}\n\n${lines.join("\n")}`);
   }
   if (!report.notes.length)
     sections.push(
@@ -355,11 +367,8 @@ export function renderReleaseNotes(report, installationNotes) {
     );
   if (report.unmatched.length)
     sections.push(
-      `### Additional commits\n\n${report.unmatched.map(({ sha, subject }) => `- ${subject} ([${sha.slice(0, 7)}](https://github.com/${report.repository}/commit/${sha}))`).join("\n")}`,
+      `## Additional commits\n\n${report.unmatched.map(({ sha, subject }) => `- ${subject} ([${sha.slice(0, 7)}](https://github.com/${report.repository}/commit/${sha}))`).join("\n")}`,
     );
-  sections.push(
-    `[Full comparison](https://github.com/${report.repository}/compare/${report.base}...${report.target})`,
-  );
   if (installationNotes.trim())
     sections.push(`## Installation\n\n${installationNotes.trim()}`);
   return `${sections.join("\n\n")}\n`;

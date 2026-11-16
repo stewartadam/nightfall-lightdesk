@@ -136,6 +136,8 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "ci.yml/scope": { contents: "read", "pull-requests": "read" },
     "ci.yml/desktop": { contents: "read", "pull-requests": "read" },
     "ci.yml/release": { contents: "write" },
+    "ci.yml/release-notes-edit": { contents: "read" },
+    "release-notes-edit.yml/edit": { contents: "read" },
     "ci.yml/preview": { "pull-requests": "write" },
     "ci.yml/gate": { "pull-requests": "read" },
     // Uses the permissionless job token only to look up public action commits.
@@ -191,6 +193,8 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
           "claude-review.yml/revoke",
           "claude-review.yml/review",
           "claude-review.yml/apply",
+          "ci.yml/release-notes-edit",
+          "release-notes-edit.yml/edit",
         ].includes(key) &&
         !["release", "preview", "symbols"].includes(id)
       ) {
@@ -283,7 +287,10 @@ test("signing and publishing only use pinned artifact actions and reviewed inlin
     }
   }
   assert.deepEqual(release.jobs.publish.needs, "sign");
-  assert.deepEqual(workflows["ci.yml"].jobs.release.needs, "desktop");
+  assert.deepEqual(workflows["ci.yml"].jobs.release.needs, [
+    "desktop",
+    "release-notes-edit",
+  ]);
 });
 
 /** Only the update signer holds the updater key, and it runs nothing but a verified minisign. */

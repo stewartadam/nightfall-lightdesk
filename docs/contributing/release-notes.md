@@ -31,7 +31,7 @@ Bare `none`, empty declarations, duplicate declarations, and placeholders such a
 `TODO` fail. Comments and fenced code examples do not count. Put a blank line or
 a Markdown heading after the entry, before the next PR section. A skip label is
 not necessary and does not bypass the check. The check also fails an entry without a
-known `type(area):` tag, an entry longer than 160 characters, or more than five
+known `type(area):` tag, an entry longer than 160 characters, or more than three
 entries; release preparation does not apply
 those limits to PRs that already merged. Reviewers, including the Claude
 mergeability review, judge the prose and omissions against the writing guide.
@@ -74,10 +74,11 @@ published prerelease, rather than repeating the whole series.
 
 The collector walks all parents between that baseline and the target. It looks up
 associated merged PRs and includes only PRs whose merge commit is in that range,
-deduplicated by PR number. Entries are grouped by the type in their
-`type(area):` tag (New features, Improvements, Fixes, Changes, Other changes), and the JSON
-report keeps each entry's area for grouping by feature area. Untagged entries
-from PRs merged before tags existed take their type from the PR title: `feat` is
+deduplicated by PR number. Entries are grouped into one section per feature area
+from their `type(area):` tag, with features, improvements, fixes and changes in
+that order inside each area, and the JSON report keeps each entry's type and
+area. Untagged entries from PRs merged before tags existed go under Other and
+take their type from the PR title: `feat` is
 an improvement, `fix` a fix, and anything else a change. The entry text comes
 from `Notes:`, not the title. Explicit omissions stay in the JSON report but do
 not appear in the published notes. Commits without a matching PR appear with
@@ -108,8 +109,17 @@ be a commit or branch for local previews. Generation is read-only on GitHub and
 writes Markdown plus `<output>.json` containing commit IDs, included notes,
 omission reasons, and unmatched commits. Avoid putting generated files in Git.
 
-The workflow saves both files as `release-notes-<commit>` for 90 days. The existing
-publisher uses this Markdown and the standard installation information when
+The workflow saves both files as `release-notes-<commit>`. Then the
+**Release notes editorial pass** (`release-notes-edit.yml`) has Claude edit them into
+the draft following [Editing a release](writing-release-notes.md#editing-a-release):
+a Highlights section, merged and folded entries, and polish dropped. Claude may
+read the checkout and write only the edited file; it runs no repository code and
+holds only the `CLAUDE_CODE_OAUTH_TOKEN` secret. If that secret is missing, the
+pass fails, or the result lacks Highlights or changes the installation section,
+the collected notes are used unchanged with a warning. The result is saved as
+`release-notes-edited-<commit>` (`release-notes.md` and its JSON report, plus
+`collected.md` when edited). Both artifacts are kept for 7 days.
+The publisher uses that Markdown and the standard installation information when
 creating its draft release and leaves it unpublished, so the notes can be edited
 on the draft before a maintainer publishes it. It does not reread PR descriptions
 when uploading. A full rerun including the

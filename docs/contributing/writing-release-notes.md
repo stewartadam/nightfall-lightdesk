@@ -12,24 +12,37 @@ few seconds by someone who never saw the code or the discussion.
 1. **Only what a user notices.** Write about behavior a user can see, hear or rely
    on in the app, the output or a saved show. If nothing changes for them, use
    `Notes: none (reason)`.
-2. **The result, not the work.** Say what is now true ("Art-Net output now…",
+2. **Only what is new.** Leave out what a user would assume anyway. "A patch can
+   now use different GDTF revisions for the same fixture", not "A show can patch
+   fixtures from different revisions of the same fixture and mode, and it reopens
+   as saved".
+3. **The result, not the work.** Say what is now true ("Art-Net output now…",
    "Deleting a fixture no longer…"), not what the PR did ("Refactored…",
    "Replays changes as they happen instead of twice a second…").
-3. **One change per entry, one short sentence each.** At most 160 characters per
-   entry. Use an empty `Notes:` line and bullets for more than one entry.
-4. **Only the headline changes.** At most five entries. Pick what a user would want
+4. **The capability, not the gesture.** "Fixture parameters can be parked to
+   freeze their output", not "Right-click a value to park it". Name a menu or
+   setting only when the change is that something moved: "The Welcome Guide can
+   now be found in the app menu".
+5. **One change per entry, one short sentence each.** At most 160 characters per
+   entry. Use an empty `Notes:` line and bullets for more than one entry. Leave out
+   examples, lists of compatible models and asides in parentheses.
+6. **Only the headline changes.** At most three entries. Pick what a user would want
    to hear about and leave out smaller polish, internal steps and side effects.
-5. **No how-to.** Do not walk through steps, buttons, dialogs or command syntax.
-   Name the feature and where to find it, in a few words at most; the user guide
-   explains how to use it.
-6. **No implementation detail.** Leave out timings, thresholds, crate, module and
+7. **No notes for cosmetic polish.** New icons, restyled cards and merged buttons
+   get `Notes: none (cosmetic polish)`. A small fix to something that got in the
+   way, such as notifications covering buttons, still gets a short entry.
+8. **No how-to.** Do not walk through steps, buttons, dialogs or command syntax;
+   the user guide explains how to use a feature.
+9. **No implementation detail.** Leave out timings, thresholds, crate, module and
    message names, protocols between Nightfall's own processes, and how a fix works.
    A number belongs only when it is the user-visible point (for example a new
    output rate).
-7. **Plain words.** Use the names users see in the app. Write in the present
-   tense, without "we", and without hedging or praise.
-8. **Tag every entry** with its type and feature area as `type(area):`, so releases
-   can group notes. A PR that touches two areas gets one entry per area.
+10. **Plain words.** Use the names users see in the app. Write in the present
+    tense, without "we", and without hedging or praise.
+11. **Tag every entry** with its type and feature area as `type(area):`, so releases
+    can group notes. A PR that touches two areas gets one entry per area. Use
+    `change` for anything users must adapt to, such as a removal or different
+    default; releases list those under Highlights.
 
 ### Types
 
@@ -139,10 +152,66 @@ Notes: Park holds fixture parameters over cues, FX, the programmer and masters u
 
 Better: `Notes: feature(programmer): Park holds fixture parameters at a fixed value over all playback until you unpark them.`
 
+Instructions instead of the capability:
+
+```markdown
+Notes: improvement(programmer): Right-click a value in Fixtures or Programmer to park it at its current output, or to unpark it. In Programmer this works on several selected values at once.
+```
+
+Better: `Notes: feature(programmer): Fixture parameters can be parked to freeze their current output value.`
+
+Behavior users already assume:
+
+```markdown
+Notes: feature(patch): A show can patch fixtures from different revisions of the same fixture and mode, and it reopens as saved.
+```
+
+Better: `Notes: feature(patch): A patch can now use different GDTF revisions for the same fixture.`
+
+Cosmetic polish that users won't look for:
+
+```markdown
+Notes: improvement(showfiles): The Export Showfile dialog's reference options use the app's shared selectable card style and accent color.
+```
+
+Better: `Notes: none (cosmetic polish)`
+
+## Editing a release
+
+The release workflow collects every merged PR's entries into one section per
+feature area, then Claude edits that collection into the draft release following
+this section. A maintainer reviews the draft before publishing it. The PR rules
+above still apply to every entry; these rules turn many PRs' entries into notes
+a user can read in a minute or two.
+
+1. **Start with Highlights.** Open with a `## Highlights` section of five to eight
+   bullets: the new features users will care about most, then every change they
+   must adapt to (`change` entries, removals, different defaults). Begin each
+   bullet with a short bold name, such as `**Park:**`, and keep it to one line.
+2. **One section per feature area.** Use `## ` headings named after features as
+   users know them (Patch and Fixture Library, DMX output and input, 3D Visualizer…),
+   in the order of the area table. Inside each, list new features, then
+   improvements, then fixes. Drop areas left empty.
+3. **Merge entries about one capability** into a single bullet with all their PR
+   numbers. For example, four entries about update checks, revision counts and
+   mixed revisions become "Nightfall now supports managing and patching GDTF
+   fixtures from different revisions (#495, #589)."
+4. **Fold small fixes together.** Several minor fixes in one area become one bullet
+   that names them briefly: "Fixes for releases, zero-time cues and Go to cue
+   (#440, #554)."
+5. **Shorten and drop.** Rewrite merged entries that break the PR rules above, and
+   drop cosmetic polish and changes users would never look for.
+6. **Cite every PR number you keep** as `(#123)` or `(#123, #456)` at the end of its
+   bullet. Do not add changes that no entry describes.
+7. **Keep the installation section as collected.** Leave everything from
+   `## Installation` on unchanged, and add nothing else such as a comparison link
+   or a title. Drop `## Additional commits`; maintainers check those in the
+   collected notes the workflow keeps.
+
 ## How this is checked
 
 The required **Release notes** check fails an entry without a known
 `type(area):` tag, an entry longer than 160 characters (not counting the tag), or
-a declaration with more than five entries. The Claude mergeability review reads
+a declaration with more than three entries. The Claude mergeability review reads
 this guide and sends PRs whose notes break the other rules to a human, with the
 reason in its comment.

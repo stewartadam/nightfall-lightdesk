@@ -193,10 +193,21 @@ jobs:
       contents: read
       pull-requests: read
 
-  release:
-    name: Release
+  release-notes-edit:
+    name: Release notes editorial pass
     needs: desktop
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/release-notes-edit.yml # zizmor: ignore[self-repository] callee comes from this commit; keeps actionlint input checks
+    permissions:
+      contents: read
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  release:
+    name: Release
+    needs: [desktop, release-notes-edit]
+    # A failed editorial pass must not block the release; publication falls back to the collected notes.
+    if: ${{ !cancelled() && needs.desktop.result == 'success' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     uses: ./.github/workflows/release.yml # zizmor: ignore[self-repository] callee comes from this commit; keeps actionlint input checks
     permissions:
       contents: write

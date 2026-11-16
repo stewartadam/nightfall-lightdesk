@@ -112,7 +112,7 @@ test("plans and renders release notes entirely from API snapshots", (t) => {
   );
   assert.match(
     readFileSync("notes.md", "utf8"),
-    /### New features\n\n- Fixed cue playback/,
+    /## Cues and sequences\n\n- Fixed cue playback\. \(#7\)/,
   );
   assert.equal(
     JSON.parse(readFileSync("notes.md.json", "utf8")).from,
@@ -205,7 +205,7 @@ test("reports untagged, overlong and too many entries", () => {
   const many = Array.from({ length: MAX_ENTRIES + 1 }, () => `- ${short}`);
   assert.match(
     releaseNoteProblems(parseReleaseNote(`Notes:\n${many.join("\n")}`)).join(),
-    /Keep to the 5 most important entries \(found 6\)/,
+    /Keep to the 3 most important entries \(found 4\)/,
   );
 });
 
@@ -361,12 +361,12 @@ test("collects all-parent ancestry and deduplicates PR associations", (t) => {
   );
   assert.deepEqual(report.unmatched, [{ sha: direct, subject: "direct" }]);
   const markdown = renderReleaseNotes(report, "Download the installer.");
-  assert.match(markdown, /### Fixes\n\n- Fixed cue playback\./);
+  assert.match(markdown, /## Other\n\n- Fixed cue playback\. \(#1\)/);
   assert.doesNotMatch(
     markdown,
     /implementation detail|test coverage only|Future changes|Old changes/,
   );
-  assert.match(markdown, /### Additional commits/);
+  assert.match(markdown, /## Additional commits/);
   assert.match(markdown, /## Installation\n\nDownload the installer\./);
 });
 
@@ -386,6 +386,40 @@ test("rejects squashed develop promotions", (t) => {
   assert.throws(
     () => collectReleaseNotes("owner/repo", "v0.1.0", "HEAD", () => [pr]),
     /Preserve promotion ancestry/,
+  );
+});
+
+/**
+ * The draft lists one section per feature area in the guide's order, puts features before fixes
+ * within an area regardless of PR order, and files untagged entries under Other.
+ */
+test("renders entries grouped by feature area", () => {
+  const markdown = renderReleaseNotes(
+    {
+      repository: "owner/repo",
+      notes: [
+        {
+          number: 3,
+          entries: [{ type: "fix", area: "dmx", text: "Output fix." }],
+        },
+        {
+          number: 5,
+          entries: [
+            { type: "feature", area: "dmx", text: "New interface." },
+            { type: "fix", area: "patch", text: "Import fix." },
+          ],
+        },
+        { number: 6, entries: [{ type: "change", area: null, text: "Old." }] },
+      ],
+      unmatched: [],
+    },
+    "",
+  );
+  assert.equal(
+    markdown,
+    "## Patching and fixture library\n\n- Import fix. (#5)\n\n" +
+      "## DMX output and input\n\n- New interface. (#5)\n- Output fix. (#3)\n\n" +
+      "## Other\n\n- Old. (#6)\n",
   );
 });
 
