@@ -25,6 +25,7 @@ use nightfall_fixtures::undo::{
 use nightfall_fixtures::websocket::SuppressFixtureChangedSnapshot;
 use nightfall_fixtures::{PatchRoute, RigFixtureUpdate, RouteEndpoint};
 use nightfall_io::prelude::*;
+use nightfall_undo::prelude::*;
 use uuid::Uuid;
 
 /// Creates an app that runs fixture commands and the batch restore operation with strict
@@ -391,4 +392,85 @@ fn restore_brings_back_changed_fixtures() {
         .iter(app.world())
         .count();
     assert_eq!(parameters, 1, "the fixture keeps its one parameter entity");
+}
+
+/// Undoing a re-import puts a repatched fixture's label, placement and console patch back
+/// and takes out the fixture it added, using the inverse captured before the change, and
+/// redoing it applies the change again.
+#[test]
+fn undo_and_redo_of_a_repatch_round_trip() {
+    let mut app = app();
+    let existing = dimmer(1);
+    let uid = existing.identifiers.uid;
+    send(
+        &mut app,
+        FixtureCommand::PatchRig {
+            add: vec![existing],
+            update: vec![],
+            routes: vec![patch(1, 1, 1)],
+        },
+    );
+    let mut placement = FixturePlacement::default();
+    placement.position.y = 6.0;
+    let command = FixtureCommand::PatchRig {
+        add: vec![dimmer(2)],
+        update: vec![RigFixtureUpdate {
+            uid,
+            label: Some("FOH 1".to_owned()),
+            placement: Some(placement.clone()),
+            repatch: true,
+        }],
+        routes: vec![patch(1, 1, 10), patch(2, 1, 1)],
+    };
+    let undo = command
+        .inverse(&UndoContext { world: app.world() })
+        .expect("a rig patch has an undo operation");
+    send(&mut app, command);
+
+    /// Runs one restore operation, captures its own inverse first, and returns that.
+    fn restore(app: &mut App, operation: &dyn Undoable) -> Box<dyn Undoable> {
+        let inverse = operation
+            .inverse(&UndoContext { world: app.world() })
+            .expect("a restore has an inverse");
+        let restore = operation
+            .as_any()
+            .downcast_ref::<RestorePatchedFixtures>()
+            .expect("the operation restores patched fixtures")
+            .clone();
+        app.world_mut()
+            .write_message(EngineOperationEnvelope::detached(restore));
+        app.update();
+        inverse
+    }
+
+    let redo = restore(&mut app, undo.as_ref());
+    assert_eq!(fixture_ids(&app), [1]);
+    let fixture = stored(&app, 1);
+    assert_eq!(fixture.identifiers.label, "Dimmer 1");
+    assert_eq!(fixture.placement, FixturePlacement::default());
+    assert_eq!(
+        console_addresses(&app),
+        [(Some(DmxRange::single(1)), Some(1))]
+    );
+
+    restore(&mut app, redo.as_ref());
+    assert_eq!(fixture_ids(&app), [1, 2]);
+    assert_eq!(stored(&app, 1).identifiers.label, "FOH 1");
+    assert_eq!(stored(&app, 1).placement, placement);
+    assert_eq!(
+        console_addresses(&app),
+        [
+            (Some(DmxRange::single(1)), Some(1)),
+            (Some(DmxRange::single(1)), Some(10))
+        ]
+    );
+    let parameters = app
+        .world_mut()
+        .query::<&Parameter>()
+        .iter(app.world())
+        .count();
+    assert_eq!(
+        parameters, 2,
+        "redo brings back the added fixture's parameter"
+    );
 }
