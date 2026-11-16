@@ -76,6 +76,7 @@ import {
   updateOrbitTargetIndicator,
 } from "../scene-environment";
 import { SceneManager } from "../scene-manager";
+import { supplyWebGpuCanvasContext } from "../webgpu-canvas-context";
 import { BaseVisualizerRenderer } from "./base-renderer";
 import { observeRenderSize } from "./observe-render-size";
 import type {
@@ -612,6 +613,7 @@ class WorkerRenderer extends BaseVisualizerRenderer {
 
     // Wait for WebGPU and the fixture model that evaluates channel output
     await Promise.all([this.renderer.init(), loadFixtureEvaluation()]);
+    supplyWebGpuCanvasContext(this.renderer);
 
     // Create scene
     this.scene = createScene("VisualizerWorkerScene");
