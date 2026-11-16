@@ -74,13 +74,13 @@ import {
   withMappingMode,
   withRemoval,
   withTypeMapping,
-} from "../model/rig-import-model";
+} from "../model/mvr-import-model";
 import {
   commitRig,
   discardRig,
   previewRig,
   uploadRigFile,
-} from "../services/rig-import-service";
+} from "../services/mvr-import-service";
 
 const log = getLogger(import.meta.url);
 

@@ -21,7 +21,7 @@ import {
   withMappingMode,
   withRemoval,
   withTypeMapping,
-} from "./rig-import-model";
+} from "./mvr-import-model";
 
 /** Builds a library entry with the given modes. */
 function libraryFixture(

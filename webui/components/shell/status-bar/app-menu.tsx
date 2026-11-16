@@ -18,7 +18,7 @@ import { GraduationCapIcon } from "@squidlab/phosphor-solid/graduation-cap";
 import { InfoIcon } from "@squidlab/phosphor-solid/info";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { type JSX, Show } from "solid-js";
-import { openRigImportDialog } from "../../../features/rig-import";
+import { openRigImportDialog } from "../../../features/mvr-import";
 import { openWelcomeGuide } from "../../../features/welcome-guide";
 import { hasDiskStorage } from "../../../lib/disk-storage";
 import { openDocumentation, openFeedbackPage } from "../../../lib/feedback";

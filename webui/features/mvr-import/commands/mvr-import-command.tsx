@@ -12,7 +12,7 @@ import { onMount, Show } from "solid-js";
 import { useUiAction } from "../../../components/providers/command-registry";
 import { hasDiskStorage } from "../../../lib/disk-storage";
 import { runtimeCapabilities } from "../../../state/appStores";
-import { openRigImportDialog } from "../model/rig-import-model";
+import { openRigImportDialog } from "../model/mvr-import-model";
 
 /** Palette action id for opening the rig import dialog. */
 export const IMPORT_RIG_ACTION_ID = "rig.import";

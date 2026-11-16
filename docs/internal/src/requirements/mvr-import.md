@@ -143,7 +143,7 @@ The following table lists where each part of the import lives:
 | Planning | `crates/mvr-import/src/plan.rs` | Fixture types, IDs, labels and statuses, shared by the preview and the commit. |
 | Commands | `crates/mvr-import/src/commands.rs` | The preview, commit and discard commands. |
 | Upload route | `crates/mvr-import/src/http.rs` | `POST /api/mvr-import`, which returns the session ID. |
-| Import dialog | `webui/features/rig-import` | The review and its options. |
+| Import dialog | `webui/features/mvr-import` | The review and its options. |
 | Sample files | `scripts/mvr-samples.mjs` | Fetches the public sample files the ignored tests use, pinned by SHA-256. |
 
 ## Related topics

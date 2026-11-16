@@ -24,7 +24,7 @@ import {
   installOutcomeNote,
   matchGdtfShare,
 } from "../../gdtf-share";
-import { missingTypeNames } from "./rig-import-model";
+import { missingTypeNames } from "./mvr-import-model";
 
 const log = getLogger(import.meta.url);
 
