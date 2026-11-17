@@ -242,7 +242,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "app-runtime"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "axum",
@@ -324,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "app-tauri"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "app-runtime",
  "idna_adapter",
@@ -5341,7 +5341,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nightfall"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "directories",
  "nightfall-dmx",
@@ -5358,7 +5358,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-actions"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -5376,7 +5376,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-audio"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -5393,7 +5393,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-backup"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "axum",
  "bevy_app",
@@ -5418,7 +5418,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-beat-detection"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "nightfall",
  "nightfall-workspace-hack",
@@ -5433,7 +5433,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-boards"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -5462,7 +5462,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-browser-runtime"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "bevy_app",
@@ -5498,7 +5498,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-cli"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "futures-util",
  "minicbor-serde",
@@ -5517,7 +5517,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-clips"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "bevy_app",
@@ -5548,7 +5548,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-cmd-parse"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "libtest-mimic",
  "logos",
@@ -5563,7 +5563,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-composition"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -5613,7 +5613,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-config"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "dotenv-ng",
  "nightfall-workspace-hack",
@@ -5623,7 +5623,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-controls"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -5651,7 +5651,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-coremidi-hotplug"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "core-foundation",
  "coremidi",
@@ -5660,7 +5660,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-cues"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -5699,7 +5699,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-dmx"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "nightfall-workspace-hack",
  "serde",
@@ -5711,7 +5711,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-engine"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "bevy_app",
@@ -5743,7 +5743,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-engine-derive"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "proc-macro-crate 3.5.0",
  "proc-macro2",
@@ -5753,7 +5753,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-fixture-library"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "axum",
@@ -5785,7 +5785,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-fixture-model"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "nightfall-dmx",
  "nightfall-workspace-hack",
@@ -5796,7 +5796,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-fixtures"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "bevy",
@@ -5831,7 +5831,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-flow"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "bevy_app",
@@ -5866,7 +5866,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-framepace"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_diagnostic",
@@ -5881,7 +5881,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-fx"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "bevy_app",
@@ -5921,7 +5921,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-fx-module"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "bevy_app",
@@ -5956,7 +5956,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-gdtf-share"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "apple-native-keyring-store",
  "axum",
@@ -5982,7 +5982,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-input-artnet"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "artnet_protocol",
  "bevy_app",
@@ -6003,7 +6003,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-input-ltc"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6019,7 +6019,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-input-midi"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6041,7 +6041,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-input-osc"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6062,7 +6062,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-input-sacn"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6081,7 +6081,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-instances"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_ecs",
  "nightfall",
@@ -6097,7 +6097,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-io"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "bevy_app",
@@ -6117,7 +6117,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-lookahead"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_ecs",
  "moonshine-kind",
@@ -6143,7 +6143,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-macros"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6162,7 +6162,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-mvr"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "nightfall-workspace-hack",
  "quick-xml 0.42.0",
@@ -6174,7 +6174,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-mvr-import"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "axum",
@@ -6207,7 +6207,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-object-library"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "axum",
@@ -6233,7 +6233,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-output-artnet"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "artnet_protocol",
  "bevy_app",
@@ -6250,7 +6250,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-output-sacn"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_diagnostic",
@@ -6267,7 +6267,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-output-usb"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6288,7 +6288,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-park"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6314,7 +6314,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-playback-planner"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "nightfall-workspace-hack",
  "serde",
@@ -6324,7 +6324,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-programming"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6353,7 +6353,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-references"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "bevy_app",
@@ -6380,7 +6380,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-scene-objects"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6400,7 +6400,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-selection"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "criterion",
  "nightfall",
@@ -6413,7 +6413,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-selection-runtime"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_ecs",
  "nightfall",
@@ -6426,7 +6426,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-service-host"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "gdt-cpus",
  "nightfall-workspace-hack",
@@ -6436,7 +6436,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-showfile"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6471,7 +6471,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-tempo"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6489,7 +6489,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-timecode"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -6509,7 +6509,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-timeline"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "axum",
@@ -6552,7 +6552,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-undo"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "bevy_app",
@@ -6599,7 +6599,7 @@ dependencies = [
 
 [[package]]
 name = "nightfall-websocket"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "async-channel",
  "axum",
@@ -7345,7 +7345,7 @@ dependencies = [
 
 [[package]]
 name = "open-fixture-library"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "indexmap 2.14.2",
  "nightfall-workspace-hack",
