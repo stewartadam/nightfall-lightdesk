@@ -1,11 +1,18 @@
 name: Desktop updates
 
-# Publishing a version release offers it to installed desktop apps. nightfall.live redirects
-# each channel's update checks to its feed (`stable.json` or `prerelease.json`) on the
-# `updater` release, which this workflow replaces.
+# Publishing a version release offers it to installed desktop apps, then asks nightfall.live to
+# point its downloads, user guide and browser demo at it. nightfall.live redirects each channel's
+# update checks to its feed (`stable.json` or `prerelease.json`) on the `updater` release, which
+# this workflow replaces. Running it by hand offers an already published release again.
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published version release to offer, for example v0.1.0-beta.1
+        required: true
+        type: string
 
 permissions: {}
 
@@ -17,9 +24,56 @@ concurrency:
 # These jobs treat release assets as data. Never checkout source, restore build caches, install
 # dependencies, or execute a release asset here. See docs/ci-security.md.
 jobs:
+  release:
+    name: Find the published release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.find.outputs.tag }}
+      commit: ${{ steps.find.outputs.commit }}
+    steps:
+      - name: Read the release's tag and commit
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version='^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9_.-]+)?(\+[a-zA-Z0-9_.-]+)?$'
+          if [[ "$GITHUB_EVENT_NAME" == release ]]; then
+            [[ "$RELEASE_ID" =~ ^[0-9]+$ ]]
+            # A just-published draft's event, and briefly the release itself, can still carry the
+            # draft's `untagged-…` placeholder instead of its tag, so read the release until it settles.
+            for attempt in 1 2 3 4 5 6; do
+              gh api "repos/$GH_REPO/releases/$RELEASE_ID" > "$RUNNER_TEMP/release.json"
+              [[ "$(jq -r .tag_name "$RUNNER_TEMP/release.json")" != untagged-* ]] && break
+              sleep 10
+            done
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$REQUESTED_TAG" =~ $version ]]
+            gh api "repos/$GH_REPO/releases/tags/$REQUESTED_TAG" > "$RUNNER_TEMP/release.json"
+          else
+            exit 1
+          fi
+          jq -e '.draft == false' "$RUNNER_TEMP/release.json" > /dev/null
+          tag=$(jq -r .tag_name "$RUNNER_TEMP/release.json")
+          if [[ ! "$tag" =~ $version ]]; then
+            echo "::notice::$tag is not a version release, so installed apps are not offered it."
+            exit 0
+          fi
+          commit=$(gh api "repos/$GH_REPO/commits/$tag" --jq .sha)
+          [[ "$commit" =~ ^[a-f0-9]{40}$ ]]
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
   sign:
     name: Sign the update packages
-    if: startsWith(github.event.release.tag_name, 'v')
+    needs: release
+    if: needs.release.outputs.tag != ''
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     # Holds the updater signing key, so it runs only system tools and a pinned,
@@ -31,7 +85,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
         run: |
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9_.-]+)?(\+[a-zA-Z0-9_.-]+)?$ ]]
@@ -61,10 +115,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_SIGNING_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
         run: |
           set -euo pipefail
-          [[ "$GITHUB_EVENT_NAME" == release ]]
+          [[ "$GITHUB_EVENT_NAME" == release || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9_.-]+)?(\+[a-zA-Z0-9_.-]+)?$ ]]
           for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD TAURI_SIGNING_PUBLIC_KEY; do
             if [[ -z "${!name}" ]]; then
@@ -141,7 +195,7 @@ jobs:
 
   publish:
     name: Offer the release to installed apps
-    needs: sign
+    needs: [release, sign]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     # Can write releases but never sees the signing key.
@@ -157,10 +211,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
         run: |
           set -euo pipefail
-          [[ "$GITHUB_EVENT_NAME" == release ]]
+          [[ "$GITHUB_EVENT_NAME" == release || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
           [[ -f manifest/release.json && -s manifest/release.json && ! -L manifest/release.json ]]
           # The manifest must announce this release and download only this release's assets.
           version="${RELEASE_TAG#v}"
@@ -219,3 +273,35 @@ jobs:
             printf '{"version":"0.0.0","platforms":{}}\n' > feeds/stable.json
           fi
           gh release upload updater feeds/*.json --clobber
+
+  website:
+    name: Ask nightfall.live to publish the release
+    needs: [release, publish]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    # Holds only the release bot's key and sends one dispatch; it never checks out source or
+    # runs repository code. See docs/ci-security.md.
+    steps:
+      - name: Mint a token that can only dispatch to nightfall.live
+        id: token
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: nightfall.live
+          permission-contents: write
+      - name: Send the release to nightfall.live
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          WEBSITE_REPO: ${{ github.repository_owner }}/nightfall.live
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9_.-]+)?(\+[a-zA-Z0-9_.-]+)?$ ]]
+          [[ "$RELEASE_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          jq -n --arg tag "$RELEASE_TAG" --arg commit "$RELEASE_COMMIT" \
+            '{event_type: "lightdesk-release", client_payload: {tag: $tag, commit: $commit}}' \
+            | gh api --method POST "repos/$WEBSITE_REPO/dispatches" --input -
+          echo "Asked nightfall.live to publish $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"

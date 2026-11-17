@@ -173,6 +173,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "claude-review.yml/apply": { issues: "write", "pull-requests": "write" },
     "claude-review.yml/finish": { checks: "write" },
     "release.yml/publish": { contents: "write" },
+    "desktop-updates.yml/release": { contents: "read" },
     "desktop-updates.yml/sign": { contents: "read" },
     "desktop-updates.yml/publish": { contents: "write" },
   };
@@ -185,7 +186,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
       if (
         file !== "release.yml" &&
         key !== "desktop-updates.yml/sign" &&
-        key !== "website-release.yml/notify" &&
+        key !== "desktop-updates.yml/website" &&
         ![
           "claude-review.yml/revoke",
           "claude-review.yml/review",
@@ -301,9 +302,23 @@ test("update signing holds only the updater key and verifies its tool", () => {
       }
     }
   }
-  assert.deepEqual(updates.on, { release: { types: ["published"] } });
-  assert.equal(updates.jobs.publish.needs, "sign");
-  for (const job of Object.values(updates.jobs)) {
+  assert.deepEqual(updates.on, {
+    release: { types: ["published"] },
+    workflow_dispatch: {
+      inputs: {
+        tag: {
+          description:
+            "Published version release to offer, for example v0.1.0-beta.1",
+          required: true,
+          type: "string",
+        },
+      },
+    },
+  });
+  assert.deepEqual(updates.jobs.sign.needs, "release");
+  assert.deepEqual(updates.jobs.publish.needs, ["release", "sign"]);
+  for (const [id, job] of Object.entries(updates.jobs)) {
+    if (id === "website") continue;
     for (const step of job.steps) {
       if (step.uses) {
         assert.match(
@@ -375,14 +390,12 @@ test("debug symbols upload same-run artifacts with a pinned, verified tool", () 
 
 /** The website notifier holds only the release bot's key and sends the published tag as data. */
 test("website notification dispatches a validated tag with a pinned token action", () => {
-  const website = workflows["website-release.yml"];
-  assert.deepEqual(website.on, {
-    workflow_run: { workflows: ["Desktop updates"], types: ["completed"] },
-  });
-  const notify = website.jobs.notify;
+  const notify = updates.jobs.website;
+  assert.deepEqual(notify.needs, ["release", "publish"]);
+  assert.equal(notify.if, undefined);
   assert.equal(
-    notify.if,
-    "github.event.workflow_run.event == 'release' && github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')",
+    notify.steps.find((step) => step.env?.RELEASE_TAG).env.RELEASE_TAG,
+    "${{ needs.release.outputs.tag }}",
   );
   assert.deepEqual(notify.permissions ?? {}, {});
   assert.deepEqual(stepActions(notify), ["actions/create-github-app-token"]);
@@ -404,10 +417,112 @@ test("website notification dispatches a validated tag with a pinned token action
   }
 });
 
+/**
+ * Runs the step that finds the published release against a stand-in `gh`. `releases` holds the
+ * release as successive reads return it, so a test can show a placeholder tag settling.
+ */
+function findRelease(directory, releases, environment = {}) {
+  const step = updates.jobs.release.steps.find(
+    (candidate) => candidate.id === "find",
+  ).run;
+  const bin = join(directory, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(directory, "releases.json"), JSON.stringify(releases));
+  writeFileSync(join(directory, "reads"), "0");
+  writeFileSync(
+    join(bin, "gh"),
+    [
+      "#!/usr/bin/env bash",
+      'printf "%s\\n" "$*" >> "$GH_LOG"',
+      'if [[ "$2" == */commits/* ]]; then echo "${COMMIT}"; exit; fi',
+      'read=$(cat "$READS"); echo $((read + 1)) > "$READS"',
+      'jq --argjson read "$read" \'.[[$read, length - 1] | min]\' "$RELEASES"',
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  writeFileSync(join(bin, "sleep"), "#!/usr/bin/env bash\n", { mode: 0o755 });
+  const output = join(directory, "output");
+  rmSync(output, { force: true });
+  rmSync(join(directory, "gh.log"), { force: true });
+  const result = spawnSync("bash", ["-c", step], {
+    cwd: directory,
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      GH_LOG: join(directory, "gh.log"),
+      GH_REPO: "owner/repo",
+      READS: join(directory, "reads"),
+      RELEASES: join(directory, "releases.json"),
+      COMMIT: "a".repeat(40),
+      RUNNER_TEMP: directory,
+      GITHUB_OUTPUT: output,
+      GITHUB_EVENT_NAME: "release",
+      RELEASE_ID: "42",
+      REQUESTED_TAG: "",
+      ...environment,
+    },
+    encoding: "utf8",
+  });
+  return {
+    status: result.status,
+    output: existsSync(output) ? readFileSync(output, "utf8") : "",
+    calls: existsSync(join(directory, "gh.log"))
+      ? readFileSync(join(directory, "gh.log"), "utf8").trim().split("\n")
+      : [],
+  };
+}
+
+/** The release's own tag is used, not the event's, which can still name the draft's placeholder. */
+test("update offers read the tag from the published release", (t) => {
+  const directory = fixtureDirectory(t);
+  const published = { tag_name: "v0.1.0-beta.1", draft: false };
+  const settled = findRelease(directory, [
+    { tag_name: "untagged-acaf4964dd3137925b3c", draft: false },
+    published,
+  ]);
+  assert.equal(settled.status, 0);
+  assert.equal(settled.output, `tag=v0.1.0-beta.1\ncommit=${"a".repeat(40)}\n`);
+  assert.equal(settled.calls[0], "api repos/owner/repo/releases/42");
+
+  const manual = findRelease(directory, [published], {
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    RELEASE_ID: "",
+    REQUESTED_TAG: "v0.1.0-beta.1",
+  });
+  assert.equal(manual.status, 0);
+  assert.equal(
+    manual.calls[0],
+    "api repos/owner/repo/releases/tags/v0.1.0-beta.1",
+  );
+  assert.match(manual.output, /^tag=v0\.1\.0-beta\.1$/m);
+
+  const other = findRelease(directory, [{ tag_name: "updater", draft: false }]);
+  assert.equal(other.status, 0);
+  assert.equal(other.output, "");
+
+  for (const [releases, environment] of [
+    [[{ tag_name: "v0.1.0-beta.1", draft: true }], {}],
+    [[published], { GITHUB_EVENT_NAME: "push" }],
+    [[published], { RELEASE_ID: "42;id" }],
+    [
+      [published],
+      {
+        GITHUB_EVENT_NAME: "workflow_dispatch",
+        REQUESTED_TAG: "v0.1.0;touch PWNED",
+      },
+    ],
+    [[published], { COMMIT: "abc123" }],
+  ]) {
+    const refused = findRelease(directory, releases, environment);
+    assert.notEqual(refused.status, 0, JSON.stringify(environment));
+    assert.equal(refused.output, "");
+  }
+});
+
 /** The dispatch step refuses anything but a version tag and a full commit SHA. */
 test("website notification rejects malformed release tags and commits", (t) => {
   const directory = fixtureDirectory(t);
-  const step = workflows["website-release.yml"].jobs.notify.steps.find(
+  const step = updates.jobs.website.steps.find(
     (candidate) => candidate.env?.RELEASE_TAG,
   );
   const bin = join(directory, "bin");
@@ -803,7 +918,7 @@ test("update signing refuses incomplete releases and missing keys", (t) => {
     0,
   );
   assert.notEqual(
-    signUpdates(directory, { GITHUB_EVENT_NAME: "workflow_dispatch" }).status,
+    signUpdates(directory, { GITHUB_EVENT_NAME: "pull_request" }).status,
     0,
   );
   assert.equal(existsSync(join(directory, "manifest/release.json")), false);
@@ -1098,7 +1213,7 @@ test("the updater release only accepts the published release's manifest", (t) =>
       ),
     ),
     offerUpdate(directory, updateManifest(), {
-      GITHUB_EVENT_NAME: "workflow_dispatch",
+      GITHUB_EVENT_NAME: "pull_request",
     }),
   ];
   for (const result of rejected) {
