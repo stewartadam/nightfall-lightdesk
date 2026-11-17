@@ -23,6 +23,7 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "AvailableNetworkInterfaces",
   "AvailableUsbDmxDevices",
   "BackupState",
+  "UsbDmxTargetStates",
   "BeatgridDetectionFailed",
   "BeatgridDetectionReady",
   "BeatgridDetectionStarted",

@@ -13,7 +13,7 @@ use nightfall_engine::prelude::*;
 use nightfall_io::prelude::UsbDmxDeviceInfo;
 use serde::Serialize;
 
-use crate::discovery::discover_devices;
+use crate::{discovery::discover_devices, targets::UsbDmxTargetState};
 
 /// Compatible USB DMX devices currently visible to the host, as offered to clients.
 #[derive(Resource, Debug, Default, Clone, PartialEq, Eq)]
@@ -37,9 +37,11 @@ impl AvailableUsbDmxDevices {
 #[derive(Serialize)]
 #[serde(tag = "type", content = "data")]
 #[typeshare::typeshare]
-enum UsbDmxWsMessage<'a> {
+pub(crate) enum UsbDmxWsMessage<'a> {
     /// Compatible USB DMX devices currently visible to the host.
     AvailableUsbDmxDevices(&'a [UsbDmxDeviceInfo]),
+    /// Each saved USB output's status against the attached adapters.
+    UsbDmxTargetStates(&'a [UsbDmxTargetState]),
 }
 
 impl ResourceFeed for AvailableUsbDmxDevices {

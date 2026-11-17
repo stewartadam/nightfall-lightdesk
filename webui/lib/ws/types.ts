@@ -124,7 +124,8 @@ export type AnyCommand =
   | types.TimecodeCommand
   | types.TimelineCommand
   | types.UiPreferencesCommand
-  | types.UndoCommand;
+  | types.UndoCommand
+  | types.UsbDmxCommand;
 
 /** Union of websocket payloads handled on the main thread. */
 export type AnyWsMessage =
