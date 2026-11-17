@@ -48,7 +48,7 @@ jobs:
             [[ "$RELEASE_ID" =~ ^[0-9]+$ ]]
             # A just-published draft's event, and briefly the release itself, can still carry the
             # draft's `untagged-…` placeholder instead of its tag, so read the release until it settles.
-            for attempt in 1 2 3 4 5 6; do
+            for _ in 1 2 3 4 5 6; do
               gh api "repos/$GH_REPO/releases/$RELEASE_ID" > "$RUNNER_TEMP/release.json"
               [[ "$(jq -r .tag_name "$RUNNER_TEMP/release.json")" != untagged-* ]] && break
               sleep 10
