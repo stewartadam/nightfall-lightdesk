@@ -178,6 +178,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "desktop-updates.yml/release": { contents: "read" },
     "desktop-updates.yml/sign": { contents: "read" },
     "desktop-updates.yml/publish": { contents: "write" },
+    "promote.yml/check": { contents: "read", checks: "read" },
   };
   for (const [file, workflow] of Object.entries(workflows)) {
     assert.deepEqual(workflow.permissions, {}, file);
@@ -189,6 +190,7 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
         file !== "release.yml" &&
         key !== "desktop-updates.yml/sign" &&
         key !== "desktop-updates.yml/website" &&
+        key !== "promote.yml/promote" &&
         ![
           "claude-review.yml/revoke",
           "claude-review.yml/review",
@@ -522,6 +524,110 @@ test("update offers read the tag from the published release", (t) => {
   ]) {
     const refused = findRelease(directory, releases, environment);
     assert.notEqual(refused.status, 0, JSON.stringify(environment));
+    assert.equal(refused.output, "");
+  }
+});
+
+/**
+ * Runs the promotion check against a stub `gh` that answers develop's head, the two compare
+ * statuses and the number of passing CI gate runs, and returns the commit it would promote.
+ */
+function checkPromotion(directory, answers, environment = {}) {
+  const promote = workflows["promote.yml"];
+  const step = promote.jobs.check.steps.find(
+    (candidate) => candidate.id === "check",
+  ).run;
+  const bin = join(directory, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "gh"),
+    [
+      "#!/usr/bin/env bash",
+      'printf "%s\\n" "$*" >> "$GH_LOG"',
+      'case "$2" in',
+      '  */commits/develop) echo "$DEVELOP" ;;',
+      '  */compare/main...*) echo "$AHEAD_OF_MAIN" ;;',
+      '  */compare/*) echo "$ON_DEVELOP" ;;',
+      '  */check-runs*) echo "$PASSED" ;;',
+      "  *) exit 1 ;;",
+      "esac",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  const output = join(directory, "output");
+  rmSync(output, { force: true });
+  rmSync(join(directory, "gh.log"), { force: true });
+  const result = spawnSync("bash", ["-c", step], {
+    cwd: directory,
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      GH_LOG: join(directory, "gh.log"),
+      GH_REPO: "owner/repo",
+      GITHUB_OUTPUT: output,
+      REQUESTED_COMMIT: "",
+      DEVELOP: "d".repeat(40),
+      ON_DEVELOP: "identical",
+      AHEAD_OF_MAIN: "ahead",
+      PASSED: "1",
+      ...answers,
+      ...environment,
+    },
+    encoding: "utf8",
+  });
+  return {
+    status: result.status,
+    output: existsSync(output) ? readFileSync(output, "utf8") : "",
+  };
+}
+
+/**
+ * Promotion only fast-forwards main to a develop commit that passed CI, and the job that can
+ * bypass main's rulesets only moves the ref forward.
+ */
+test("promoting develop only fast-forwards main to a green develop commit", (t) => {
+  const directory = fixtureDirectory(t);
+  const promote = workflows["promote.yml"];
+  assert.deepEqual(Object.keys(promote.on), ["workflow_dispatch"]);
+  assert.deepEqual(promote.jobs.promote.needs, "check");
+  assert.match(
+    JSON.stringify(promote.jobs.promote),
+    /git\/refs\/heads\/main.*force=false/,
+  );
+  assert.doesNotMatch(JSON.stringify(promote), /actions\/checkout/);
+
+  const head = checkPromotion(directory, {});
+  assert.equal(head.status, 0);
+  assert.equal(head.output, `commit=${"d".repeat(40)}\n`);
+
+  const older = "e".repeat(40);
+  const chosen = checkPromotion(
+    directory,
+    { ON_DEVELOP: "ahead" },
+    { REQUESTED_COMMIT: older },
+  );
+  assert.equal(chosen.status, 0);
+  assert.equal(chosen.output, `commit=${older}\n`);
+
+  const current = checkPromotion(directory, { AHEAD_OF_MAIN: "identical" });
+  assert.equal(current.status, 0);
+  assert.equal(current.output, "");
+
+  for (const [answers, environment] of [
+    [{ ON_DEVELOP: "behind" }, {}],
+    [{ ON_DEVELOP: "diverged" }, {}],
+    [{ AHEAD_OF_MAIN: "diverged" }, {}],
+    [{ AHEAD_OF_MAIN: "behind" }, {}],
+    [{ PASSED: "0" }, {}],
+    [{}, { REQUESTED_COMMIT: "abc123" }],
+    [{}, { REQUESTED_COMMIT: `${"a".repeat(40)};touch PWNED` }],
+  ]) {
+    const refused = checkPromotion(directory, answers, environment);
+    assert.notEqual(
+      refused.status,
+      0,
+      JSON.stringify({ answers, environment }),
+    );
     assert.equal(refused.output, "");
   }
 });

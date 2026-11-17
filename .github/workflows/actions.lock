@@ -58,6 +58,8 @@ workflows:
         - 'taiki-e/install-action@v2.87.31'
     '.github/workflows/pr-commands.yml':
         - 'github/command@v2.0.3'
+    '.github/workflows/promote.yml':
+        - 'actions/create-github-app-token@v3.3.0'
     '.github/workflows/release-notes.yml':
         - 'actions/checkout@v5.1.0'
         - 'actions/download-artifact@v8.0.1'

@@ -117,6 +117,12 @@ Publication (fresh runner; contents: write; no Apple credentials)
   `ci.yml` on the PR's own branch with the preview input. That manual run follows
   the same boundaries as the PR's CI run, and `/republish` refuses fork and
   Dependabot PRs, so it never hands the preview credential to code CI would not.
+- **Promotion:** `promote.yml` runs only by hand from `develop`. A read-only job checks
+  that the commit is on `develop`, that `main` can fast-forward to it, and that its `CI gate`
+  check passed. A second job then mints a release bot token limited to this repository's
+  contents and moves `main` with `force=false`, so GitHub refuses anything but a
+  fast-forward. That token can bypass `main`'s rulesets, so the job checks out nothing and
+  runs no repository code.
 - **Debug symbols:** on version tags, a fresh runner downloads this run's debug
   symbol artifacts as data and uploads them to the error service so crash stack
   traces resolve to functions and lines. It holds only `GLITCHTIP_AUTH_TOKEN`,

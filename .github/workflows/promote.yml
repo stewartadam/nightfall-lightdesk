@@ -1,0 +1,100 @@
+name: Promote develop
+
+# Fast-forwards main to a develop commit that passed CI, so main gets develop's exact commits and
+# develop never needs main merged back. main's rulesets only accept rebase merges, which would
+# copy develop's commits with new SHAs. Open the develop -> main promotion PR first so the full
+# suite runs; when main reaches its head commit, GitHub marks that PR merged. See
+# docs/desktop-releases.md.
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full SHA of the develop commit to promote (default, develop's head)
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: promote-develop
+  cancel-in-progress: false
+
+# Neither job checks out source or runs repository code. See docs/ci-security.md.
+jobs:
+  check:
+    name: Check the commit can be promoted
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      commit: ${{ steps.check.outputs.commit }}
+    steps:
+      - name: Check the commit is on develop, ahead of main and passed CI
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REQUESTED_COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUESTED_COMMIT" =~ ^([0-9a-f]{40})?$ ]]; then
+            echo "::error::Give the commit as a full 40-character SHA."
+            exit 1
+          fi
+          develop=$(gh api "repos/$GH_REPO/commits/develop" --jq .sha)
+          commit=${REQUESTED_COMMIT:-$develop}
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          on_develop=$(gh api "repos/$GH_REPO/compare/$commit...$develop" --jq .status)
+          if [[ "$on_develop" != ahead && "$on_develop" != identical ]]; then
+            echo "::error::$commit is not on develop."
+            exit 1
+          fi
+          ahead=$(gh api "repos/$GH_REPO/compare/main...$commit" --jq .status)
+          if [[ "$ahead" == identical ]]; then
+            echo "::notice::main is already at $commit."
+            exit 0
+          fi
+          if [[ "$ahead" != ahead ]]; then
+            echo "::error::main has commits that $commit lacks, so it cannot be fast-forwarded."
+            exit 1
+          fi
+          passed=$(gh api "repos/$GH_REPO/commits/$commit/check-runs?check_name=CI%20gate" \
+            --jq '[.check_runs[] | select(.conclusion == "success")] | length')
+          if [[ "$passed" == 0 ]]; then
+            echo "::error::CI gate has not passed on $commit. Let the promotion PR's checks finish first."
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+  promote:
+    name: Fast-forward main
+    needs: check
+    if: needs.check.outputs.commit != ''
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    # Holds a token that can bypass main's rulesets, so it only moves the ref, and only forward.
+    steps:
+      - name: Mint a token that can update this repository's branches
+        id: token
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+      - name: Move main to the commit
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ needs.check.outputs.commit }}
+        run: |
+          set -euo pipefail
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          # force=false makes GitHub refuse anything but a fast-forward.
+          gh api --method PATCH "repos/$GH_REPO/git/refs/heads/main" \
+            -f sha="$COMMIT" -F force=false > /dev/null
+          echo "::notice::main is now at $COMMIT."

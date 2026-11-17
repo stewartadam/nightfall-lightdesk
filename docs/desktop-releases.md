@@ -23,7 +23,8 @@ This repository supplies the tagged GitHub Release assets. The `nightfall.live/d
 
 ## Cutting a release
 
-1. Set the same version in `Cargo.toml` under `[workspace.package]` and in `desktop/app-tauri/tauri.conf.json`. Update `Cargo.lock` through Cargo and merge the version change after validation. Include a `Notes:` declaration on every PR, including version-only PRs; see [PR release notes](contributing/release-notes.md). Preserve commit ancestry when promoting `develop` to `main` so the release includes the original PR notes.
+1. Set the same version in `Cargo.toml` under `[workspace.package]` and in `desktop/app-tauri/tauri.conf.json`. Update `Cargo.lock` through Cargo and merge the version change after validation. Include a `Notes:` declaration on every PR, including version-only PRs; see [PR release notes](contributing/release-notes.md).
+   Then promote `develop` to `main`. Open a `develop` → `main` PR so the full CI suite runs. Once it passes, run **Promote develop** (`gh workflow run promote.yml --ref develop`, or add `-f commit=<sha>` for an earlier develop commit). The workflow fast-forwards `main` to that commit, and GitHub marks the PR merged. `main` then holds develop's exact commits, so the release includes the original PR notes and `develop` never needs `main` merged back. Don't use the PR's merge button: `main` accepts only rebase merges, which would copy develop's commits with new SHAs.
 2. Verify the `main` artifacts on each target operating system, including startup, showfile save/open, and beat detection from the installed application.
 3. Create and push the matching version tag, for example:
 
