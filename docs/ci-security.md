@@ -65,7 +65,10 @@ Publication (fresh runner; contents: write; no Apple credentials)
   notarizes, and staples that DMG. A temporary keychain is removed on exit.
   The current app has no bundled frameworks or nested application bundles;
   adding those requires reviewing extraction and inside-out signing support.
-- **Update signing:** publishing a release runs `desktop-updates.yml`. A fresh
+- **Update signing:** publishing a release runs `desktop-updates.yml`, which a
+  maintainer can also run by hand for a published release's tag. A read-only job
+  first reads the tag and commit from the release itself, since a just-published
+  draft's event can still name its `untagged-…` placeholder. A fresh
   Linux runner downloads the four update packages (the signed macOS app archive,
   Windows installer, Debian package, and AppImage) from that release as data and
   signs each one with the updater key. This key is release authority: every
@@ -79,11 +82,11 @@ Publication (fresh runner; contents: write; no Apple credentials)
   channel's feed on the `updater` release (`prerelease.json`, and `stable.json` for a
   release without a prerelease tag), skipping a feed that already offers a newer
   version.
-- **Website release:** when that workflow succeeds for a release, `website-release.yml`
-  asks nightfall.live to publish the same tag. Its one job holds only the release bot's
-  GitHub App key, mints a token limited to dispatching events to nightfall.live, checks
-  the tag and commit formats, and sends them as a `lightdesk-release` dispatch. It
-  checks out nothing and runs no repository code.
+- **Website release:** once the feeds are updated, a last job in the same workflow asks
+  nightfall.live to publish the same tag. It holds only the release bot's GitHub App key,
+  mints a token limited to dispatching events to nightfall.live, checks the tag and commit
+  formats, and sends them as a `lightdesk-release` dispatch. It checks out nothing and
+  runs no repository code.
 - **Publish:** another fresh runner downloads the installers, notices, and release
   notes as data. It requires exactly the four installers, the macOS update archive, and one combined notices file,
   rejects empty files and links, computes checksums, and uploads them to a draft
