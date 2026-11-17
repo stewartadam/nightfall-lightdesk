@@ -6,32 +6,43 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createMemo, createUniqueId, For } from "solid-js";
-import { Input } from "../../../components/ui/form-controls";
+import { createMemo } from "solid-js";
+import {
+  AutocompleteField,
+  type AutocompleteFieldProps,
+  type AutocompleteOption,
+} from "../../../components/ui/autocomplete-field";
 import { attributeSuggestions } from "../model/draft-editing";
-import { CommitField, type CommitOutcome } from "./commit-field";
+import { type CommitOutcome, createCommitText } from "./commit-field";
 import { useDraftEditing } from "./draft-context";
 
 /**
- * Suggests attribute names for a field: the standard GDTF attributes plus
- * any the fixture already defines. The field still takes any name, since a
- * fixture may define attributes of its own.
+ * A text field that suggests attribute names: the standard GDTF attributes, each described by
+ * its group and readable name, plus any the fixture already defines. It still takes any name,
+ * since a fixture may define attributes of its own.
  */
-function AttributeOptions(props: { id: string }) {
+function AttributeInput(
+  props: Omit<
+    AutocompleteFieldProps,
+    "options" | "density" | "spellcheck" | "listLabel"
+  >,
+) {
   const editing = useDraftEditing();
   /** Suggestions in catalog order, followed by the fixture's own attributes. */
-  const options = createMemo(() =>
+  const options = createMemo<AutocompleteOption[]>(() =>
     attributeSuggestions(
       editing.attributeOptions(),
       editing.draft().attributes,
-    ),
+    ).map((option) => ({ value: option.name, description: option.label })),
   );
   return (
-    <datalist id={props.id}>
-      <For each={options()}>
-        {(option) => <option value={option.name}>{option.label}</option>}
-      </For>
-    </datalist>
+    <AutocompleteField
+      {...props}
+      density="compact"
+      spellcheck={false}
+      listLabel="Attributes"
+      options={options()}
+    />
   );
 }
 
@@ -41,20 +52,13 @@ export default function AttributeField(props: {
   onInput: (value: string) => void;
   placeholder?: string;
 }) {
-  const listId = createUniqueId();
   return (
-    <>
-      <Input
-        density="compact"
-        list={listId}
-        autocomplete="off"
-        spellcheck={false}
-        value={props.value}
-        placeholder={props.placeholder}
-        onInput={(event) => props.onInput(event.currentTarget.value)}
-      />
-      <AttributeOptions id={listId} />
-    </>
+    <AttributeInput
+      value={props.value}
+      placeholder={props.placeholder}
+      onInput={props.onInput}
+      onPick={props.onInput}
+    />
   );
 }
 
@@ -64,20 +68,20 @@ export function AttributeCommitField(props: {
   onCommit: (value: string) => CommitOutcome;
   "aria-label"?: string;
 }) {
-  const listId = createUniqueId();
+  const field = createCommitText({
+    get value() {
+      return props.value;
+    },
+    onCommit: (value) => (value.trim() ? props.onCommit(value.trim()) : false),
+  });
   return (
-    <>
-      <CommitField
-        list={listId}
-        autocomplete="off"
-        spellcheck={false}
-        aria-label={props["aria-label"]}
-        value={props.value}
-        onCommit={(value) =>
-          value.trim() ? props.onCommit(value.trim()) : false
-        }
-      />
-      <AttributeOptions id={listId} />
-    </>
+    <AttributeInput
+      aria-label={props["aria-label"]}
+      value={field.text()}
+      onInput={field.type}
+      onPick={field.choose}
+      onKeyDown={field.handleKey}
+      onBlur={field.commit}
+    />
   );
 }

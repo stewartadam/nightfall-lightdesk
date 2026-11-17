@@ -179,6 +179,58 @@ async function addChannel(
   await form.getByRole("button", { name: "Add channel" }).click();
 }
 
+/**
+ * Picks attributes from the suggestion list instead of typing them out: the
+ * add form narrows the list as the user types and Enter picks the highlighted
+ * suggestion, and a function's attribute field commits a clicked suggestion.
+ */
+test("fixture editor suggests attributes while typing", async ({
+  page,
+  backendSlot,
+}, testInfo) => {
+  await openApp(page, backendSlot.backendPort);
+  const editor = await openEditorFromPalette(page);
+  await editor.getByTestId("fixture-starter-blank").click();
+
+  const form = editor.getByTestId("add-channel-form");
+  const field = form.getByRole("combobox", { name: "Attribute" });
+  await field.fill("coloradd");
+  const list = editor.getByRole("listbox", { name: "Attributes" });
+  await expect(list).toBeVisible();
+  await expect(list.getByRole("option").first()).toContainText("ColorAdd_R");
+  await field.press("ArrowDown");
+  await expect(list.getByRole("option").first()).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await editor.screenshot({
+    path: testInfo.outputPath("11-attribute-suggestions.png"),
+  });
+  await field.press("Enter");
+  await expect(list).toBeHidden();
+  await expect(field).toHaveValue("ColorAdd_R");
+  await form.getByRole("button", { name: "Add channel" }).click();
+  const rows = editor.getByTestId("channel-row");
+  await expect(rows).toHaveCount(1);
+
+  await rows
+    .first()
+    .getByRole("button", { name: /ColorAdd_R/ })
+    .first()
+    .click();
+  const card = editor.getByTestId("function-card").first();
+  const attribute = card.getByRole("combobox", { name: "Attribute" });
+  await attribute.click();
+  await expect(list).toBeVisible();
+  await attribute.fill("ColorAdd_G");
+  await list.getByRole("option", { name: /^ColorAdd_G\b/ }).click();
+  await expect(list).toBeHidden();
+  await expect(attribute).toHaveValue("ColorAdd_G");
+  // Undo proves the pick went to the draft as one edit rather than staying in the field.
+  await editor.getByRole("button", { name: "Undo" }).click();
+  await expect(attribute).toHaveValue("ColorAdd_R");
+});
+
 /** Replaces a draft field's text and commits it with Enter. */
 async function commitField(
   field: ReturnType<Page["getByLabel"]>,
