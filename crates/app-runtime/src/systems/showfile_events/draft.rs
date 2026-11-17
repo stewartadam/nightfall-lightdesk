@@ -127,6 +127,13 @@ pub(super) fn prepare_showfile_session(
     super::paths::select_show_storage_for_source(source_dir);
     let draft_dir = showfile_draft_dir_path(showfile_name)?;
     if paths_refer_to_same_file(source_dir, &draft_dir) {
+        // Undo history starts empty, so images no button shows can no longer come back.
+        if let Err(error) = super::remove_orphaned_board_images(&snapshot.boards, &draft_dir) {
+            tracing::warn!(
+                "Failed to remove orphaned board images from the draft: {}",
+                error
+            );
+        }
         nightfall::set_active_show_data_dir(draft_dir);
         return Ok(snapshot);
     }

@@ -40,6 +40,7 @@ pub(crate) struct InitialShowfileAsset {
 
 mod assets;
 mod backup;
+mod board_images;
 mod commands;
 mod draft;
 mod draft_status;
@@ -73,6 +74,7 @@ use backup::{
     backup_show_data_directory, copy_directory_recursive_excluding_names,
     list_show_data_backup_directories,
 };
+use board_images::remove_orphaned_board_images;
 #[cfg(test)]
 use commands::effective_save_showfile_name;
 pub use commands::handle_events;

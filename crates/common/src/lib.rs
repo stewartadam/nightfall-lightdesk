@@ -44,8 +44,8 @@ pub mod prelude {
         Blueprint, BlueprintAddress, BlueprintApplication, BlueprintResolution, BlueprintSelector,
     };
     pub use crate::board::{
-        BOARD_TARGET_TYPES, Board, BoardCell, BoardElement, BoardElementKind, BoardPlacementError,
-        MAX_BOARD_DIMENSION,
+        BOARD_IMAGE_DIR, BOARD_TARGET_TYPES, Board, BoardCell, BoardElement, BoardElementKind,
+        BoardPlacementError, MAX_BOARD_DIMENSION, board_image_path, is_board_image_id,
     };
     pub use crate::color_path::{
         ColorAttributeTiming, ColorInterpolationSpace, ColorPath, ColorPathDefault, ColorPathId,

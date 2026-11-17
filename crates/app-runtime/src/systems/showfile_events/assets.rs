@@ -49,6 +49,13 @@ pub(super) fn prepare_imported_showfile_assets(
         source_show_data_dir,
         current_show_data_dir,
     )?;
+    super::board_images::copy_imported_board_images(
+        &current.boards,
+        &incoming.boards,
+        options.boards,
+        source_show_data_dir,
+        current_show_data_dir,
+    )?;
 
     Ok(())
 }
@@ -148,7 +155,7 @@ pub(super) fn copy_imported_scene_object_assets(
 }
 
 /// Select incoming identified rows that can contribute data under the import policy.
-fn imported_identified_uids<T>(
+pub(super) fn imported_identified_uids<T>(
     current: &[T],
     incoming: &[T],
     policy: ShowfileImportPolicy,
@@ -176,7 +183,7 @@ where
 }
 
 /// Copy one showfile-scoped asset unless the source and destination are the same file.
-fn copy_imported_showfile_asset_file(
+pub(super) fn copy_imported_showfile_asset_file(
     source_path: &Path,
     destination_path: &Path,
     label: &str,

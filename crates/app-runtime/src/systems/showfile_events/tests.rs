@@ -2924,6 +2924,7 @@ fn roundtrip_preserves_boards() {
             },
             label: Some("Washes".to_string()),
             color: Some("#ff8800".to_string()),
+            image: None,
             show_title: false,
             kind: BoardElementKind::Collection {
                 query: ObjectQuery {

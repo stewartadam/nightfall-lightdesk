@@ -232,7 +232,8 @@ fn placement_error(error: BoardPlacementError) -> CommandError {
     }
 }
 
-/// Checks one element's contents: its color override and the object type it targets.
+/// Checks one element's contents: its color override, its image, and the object type it
+/// targets.
 fn validate_element(element: &BoardElement) -> Result<(), CommandError> {
     if let Some(color) = &element.color
         && !is_hex_color(color)
@@ -241,6 +242,20 @@ fn validate_element(element: &BoardElement) -> Result<(), CommandError> {
             "board.invalid_color",
             format!("'{color}' is not a #rrggbb color"),
         ));
+    }
+    if let Some(image) = &element.image {
+        if !matches!(element.kind, BoardElementKind::Target { .. }) {
+            return Err(CommandError::new(
+                "board.image_not_supported",
+                "Only buttons can show an image",
+            ));
+        }
+        if !is_board_image_id(image) {
+            return Err(CommandError::new(
+                "board.invalid_image",
+                format!("'{image}' is not a stored board image"),
+            ));
+        }
     }
     let object_type = match &element.kind {
         BoardElementKind::Target { target } => Some(target.object_type),
@@ -401,6 +416,52 @@ mod tests {
             },
         ));
         assert_eq!(stored(&app, 1).elements, vec![other]);
+    }
+
+    /// Buttons accept a stored image ID, while malformed IDs and images on non-button elements
+    /// are rejected.
+    #[test]
+    fn button_images_are_validated() {
+        let mut app = board_command_app();
+        run(&mut app, BoardCommand::StoreBoard(board(1)));
+        let image = format!("{}.png", "0f".repeat(32));
+
+        let mut button = group_button(0, 0);
+        button.image = Some(image.clone());
+        assert!(run(
+            &mut app,
+            BoardCommand::StoreBoardElement {
+                board_id: 1,
+                element: button.clone(),
+            },
+        ));
+        assert_eq!(stored(&app, 1).element(button.uid), Some(&button));
+
+        button.image = Some("../showfile.json".to_string());
+        assert!(!run(
+            &mut app,
+            BoardCommand::StoreBoardElement {
+                board_id: 1,
+                element: button,
+            },
+        ));
+
+        let label = BoardElement {
+            cell: BoardCell {
+                x: 4,
+                ..Default::default()
+            },
+            image: Some(image),
+            kind: BoardElementKind::Label,
+            ..Default::default()
+        };
+        assert!(!run(
+            &mut app,
+            BoardCommand::StoreBoardElement {
+                board_id: 1,
+                element: label,
+            },
+        ));
     }
 
     /// Boards start listed in the layout switcher and can be hidden from it and shown again.
