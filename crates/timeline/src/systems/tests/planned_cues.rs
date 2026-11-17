@@ -77,7 +77,6 @@ fn navigation_timeline(timeline_uid: Uuid, actions: &[(&str, ActionKind, u64)]) 
             label: "Sequence".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             automation_lanes: Vec::new(),
             actions: actions
                 .iter()

@@ -160,6 +160,7 @@ export function TimelineContextProvider(props: TimelineContextProviderProps) {
       removePoint: track.removePoint,
       toggleMute: track.toggleTrackMute,
       toggleSolo: track.toggleTrackSolo,
+      isTrackExpanded: track.isTrackExpanded,
       toggleTrackExpanded: track.toggleTrackExpanded,
     },
     actions: {

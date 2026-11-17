@@ -847,7 +847,6 @@ mod tests {
             label: "Track".to_string(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: Vec::new(),
             automation_lanes: Vec::new(),
         });

@@ -605,8 +605,6 @@ pub struct Track {
     pub muted: bool,
     /// Whether the track is soloed
     pub solo: bool,
-    /// Whether the track's parameters are expanded in the UI
-    pub expanded: bool,
     /// The list of actions on this track
     pub actions: Vec<Action>,
     /// Optional parameters that can be adjusted over time

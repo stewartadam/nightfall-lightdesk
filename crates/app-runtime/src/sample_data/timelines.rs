@@ -132,14 +132,13 @@ impl ActionList {
         self.stop("Stop sparkle", SPARKLES_FX_CLIP_UID, until);
     }
 
-    /// Wraps the actions in an unmuted, expanded track.
+    /// Wraps the actions in an unmuted track.
     fn into_track(self, id: &str, label: &str) -> Track {
         Track {
             id: id.to_owned(),
             label: label.to_owned(),
             muted: false,
             solo: false,
-            expanded: true,
             actions: self.actions,
             automation_lanes: Vec::new(),
         }

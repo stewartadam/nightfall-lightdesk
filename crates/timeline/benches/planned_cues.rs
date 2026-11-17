@@ -179,7 +179,6 @@ fn planned_cues_app(cue_count: usize, start_count: usize) -> App {
                 label: "Track 1".to_owned(),
                 muted: false,
                 solo: false,
-                expanded: false,
                 actions,
                 automation_lanes: Vec::new(),
             }],

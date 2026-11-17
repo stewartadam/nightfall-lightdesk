@@ -303,7 +303,6 @@ fn seed_timeline_started_sequence(app: &mut App) -> u32 {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "start-sequence".to_owned(),
                 label: "Start Sequence".to_owned(),

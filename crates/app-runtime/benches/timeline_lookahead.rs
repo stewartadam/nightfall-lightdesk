@@ -338,7 +338,6 @@ fn start_timeline(app: &mut App, actions: Vec<Action>, mode: TimelineLookaheadMo
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions,
             automation_lanes: Vec::new(),
         }],

@@ -50,7 +50,6 @@ fn seek_replay_skips_source_less_clip_start() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -141,7 +140,6 @@ fn seek_replay_direct_materializes_classic_fx_clip() {
             label: "FX Track".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "fx-start".to_owned(),
@@ -316,7 +314,6 @@ fn seek_replay_direct_materializes_classic_fx_with_same_clip_cleanup() {
             label: "FX Track".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "fx-start".to_owned(),
                 label: "Start FX".to_owned(),
@@ -478,7 +475,6 @@ fn seek_replay_direct_materializes_step_fx_clip() {
             label: "Step FX Track".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "step-fx-start".to_owned(),
                 label: "Start Step FX".to_owned(),
@@ -640,7 +636,6 @@ fn seek_replay_direct_reconciles_fx_module_clip() {
             label: "FX Module Track".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "fx-module-start".to_owned(),
@@ -813,7 +808,6 @@ fn seek_replay_direct_fx_module_second_seek_keeps_existing_layer() {
             label: "FX Module Track".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "fx-module-start".to_owned(),
                 label: "Start FX Module".to_owned(),
@@ -951,7 +945,6 @@ fn seek_replay_direct_materializes_flow_clip() {
             label: "Flow Track".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "flow-start".to_owned(),
@@ -1087,7 +1080,6 @@ fn seek_replay_skips_source_less_clip_after_action_duration_without_stop() {
             label: "FX Track".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "sparkles".to_owned(),
                 label: "Sparkles".to_owned(),
@@ -1177,7 +1169,6 @@ fn seek_replay_skips_stopped_fx_clip_after_zero_release() {
             label: "FX Track".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "fx-start".to_owned(),

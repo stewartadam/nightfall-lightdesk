@@ -92,7 +92,6 @@ async function openBeatgridTimeline(page: Page): Promise<string> {
                 label: "Snap Track",
                 muted: false,
                 solo: false,
-                expanded: false,
                 actions: [
                   {
                     id: actionId,

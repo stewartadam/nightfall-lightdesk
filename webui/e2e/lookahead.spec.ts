@@ -401,7 +401,6 @@ function timeline(): object {
         label: "Lookahead",
         muted: false,
         solo: false,
-        expanded: false,
         automation_lanes: [],
         actions: [
           {

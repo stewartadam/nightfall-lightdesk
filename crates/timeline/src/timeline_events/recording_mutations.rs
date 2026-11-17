@@ -37,7 +37,6 @@ fn insert_recorded_actions(
             label: "Recorded Actions".to_string(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: Vec::new(),
             automation_lanes: Vec::new(),
         });

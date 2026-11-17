@@ -40,6 +40,7 @@ export const ConnectedTrackHeaders = () => {
       onRemoveTrack={ctx.track.removeTrack}
       onRenameTrack={ctx.track.renameTrack}
       onReorderTrack={ctx.track.reorderTrack}
+      isExpanded={ctx.track.isTrackExpanded}
       onToggleExpand={ctx.track.toggleTrackExpanded}
       onToggleMuted={ctx.track.toggleMute}
       onToggleSolo={ctx.track.toggleSolo}
@@ -64,6 +65,8 @@ type TrackHeadersProps = {
     targetTrackId: string,
     placement: TrackReorderPlacement,
   ) => void;
+  /** Whether the track's automation lane headers are shown; reactive. */
+  isExpanded?: (trackId: string) => boolean;
   onToggleExpand?: (trackId: string) => void;
   onToggleMuted?: (trackId: string) => void;
   onToggleSolo?: (trackId: string) => void;
@@ -239,11 +242,11 @@ const TrackHeaders = (props: TrackHeadersProps) => {
                   class="mr-1"
                   style={{ width: "20px" }}
                   label={
-                    track.expanded
+                    props.isExpanded?.(track.id)
                       ? "Collapse automation lanes"
                       : "Expand automation lanes"
                   }
-                  aria-expanded={track.expanded}
+                  aria-expanded={props.isExpanded?.(track.id) ?? false}
                   draggable={false}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -256,7 +259,7 @@ const TrackHeaders = (props: TrackHeadersProps) => {
                     fill="currentColor"
                     class="w-4 h-4 transition-transform duration-200"
                     style={{
-                      transform: track.expanded
+                      transform: props.isExpanded?.(track.id)
                         ? "rotate(90deg)"
                         : "rotate(0deg)",
                     }}
@@ -336,7 +339,7 @@ const TrackHeaders = (props: TrackHeadersProps) => {
             </div>
 
             {/* Automation lane headers when expanded */}
-            <Show when={track.expanded && track.automation_lanes}>
+            <Show when={props.isExpanded?.(track.id) && track.automation_lanes}>
               <div class="pl-6">
                 <For each={track.automation_lanes}>
                   {(param) => (

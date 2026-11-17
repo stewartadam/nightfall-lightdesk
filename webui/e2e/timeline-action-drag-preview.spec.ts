@@ -79,7 +79,6 @@ async function openDragPreviewFixture(page: Page): Promise<DragPreviewFixture> {
             label: "Drag Source",
             muted: false,
             solo: false,
-            expanded: false,
             actions: [
               {
                 id: actionId,
@@ -109,7 +108,6 @@ async function openDragPreviewFixture(page: Page): Promise<DragPreviewFixture> {
             label: "Drag Target",
             muted: false,
             solo: false,
-            expanded: false,
             actions: [],
             automation_lanes: [],
           },

@@ -140,7 +140,6 @@ async function openTimelinePasteFixture(
                 label: "Paste Undo Track",
                 muted: false,
                 solo: false,
-                expanded: true,
                 actions: [
                   {
                     id: actionId,

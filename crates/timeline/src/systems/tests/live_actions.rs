@@ -79,7 +79,6 @@ fn process_actions_skips_regular_trigger_scan_on_seek_frames() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Start exec".to_owned(),
@@ -160,7 +159,6 @@ fn process_actions_resumes_after_running_seek_target() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-after-seek".to_owned(),
                 label: "Start after seek".to_owned(),
@@ -261,7 +259,6 @@ fn process_actions_replays_mutation_after_move_playhead_only_seek_frame() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: Vec::new(),
             automation_lanes: Vec::new(),
         }],
@@ -367,7 +364,6 @@ fn process_actions_dispatches_registered_clip_action() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "registered-start".to_owned(),
                 label: "Registered Start".to_owned(),
@@ -431,7 +427,6 @@ fn process_actions_delegates_registered_domain_action() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "custom-action".to_owned(),
                 label: "Custom Action".to_owned(),
@@ -544,7 +539,6 @@ fn process_actions_syncs_live_fire_cue_clock_from_timeline_position() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Fire cue".to_owned(),
@@ -675,7 +669,6 @@ fn process_actions_releases_bounded_fire_cue_at_action_end() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Fire cue".to_owned(),
@@ -802,7 +795,6 @@ fn process_actions_skips_bounded_fire_cue_after_release_tail() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Fire cue".to_owned(),
@@ -885,7 +877,6 @@ fn process_actions_sends_timed_start_clip_from_timeline_position() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -972,7 +963,6 @@ fn process_actions_stops_clip_when_started_action_is_deleted() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -1073,7 +1063,6 @@ fn process_actions_applies_inserted_elapsed_stop_action() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -1180,7 +1169,6 @@ fn process_actions_restores_start_when_elapsed_stop_action_is_deleted() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),
@@ -1292,7 +1280,6 @@ fn process_actions_leaves_lookahead_unset_when_timeline_setting_is_unset() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -1381,7 +1368,6 @@ fn process_actions_tracks_last_processed_per_timeline() {
             label: "Track A".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-a".to_owned(),
                 label: "Start exec A".to_owned(),
@@ -1408,7 +1394,6 @@ fn process_actions_tracks_last_processed_per_timeline() {
             label: "Track B".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-b".to_owned(),
                 label: "Start exec B".to_owned(),
@@ -1493,7 +1478,6 @@ fn process_actions_keeps_started_clip_active_after_action_duration() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -1586,7 +1570,6 @@ fn process_actions_ignores_start_clip_duration_resize() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -1689,7 +1672,6 @@ fn process_actions_ignores_inserted_elapsed_muted_action() {
                 label: "Active".to_owned(),
                 muted: false,
                 solo: false,
-                expanded: false,
                 actions: vec![Action {
                     id: "action-start".to_owned(),
                     label: "Start exec".to_owned(),
@@ -1704,7 +1686,6 @@ fn process_actions_ignores_inserted_elapsed_muted_action() {
                 label: "Muted".to_owned(),
                 muted: true,
                 solo: false,
-                expanded: false,
                 actions: Vec::new(),
                 automation_lanes: Vec::new(),
             },
@@ -1807,7 +1788,6 @@ fn process_actions_directly_unlinks_changed_elapsed_start_clip() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -1964,7 +1944,6 @@ fn changed_elapsed_start_clip_flushes_stale_sequence_before_replay() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -2089,7 +2068,6 @@ fn process_actions_preserves_active_start_after_future_only_edit() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -2214,7 +2192,6 @@ fn process_actions_ignores_inserted_stop_before_active_start() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -2324,7 +2301,6 @@ fn process_actions_ignores_deleted_stop_before_active_start() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-noop-stop".to_owned(),
@@ -2434,7 +2410,6 @@ fn process_actions_ignores_shadowed_stop_moved_after_playhead() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-noop-stop".to_owned(),
@@ -2541,7 +2516,6 @@ fn process_actions_replays_inserted_speed_before_active_start() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-start".to_owned(),
                 label: "Start exec".to_owned(),
@@ -2649,7 +2623,6 @@ fn process_actions_replays_start_after_speed_becomes_stop_before_it() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-speed".to_owned(),
@@ -2763,7 +2736,6 @@ fn process_actions_replays_start_after_stop_becomes_ignored_desk_eval() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),
@@ -2875,7 +2847,6 @@ fn process_actions_replays_start_after_elapsed_stop_moves_before_it() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),
@@ -2989,7 +2960,6 @@ fn process_actions_replays_desk_eval_actions_after_dispatch_desk_eval_delete() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-go".to_owned(),
@@ -3092,7 +3062,6 @@ fn process_actions_replays_start_after_dispatch_desk_eval_stop_delete() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),
@@ -3198,7 +3167,6 @@ fn process_actions_desk_eval_delete_does_not_duplicate_active_fire_cue() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-cue".to_owned(),
@@ -3299,7 +3267,6 @@ fn process_actions_skips_inserted_desk_eval_when_seek_policy_ignores_it() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: Vec::new(),
             automation_lanes: Vec::new(),
         }],
@@ -3388,7 +3355,6 @@ fn process_actions_drops_skipped_deleted_action_trigger_state() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-reused".to_owned(),
                 label: "Ignored desk eval".to_owned(),
@@ -3491,7 +3457,6 @@ fn process_actions_does_not_pretrigger_skipped_future_action() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-future".to_owned(),
                 label: "Ignored desk eval".to_owned(),
@@ -3593,7 +3558,6 @@ fn process_actions_sends_untimed_stop_without_tracked_origin() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-stop".to_owned(),
                 label: "Stop exec".to_owned(),
@@ -3658,7 +3622,6 @@ fn process_actions_dispatches_desk_eval_actions() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Desk Eval".to_owned(),
@@ -3746,7 +3709,6 @@ fn process_actions_tracks_desk_eval_clip_actions() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Desk Eval Clip".to_owned(),
@@ -3833,7 +3795,6 @@ fn process_actions_tracks_sequence_navigation_clip_actions() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-advance".to_owned(),
@@ -3983,7 +3944,6 @@ fn process_actions_sends_timed_sequence_navigation_from_planner() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),
@@ -4122,7 +4082,6 @@ fn paused_timeline_sets_owned_playback_speed_to_zero_and_restores() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: Vec::new(),
             automation_lanes: Vec::new(),
         }],
@@ -4214,7 +4173,6 @@ fn timeline_syncs_owned_clip_instance_clock_from_action_position() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Start clip".to_owned(),
@@ -4344,7 +4302,6 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_speed_actions() {
                 label: "Track 1".to_owned(),
                 muted: false,
                 solo: false,
-                expanded: false,
                 actions: vec![
                     Action {
                         id: "start-1".to_owned(),
@@ -4383,7 +4340,6 @@ fn timeline_syncs_owned_fx_module_clip_clock_from_shared_speed_actions() {
                 label: "Muted Track".to_owned(),
                 muted: true,
                 solo: false,
-                expanded: false,
                 actions: vec![Action {
                     id: "muted-speed-1".to_owned(),
                     label: "Muted speed".to_owned(),
@@ -4553,7 +4509,6 @@ fn timeline_syncs_source_owned_clock_without_materialized_clip_from_speed_aware_
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "start-1".to_owned(),
@@ -4672,7 +4627,6 @@ fn process_parameters_applies_clip_speed_lane_to_attached_instance() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: Vec::new(),
             automation_lanes: vec![AutomationLane {
                 id: "speed-1".to_owned(),
@@ -4758,7 +4712,6 @@ fn clip_speed_automation_drives_step_fx_and_wasm_fx_clocks() {
                 label: "Track".into(),
                 muted: false,
                 solo: false,
-                expanded: true,
                 actions: vec![Action {
                     id: "start".into(),
                     label: "Start".into(),
@@ -4984,7 +4937,6 @@ fn inactive_paused_timeline_sets_owned_playback_speed_to_zero_and_restores() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: Vec::new(),
             automation_lanes: Vec::new(),
         }],
@@ -5060,7 +5012,6 @@ fn paused_timeline_freezes_owned_cue_instance_clock_without_shifting() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: Vec::new(),
             automation_lanes: Vec::new(),
         }],
@@ -5127,7 +5078,6 @@ fn process_actions_skips_missing_clip_actions_without_panicking() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-1".to_owned(),
                 label: "Missing exec".to_owned(),
@@ -5204,7 +5154,6 @@ fn process_actions_tracks_clip_autostarted_by_jump_to_cue() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-jump".to_owned(),
                 label: "Jump exec".to_owned(),
@@ -5306,7 +5255,6 @@ fn process_actions_tracks_running_clip_for_jump_to_cue() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![Action {
                 id: "action-jump".to_owned(),
                 label: "Jump exec".to_owned(),
@@ -5437,7 +5385,6 @@ fn process_actions_preserves_started_clip_origin_for_jump_to_cue() {
             label: "Track 1".to_owned(),
             muted: false,
             solo: false,
-            expanded: false,
             actions: vec![
                 Action {
                     id: "action-start".to_owned(),

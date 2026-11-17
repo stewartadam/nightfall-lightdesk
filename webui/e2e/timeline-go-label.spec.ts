@@ -105,7 +105,6 @@ function timeline(): object {
         label: "Sequence",
         muted: false,
         solo: false,
-        expanded: false,
         automation_lanes: [],
         actions: [
           timelineAction("go-label-start", 1, {

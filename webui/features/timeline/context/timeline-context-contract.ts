@@ -242,6 +242,9 @@ export interface TimelineContextType {
     ) => void;
     toggleMute: (trackId: string) => void;
     toggleSolo: (trackId: string) => void;
+    /** Whether this device shows the track's automation lanes; reactive. */
+    isTrackExpanded: (trackId: string) => boolean;
+    /** Shows or hides the track's automation lanes on this device only. */
     toggleTrackExpanded: (trackId: string) => void;
   };
   actions: ActionOperations;
