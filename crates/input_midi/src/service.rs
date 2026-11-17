@@ -20,7 +20,7 @@ mod identity;
 mod output;
 
 pub(crate) use identity::is_session_key;
-use identity::{PortIdentity, port_identity};
+use identity::{PortIdentity, number_unit_ports, port_identity};
 pub use output::MidiOutputClient;
 #[cfg(test)]
 pub(crate) use output::MidiOutputMessage;
@@ -37,6 +37,12 @@ pub struct MidiPortInfo {
     /// Key that stays with the physical unit across replugs where the OS allows, such as its
     /// USB serial or USB port.
     pub unit: String,
+    /// Key naming the USB port the unit is plugged into, which tells apart units that share
+    /// a serial; `None` without a USB device behind the port.
+    pub location: Option<String>,
+    /// Key naming the model and which of its ports this is, from its USB IDs, which every OS
+    /// reports alike; `None` without a USB device behind the port.
+    pub hardware: Option<String>,
 }
 
 /// Raw MIDI event emitted by the process-lifetime MIDI service.
@@ -280,16 +286,24 @@ impl MidiInputWorker {
             .into_iter()
             .filter(|port| port_allowed(self.input_port.as_deref(), &port.name))
             .collect();
-        self.identities.retain(|key, _| {
-            discovered_ports
-                .iter()
-                .any(|port| cache_key(&port.id, &port.name) == *key)
-        });
-        for port in &discovered_ports {
-            self.identities
-                .entry(cache_key(&port.id, &port.name))
-                .or_insert_with(|| port_identity(&port.id, &port.name));
-        }
+        // Ports are numbered within their unit over every discovered port, not just those
+        // that connected, so a port that failed to open does not shift its siblings.
+        let keys: Vec<String> = discovered_ports
+            .iter()
+            .map(|port| cache_key(&port.id, &port.name))
+            .collect();
+        let mut ordered: Vec<PortIdentity> = discovered_ports
+            .iter()
+            .zip(&keys)
+            .map(|(port, key)| {
+                self.identities
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_else(|| port_identity(&port.id, &port.name))
+            })
+            .collect();
+        number_unit_ports(&mut ordered);
+        self.identities = keys.into_iter().zip(ordered).collect();
         let event_tx = self.event_tx.clone();
         let timecode_feed = self.timecode_feed.clone();
         let changed = refresh_connections(&mut self.connections, discovered_ports, |port, name| {
@@ -435,6 +449,8 @@ fn connected_ports<C>(
                 port: connection.id.clone(),
                 model: identity.base,
                 unit: identity.unit,
+                location: identity.location,
+                hardware: identity.hardware,
             };
             (port, pairing)
         })

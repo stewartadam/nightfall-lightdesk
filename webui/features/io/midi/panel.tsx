@@ -244,16 +244,23 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
     return device ? profilesByModel().get(device.model) : undefined;
   };
   /**
-   * Returns the saved devices a connected new unit can be recognized as: those of its model
-   * that are not plugged in. Saved or unplugged rows get none.
+   * Returns the saved devices a connected new unit can be recognized as: every one that is
+   * not plugged in, those of the unit's model first. Other models are offered too, since
+   * another computer may have named the same model differently. Saved or unplugged rows get
+   * none.
    */
-  const assignableDevices = (unit: MidiDevice) =>
-    unit.saved || !unit.connected
-      ? []
-      : $midiDevices().filter(
-          (device) =>
-            device.saved && !device.connected && device.model === unit.model,
-        );
+  const assignableDevices = (unit: MidiDevice) => {
+    if (unit.saved || !unit.connected) {
+      return [];
+    }
+    const free = $midiDevices().filter(
+      (device) => device.saved && !device.connected,
+    );
+    return [
+      ...free.filter((device) => device.model === unit.model),
+      ...free.filter((device) => device.model !== unit.model),
+    ];
+  };
 
   const [selection, setSelection] = createSignal<GridSelection>(
     emptyGridSelection(),
@@ -504,7 +511,7 @@ export default function MidiInputPanel(props: MidiInputPanelProps) {
                         trigger="Assign to…"
                         triggerSize="compact"
                         triggerVariant="secondary"
-                        triggerTitle={`Use the mappings of a saved ${device.model} for this unit`}
+                        triggerTitle="Use the mappings of a saved device for this unit"
                         placement="below"
                         align="end"
                         contentLabel={`Saved devices ${device.name} can be`}

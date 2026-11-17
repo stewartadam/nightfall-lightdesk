@@ -2443,6 +2443,8 @@ fn seed_world(world: &mut World) {
             model: "Grid".to_string(),
             number: 2,
             units: vec!["usb:09e8:004f:serial:S1".to_string()],
+            hardware: Some("usb:09e8:004f:0".to_string()),
+            aliases: vec!["Grid:Grid MIDI 1".to_string()],
             feedback: Some(false),
         }]));
     #[cfg(feature = "midi")]

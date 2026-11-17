@@ -109,7 +109,10 @@ mod tests {
                 .map(|(index, (model, unit, number))| ConnectedDevice {
                     port: format!("port-{index}"),
                     model: (*model).to_string(),
+                    port_model: (*model).to_string(),
                     unit: (*unit).to_string(),
+                    location: None,
+                    hardware: None,
                     has_output: true,
                     device: Uuid::from_u128(index as u128 + 1),
                     name: display_name(model, *number),

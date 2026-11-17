@@ -259,7 +259,7 @@ pub(crate) fn send_midi_feedback(world: &mut World) {
                     && output.has_output(&connected.port))
                 .then_some((
                     mapping.device,
-                    (connected.port.as_str(), connected.model.as_str()),
+                    (connected.port.as_str(), connected.port_model.as_str()),
                 ))
             })
             .collect();
@@ -396,12 +396,17 @@ mod tests {
             model: model.to_string(),
             number: 1,
             units: vec!["unit".to_string()],
+            hardware: None,
+            aliases: Vec::new(),
             feedback: None,
         }]));
         let devices = MidiDevices::new(vec![ConnectedDevice {
             port: "port".to_string(),
             model: model.to_string(),
+            port_model: model.to_string(),
             unit: "unit".to_string(),
+            location: None,
+            hardware: None,
             has_output: true,
             device: DEVICE,
             name: model.to_string(),

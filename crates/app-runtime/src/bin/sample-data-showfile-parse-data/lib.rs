@@ -320,6 +320,8 @@ fn add_input_mappings(world: &mut World) {
             model: "Parser Grid".to_owned(),
             number: 1,
             units: Vec::new(),
+            hardware: None,
+            aliases: Vec::new(),
             feedback: None,
         }]));
     #[cfg(feature = "midi")]

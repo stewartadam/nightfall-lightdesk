@@ -319,8 +319,8 @@ fn refresh_midi_devices(
     let (current, learned) = resolve(ports, mappings.devices(), &devices);
     if !learned.is_empty() {
         let registry = mappings.devices_mut();
-        for (device, unit) in learned {
-            registry.learn_unit(device, &unit);
+        for learned in &learned {
+            registry.learn(learned);
         }
     }
     forget_vanished_device_mappings(&devices, &current, &mappings, &mut edges);
@@ -465,8 +465,11 @@ fn save_device(
     Ok(())
 }
 
-/// Recognizes connected new unit `unit` as saved device `device`, which must be of the same
-/// model and not plugged in, by teaching the device the unit's key.
+/// Recognizes connected new unit `unit` as saved device `device`, which must not be plugged
+/// in, by teaching the device the unit's key and USB IDs.
+///
+/// The device may have been saved under another name, as another OS names the same model
+/// differently, so the unit's name becomes an alias of the device's model.
 fn assign_device(
     unit: Uuid,
     device: Uuid,
@@ -488,25 +491,14 @@ fn assign_device(
             format!("MIDI device {device} is not saved"),
         )
     })?;
-    if saved.model != connected.model {
-        return Err(CommandError::new(
-            "midi.device_model_mismatch",
-            format!(
-                "{} is a {}, not a {}",
-                saved.display_name(),
-                saved.model,
-                connected.model
-            ),
-        ));
-    }
     if devices.is_connected(device) {
         return Err(CommandError::new(
             "midi.device_connected",
             format!("{} is already connected", saved.display_name()),
         ));
     }
-    let unit_key = connected.unit.clone();
-    mappings.devices_mut().learn_unit(device, &unit_key);
+    let learned = connected.assigned_to(saved);
+    mappings.devices_mut().learn(&learned);
     Ok(())
 }
 
@@ -615,7 +607,10 @@ mod tests {
         ConnectedDevice {
             port: port.to_string(),
             model: model.to_string(),
+            port_model: model.to_string(),
             unit: format!("unit-{port}"),
+            location: None,
+            hardware: None,
             has_output: false,
             device,
             name: devices::display_name(model, unsaved_number.unwrap_or(1)),
@@ -630,6 +625,8 @@ mod tests {
             model: model.to_string(),
             number,
             units: Vec::new(),
+            hardware: None,
+            aliases: Vec::new(),
             feedback: None,
         }
     }
@@ -1460,8 +1457,8 @@ mod tests {
         ));
     }
 
-    /// Verifies a connected new unit can be assigned to a saved device of its model that is
-    /// not plugged in, which learns the unit's key, but not to a connected device.
+    /// Verifies a connected new unit can be assigned to a saved device that is not plugged
+    /// in, which learns the unit's key, but not to a connected device.
     #[test]
     fn assigning_a_new_unit_teaches_the_device_its_key() {
         let mut app = midi_command_app();
@@ -1502,5 +1499,29 @@ mod tests {
                 .map(|device| device.units.clone()),
             Some(vec!["unit-port-new".to_string()])
         );
+    }
+
+    /// Verifies a unit can be assigned to a saved device of another name, as when another OS
+    /// names the model differently: the device learns the unit's name as an alias and its USB
+    /// IDs, so the unit is recognized on its own afterwards.
+    #[test]
+    fn assigning_under_another_name_teaches_an_alias() {
+        let mut app = midi_command_app();
+        let unit = Uuid::from_u128(0x0E1);
+        let mut new_unit = connected(unit, "port-new", "Pad:Pad MIDI 1", Some(1));
+        new_unit.hardware = Some("usb:1234:5678:0".to_string());
+        app.insert_resource(MidiDevices::new(vec![new_unit]));
+
+        submit_command(&mut app, MidiCommand::AssignDevice { unit, device: PAD });
+        app.update();
+        assert!(matches!(
+            take_result(&mut app).outcome,
+            CommandOutcome::Succeeded { .. }
+        ));
+        let mappings = app.world().resource::<MidiMappings>();
+        let device = mappings.devices().get(PAD).expect("device stays saved");
+        assert_eq!(device.aliases, vec!["Pad:Pad MIDI 1".to_string()]);
+        assert_eq!(device.hardware.as_deref(), Some("usb:1234:5678:0"));
+        assert_eq!(device.units, vec!["unit-port-new".to_string()]);
     }
 }

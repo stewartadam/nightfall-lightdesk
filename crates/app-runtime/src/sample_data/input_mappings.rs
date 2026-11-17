@@ -21,6 +21,8 @@ pub(super) fn add_midi_mappings(world: &mut World) {
         model: "Grid".to_string(),
         number: 1,
         units: Vec::new(),
+        hardware: None,
+        aliases: Vec::new(),
         feedback: None,
     }]));
     midi_mappings.set_mappings(vec![MidiMapping {

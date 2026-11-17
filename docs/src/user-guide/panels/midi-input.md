@@ -12,11 +12,9 @@ When you plug in a controller while Nightfall is running and the show has no bin
 
 You can use two or more identical controllers, such as two APC minis, at once. Nightfall numbers them, so they show as "APC mini" and "APC mini (2)", and each one keeps its own bindings and LED feedback.
 
-Nightfall recognizes each controller by its USB serial number, or by the USB port it is plugged into when it has none. A controller you have not bound yet is marked **New**. Its number is saved with the show once you bind one of its controls or change its LED feedback. A controller the show knows that is unplugged is marked **Not connected**.
+Nightfall recognizes each controller by its USB serial number, on Windows, macOS and Linux alike, so a show moved to another computer finds its controllers again. A controller you have not bound yet is marked **New**. Its number is saved with the show once you bind one of its controls or change its LED feedback. A controller the show knows that is unplugged is marked **Not connected**.
 
-If you move a controller to another USB port or another computer and it shows as **New**, choose **Assign to…** next to it and pick the controller it replaces. Its bindings then follow it. When only one controller of a model is plugged in and the show knows only one of that model, Nightfall does this for you.
-
-Controllers without a serial number are told apart by USB port. If you swap two of them between ports, swap their cables back, or rebind them.
+Some controllers have no serial number, or share one with their twins. Nightfall tells those apart by the USB port they are plugged into. When only one controller of a model is plugged in and the show knows only one of that model, it is recognized anyway. Otherwise it shows as **New** on another port or another computer: choose **Assign to…** next to it and pick the controller it replaces, and its bindings follow it from then on. If you swap two of them between ports, swap their cables back, or assign them again.
 
 Each row in the table is one binding:
 

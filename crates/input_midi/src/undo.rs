@@ -127,6 +127,8 @@ mod tests {
             model: "Pad".to_string(),
             number: 1,
             units: Vec::new(),
+            hardware: None,
+            aliases: Vec::new(),
             feedback: None,
         }]));
         app.insert_resource(mappings);

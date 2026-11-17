@@ -6024,6 +6024,7 @@ dependencies = [
  "alsa",
  "bevy_app",
  "bevy_ecs",
+ "core-foundation",
  "coremidi-sys",
  "midir",
  "nightfall",
@@ -6034,6 +6035,7 @@ dependencies = [
  "nightfall-timecode",
  "nightfall-undo",
  "nightfall-workspace-hack",
+ "nusb",
  "serde",
  "serde_json",
  "tempfile",
@@ -6041,6 +6043,7 @@ dependencies = [
  "tracing",
  "typeshare",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
