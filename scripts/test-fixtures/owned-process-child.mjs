@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { writeFileSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 
 const [markerPath, processGroupId] = process.argv.slice(2);
@@ -19,8 +19,10 @@ function handleServerListening() {
   if (!address || typeof address === "string") {
     throw new Error("Could not resolve fixture listener port");
   }
+  // Write then rename so readers polling for the marker never see a partial file.
+  const pendingMarkerPath = `${markerPath}.${process.pid}.tmp`;
   writeFileSync(
-    markerPath,
+    pendingMarkerPath,
     JSON.stringify({
       pid: process.pid,
       port: address.port,
@@ -28,6 +30,7 @@ function handleServerListening() {
     }),
     "utf8",
   );
+  renameSync(pendingMarkerPath, markerPath);
   process.send?.({ ready: true });
 }
 
