@@ -24,6 +24,11 @@ concurrency:
 # These jobs treat release assets as data. Never checkout source, restore build caches, install
 # dependencies, or execute a release asset here. See docs/ci-security.md.
 jobs:
+  # Every later job takes the tag from this job's outputs, never from the event. GitHub can send
+  # `published` with the draft's `untagged-<hash>` placeholder as `release.tag_name` (and as the
+  # run's head_branch), even though the release record already names the real tag. That happened
+  # for v0.1.0-beta.1 and skipped the feeds and website. Other projects report the same placeholder
+  # appearing after a draft is edited or published (e.g. cli/cli#2964, xberg-io/actions#68).
   release:
     name: Find the published release
     runs-on: ubuntu-22.04
