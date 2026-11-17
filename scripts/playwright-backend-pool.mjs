@@ -113,12 +113,22 @@ function shortIdentifier(value) {
   return createHash("sha256").update(value).digest("hex").slice(0, 12);
 }
 
+/** Thrown when a service process exits before its URL responds. */
+class ServiceExitError extends Error {}
+
+/** Reports whether a startup failure came from the service process exiting early. */
+function isServiceExitError(error) {
+  return error instanceof ServiceExitError;
+}
+
 /** Waits until a service responds successfully or its child exits. */
 async function waitForService(child, url, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error(`Service process exited before ${url} became ready`);
+      throw new ServiceExitError(
+        `Service process exited before ${url} became ready`,
+      );
     }
     try {
       const response = await fetch(url, {
@@ -193,24 +203,38 @@ async function stopService(service) {
  * without the cookie fails instead of reaching another test's backend. Its
  * process registry lives in the run root, so the pool sweep stops it when
  * Playwright exits.
+ *
+ * The claimed ports come from the ephemeral range, so another process can take
+ * the frontend port before Vite binds it. Vite then exits on its strict port,
+ * and the server starts again on a newly claimed pair.
  */
 export async function startPlaywrightSharedVite(runRoot) {
-  const { backendPort: unusedBackendPort } =
-    await claimAvailablePortPair(runRoot);
-  const baseURL = `http://127.0.0.1:${unusedBackendPort + 1}`;
-  await startService({
-    environment: {
-      NIGHTFALL_PLAYWRIGHT_SHARED_VITE: "1",
-      NIGHTFALL_PORT: String(unusedBackendPort),
-      NIGHTFALL_VITE_PROXY: "1",
-      NIGHTFALL_VITE_WARMUP_PANELS: "1",
-    },
-    registryPath: join(runRoot, "shared-vite.jsonl"),
-    scriptName: "run-playwright-vite.mjs",
-    timeoutMs: 120_000,
-    url: baseURL,
-  });
-  return baseURL;
+  const attempts = 3;
+  for (let attempt = 1; ; attempt += 1) {
+    const { backendPort: unusedBackendPort } =
+      await claimAvailablePortPair(runRoot);
+    const baseURL = `http://127.0.0.1:${unusedBackendPort + 1}`;
+    try {
+      await startService({
+        environment: {
+          NIGHTFALL_PLAYWRIGHT_SHARED_VITE: "1",
+          NIGHTFALL_PORT: String(unusedBackendPort),
+          NIGHTFALL_VITE_PROXY: "1",
+          NIGHTFALL_VITE_WARMUP_PANELS: "1",
+        },
+        registryPath: join(runRoot, "shared-vite.jsonl"),
+        scriptName: "run-playwright-vite.mjs",
+        timeoutMs: 120_000,
+        url: baseURL,
+      });
+      return baseURL;
+    } catch (error) {
+      if (attempt >= attempts || !isServiceExitError(error)) throw error;
+      process.stderr.write(
+        `Shared Vite server could not start on ${baseURL}; retrying on new ports.\n`,
+      );
+    }
+  }
 }
 
 /** Claims a backend port for one Playwright worker and points it at the shared Vite server. */
