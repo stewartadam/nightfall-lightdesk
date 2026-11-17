@@ -643,3 +643,154 @@ test("board tempo pad shows and taps the show tempo", async ({
     path: "test-results/playwright/board-tempo-pad.png",
   });
 });
+
+/** Draws a 600x400 PNG photo-sized test picture in the page and returns its bytes. */
+async function photoPng(page: Page): Promise<Buffer> {
+  const base64 = await page.evaluate(async () => {
+    const canvas = new OffscreenCanvas(600, 400);
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("no 2d context");
+    const gradient = context.createLinearGradient(0, 0, 600, 400);
+    gradient.addColorStop(0, "#f97316");
+    gradient.addColorStop(1, "#db2777");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 600, 400);
+    context.fillStyle = "#fde047";
+    context.beginPath();
+    context.arc(300, 200, 120, 0, Math.PI * 2);
+    context.fill();
+    const blob = await canvas.convertToBlob({ type: "image/png" });
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+  });
+  return Buffer.from(base64, "base64");
+}
+
+/** A small vector icon: a white lightning bolt. */
+const BOLT_SVG = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <path fill="#facc15" d="M13 2 4 14h7l-1 8 9-12h-7z"/>
+</svg>`;
+
+/**
+ * Gives two group buttons pictures from the element settings: a large PNG is shrunk to the
+ * stored size, an SVG is kept as is and served inert, both show on the buttons while operating,
+ * and Clear takes a picture off again.
+ */
+test("board buttons show uploaded images", async ({
+  backendSlot,
+  page,
+}, testInfo) => {
+  await openBoardApp(page, backendSlot.backendPort);
+  await submitCommand(page, "fix 311>312");
+  await submitCommand(page, "store group 1");
+  await submitCommand(page, "fix 311");
+  await submitCommand(page, "store group 2");
+  await submitCommand(page, "clear");
+
+  await runPaletteCommand(page, "New Board");
+  const panel = page.locator('[data-panel-kind="boards"]:visible');
+  await expect(panel.locator("[data-board-grid]")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Two group buttons, each four cells wide and four tall.
+  for (const x of [0, 5]) {
+    await dragCells(page, panel, { x, y: 0 }, { x: x + 3, y: 3 });
+    await page.getByRole("menuitem", { name: /^Button/ }).hover();
+    await chooseMenuItem(page, "Group");
+  }
+  await expect.poll(async () => (await boardElements(page)).length).toBe(2);
+  const buttons = elementOfKind(panel, "Target");
+  await expect(buttons).toHaveCount(2);
+
+  /** Opens the settings pop-out of the button at `index` and returns it. */
+  const openSettings = async (index: number) => {
+    const element = buttons.nth(index);
+    await element.hover();
+    await element.getByRole("button", { name: "Element settings" }).click();
+    const settings = page.getByRole("menu", { name: "Element settings" });
+    await expect(settings).toBeVisible();
+    return settings;
+  };
+  /** Returns the image ID stored on the button at `index`. */
+  const storedImage = async (index: number) =>
+    (await boardElements(page)).filter(
+      (element) => element.kind.type === "Target",
+    )[index]?.image;
+
+  // A 600x400 photo is uploaded from the Image field and stored as a 256 px wide PNG.
+  let settings = await openSettings(0);
+  await expect(
+    settings.getByRole("button", { name: "Choose image…" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("board-image-choose.png"),
+  });
+  await settings.getByLabel("Button image file").setInputFiles({
+    name: "photo.png",
+    mimeType: "image/png",
+    buffer: await photoPng(page),
+  });
+  await expect.poll(() => storedImage(0)).toMatch(/^[0-9a-f]{64}\.png$/);
+  const photo = buttons.nth(0).locator(".nf-board-button-image");
+  await expect(photo).toBeVisible();
+  await expect
+    .poll(() => photo.evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .toBe(256);
+  await expect(settings.locator("[data-board-image-preview]")).toBeVisible();
+  await expect(
+    settings.getByRole("button", { name: "Replace…" }),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("board-image-set.png") });
+  await page.keyboard.press("Escape");
+
+  // An SVG icon is stored as is and served so it cannot run script if opened directly.
+  settings = await openSettings(1);
+  await settings.getByLabel("Button image file").setInputFiles({
+    name: "bolt.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from(BOLT_SVG),
+  });
+  await expect.poll(() => storedImage(1)).toMatch(/^[0-9a-f]{64}\.svg$/);
+  const bolt = buttons.nth(1).locator(".nf-board-button-image");
+  await expect(bolt).toBeVisible();
+  const served = await page.request.get((await bolt.getAttribute("src")) ?? "");
+  expect(served.ok()).toBe(true);
+  expect(served.headers()["content-type"]).toContain("image/svg+xml");
+  expect(served.headers()["content-security-policy"]).toContain("sandbox");
+  expect(served.headers()["cache-control"]).toContain("immutable");
+  await page.keyboard.press("Escape");
+
+  // Files that are not images are refused with a message and leave the button unchanged.
+  settings = await openSettings(1);
+  await settings.getByLabel("Button image file").setInputFiles({
+    name: "notes.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("not an image"),
+  });
+  await expect(page.getByText(/Could not use notes\.txt/)).toBeVisible();
+  expect(await storedImage(1)).toMatch(/\.svg$/);
+  await page.keyboard.press("Escape");
+
+  // Operating, both pictures show and the pressed button still lights.
+  await panel.getByRole("tab", { name: "Operate" }).click();
+  await buttons.nth(0).locator(".nf-board-button").click();
+  await expect(buttons.nth(0).locator(".nf-board-button")).toHaveAttribute(
+    "data-state",
+    "On",
+  );
+  await expect(photo).toBeVisible();
+  await expect(bolt).toBeVisible();
+  await panel.screenshot({
+    path: testInfo.outputPath("board-images-operating.png"),
+  });
+
+  // Clear removes the picture again.
+  await panel.getByRole("tab", { name: "Edit" }).click();
+  settings = await openSettings(0);
+  await settings.getByRole("button", { name: "Clear" }).click();
+  await expect.poll(() => storedImage(0)).toBeFalsy();
+  await expect(photo).toHaveCount(0);
+});

@@ -87,6 +87,15 @@ pub(super) fn save_showfile(
         );
     }
 
+    // Only the saved copy is cleaned: the running show keeps cleared images so undo can bring
+    // them back.
+    if let Err(error) = remove_orphaned_board_images(&showfile_snapshot.boards, &saved_dir) {
+        tracing::warn!(
+            "Failed to remove orphaned board images after save: {}",
+            error
+        );
+    }
+
     if let Err(error) =
         remove_orphaned_timeline_audio_assets_after_save(&showfile_snapshot.timelines, &saved_dir)
     {

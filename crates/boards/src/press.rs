@@ -470,6 +470,7 @@ mod tests {
                 },
                 label: None,
                 color: None,
+                image: None,
                 show_title: true,
                 kind,
             }],

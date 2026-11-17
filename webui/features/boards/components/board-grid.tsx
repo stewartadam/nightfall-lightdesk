@@ -42,6 +42,7 @@ import {
   cellAtPoint,
   firstFittingCell,
 } from "../model/board-placement";
+import { boardImageUrl } from "../services/board-images";
 import { ElementSettings } from "./board-properties";
 import "./board.css";
 
@@ -148,6 +149,22 @@ function BoardButton(props: {
       aria-pressed={props.item.state === "On"}
       onClick={() => props.onPress()}
     >
+      <Show
+        when={
+          props.item.state !== "Missing" &&
+          props.element.image &&
+          boardImageUrl(props.element.image)
+        }
+      >
+        {(url) => (
+          <img
+            class="nf-board-button-image"
+            src={url()}
+            alt=""
+            draggable={false}
+          />
+        )}
+      </Show>
       <span class="nf-board-button-label">
         {props.item.state === "Missing"
           ? "Deleted"

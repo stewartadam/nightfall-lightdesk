@@ -11,8 +11,10 @@ name = "nightfall-headless"
 path = "src/main.rs"
 
 [dependencies]
-axum.workspace = true
+axum = { workspace = true, features = ["multipart"] }
 bevy.workspace = true
+image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+sha2 = "0.11"
 bevy_state.workspace = true
 jiff.workspace = true
 clonetree = "0.0.2"

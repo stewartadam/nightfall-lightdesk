@@ -32,6 +32,29 @@ pub const BOARD_TARGET_TYPES: &[ObjectType] = &[
     ObjectType::Macro,
 ];
 
+/// Show folder subdirectory holding the images shown on board buttons.
+pub const BOARD_IMAGE_DIR: &str = "board-images";
+
+/// Returns whether `id` names a stored board image: a lowercase SHA-256 hex digest of the
+/// stored bytes followed by `.png` or `.svg`.
+///
+/// The strict shape keeps showfile references from naming any other file in the show folder.
+pub fn is_board_image_id(id: &str) -> bool {
+    let Some((digest, extension)) = id.split_once('.') else {
+        return false;
+    };
+    digest.len() == 64
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        && matches!(extension, "png" | "svg")
+}
+
+/// Returns the show-folder relative path of a board image, or `None` for a malformed ID.
+pub fn board_image_path(id: &str) -> Option<String> {
+    is_board_image_id(id).then(|| format!("{BOARD_IMAGE_DIR}/{id}"))
+}
+
 /// Shared showfile object holding operator-arranged controls on an open grid of small cells.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, SmartDefault)]
 #[typeshare::typeshare]
@@ -247,6 +270,9 @@ pub struct BoardElement {
     /// Optional `#rrggbb` color override.
     #[serde(default)]
     pub color: Option<String>,
+    /// Image shown on a pinned button, by the ID of its file in the show's board images.
+    #[serde(default)]
+    pub image: Option<String>,
     /// Whether a frame or collection draws its title above its area.
     #[serde(default = "show_title_default")]
     #[default(true)]
@@ -301,6 +327,29 @@ impl BoardElementKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Image IDs accept only a lowercase SHA-256 digest with a stored extension, so no
+    /// reference can reach outside the board image folder.
+    #[test]
+    fn board_image_ids_are_digest_file_names() {
+        let digest = "a".repeat(64);
+        assert!(is_board_image_id(&format!("{digest}.png")));
+        assert!(is_board_image_id(&format!("{digest}.svg")));
+        assert_eq!(
+            board_image_path(&format!("{digest}.png")),
+            Some(format!("board-images/{digest}.png"))
+        );
+        for invalid in [
+            format!("{digest}.jpg"),
+            format!("{}.png", "A".repeat(64)),
+            format!("{}.png", "a".repeat(63)),
+            format!("../{}.png", "a".repeat(61)),
+            format!("{digest}.png.png"),
+            digest.clone(),
+        ] {
+            assert!(!is_board_image_id(&invalid), "{invalid} should be rejected");
+        }
+    }
 
     /// Builds a pinned target element at a cell for exclusivity tests.
     fn target(object_type: ObjectType, x: u32, y: u32) -> BoardElement {

@@ -6,6 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createSignal,
@@ -20,6 +21,8 @@ import {
   NativeSelect,
 } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
+import { hasDiskStorage } from "../../../lib/disk-storage";
+import { pushToast, runtimeCapabilities } from "../../../state/appStores";
 import type * as types from "../../../types";
 import type { BoardPanelController } from "../controllers/board-panel-controller";
 import {
@@ -30,6 +33,11 @@ import {
   isBoardTargetType,
   MAX_OBJECT_ID,
 } from "../model/board-model";
+import {
+  BOARD_IMAGE_ACCEPT,
+  boardImageUrl,
+  uploadBoardImage,
+} from "../services/board-images";
 
 interface BoardPropertiesProps {
   controller: BoardPanelController;
@@ -154,6 +162,103 @@ function ExclusiveField(props: {
         <span class="block text-neutral-500">{props.description}</span>
       </span>
     </label>
+  );
+}
+
+/**
+ * Picks the picture shown on a button: one button opens the file chooser, the chosen file is
+ * uploaded into the show, and the element is stored with the returned image. A set image shows
+ * as a thumbnail with a Clear button. Hidden where the runtime cannot store files.
+ */
+function ImageField(
+  props: BoardPropertiesProps & { element: types.BoardElement },
+) {
+  const capabilities = useStore(runtimeCapabilities);
+  const [uploading, setUploading] = createSignal(false);
+  let fileInput: HTMLInputElement | undefined;
+
+  /**
+   * Uploads the chosen file and points the element at it, reporting failures as a toast. The
+   * element is looked up again once the upload finishes, so moves or edits made meanwhile are
+   * kept, and nothing is stored if the board was switched or the element removed.
+   */
+  const upload = async (file: File) => {
+    const controller = props.controller;
+    const boardUid = controller.board()?.identifiers.uid;
+    const elementUid = props.element.uid;
+    setUploading(true);
+    try {
+      const image = await uploadBoardImage(file);
+      const current = controller.elementByUid(elementUid);
+      if (current && controller.board()?.identifiers.uid === boardUid) {
+        controller.storeElement({ ...current, image });
+      }
+    } catch (error) {
+      pushToast(
+        "error",
+        `Could not use ${file.name}: ${error instanceof Error ? error.message : error}`,
+      );
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <Show when={hasDiskStorage(capabilities())}>
+      <div class="block text-xs font-medium text-neutral-300">
+        Image
+        <div class="mt-1 flex items-center gap-2">
+          <Show
+            when={props.element.image && boardImageUrl(props.element.image)}
+          >
+            {(url) => (
+              <img
+                src={url()}
+                alt=""
+                data-board-image-preview
+                class="size-9 shrink-0 rounded border border-neutral-700 object-contain"
+              />
+            )}
+          </Show>
+          <Button
+            variant="subtle"
+            disabled={uploading()}
+            onClick={() => fileInput?.click()}
+          >
+            {uploading()
+              ? "Uploading…"
+              : props.element.image
+                ? "Replace…"
+                : "Choose image…"}
+          </Button>
+          <Show when={props.element.image}>
+            <Button
+              variant="subtle"
+              onClick={() =>
+                props.controller.storeElement({
+                  ...props.element,
+                  image: undefined,
+                })
+              }
+            >
+              Clear
+            </Button>
+          </Show>
+        </div>
+        <input
+          ref={fileInput}
+          type="file"
+          class="hidden"
+          accept={BOARD_IMAGE_ACCEPT}
+          aria-label="Button image file"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = "";
+            if (file) void upload(file);
+          }}
+        />
+      </div>
+    </Show>
   );
 }
 
@@ -411,6 +516,9 @@ export function ElementSettings(
             })
           }
         />
+      </Show>
+      <Show when={kind().type === "Target"}>
+        <ImageField controller={controller} element={props.element} />
       </Show>
       <Show when={hasTitleSetting(kind())}>
         <label class="flex items-center gap-2 text-xs text-neutral-300">

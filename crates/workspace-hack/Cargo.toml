@@ -31,7 +31,7 @@ bevy_time = { version = "0.20.1" }
 bevy_utils = { version = "0.20.1", features = ["debug", "std"] }
 bitflags = { version = "2.13.2", default-features = false, features = ["serde", "std"] }
 bumpalo = { version = "3.20.3", features = ["allocator-api2"] }
-bytemuck = { version = "1.25.2", default-features = false, features = ["aarch64_simd", "derive", "wasm_simd"] }
+bytemuck = { version = "1.25.2", default-features = false, features = ["aarch64_simd", "derive", "extern_crate_alloc", "wasm_simd"] }
 byteorder = { version = "1.5.0" }
 concurrent-queue = { version = "2.5.0" }
 cranelift-bitset = { version = "0.137.1", default-features = false, features = ["enable-serde"] }

@@ -18,6 +18,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use nightfall::prelude::{BOARD_IMAGE_DIR, is_board_image_id};
 use nightfall_websocket::prelude::HttpRouteRegistry;
 use tower_http::services::ServeFile;
 
@@ -37,6 +38,11 @@ pub(crate) fn register_showfile_http_routes(registry: &mut HttpRouteRegistry) {
     registry.register(
         "/api/showfiles/current/export",
         post(export_current_showfile),
+    );
+    registry.register(
+        "/api/showfiles/current/board-images",
+        post(super::board_images::upload_board_image)
+            .layer(super::board_images::board_image_upload_limit()),
     );
     registry.register(
         "/api/showfiles/current/{*resource_path}",
@@ -139,6 +145,28 @@ fn without_showfile_resource_cache(mut response: Response) -> Response {
     response
 }
 
+/// Marks a served board image as cacheable forever and inert.
+///
+/// A board image's name is the hash of its contents, so a name never points at different bytes
+/// and clients can keep it across shows. The sandboxing policy stops an uploaded SVG from
+/// running script or loading anything if it is opened directly instead of through `<img>`.
+fn board_image_response(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'; sandbox"),
+    );
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    response
+}
+
 /// Build a showfile-resource error response without exposing filesystem paths.
 fn showfile_resource_error(status: StatusCode, message: impl Into<String>) -> Response {
     without_showfile_resource_cache(
@@ -186,6 +214,10 @@ async fn serve_current_showfile_resource(
         }
     };
     let is_snapshot = resource_path == super::paths::SHOWFILE_SNAPSHOT_FILENAME;
+    let is_board_image = resource_path
+        .strip_prefix(BOARD_IMAGE_DIR)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .is_some_and(is_board_image_id);
     let resource_path = match resolve_showfile_resource_path_from(&show_data_dir, &resource_path) {
         Ok(_) if is_snapshot => super::paths::showfile_snapshot_path_in_dir(&show_data_dir),
         Ok(path) => path,
@@ -251,6 +283,7 @@ async fn serve_current_showfile_resource(
     }
     let mut service = ServeFile::new(canonical_resource_path);
     match service.try_call(request).await {
+        Ok(response) if is_board_image => board_image_response(response.map(Body::new)),
         Ok(response) => without_showfile_resource_cache(response.map(Body::new)),
         Err(error) => {
             tracing::warn!(%error, "Failed to serve a showfile resource");
