@@ -35,3 +35,5 @@ You can also drag clips, groups, blueprints, masters, and macros straight onto a
 Drag an element to move it, and drag its corner handle to resize it. Elements can't overlap: a drag stops at the last free spot. Frames may sit over other elements and move by their title bar. With the keyboard, arrow keys move the selected element, Shift+arrows resize it, and Delete removes it. Ctrl/Cmd+C, X, and V copy, cut, and paste elements, including between boards.
 
 Each element has a gear for its settings (target, label, color, filter, Solo, and whether a frame or collection shows its title) and a right-click menu with Solo, Show title, Cut, Copy, Paste, and Remove. Properties shows the same settings for the selected element, or for the board when nothing is selected.
+
+A button can also show a picture: choose **Image** in its settings and pick a PNG, JPEG, WebP, GIF, or SVG file of up to 5 MB. The picture appears above the button's caption and is saved inside the show, so it moves with the show to other computers and backup servers. Large pictures are shrunk to 256 pixels, and animated ones show their first frame. **Clear** takes the picture off again.
