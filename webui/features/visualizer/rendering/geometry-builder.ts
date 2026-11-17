@@ -187,6 +187,14 @@ function createEmitterMesh(node: GeometryNode): Mesh {
   return mesh;
 }
 
+/** Count of archive meshes swapped in for primitives, so on-demand renderers know to redraw. */
+let meshSwaps = 0;
+
+/** Returns how many archive meshes have finished loading into fixtures since the page opened. */
+export function meshSwapGeneration(): number {
+  return meshSwaps;
+}
+
 /**
  * Replace a primitive mesh with a loaded mesh group.
  * Disposes the primitive geometry and material before replacement.
@@ -302,6 +310,7 @@ export function buildGeometryTree(
         ).then((meshGroup) => {
           if (meshGroup) {
             replacePrimitiveWithMesh(obj, node.name, meshGroup);
+            meshSwaps++;
           }
         });
       }

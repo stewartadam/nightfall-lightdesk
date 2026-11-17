@@ -37,6 +37,11 @@ export interface FixturePreviewProps {
   fixture: PreviewFixtureDefinition | null;
   /** Optional label to display */
   label?: string;
+  /**
+   * Keeps the user's view when the fixture is replaced by an updated version of itself, as in
+   * an editor; otherwise each new fixture is framed from the default angle.
+   */
+  keepCamera?: boolean;
 }
 
 /**
@@ -88,7 +93,9 @@ const FixturePreviewCanvas: Component<FixturePreviewProps> = (props) => {
       () => props.fixture,
       (fixture) => {
         if (rendererState) {
-          setPreviewFixture(rendererState, fixture);
+          setPreviewFixture(rendererState, fixture, {
+            keepCamera: props.keepCamera,
+          });
         }
       },
       { defer: true },

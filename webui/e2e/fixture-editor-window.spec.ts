@@ -250,6 +250,9 @@ test("fixture editor builds and saves a fixture", async ({
   page,
   backendSlot,
 }, testInfo) => {
+  // The 3D preview redraws after every edit, and a browser without a GPU compiles its shaders on
+  // the page's own thread, which takes seconds per redraw.
+  test.setTimeout(120_000);
   await openApp(page, backendSlot.backendPort);
   const editor = await openEditorFromPalette(page);
   const draftEditor = editor.getByTestId("fixture-draft-editor");
@@ -258,10 +261,17 @@ test("fixture editor builds and saves a fixture", async ({
   await expect(draftEditor).toBeVisible();
   await expect(draftEditor).toContainText("No channels yet");
 
+  // The 3D preview draws the draft from the start and redraws it after each change.
+  const preview = draftEditor.getByTestId("fixture-draft-preview");
+  await expect(preview).toHaveAttribute("data-state", "ready");
+  const firstVersion = await preview.getAttribute("data-version");
+
   await addChannel(editor, "Dimmer", "16-bit");
   await addChannel(editor, "ColorAdd_R", "8-bit");
   const rows = editor.getByTestId("channel-row");
   await expect(rows).toHaveCount(2);
+  await expect(preview).not.toHaveAttribute("data-version", firstVersion ?? "");
+  await expect(preview).toHaveAttribute("data-state", "ready");
   await expect(rows.nth(0)).toContainText("1–2");
   await expect(rows.nth(1)).toContainText("3");
 

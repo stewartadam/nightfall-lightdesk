@@ -176,6 +176,30 @@ export async function listAttributes(): Promise<types.DraftAttributeOption[]> {
   return output;
 }
 
+/**
+ * Converts one mode of a draft into the fixture and geometry the 3D preview draws, the same
+ * shape a library fixture's profile has. Without a mode, the draft's first mode is used.
+ */
+export async function previewDraft(
+  draftId: types.DraftId,
+  mode?: string,
+): Promise<types.GetFixtureProfileResponse> {
+  const output = await invokeEditor({
+    type: "PreviewDraft",
+    data: { draft_id: draftId, mode },
+  });
+  if (
+    typeof output !== "object" ||
+    output === null ||
+    !("profile" in output) ||
+    typeof output.profile !== "object" ||
+    output.profile === null
+  ) {
+    throw new Error("The backend did not return a preview");
+  }
+  return (output as types.DraftPreviewResponse).profile;
+}
+
 /** Loads every open draft into the shared store, replacing what this window held. */
 export async function refreshDrafts(): Promise<void> {
   const output = await invokeEditor({ type: "ListDrafts" });

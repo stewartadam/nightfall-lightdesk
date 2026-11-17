@@ -31,7 +31,11 @@ import {
   Vector3,
   WebGPURenderer,
 } from "three/webgpu";
-import type { FixtureGeometry } from "../../../types";
+import { getLogger } from "../../../lib/logger";
+import type {
+  FixtureGeometry,
+  GetFixtureProfileResponse,
+} from "../../../types";
 import type { RenderableFixture } from "../model/types";
 import { BeamManager, BeamUpdater } from "./effects";
 import type { ExtendedFixtureInstance } from "./fixture-renderers";
@@ -41,8 +45,14 @@ import {
   disposeFixtureWithRenderer,
   updateFixtureColors,
 } from "./fixture-renderers";
-import { type EmitterColor, updateEmitterColors } from "./geometry-builder";
+import {
+  type EmitterColor,
+  meshSwapGeneration,
+  updateEmitterColors,
+} from "./geometry-builder";
 import { resolveQualityProfile } from "./quality-profile";
+
+const log = getLogger(import.meta.url);
 
 /**
  * The preview renders straight to the canvas with no bloom pass, so it uses the Medium
@@ -107,6 +117,25 @@ export interface PreviewFixtureDefinition {
 }
 
 /**
+ * Builds what the preview draws from a fixture profile (a library fixture's or a fixture-editor
+ * draft's), or null while the profile has no converted fixture.
+ */
+export function profileToPreviewFixture(
+  profile: Pick<GetFixtureProfileResponse, "fixture" | "geometry"> | null,
+): PreviewFixtureDefinition | null {
+  const fixture = profile?.fixture;
+  if (!fixture) return null;
+  return {
+    make: fixture.make,
+    model: fixture.model,
+    geometry: profile.geometry ?? null,
+    elements: fixture.elements,
+    beamType: fixture.physical?.beamType,
+    layout: fixture.layout,
+  };
+}
+
+/**
  * Preview the renderer state.
  */
 export interface PreviewRendererState {
@@ -120,6 +149,28 @@ export interface PreviewRendererState {
   beamUpdater: BeamUpdater;
   fixtureInstance: ExtendedFixtureInstance | null;
   isPaused: boolean;
+  /** Frames still to draw at full rate after the scene, size or view last changed. */
+  activeFrames: number;
+  /**
+   * When the frame still being drawn started, or null when none is. The loop starts no other
+   * frame until it finishes, or until it has taken so long that it is presumed lost.
+   */
+  renderStartedMs: number | null;
+  /** Mesh loads already drawn, to redraw when an archive mesh replaces a placeholder. */
+  drawnMeshSwaps: number;
+  /** Whether the camera is framed on a fixture with a real size, which a kept view needs. */
+  framed: boolean;
+}
+
+/** A frame running longer than this is presumed lost (such as on a lost GPU device), so drawing resumes. */
+const LOST_FRAME_MS = 5000;
+
+/** Frames drawn after a change. `renderAsync` waits for shaders to compile, so one is enough. */
+const ACTIVE_FRAMES_AFTER_CHANGE = 1;
+
+/** Asks the preview to draw at full rate for a while, after anything on screen changed. */
+function markPreviewChanged(state: PreviewRendererState): void {
+  state.activeFrames = ACTIVE_FRAMES_AFTER_CHANGE;
 }
 
 /**
@@ -176,7 +227,7 @@ export function initPreviewRenderer(
 
   const beamUpdater = new BeamUpdater(new BeamManager(scene, PREVIEW_QUALITY));
 
-  return {
+  const state: PreviewRendererState = {
     renderer,
     scene,
     camera,
@@ -186,17 +237,27 @@ export function initPreviewRenderer(
     beamUpdater,
     fixtureInstance: null,
     isPaused: false,
+    activeFrames: ACTIVE_FRAMES_AFTER_CHANGE,
+    renderStartedMs: null,
+    drawnMeshSwaps: meshSwapGeneration(),
+    framed: false,
   };
+  controls.addEventListener("change", () => markPreviewChanged(state));
+  return state;
 }
 
 /**
  * Set the fixture to display in the preview.
- * Disposes any existing fixture and loads the new one.
+ * Disposes any existing fixture and loads the new one, then frames the camera on it. With
+ * `keepCamera`, a fixture that replaces another one keeps the current view instead, so a
+ * fixture being edited does not jump back to the default angle after each change.
  */
 export function setPreviewFixture(
   state: PreviewRendererState,
   fixture: PreviewFixtureDefinition | null,
+  options: { keepCamera?: boolean } = {},
 ): void {
+  const replacing = state.fixtureInstance !== null;
   // Dispose existing fixture
   if (state.fixtureInstance) {
     state.scene.remove(state.fixtureInstance.group);
@@ -224,7 +285,12 @@ export function setPreviewFixture(
           fixture.layout,
         );
 
-    if (!instance) return;
+    if (!instance) {
+      // The old fixture is gone either way, so draw the empty scene now.
+      state.framed = false;
+      markPreviewChanged(state);
+      return;
+    }
 
     state.fixtureInstance = instance;
     const elementColors = colorPreviewEmitters(instance);
@@ -240,8 +306,11 @@ export function setPreviewFixture(
     );
 
     // Frame the camera on the new fixture
-    frameCameraOnFixture(state);
+    if (!(options.keepCamera && replacing && state.framed)) {
+      frameCameraOnFixture(state);
+    }
   }
+  markPreviewChanged(state);
 }
 
 /**
@@ -258,6 +327,9 @@ function frameCameraOnFixture(state: PreviewRendererState): void {
 
   // Get the largest dimension for distance calculation
   const maxDim = Math.max(size.x, size.y, size.z);
+  // A fixture with no size (an empty draft) gives no view worth keeping, so leave the camera.
+  state.framed = Number.isFinite(maxDim) && maxDim > 0;
+  if (!state.framed) return;
   const distance = maxDim * CAMERA_DISTANCE_FACTOR;
 
   // Position camera using spherical coordinates
@@ -282,23 +354,46 @@ export function handlePreviewResize(
   state.camera.aspect = width / height;
   state.camera.updateProjectionMatrix();
   state.renderer.setSize(width, height, false);
+  markPreviewChanged(state);
 }
 
 /**
- * Start the preview render loop.
+ * Start the preview render loop. It draws at full rate while the fixture, the size or the view
+ * is changing (including the orbit controls' damping, and a mesh that finishes loading) and for a
+ * couple of frames after, and draws nothing while the preview sits still. Drawing an unchanged
+ * scene is not free: on a software GPU one frame can hold the page for over a second. A frame that takes longer than the
+ * display's refresh (a slow or software GPU) holds back the next one instead of piling up
+ * draws until the page stops responding.
  */
 export function startPreviewRenderLoop(state: PreviewRendererState): void {
   state.isPaused = false;
 
-  state.renderer.setAnimationLoop(() => {
+  state.renderer.setAnimationLoop((time: number) => {
     if (state.isPaused) return;
+    const started = state.renderStartedMs;
+    if (started !== null && time - started < LOST_FRAME_MS) return;
 
     // Skip rendering when the canvas has no area (e.g. tab not visible)
     const { width, height } = state.renderer.getSize(new Vector2());
     if (width <= 0 || height <= 0) return;
 
-    state.controls.update();
-    state.renderer.renderAsync(state.scene, state.camera);
+    const swaps = meshSwapGeneration();
+    if (swaps !== state.drawnMeshSwaps) {
+      state.drawnMeshSwaps = swaps;
+      markPreviewChanged(state);
+    }
+    const moving = state.controls.update();
+    if (!moving && state.activeFrames === 0) return;
+    if (state.activeFrames > 0) state.activeFrames--;
+    state.renderStartedMs = time;
+    void state.renderer
+      .renderAsync(state.scene, state.camera)
+      .catch((error: unknown) => {
+        log.warn("Preview frame failed", { error });
+      })
+      .finally(() => {
+        if (state.renderStartedMs === time) state.renderStartedMs = null;
+      });
   });
 }
 

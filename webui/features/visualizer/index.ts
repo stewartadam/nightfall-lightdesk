@@ -13,6 +13,7 @@ export {
   visualizerQuality,
 } from "./context/visualizer-context";
 export { default as VisualizerPanel } from "./panels/visualizer-panel";
+export { profileToPreviewFixture } from "./rendering/preview-renderer";
 export type { VisualizerCameraRotationMode } from "./rendering/renderers/renderer-api";
 export type { FramePacingSnapshot } from "./services/frame-pacing";
 export type { VisualizerQualityPreset } from "./state/settings";
