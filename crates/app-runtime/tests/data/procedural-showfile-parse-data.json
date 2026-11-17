@@ -1,7 +1,7 @@
 {
   "metadata": {
     "nightfallVersion": "0.1.0-alpha.5",
-    "showfileVersion": 27,
+    "showfileVersion": 28,
     "lastSavedUnixSec": 1800000000
   },
   "fixtures": [
@@ -329,7 +329,7 @@
   "midiMappings": [
     {
       "id": "00000000-0000-0000-0000-00005a3d0001",
-      "device_name": "Parser Grid",
+      "device": "0000000000000000000000005a3dd001",
       "source": {
         "type": "ControlChange",
         "data": {
@@ -347,7 +347,13 @@
       "led": {}
     }
   ],
-  "midiFeedbackDevices": [],
+  "midiDevices": [
+    {
+      "id": "0000000000000000000000005a3dd001",
+      "model": "Parser Grid",
+      "number": 1
+    }
+  ],
   "oscMappings": [
     {
       "id": "00000000-0000-0000-0000-00005a3d0002",

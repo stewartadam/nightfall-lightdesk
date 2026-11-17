@@ -86,8 +86,10 @@ pub struct MidiMapping {
     /// Stable identity used to edit, replace, and delete the mapping.
     #[typeshare(serialized_as = "String")]
     pub id: Uuid,
-    /// Name of the MIDI device this mapping applies to.
-    pub device_name: String,
+    /// Saved device this mapping applies to.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub device: Uuid,
     /// Control on the device that drives the action.
     pub source: MidiSource,
     /// How the control's presses and releases invoke the action.
@@ -158,8 +160,13 @@ impl MidiLedValues {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[typeshare::typeshare]
 pub struct MidiLastEvent {
-    /// Device that generated the event.
-    pub device: String,
+    /// Device that generated the event: a saved device, or the ID a new unit is saved under
+    /// once it is mapped.
+    #[serde(with = "nightfall::serde_uuid_simple")]
+    #[typeshare(serialized_as = "String")]
+    pub device: Uuid,
+    /// Name the device is shown under.
+    pub device_name: String,
     /// MIDI status byte (message type and channel).
     pub channel: u8,
     /// Note or control number.
@@ -188,12 +195,26 @@ pub enum MidiCommand {
     UpsertMapping(MidiMapping),
     /// Delete a mapping by its stable ID.
     DeleteMapping(#[typeshare(serialized_as = "String")] Uuid),
-    /// Turn LED and fader feedback to a device on or off.
+    /// Turn LED and fader feedback to a device on or off; a connected new unit is saved.
     SetDeviceFeedback {
-        /// Input device name, as stored on its mappings.
-        device: String,
+        /// Device ID, as stored on its mappings.
+        #[serde(with = "nightfall::serde_uuid_simple")]
+        #[typeshare(serialized_as = "String")]
+        device: Uuid,
         /// Whether mapped controls on the device are sent their targets' state.
         enabled: bool,
+    },
+    /// Recognize a connected new unit as a saved device of the same model that is not
+    /// plugged in, so that device's mappings follow the unit from now on.
+    AssignDevice {
+        /// ID of the connected new unit.
+        #[serde(with = "nightfall::serde_uuid_simple")]
+        #[typeshare(serialized_as = "String")]
+        unit: Uuid,
+        /// Saved device the unit is.
+        #[serde(with = "nightfall::serde_uuid_simple")]
+        #[typeshare(serialized_as = "String")]
+        device: Uuid,
     },
 }
 

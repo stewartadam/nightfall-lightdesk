@@ -2438,9 +2438,21 @@ fn seed_world(world: &mut World) {
     #[cfg(feature = "midi")]
     world
         .resource_mut::<MidiMappings>()
+        .set_devices(MidiDeviceRegistry::new([MidiDeviceSetting {
+            id: SEEDED_GRID,
+            model: "Grid".to_string(),
+            number: 2,
+            units: vec!["usb:09e8:004f:serial:S1".to_string()],
+            hardware: Some("usb:09e8:004f:0".to_string()),
+            aliases: vec!["Grid:Grid MIDI 1".to_string()],
+            feedback: Some(false),
+        }]));
+    #[cfg(feature = "midi")]
+    world
+        .resource_mut::<MidiMappings>()
         .set_mappings(vec![MidiMapping {
             id: uuid::Uuid::from_u128(0x5a3d_0001),
-            device_name: "Grid".to_string(),
+            device: SEEDED_GRID,
             source: MidiSource::ControlChange {
                 channel: 0,
                 controller: 36,
@@ -3042,6 +3054,11 @@ fn showfile_load_preserves_transport_runtime_policy() {
     assert!(!policy.usb_output_enabled(settings));
 }
 
+/// MIDI device the seeded show maps.
+#[cfg(feature = "midi")]
+const SEEDED_GRID: uuid::Uuid = uuid::Uuid::from_u128(0x5a3d_d001);
+
+/// Verifies MIDI mappings and the devices they refer to survive a save and load.
 #[cfg(feature = "midi")]
 #[test]
 fn roundtrip_preserves_midi_mappings() {
@@ -3059,7 +3076,16 @@ fn roundtrip_preserves_midi_mappings() {
     );
     assert_eq!(restored_snapshot.midi_mappings.len(), 1);
     let mapping = &restored_snapshot.midi_mappings[0];
-    assert_eq!(mapping.device_name, "Grid");
+    assert_eq!(mapping.device, SEEDED_GRID);
+    assert_eq!(restored_snapshot.midi_devices, source_snapshot.midi_devices);
+    assert_eq!(
+        restored_snapshot
+            .midi_devices
+            .iter()
+            .map(MidiDeviceSetting::display_name)
+            .collect::<Vec<_>>(),
+        vec!["Grid (2)".to_string()]
+    );
     assert_eq!(
         mapping.source,
         MidiSource::ControlChange {
@@ -3196,7 +3222,7 @@ fn showfile_import_keeps_fixtures_on_different_revisions_of_one_mode() {
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
             #[cfg(feature = "midi")]
-            midi_feedback_devices: vec![],
+            midi_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],
@@ -3284,7 +3310,7 @@ fn showfile_import_allows_non_library_fixtures_without_asset_version_metadata() 
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
             #[cfg(feature = "midi")]
-            midi_feedback_devices: vec![],
+            midi_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],
@@ -3357,7 +3383,7 @@ fn showfile_import_rejects_multiple_scene_object_versions_for_same_asset_name() 
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
             #[cfg(feature = "midi")]
-            midi_feedback_devices: vec![],
+            midi_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![scene_object_a, scene_object_b],
@@ -4118,7 +4144,7 @@ fn load_in_place_validation_failure_preserves_existing_world_state() {
         #[cfg(feature = "midi")]
         midi_mappings: vec![],
         #[cfg(feature = "midi")]
-        midi_feedback_devices: vec![],
+        midi_devices: vec![],
         #[cfg(feature = "osc")]
         osc_mappings: vec![],
         scene_objects: vec![road_case(401, "v1"), road_case(402, "v2")],
@@ -4204,7 +4230,7 @@ fn load_initializes_virtual_intensity_to_full_scale() {
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
             #[cfg(feature = "midi")]
-            midi_feedback_devices: vec![],
+            midi_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],
@@ -4304,7 +4330,7 @@ fn load_materializes_timecodes_and_timelines() {
             #[cfg(feature = "midi")]
             midi_mappings: vec![],
             #[cfg(feature = "midi")]
-            midi_feedback_devices: vec![],
+            midi_devices: vec![],
             #[cfg(feature = "osc")]
             osc_mappings: vec![],
             scene_objects: vec![],

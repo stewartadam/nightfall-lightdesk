@@ -16,18 +16,40 @@ use nightfall_timecode::prelude::ExternalTimecodeFeed;
 
 use crate::mtc::{MtcDecoder, is_timecode_message};
 
+mod identity;
 mod output;
 
+pub(crate) use identity::is_session_key;
+use identity::{PortIdentity, number_unit_ports, port_identity};
 pub use output::MidiOutputClient;
 #[cfg(test)]
 pub(crate) use output::MidiOutputMessage;
-use output::MidiOutputWorker;
+use output::{InputPairing, MidiOutputWorker};
+
+/// One connected MIDI input port and the physical unit behind it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MidiPortInfo {
+    /// OS port ID, unique among connected ports, which events and feedback are addressed by.
+    pub port: String,
+    /// Device model name, without the instance number or address the OS adds to tell
+    /// identical units apart.
+    pub model: String,
+    /// Key that stays with the physical unit across replugs where the OS allows, such as its
+    /// USB serial or USB port.
+    pub unit: String,
+    /// Key naming the USB port the unit is plugged into, which tells apart units that share
+    /// a serial; `None` without a USB device behind the port.
+    pub location: Option<String>,
+    /// Key naming the model and which of its ports this is, from its USB IDs, which every OS
+    /// reports alike; `None` without a USB device behind the port.
+    pub hardware: Option<String>,
+}
 
 /// Raw MIDI event emitted by the process-lifetime MIDI service.
 #[derive(Debug, Clone)]
 pub struct MidiInputEvent {
-    /// Device name that generated the event.
-    pub device: String,
+    /// OS port ID of the input that received the event.
+    pub port: String,
     /// MIDI status byte (channel + message type).
     pub channel: u8,
     /// Note or control number.
@@ -44,7 +66,7 @@ pub struct MidiInputEvent {
 #[derive(Clone, Default)]
 pub struct MidiInputClient {
     event_tx: Arc<Mutex<Option<tokio::sync::broadcast::Sender<MidiInputEvent>>>>,
-    device_names: Arc<Mutex<Vec<String>>>,
+    ports: Arc<Mutex<Vec<MidiPortInfo>>>,
 }
 
 /// How long the bridge thread sleeps when no MIDI event is waiting. It bounds the latency the
@@ -118,24 +140,25 @@ impl MidiInputClient {
         Some((event_mpsc_rx, bridge_done_rx))
     }
 
-    /// Return currently connected MIDI device names.
-    pub fn device_names(&self) -> Vec<String> {
-        self.device_names
+    /// Returns the currently connected MIDI input ports, in discovery order.
+    pub fn ports(&self) -> Vec<MidiPortInfo> {
+        self.ports
             .lock()
-            .map(|devices| devices.clone())
+            .map(|ports| ports.clone())
             .unwrap_or_default()
     }
 
+    /// Publishes the worker's event sender and connected ports to clients.
     pub(crate) fn set_state(
         &self,
         event_tx: Option<tokio::sync::broadcast::Sender<MidiInputEvent>>,
-        device_names: Vec<String>,
+        ports: Vec<MidiPortInfo>,
     ) {
         if let Ok(mut sender_slot) = self.event_tx.lock() {
             *sender_slot = event_tx;
         }
-        if let Ok(mut devices) = self.device_names.lock() {
-            *devices = device_names;
+        if let Ok(mut current) = self.ports.lock() {
+            *current = ports;
         }
     }
 }
@@ -175,8 +198,10 @@ impl<C> ConnectedMidiPort<C> {
 pub(crate) struct MidiInputWorker {
     /// Broadcast sender for distributing MIDI events into ECS subscribers.
     pub(crate) event_tx: tokio::sync::broadcast::Sender<MidiInputEvent>,
-    /// Device names connected when this worker was initialized.
-    pub(crate) device_names: Vec<String>,
+    /// Connected input ports as of the last refresh.
+    pub(crate) ports: Vec<MidiPortInfo>,
+    /// Identity of each discovered input port by port ID, looked up once per port.
+    identities: HashMap<String, PortIdentity>,
     discovery_input: Option<midir::MidiInput>,
     topology_change_rx: Option<std::sync::mpsc::Receiver<()>>,
     last_discovery_error: Option<String>,
@@ -199,7 +224,8 @@ impl MidiInputWorker {
         let (event_tx, _) = tokio::sync::broadcast::channel(1024);
         let mut worker = Self {
             event_tx,
-            device_names: Vec::new(),
+            ports: Vec::new(),
+            identities: HashMap::new(),
             discovery_input: None,
             topology_change_rx: nightfall_coremidi_hotplug::spawn_device_update_listener(),
             last_discovery_error: None,
@@ -242,9 +268,9 @@ impl MidiInputWorker {
                         self.last_discovery_error = Some(error);
                     }
 
-                    let had_devices = !self.device_names.is_empty() || !self.connections.is_empty();
+                    let had_devices = !self.ports.is_empty() || !self.connections.is_empty();
                     self.shutdown();
-                    self.device_names.clear();
+                    self.ports.clear();
                     return had_devices;
                 }
             }
@@ -252,7 +278,7 @@ impl MidiInputWorker {
             tracing::info!("MIDI discovery recovered after error: {}", previous_error);
         }
 
-        let discovered_ports = self
+        let discovered_ports: Vec<MidiDeviceInfo> = self
             .discovery_input
             .as_ref()
             .map(discover_ports)
@@ -260,20 +286,38 @@ impl MidiInputWorker {
             .into_iter()
             .filter(|port| port_allowed(self.input_port.as_deref(), &port.name))
             .collect();
+        // Ports are numbered within their unit over every discovered port, not just those
+        // that connected, so a port that failed to open does not shift its siblings.
+        let keys: Vec<String> = discovered_ports
+            .iter()
+            .map(|port| cache_key(&port.id, &port.name))
+            .collect();
+        let mut ordered: Vec<PortIdentity> = discovered_ports
+            .iter()
+            .zip(&keys)
+            .map(|(port, key)| {
+                self.identities
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_else(|| port_identity(&port.id, &port.name))
+            })
+            .collect();
+        number_unit_ports(&mut ordered);
+        self.identities = keys.into_iter().zip(ordered).collect();
         let event_tx = self.event_tx.clone();
         let timecode_feed = self.timecode_feed.clone();
         let changed = refresh_connections(&mut self.connections, discovered_ports, |port, name| {
             connect_to_port(&port, name, &event_tx, &timecode_feed)
         });
-        let device_names = connected_device_names(&self.connections);
-        self.output.refresh(&device_names);
-        if self.device_names != device_names {
+        let (ports, pairings) = connected_ports(&self.connections, &self.identities);
+        self.output.refresh(&pairings);
+        if self.ports != ports {
             tracing::info!(
-                previous_devices = ?self.device_names,
-                current_devices = ?device_names,
+                previous_ports = ?self.ports,
+                current_ports = ?ports,
                 "MIDI device list changed"
             );
-            self.device_names = device_names;
+            self.ports = ports;
             return true;
         }
         changed
@@ -315,10 +359,20 @@ fn discover_ports(midi_in: &midir::MidiInput) -> Vec<MidiDeviceInfo> {
         .collect()
 }
 
+/// Key of the identity cache: OS port IDs can be reused by another device after a replug, so
+/// the name is part of the key.
+fn cache_key(id: &str, name: &str) -> String {
+    format!("{id}\u{0}{name}")
+}
+
 /// Reconcile the retained connection set against the latest discovered ports.
 ///
 /// Connections stay in a `Vec` so the worker can preserve discovery order and duplicate device
-/// names while still keying reconciliation by the stable port id.
+/// names while still keying reconciliation by the stable port id. A connection whose port now
+/// carries a different name is reopened, since the ID then belongs to another device, or an
+/// output now serves another input.
+///
+/// `connect` receives the port and the descriptor's name.
 fn refresh_connections<P, C>(
     connections: &mut Vec<ConnectedMidiPort<C>>,
     discovered_ports: Vec<MidiPortDescriptor<P>>,
@@ -329,13 +383,15 @@ fn refresh_connections<P, C>(
         .enumerate()
         .map(|(index, device)| (device.id.clone(), index))
         .collect();
-    let discovered_ids: HashSet<&str> = discovered_ports
+    let discovered: HashSet<(&str, &str)> = discovered_ports
         .iter()
-        .map(|device| device.id.as_str())
+        .map(|device| (device.id.as_str(), device.name.as_str()))
         .collect();
 
     let previous_connection_count = connections.len();
-    connections.retain(|connection| discovered_ids.contains(connection.id.as_str()));
+    connections.retain(|connection| {
+        discovered.contains(&(connection.id.as_str(), connection.name.as_str()))
+    });
 
     let mut existing_ids: HashSet<String> = connections
         .iter()
@@ -371,11 +427,34 @@ fn refresh_connections<P, C>(
     previous_connection_count != connections.len() || added_connection
 }
 
-fn connected_device_names<C>(connections: &[ConnectedMidiPort<C>]) -> Vec<String> {
+/// Describes the connected input ports, in discovery order, from the identity cache, both
+/// as clients see them and as output pairing needs them.
+fn connected_ports<C>(
+    connections: &[ConnectedMidiPort<C>],
+    identities: &HashMap<String, PortIdentity>,
+) -> (Vec<MidiPortInfo>, Vec<InputPairing>) {
     connections
         .iter()
-        .map(|connection| connection.name.clone())
-        .collect()
+        .map(|connection| {
+            let identity = identities
+                .get(&cache_key(&connection.id, &connection.name))
+                .cloned()
+                .unwrap_or_else(|| port_identity(&connection.id, &connection.name));
+            let pairing = InputPairing {
+                port: connection.id.clone(),
+                base: identity.base.clone(),
+                pairing: identity.pairing,
+            };
+            let port = MidiPortInfo {
+                port: connection.id.clone(),
+                model: identity.base,
+                unit: identity.unit,
+                location: identity.location,
+                hardware: identity.hardware,
+            };
+            (port, pairing)
+        })
+        .unzip()
 }
 
 /// Open one MIDI input connection and forward incoming messages onto `event_tx`.
@@ -397,7 +476,7 @@ fn connect_to_port(
     };
     midi_in.ignore(midir::Ignore::None);
 
-    let device_name_for_callback = device_name.clone();
+    let port_id = port.id();
     let event_tx = event_tx.clone();
     let timecode_feed = timecode_feed.clone();
     let mut mtc_decoder = MtcDecoder::default();
@@ -412,7 +491,7 @@ fn connect_to_port(
                 }
             } else if message.len() >= 3 {
                 let _ = event_tx.send(MidiInputEvent {
-                    device: device_name_for_callback.clone(),
+                    port: port_id.clone(),
                     channel: message[0],
                     note: message[1],
                     velocity: message[2],
@@ -420,7 +499,7 @@ fn connect_to_port(
                 });
             } else if message.len() >= 2 {
                 let _ = event_tx.send(MidiInputEvent {
-                    device: device_name_for_callback.clone(),
+                    port: port_id.clone(),
                     channel: message[0],
                     note: message[1],
                     velocity: 0,
@@ -499,7 +578,7 @@ impl MidiInputService {
             self.output_client
                 .set_worker(worker.as_ref().map(|worker| &worker.output));
             if let Some(worker) = worker {
-                (Some(worker.event_tx.clone()), worker.device_names.clone())
+                (Some(worker.event_tx.clone()), worker.ports.clone())
             } else {
                 (None, Vec::new())
             }
@@ -529,11 +608,7 @@ impl MidiInputService {
         let (sender, devices, changed) = self.slot.with_worker(|worker| {
             let worker = worker.expect("MIDI worker should be present after ensure_started");
             let changed = worker.refresh();
-            (
-                Some(worker.event_tx.clone()),
-                worker.device_names.clone(),
-                changed,
-            )
+            (Some(worker.event_tx.clone()), worker.ports.clone(), changed)
         });
         self.client.set_state(sender, devices);
         changed
@@ -566,6 +641,14 @@ mod tests {
     /// Test MIDI connection handle that records whether it has been closed.
     #[derive(Debug, PartialEq, Eq)]
     struct TestConnection(&'static str);
+
+    /// Returns the names of the retained connections, in order.
+    fn connection_names<C>(connections: &[ConnectedMidiPort<C>]) -> Vec<String> {
+        connections
+            .iter()
+            .map(|connection| connection.name.clone())
+            .collect()
+    }
 
     #[test]
     fn midi_bridge_thread_exits_after_receiver_drop_on_repeated_subscriptions() {
@@ -618,7 +701,7 @@ mod tests {
 
         assert!(changed);
         assert_eq!(
-            connected_device_names(&connections),
+            connection_names(&connections),
             vec!["controller-a", "controller-b"]
         );
         assert_eq!(connections[0].connection, TestConnection("existing"));
@@ -679,7 +762,7 @@ mod tests {
 
         assert!(changed);
         assert_eq!(
-            connected_device_names(&connections),
+            connection_names(&connections),
             vec!["controller", "controller"]
         );
         assert_eq!(connections[0].connection, TestConnection("existing-a"));
@@ -710,7 +793,7 @@ mod tests {
 
         assert!(changed);
         assert_eq!(connection_attempts, 1);
-        assert_eq!(connected_device_names(&connections), vec!["controller"]);
+        assert_eq!(connection_names(&connections), vec!["controller"]);
         assert_eq!(connections[0].id, "fresh-port");
         assert_eq!(connections[0].connection, TestConnection("fresh-port"));
     }

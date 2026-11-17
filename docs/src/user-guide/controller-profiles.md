@@ -27,6 +27,6 @@ The Launchpad MK2, Mini MK3, X, and Pro MK3, and the APC mini mk2, APC40 mkII, a
 
 If you own one of these controllers:
 
-1. Connect it and open **MIDI Input**. Under **Connected MIDI Devices**, check that the controller's name appears beside its port. If it does not, the port name does not match the profile.
+1. Connect it and open **MIDI Input**. Under **MIDI Devices**, check that the controller's name appears beside its port. If it does not, the port name does not match the profile.
 2. Turn on **LED feedback** for the device, bind a few buttons, and check that each LED color matches its name.
 3. Report the port name and anything that looked wrong, so the profile can be marked as tested or fixed.

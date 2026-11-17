@@ -12,10 +12,14 @@ use nightfall_actions::{ActionRegistry, capture_binding_edit};
 use nightfall_undo::prelude::*;
 
 use crate::command::MidiCommand;
+use crate::devices::{MidiDevices, profile_default};
 use crate::mapping::MidiMappings;
 
 impl Undoable for MidiCommand {
     /// Snapshots the mappings an edit will change, including mappings an upsert displaces.
+    ///
+    /// Saving a device and assigning a unit to one are not undone: a saved device without
+    /// mappings changes nothing, and the unit keys a device learned stay true.
     fn inverse(&self, ctx: &UndoContext) -> Option<Box<dyn Undoable>> {
         match self {
             Self::UpsertMapping(mapping) => {
@@ -41,18 +45,24 @@ impl Undoable for MidiCommand {
                 device,
                 enabled: requested,
             } => {
-                let enabled = ctx
-                    .world
-                    .get_resource::<MidiMappings>()?
-                    .feedback_devices()
-                    .is_enabled(device);
+                let mappings = ctx.world.get_resource::<MidiMappings>()?;
+                let enabled = match mappings.devices().get(*device) {
+                    Some(saved) => saved.feedback_enabled(),
+                    None => profile_default(
+                        &ctx.world
+                            .get_resource::<MidiDevices>()?
+                            .by_device(*device)?
+                            .model,
+                    ),
+                };
                 (enabled != *requested).then(|| -> Box<dyn Undoable> {
                     Box::new(Self::SetDeviceFeedback {
-                        device: device.clone(),
+                        device: *device,
                         enabled,
                     })
                 })
             }
+            Self::AssignDevice { .. } => None,
         }
     }
 
@@ -67,6 +77,7 @@ impl Undoable for MidiCommand {
             Self::SetDeviceFeedback { enabled: false, .. } => {
                 "Turn off MIDI LED feedback".to_string()
             }
+            Self::AssignDevice { .. } => "Assign MIDI device".to_string(),
         }
     }
 }
@@ -86,6 +97,10 @@ mod tests {
 
     use super::*;
     use crate::command::{MidiMapping, MidiSource};
+    use crate::devices::{MidiDeviceRegistry, MidiDeviceSetting};
+
+    /// ID of the saved pad device the tests map.
+    const PAD: Uuid = Uuid::from_u128(0xFAD);
 
     /// Terminal results collected across frames, keyed by command.
     #[derive(Resource, Default)]
@@ -106,7 +121,18 @@ mod tests {
                 ActionDescriptor::new("test.trigger", "Test", "Tests"),
                 |_world, _arguments, _invocation| Ok(InvocationDispatch::succeeded()),
             );
-        app.init_resource::<MidiMappings>();
+        let mut mappings = MidiMappings::default();
+        mappings.set_devices(MidiDeviceRegistry::new([MidiDeviceSetting {
+            id: PAD,
+            model: "Pad".to_string(),
+            number: 1,
+            units: Vec::new(),
+            hardware: None,
+            aliases: Vec::new(),
+            feedback: None,
+        }]));
+        app.insert_resource(mappings);
+        app.init_resource::<MidiDevices>();
         app.init_resource::<Results>();
         register_ingress_command::<MidiCommand>(&mut app);
         register_binding_undo::<MidiMappings, MidiCommand>(&mut app);
@@ -151,7 +177,7 @@ mod tests {
     fn pad(id: u128, note: u8) -> MidiMapping {
         MidiMapping {
             id: Uuid::from_u128(id),
-            device_name: "Pad".to_string(),
+            device: PAD,
             source: MidiSource::Note { channel: 0, note },
             behavior: ControlBehavior::Press,
             led: Default::default(),
@@ -223,8 +249,8 @@ mod tests {
     fn pad_feedback(app: &App) -> bool {
         app.world()
             .resource::<MidiMappings>()
-            .feedback_devices()
-            .is_enabled("Pad")
+            .devices()
+            .feedback_enabled(PAD)
     }
 
     /// Verifies turning LED feedback on undoes and redoes, while repeating it adds no
@@ -233,7 +259,7 @@ mod tests {
     fn device_feedback_undoes_and_skips_repeats() {
         let mut app = seeded_app();
         let on = MidiCommand::SetDeviceFeedback {
-            device: "Pad".to_string(),
+            device: PAD,
             enabled: true,
         };
 

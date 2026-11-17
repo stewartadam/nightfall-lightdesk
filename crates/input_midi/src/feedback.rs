@@ -14,90 +14,27 @@
 //! feedback unless the operator turns it off; any other device is sent nothing until the
 //! operator turns it on, since echoing to an unknown device can disturb its own state.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashMap;
 
 use bevy_ecs::prelude::*;
 use nightfall_actions::{ActionFeedback, ActionRegistry, FeedbackState};
-use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::command::{MidiLedValues, MidiMapping, MidiSource};
+use crate::devices::MidiDevices;
 use crate::mapping::MidiMappings;
 use crate::profile;
 use crate::service::MidiOutputClient;
-
-/// The operator's LED feedback choice for one device, as saved in the showfile.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MidiFeedbackSetting {
-    /// Input device name, as stored on its mappings.
-    pub device: String,
-    /// Whether mapped controls on the device are sent their targets' state.
-    pub enabled: bool,
-}
-
-/// Whether each device is sent LED feedback, by input device name.
-///
-/// A device follows its controller profile (on for known hardware, off otherwise) until the
-/// operator chooses otherwise; only those choices are stored. Kept with the mappings in
-/// [`MidiMappings`], since both describe the show's controllers and are saved together.
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct MidiFeedbackDevices(BTreeMap<String, bool>);
-
-impl MidiFeedbackDevices {
-    /// Creates the choices from saved settings; when a device appears twice, as after
-    /// merging an imported showfile, the first choice wins.
-    pub fn new(settings: impl IntoIterator<Item = MidiFeedbackSetting>) -> Self {
-        let mut choices = BTreeMap::new();
-        for setting in settings {
-            choices.entry(setting.device).or_insert(setting.enabled);
-        }
-        Self(choices)
-    }
-
-    /// Returns the operator's choices in device name order, for saving.
-    pub fn settings(&self) -> impl Iterator<Item = MidiFeedbackSetting> + '_ {
-        self.0.iter().map(|(device, enabled)| MidiFeedbackSetting {
-            device: device.clone(),
-            enabled: *enabled,
-        })
-    }
-
-    /// Returns whether feedback is on for a device: the operator's choice, otherwise its
-    /// profile's default.
-    pub fn is_enabled(&self, device: &str) -> bool {
-        self.0
-            .get(device)
-            .copied()
-            .unwrap_or_else(|| profile_default(device))
-    }
-
-    /// Turns feedback on or off for a device and reports whether that changed anything.
-    ///
-    /// Choosing what the profile would choose anyway clears the stored choice, so the
-    /// device keeps following its profile.
-    pub fn set(&mut self, device: &str, enabled: bool) -> bool {
-        let was_enabled = self.is_enabled(device);
-        if enabled == profile_default(device) {
-            self.0.remove(device);
-        } else {
-            self.0.insert(device.to_string(), enabled);
-        }
-        was_enabled != enabled
-    }
-}
-
-/// Returns whether a device's controller profile turns feedback on before the operator
-/// chooses; devices without a profile start off.
-fn profile_default(device: &str) -> bool {
-    profile::for_device(device).is_some_and(|profile| profile.feedback)
-}
 
 /// Output client the feedback system writes through.
 #[derive(Resource, Clone)]
 pub(crate) struct MidiOutput(pub(crate) MidiOutputClient);
 
-/// Device name and control address one feedback message is sent to.
+/// Input port and control address one feedback message is sent to.
 type FeedbackAddress = (String, MidiSource);
+
+/// Input port and model of a connected device that receives feedback.
+type FeedbackTarget<'a> = (&'a str, &'a str);
 
 /// What one control address should show, and how to release it once nothing maps it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,10 +49,11 @@ struct AddressFeedback {
 /// Last message sent to each control address, so only changes are sent.
 #[derive(Resource, Default, Debug)]
 pub(crate) struct MidiFeedbackCache {
-    /// Last feedback per device and control address.
+    /// Last feedback per input port and control address.
     sent: HashMap<FeedbackAddress, AddressFeedback>,
-    /// Devices that were sent their profile's init messages and are receiving feedback.
-    active_devices: HashSet<String>,
+    /// Model behind each input port that was sent its profile's init messages and is
+    /// receiving feedback.
+    active_ports: HashMap<String, String>,
     /// Output generation the cache was built against; a change means ports reopened.
     generation: u64,
 }
@@ -231,23 +169,22 @@ fn ramp_step(ramp: &[u8], level: f32) -> u8 {
 ///
 /// When several mappings share an address (a press and a release binding on one pad), the
 /// first one in mapping order whose action reports feedback the address can show decides
-/// what the LED shows. LED values a mapping leaves unset come from its device's profile,
+/// what the LED shows. LED values a mapping leaves unset come from its model's profile,
 /// which may also move a note's LED message to another channel.
 fn desired_messages(
     world: &World,
     registry: &ActionRegistry,
     mappings: &[MidiMapping],
-    enabled: &HashSet<&str>,
+    enabled: &HashMap<Uuid, FeedbackTarget>,
 ) -> HashMap<FeedbackAddress, AddressFeedback> {
     let mut desired = HashMap::new();
     let mut profile_led = HashMap::new();
     for mapping in mappings {
-        let device = mapping.device_name.as_str();
-        if !enabled.contains(device) {
+        let Some(&(port, model)) = enabled.get(&mapping.device) else {
             continue;
-        }
-        let (profile, fallback) = *profile_led.entry(device).or_insert_with(|| {
-            let profile = profile::for_device(device);
+        };
+        let (profile, fallback) = *profile_led.entry(model).or_insert_with(|| {
+            let profile = profile::for_device(model);
             let fallback = profile
                 .map(profile::MidiProfile::default_led)
                 .unwrap_or_default();
@@ -258,7 +195,7 @@ fn desired_messages(
         let led_address = profile.map_or(mapping.source, |profile| {
             profile.led_address(mapping.source)
         });
-        let key = (mapping.device_name.clone(), led_address);
+        let key = (port.to_string(), led_address);
         if desired.contains_key(&key) {
             continue;
         }
@@ -279,20 +216,23 @@ fn desired_messages(
     desired
 }
 
-/// Sends every message of a device's profile in `pick` (its init or release messages).
+/// Sends every message of a model's profile in `pick` (its init or release messages) to the
+/// output paired with input port `port`.
 fn send_profile_messages(
     output: &MidiOutputClient,
-    device: &str,
+    port: &str,
+    model: &str,
     pick: impl Fn(&profile::MidiProfile) -> &[Vec<u8>],
 ) {
-    if let Some(profile) = profile::for_device(device) {
+    if let Some(profile) = profile::for_device(model) {
         for message in pick(profile) {
-            output.send(device, message.clone());
+            output.send(port, message.clone());
         }
     }
 }
 
-/// Sends each mapped control on a feedback-enabled device its target's current state.
+/// Sends each mapped control on a connected, feedback-enabled device its target's current
+/// state, through the output paired with the port the device is connected through.
 ///
 /// Only messages that differ from the last one sent to an address go out. A device whose
 /// feedback starts is first sent its profile's init messages. Addresses that no longer have
@@ -306,27 +246,36 @@ pub(crate) fn send_midi_feedback(world: &mut World) {
     else {
         return;
     };
-    let (enabled, desired): (HashSet<String>, _) = {
+    let (enabled, desired): (HashMap<String, String>, _) = {
         let registry = world.resource::<ActionRegistry>();
         let mappings = world.resource::<MidiMappings>();
-        let feedback_devices = mappings.feedback_devices();
-        let enabled: HashSet<&str> = mappings
+        let devices = world.resource::<MidiDevices>();
+        let enabled: HashMap<Uuid, FeedbackTarget> = mappings
             .mappings()
             .iter()
-            .map(|mapping| mapping.device_name.as_str())
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .filter(|device| feedback_devices.is_enabled(device) && output.has_output(device))
+            .filter_map(|mapping| {
+                let connected = devices.by_device(mapping.device)?;
+                (mappings.devices().feedback_enabled(mapping.device)
+                    && output.has_output(&connected.port))
+                .then_some((
+                    mapping.device,
+                    (connected.port.as_str(), connected.port_model.as_str()),
+                ))
+            })
             .collect();
         let desired = desired_messages(world, registry, mappings.mappings(), &enabled);
-        (enabled.into_iter().map(str::to_string).collect(), desired)
+        let ports = enabled
+            .into_values()
+            .map(|(port, model)| (port.to_string(), model.to_string()))
+            .collect();
+        (ports, desired)
     };
 
     let mut cache = world.resource_mut::<MidiFeedbackCache>();
     let generation = output.generation();
     if cache.generation != generation {
         cache.sent.clear();
-        cache.active_devices.clear();
+        cache.active_ports.clear();
         cache.generation = generation;
     }
     let stale: Vec<_> = cache
@@ -340,15 +289,20 @@ pub(crate) fn send_midi_feedback(world: &mut World) {
             output.send(&key.0, release);
         }
     }
-    let stopped: Vec<_> = cache.active_devices.difference(&enabled).cloned().collect();
-    for device in stopped {
-        send_profile_messages(&output, &device, |profile| &profile.release);
-        cache.active_devices.remove(&device);
+    let stopped: Vec<_> = cache
+        .active_ports
+        .iter()
+        .filter(|(port, model)| enabled.get(*port) != Some(*model))
+        .map(|(port, model)| (port.clone(), model.clone()))
+        .collect();
+    for (port, model) in stopped {
+        send_profile_messages(&output, &port, &model, |profile| &profile.release);
+        cache.active_ports.remove(&port);
     }
-    for device in enabled {
-        if !cache.active_devices.contains(&device) {
-            send_profile_messages(&output, &device, |profile| &profile.init);
-            cache.active_devices.insert(device);
+    for (port, model) in enabled {
+        if let std::collections::hash_map::Entry::Vacant(entry) = cache.active_ports.entry(port) {
+            send_profile_messages(&output, entry.key(), &model, |profile| &profile.init);
+            entry.insert(model);
         }
     }
     for (key, address) in desired {
@@ -374,7 +328,19 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::devices::{ConnectedDevice, MidiDeviceRegistry, MidiDeviceSetting};
     use crate::service::MidiOutputMessage;
+
+    /// ID of the device each feedback test maps.
+    const DEVICE: Uuid = Uuid::from_u128(100);
+
+    /// Turns feedback on or off for the test device.
+    fn set_feedback(app: &mut App, enabled: bool) {
+        app.world_mut()
+            .resource_mut::<MidiMappings>()
+            .devices_mut()
+            .set_feedback(DEVICE, enabled);
+    }
 
     /// Whether the test target is running, read by the test action's feedback.
     #[derive(Resource)]
@@ -391,17 +357,15 @@ mod tests {
                 held: None,
             },
         );
-        app.world_mut()
-            .resource_mut::<MidiMappings>()
-            .feedback_devices_mut()
-            .set("Pad", true);
+        set_feedback(&mut app, true);
         (app, rx, generation)
     }
 
-    /// Builds an app with one note-60 mapping on `device` with the given LED values, whose
-    /// action reports [`TestRunning`], leaving feedback to the device's profile default.
+    /// Builds an app with one note-60 mapping on a connected device of model `model` with the
+    /// given LED values, whose action reports [`TestRunning`], leaving feedback to the
+    /// model's profile default.
     fn device_feedback_app(
-        device: &str,
+        model: &str,
         led: MidiLedValues,
     ) -> (App, Receiver<MidiOutputMessage>, Arc<AtomicU64>) {
         let mut app = App::new();
@@ -418,7 +382,7 @@ mod tests {
         let mut mappings = MidiMappings::new();
         mappings.set_mappings(vec![MidiMapping {
             id: Uuid::from_u128(1),
-            device_name: device.to_string(),
+            device: DEVICE,
             source: MidiSource::Note {
                 channel: 0,
                 note: 60,
@@ -427,9 +391,31 @@ mod tests {
             led,
             action: ActionReference::new("test.start", serde_json::json!({})),
         }]);
+        mappings.set_devices(MidiDeviceRegistry::new([MidiDeviceSetting {
+            id: DEVICE,
+            model: model.to_string(),
+            number: 1,
+            units: vec!["unit".to_string()],
+            hardware: None,
+            aliases: Vec::new(),
+            feedback: None,
+        }]));
+        let devices = MidiDevices::new(vec![ConnectedDevice {
+            port: "port".to_string(),
+            model: model.to_string(),
+            port_model: model.to_string(),
+            unit: "unit".to_string(),
+            location: None,
+            hardware: None,
+            has_output: true,
+            device: DEVICE,
+            name: model.to_string(),
+            unsaved_number: None,
+        }]);
         let (client, rx, generation) = MidiOutputClient::capturing();
         app.insert_resource(registry)
             .insert_resource(mappings)
+            .insert_resource(devices)
             .insert_resource(TestRunning(false))
             .insert_resource(MidiOutput(client))
             .init_resource::<MidiFeedbackCache>()
@@ -458,10 +444,7 @@ mod tests {
         generation.fetch_add(1, Ordering::SeqCst);
         assert_eq!(frame(&mut app, &rx), vec![vec![0x90, 60, 5]]);
 
-        app.world_mut()
-            .resource_mut::<MidiMappings>()
-            .feedback_devices_mut()
-            .set("Pad", false);
+        set_feedback(&mut app, false);
         assert_eq!(frame(&mut app, &rx), vec![vec![0x90, 60, 1]]);
         assert!(frame(&mut app, &rx).is_empty());
     }
@@ -486,10 +469,7 @@ mod tests {
             vec![vec![0xB0, 0, 0], vec![0xB0, 0, 40], vec![0x90, 60, 60]]
         );
 
-        app.world_mut()
-            .resource_mut::<MidiMappings>()
-            .feedback_devices_mut()
-            .set("Launchpad", false);
+        set_feedback(&mut app, false);
         assert_eq!(
             frame(&mut app, &rx),
             vec![vec![0x90, 60, 12], vec![0xB0, 0, 0]]
@@ -505,10 +485,7 @@ mod tests {
         let (mut app, rx, _) = device_feedback_app("APC mini mk2", MidiLedValues::default());
         assert!(frame(&mut app, &rx).is_empty());
 
-        app.world_mut()
-            .resource_mut::<MidiMappings>()
-            .feedback_devices_mut()
-            .set("APC mini mk2", true);
+        set_feedback(&mut app, true);
         assert_eq!(frame(&mut app, &rx), vec![vec![0x96, 60, 0]]);
         app.insert_resource(TestRunning(true));
         assert_eq!(frame(&mut app, &rx), vec![vec![0x96, 60, 21]]);
@@ -562,10 +539,7 @@ mod tests {
     #[test]
     fn feedback_skips_devices_without_feedback() {
         let (mut app, rx, _) = feedback_app();
-        app.world_mut()
-            .resource_mut::<MidiMappings>()
-            .feedback_devices_mut()
-            .set("Pad", false);
+        set_feedback(&mut app, false);
 
         assert!(frame(&mut app, &rx).is_empty());
     }
@@ -643,37 +617,25 @@ mod tests {
         );
     }
 
-    /// Verifies turning a device on and off reports whether the set changed.
+    /// Verifies a device that is not connected is sent nothing, and its port is sent its
+    /// state once it connects.
     #[test]
-    fn feedback_devices_report_changes() {
-        let mut devices = MidiFeedbackDevices::default();
+    fn feedback_waits_for_the_device_to_connect() {
+        let (mut app, rx, _) = feedback_app();
+        let connected = app.world().resource::<MidiDevices>().clone();
+        app.insert_resource(MidiDevices::default());
+        assert!(frame(&mut app, &rx).is_empty());
 
-        assert!(devices.set("Pad", true));
-        assert!(!devices.set("Pad", true));
-        assert!(devices.is_enabled("Pad"));
-        assert!(devices.set("Pad", false));
-        assert!(!devices.is_enabled("Pad"));
-    }
-
-    /// Verifies a profiled device starts on, stores only a choice that differs from its
-    /// profile, and goes back to following the profile when turned on again.
-    #[test]
-    fn feedback_devices_follow_profile_defaults() {
-        let mut devices = MidiFeedbackDevices::default();
-        assert!(devices.is_enabled("Launchpad"));
-
-        assert!(devices.set("Launchpad", false));
-        assert!(!devices.is_enabled("Launchpad"));
+        app.insert_resource(connected);
+        app.update();
+        let sent: Vec<_> = rx.try_iter().collect();
         assert_eq!(
-            devices.settings().collect::<Vec<_>>(),
-            vec![MidiFeedbackSetting {
-                device: "Launchpad".to_string(),
-                enabled: false,
+            sent,
+            vec![MidiOutputMessage {
+                port: "port".to_string(),
+                bytes: vec![0x90, 60, 1],
             }]
         );
-
-        assert!(devices.set("Launchpad", true));
-        assert_eq!(devices.settings().count(), 0);
     }
 
     /// Verifies a held flash shows the mapping's held value when it sets one.

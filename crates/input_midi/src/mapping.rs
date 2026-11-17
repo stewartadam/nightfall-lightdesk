@@ -13,13 +13,16 @@ use nightfall_actions::{ActionInputKind, ActionReference, BindingStore};
 use uuid::Uuid;
 
 use crate::command::{MidiMapping, MidiSource};
-use crate::feedback::MidiFeedbackDevices;
+use crate::devices::MidiDeviceRegistry;
 
-/// Resource storing all MIDI input mappings and the devices that receive their feedback.
+/// Resource storing all MIDI input mappings and the devices they refer to.
+///
+/// Devices are kept with the mappings, since both describe the show's controllers and are
+/// saved, imported, and loaded together.
 #[derive(Resource, Default, Debug, Clone)]
 pub struct MidiMappings {
     mappings: Vec<MidiMapping>,
-    feedback_devices: MidiFeedbackDevices,
+    devices: MidiDeviceRegistry,
 }
 
 impl MidiMappings {
@@ -28,19 +31,19 @@ impl MidiMappings {
         Self::default()
     }
 
-    /// Returns the devices that mapped controls send LED feedback to.
-    pub fn feedback_devices(&self) -> &MidiFeedbackDevices {
-        &self.feedback_devices
+    /// Returns the devices the show saves.
+    pub fn devices(&self) -> &MidiDeviceRegistry {
+        &self.devices
     }
 
-    /// Returns the devices that receive feedback, for turning feedback on or off.
-    pub fn feedback_devices_mut(&mut self) -> &mut MidiFeedbackDevices {
-        &mut self.feedback_devices
+    /// Returns the devices the show saves, for adding devices or changing their feedback.
+    pub fn devices_mut(&mut self) -> &mut MidiDeviceRegistry {
+        &mut self.devices
     }
 
-    /// Replaces the devices that receive feedback, as when loading a showfile.
-    pub fn set_feedback_devices(&mut self, devices: MidiFeedbackDevices) {
-        self.feedback_devices = devices;
+    /// Replaces the saved devices, as when loading a showfile.
+    pub fn set_devices(&mut self, devices: MidiDeviceRegistry) {
+        self.devices = devices;
     }
 
     /// Replace all mappings with the provided list, as when loading a showfile.
@@ -69,7 +72,7 @@ impl MidiMappings {
             .into_iter()
             .partition::<Vec<_>, _>(|existing| {
                 existing.id != mapping.id
-                    && existing.device_name == mapping.device_name
+                    && existing.device == mapping.device
                     && existing.source == mapping.source
                     && mapping.behavior.overlaps(
                         kind,
@@ -97,10 +100,15 @@ impl MidiMappings {
     }
 
     /// Returns the mappings bound to one control on a device, at most one per edge.
-    pub fn lookup(&self, device: &str, source: MidiSource) -> impl Iterator<Item = &MidiMapping> {
+    pub fn lookup(&self, device: Uuid, source: MidiSource) -> impl Iterator<Item = &MidiMapping> {
         self.mappings
             .iter()
-            .filter(move |mapping| mapping.device_name == device && mapping.source == source)
+            .filter(move |mapping| mapping.device == device && mapping.source == source)
+    }
+
+    /// Returns whether any mapping is bound to a control on device `device`.
+    pub fn maps_device(&self, device: Uuid) -> bool {
+        self.mappings.iter().any(|mapping| mapping.device == device)
     }
 }
 
@@ -135,11 +143,17 @@ mod tests {
         Some(ActionInputKind::Trigger)
     }
 
+    /// Device the tests map first.
+    const DEVICE_A: Uuid = Uuid::from_u128(0xA);
+
+    /// Another device, whose controls are separate from [`DEVICE_A`]'s.
+    const DEVICE_B: Uuid = Uuid::from_u128(0xB);
+
     /// Builds a note mapping with a deterministic ID.
-    fn note_mapping(id: u128, device: &str, note: u8, action: &str) -> MidiMapping {
+    fn note_mapping(id: u128, device: Uuid, note: u8, action: &str) -> MidiMapping {
         MidiMapping {
             id: Uuid::from_u128(id),
-            device_name: device.to_string(),
+            device,
             source: MidiSource::Note { channel: 0, note },
             behavior: ControlBehavior::Press,
             led: Default::default(),
@@ -151,12 +165,12 @@ mod tests {
     #[test]
     fn lookup_matches_device_and_control() {
         let mut mappings = MidiMappings::new();
-        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"), triggers);
+        mappings.upsert(note_mapping(1, DEVICE_A, 60, "test.a"), triggers);
 
         assert!(
             mappings
                 .lookup(
-                    "Device A",
+                    DEVICE_A,
                     MidiSource::Note {
                         channel: 0,
                         note: 60
@@ -168,7 +182,7 @@ mod tests {
         assert!(
             mappings
                 .lookup(
-                    "Device B",
+                    DEVICE_B,
                     MidiSource::Note {
                         channel: 0,
                         note: 60
@@ -180,7 +194,7 @@ mod tests {
         assert!(
             mappings
                 .lookup(
-                    "Device A",
+                    DEVICE_A,
                     MidiSource::ControlChange {
                         channel: 0,
                         controller: 60
@@ -195,12 +209,12 @@ mod tests {
     #[test]
     fn upsert_replaces_other_mappings_on_the_same_control() {
         let mut mappings = MidiMappings::new();
-        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"), triggers);
-        mappings.upsert(note_mapping(2, "Device A", 61, "test.b"), triggers);
+        mappings.upsert(note_mapping(1, DEVICE_A, 60, "test.a"), triggers);
+        mappings.upsert(note_mapping(2, DEVICE_A, 61, "test.b"), triggers);
 
-        let displaced = mappings.upsert(note_mapping(3, "Device A", 60, "test.c"), triggers);
+        let displaced = mappings.upsert(note_mapping(3, DEVICE_A, 60, "test.c"), triggers);
 
-        assert_eq!(displaced, vec![note_mapping(1, "Device A", 60, "test.a")]);
+        assert_eq!(displaced, vec![note_mapping(1, DEVICE_A, 60, "test.a")]);
         assert_eq!(
             mappings
                 .mappings()
@@ -215,10 +229,10 @@ mod tests {
     #[test]
     fn upsert_edits_existing_mapping_in_place() {
         let mut mappings = MidiMappings::new();
-        mappings.upsert(note_mapping(1, "Device A", 60, "test.a"), triggers);
-        mappings.upsert(note_mapping(2, "Device A", 61, "test.b"), triggers);
+        mappings.upsert(note_mapping(1, DEVICE_A, 60, "test.a"), triggers);
+        mappings.upsert(note_mapping(2, DEVICE_A, 61, "test.b"), triggers);
 
-        let displaced = mappings.upsert(note_mapping(1, "Device A", 62, "test.c"), triggers);
+        let displaced = mappings.upsert(note_mapping(1, DEVICE_A, 62, "test.c"), triggers);
 
         assert!(displaced.is_empty());
         assert_eq!(mappings.mappings()[0].action.id.as_str(), "test.c");
@@ -237,10 +251,10 @@ mod tests {
             })
         };
         let mut mappings = MidiMappings::new();
-        mappings.upsert(note_mapping(1, "Device A", 60, "test.start"), input_kind);
+        mappings.upsert(note_mapping(1, DEVICE_A, 60, "test.start"), input_kind);
         let release = MidiMapping {
             behavior: ControlBehavior::Release,
-            ..note_mapping(2, "Device A", 60, "test.stop")
+            ..note_mapping(2, DEVICE_A, 60, "test.stop")
         };
 
         assert!(mappings.upsert(release, input_kind).is_empty());
@@ -248,9 +262,9 @@ mod tests {
             channel: 0,
             note: 60,
         };
-        assert_eq!(mappings.lookup("Device A", pad).count(), 2);
+        assert_eq!(mappings.lookup(DEVICE_A, pad).count(), 2);
 
-        let displaced = mappings.upsert(note_mapping(3, "Device A", 60, "test.hold"), input_kind);
+        let displaced = mappings.upsert(note_mapping(3, DEVICE_A, 60, "test.hold"), input_kind);
         assert_eq!(
             displaced
                 .iter()
@@ -258,6 +272,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![Uuid::from_u128(1), Uuid::from_u128(2)]
         );
-        assert_eq!(mappings.lookup("Device A", pad).count(), 1);
+        assert_eq!(mappings.lookup(DEVICE_A, pad).count(), 1);
     }
 }

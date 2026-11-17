@@ -20,7 +20,7 @@ import { editedLedValue, ledValueCell } from "./led-values";
 
 /** A two-color profile shaped like the Launchpad's, for cell tests. */
 const PROFILE: MidiDeviceProfile = {
-  device: "Launchpad",
+  model: "Launchpad",
   id: "novation.launchpad",
   name: "Novation Launchpad",
   hint: undefined,

@@ -436,8 +436,8 @@ pub(crate) fn for_device(device: &str) -> Option<&'static MidiProfile> {
 #[serde(rename_all = "camelCase")]
 #[typeshare::typeshare]
 pub struct MidiDeviceProfile {
-    /// Input device name the profile applies to, as stored on mappings.
-    pub device: String,
+    /// Device model the profile applies to, as stored on saved devices.
+    pub model: String,
     /// Stable profile identifier.
     pub id: String,
     /// Name of the hardware family.
@@ -451,10 +451,10 @@ pub struct MidiDeviceProfile {
 }
 
 impl MidiDeviceProfile {
-    /// Copies the parts of a device's profile the UI shows.
-    pub(crate) fn new(device: &str, profile: &MidiProfile) -> Self {
+    /// Copies the parts of a model's profile the UI shows.
+    pub(crate) fn new(model: &str, profile: &MidiProfile) -> Self {
         Self {
-            device: device.to_string(),
+            model: model.to_string(),
             id: profile.id.clone(),
             name: profile.name.clone(),
             hint: profile.hint.clone(),

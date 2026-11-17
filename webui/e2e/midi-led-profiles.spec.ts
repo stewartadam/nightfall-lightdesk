@@ -6,6 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
   globalMaster,
   makeGlobalMasterToggle,
@@ -14,8 +17,11 @@ import {
 } from "./controller-mapping";
 import { expect, type Page, test } from "./playwright-fixtures";
 
-/** Device name the bundled Launchpad profile matches; no such port needs to be connected. */
+/** Device model the bundled Launchpad profile matches; no such port needs to be connected. */
 const LAUNCHPAD = "Launchpad";
+
+/** ID of the saved Launchpad device the spec maps. */
+const LAUNCHPAD_ID = "6c61756e636870616400000000000001";
 
 /** Returns the LED values the backend stored on the only MIDI mapping. */
 function storedLed(page: Page): Promise<Record<string, number> | undefined> {
@@ -24,25 +30,65 @@ function storedLed(page: Page): Promise<Record<string, number> | undefined> {
   );
 }
 
-/** Stores a note mapping on an unplugged Launchpad toggling the global master. */
+/**
+ * Saves the current show with a Launchpad among its MIDI devices and loads it again, since a
+ * device can only be mapped once the show saves it or it is connected.
+ */
+async function saveLaunchpadDevice(page: Page, dataDir: string): Promise<void> {
+  const name = "launchpad-device";
+  const saved = await page.evaluate(
+    (name) =>
+      (window as any).appStores.sendAndAwait({
+        module: "ShowfileCommand",
+        command: { type: "SaveNamedShowfile", data: name },
+      }),
+    name,
+  );
+  expect(saved.outcome.type).toBe("Succeeded");
+  const path = join(dataDir, `${name}.nightfall-show`, "showfile.json.gz");
+  const showfile = JSON.parse(gunzipSync(readFileSync(path)).toString("utf8"));
+  showfile.midiDevices = [{ id: LAUNCHPAD_ID, model: LAUNCHPAD, number: 1 }];
+  writeFileSync(path, gzipSync(JSON.stringify(showfile)));
+  await page.evaluate(
+    (name) =>
+      (window as any).appStores.send({
+        module: "ShowfileCommand",
+        command: { type: "LoadNamedShowfile", data: name },
+      }),
+    name,
+  );
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          ((window as any).appStores.midiDevices.get() as { id: string }[]).map(
+            (device) => device.id,
+          ),
+        ),
+      { timeout: 30_000 },
+    )
+    .toContain(LAUNCHPAD_ID);
+}
+
+/** Stores a note mapping on the saved, unplugged Launchpad toggling the global master. */
 async function storeLaunchpadMapping(page: Page): Promise<void> {
   const masterUid = (await globalMaster(page)).identifiers.uid;
   await page.evaluate(
-    ({ deviceName, masterUid }) =>
+    ({ device, masterUid }) =>
       (window as any).appStores.sendAndAwait({
         module: "MidiCommand",
         command: {
           type: "UpsertMapping",
           data: {
             id: crypto.randomUUID().replace(/-/g, ""),
-            device_name: deviceName,
+            device,
             source: { type: "Note", data: { channel: 0, note: 0 } },
             behavior: "Press",
             action: { id: "master.toggle", arguments: { master: masterUid } },
           },
         },
       }),
-    { deviceName: LAUNCHPAD, masterUid },
+    { device: LAUNCHPAD_ID, masterUid },
   );
 }
 
@@ -57,6 +103,7 @@ test("LED cells offer a profiled controller's colors by name", async ({
 }) => {
   await openMappingApp(page, backendSlot.backendPort);
   await makeGlobalMasterToggle(page);
+  await saveLaunchpadDevice(page, backendSlot.dataDir);
   await storeLaunchpadMapping(page);
   await openPanel(page, "MIDI Input");
 

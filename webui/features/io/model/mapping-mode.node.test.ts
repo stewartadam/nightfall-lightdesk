@@ -25,7 +25,8 @@ import {
 /** Builds a MIDI touch from a note control on the E2E pad. */
 function midiTouch(note: number, velocity = 127): types.MidiLastEvent {
   return {
-    device: "Pad",
+    device: "000000000000000000000000000000ad",
+    device_name: "Pad",
     channel: 0x90,
     note,
     velocity,
@@ -53,7 +54,8 @@ afterEach(() => {
 test("unmappable MIDI touches explain why nothing armed", () => {
   enterMappingMode();
   const programChange: types.MidiLastEvent = {
-    device: "Pad",
+    device: "000000000000000000000000000000ad",
+    device_name: "Pad",
     channel: 0xc2,
     note: 5,
     velocity: 0,
@@ -95,7 +97,8 @@ test("disarming a bound control keeps a newer touch armed", () => {
 /** Builds a MIDI touch from controller `controller` sending `value`. */
 function midiControl(controller: number, value: number): types.MidiLastEvent {
   return {
-    device: "Pad",
+    device: "000000000000000000000000000000ad",
+    device_name: "Pad",
     channel: 0xb0,
     note: controller,
     velocity: value,

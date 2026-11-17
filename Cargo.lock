@@ -6055,9 +6055,13 @@ dependencies = [
 name = "nightfall-input-midi"
 version = "0.1.0-beta.2"
 dependencies = [
+ "alsa",
  "bevy_app",
  "bevy_ecs",
+ "core-foundation",
+ "coremidi-sys",
  "midir",
+ "nightfall",
  "nightfall-actions",
  "nightfall-coremidi-hotplug",
  "nightfall-engine",
@@ -6065,12 +6069,15 @@ dependencies = [
  "nightfall-timecode",
  "nightfall-undo",
  "nightfall-workspace-hack",
+ "nusb",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "typeshare",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

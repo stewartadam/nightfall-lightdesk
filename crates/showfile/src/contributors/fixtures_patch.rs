@@ -29,7 +29,7 @@ pub(crate) struct FixturesPatchSnapshot<'a> {
     #[cfg(feature = "midi")]
     pub(super) midi_mappings: Cow<'a, [MidiMapping]>,
     #[cfg(feature = "midi")]
-    pub(super) midi_feedback_devices: Cow<'a, [MidiFeedbackSetting]>,
+    pub(super) midi_devices: Cow<'a, [MidiDeviceSetting]>,
     #[cfg(feature = "osc")]
     pub(super) osc_mappings: Cow<'a, [OscMapping]>,
 }
@@ -91,9 +91,7 @@ impl ShowfileSaveContributor for FixturesPatchSaveContributor<'_> {
             #[cfg(feature = "midi")]
             midi_mappings: Cow::Owned(self.midi_mappings.mappings().to_vec()),
             #[cfg(feature = "midi")]
-            midi_feedback_devices: Cow::Owned(
-                self.midi_mappings.feedback_devices().settings().collect(),
-            ),
+            midi_devices: Cow::Owned(self.midi_mappings.devices().settings().to_vec()),
             #[cfg(feature = "osc")]
             osc_mappings: Cow::Owned(self.osc_mappings.mappings().to_vec()),
         })
@@ -195,10 +193,9 @@ impl ShowfileLoadContributor for FixturesPatchLoadContributor<'_> {
                 {
                     self.midi_mappings
                         .set_mappings(contribution.midi_mappings.to_vec());
-                    self.midi_mappings
-                        .set_feedback_devices(MidiFeedbackDevices::new(
-                            contribution.midi_feedback_devices.iter().cloned(),
-                        ));
+                    self.midi_mappings.set_devices(MidiDeviceRegistry::new(
+                        contribution.midi_devices.iter().cloned(),
+                    ));
                 }
                 #[cfg(feature = "osc")]
                 self.osc_mappings

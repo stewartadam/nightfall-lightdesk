@@ -1493,10 +1493,14 @@ fn sample_data_build_seeds_default_midi_mapping() {
             showfile_name: None,
         })
         .expect("world factory build");
-    let mappings = app.world().resource::<MidiMappings>().mappings();
+    let stored = app.world().resource::<MidiMappings>();
+    let mappings = stored.mappings();
 
     assert!(mappings.iter().any(|mapping| {
-        mapping.device_name == "Grid"
+        stored
+            .devices()
+            .get(mapping.device)
+            .is_some_and(|device| device.display_name() == "Grid")
             && mapping.source
                 == MidiSource::ControlChange {
                     channel: 0,

@@ -28,6 +28,7 @@ import { Popover } from "../../../components/ui/popover";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import {
   actionCatalog,
+  midiDevices,
   midiMappings,
   oscMappings,
   pushToast,
@@ -48,6 +49,7 @@ import {
 } from "../model/binding-behaviors";
 import {
   formatBehavior,
+  midiDeviceName,
   midiSourceLabel,
 } from "../model/controller-mapping-builders";
 import {
@@ -134,6 +136,7 @@ export function Mappable(props: MappableProps): JSX.Element {
   /** Whether mapping mode is on; outside it the wrapper is inert and tracks nothing else. */
   const mapping = () => $mode().active;
   const $midiMappings = useConditionalShallowStore(midiMappings, mapping);
+  const $midiDevices = useConditionalShallowStore(midiDevices, mapping);
   const $oscMappings = useConditionalShallowStore(oscMappings, mapping);
   const $backendCatalog = useConditionalShallowStore(actionCatalog, mapping);
   const $catalog = useBindableActionCatalog(mapping);
@@ -159,7 +162,7 @@ export function Mappable(props: MappableProps): JSX.Element {
       .map((mapping) => ({
         id: mapping.id,
         kind: "midi" as const,
-        label: `MIDI ${midiSourceLabel(mapping.source)} (${mapping.device_name}) · ${formatBehavior(mapping.behavior)}`,
+        label: `MIDI ${midiSourceLabel(mapping.source)} (${midiDeviceName($midiDevices(), mapping.device)}) · ${formatBehavior(mapping.behavior)}`,
       })),
     ...$oscMappings()
       .filter((mapping) => boundHere(mapping.action))
