@@ -397,10 +397,12 @@ test("embedded demo edits and plays the sample without backend traffic", async (
   page.on("console", (message) => {
     const text = message.text();
     // The visualizer initializes its renderer eagerly and logs the missing WebGL
-    // context as a caught initialization failure rather than a page error.
+    // context as a caught initialization failure rather than a page error, then
+    // its panel gives up and logs the error it shows in place of the scene.
     if (
       browserName === "firefox" &&
-      text.includes("Failed to initialize renderer")
+      (text.includes("Failed to initialize renderer") ||
+        text.includes("[visualizer-error-boundary] Visualizer error"))
     ) {
       return;
     }
