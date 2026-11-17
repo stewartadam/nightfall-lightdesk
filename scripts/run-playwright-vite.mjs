@@ -28,7 +28,14 @@ registerOwnedProcess(processRegistry, process.pid, false);
 
 /** Returns the Vite command line for the run's frontend mode. */
 function viteArguments() {
-  const listen = ["--host", "127.0.0.1", "--port", `${backendPort + 1}`];
+  // Fail instead of moving to the next port, since the wrapper waits on this one.
+  const listen = [
+    "--host",
+    "127.0.0.1",
+    "--port",
+    `${backendPort + 1}`,
+    "--strictPort",
+  ];
   switch (viteMode) {
     case "dev":
       return ["dev", ...listen];
