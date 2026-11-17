@@ -55,6 +55,8 @@ const HANDLED_MESSAGE_TYPES: AnyWsMessage["type"][] = [
   "ExternalControlState",
   "FixtureCommand",
   "FixtureDefinitions",
+  "FixtureDraftClosed",
+  "FixtureDraftUpdated",
   "FixtureGeometries",
   "FlowAck",
   "FlowCommand",

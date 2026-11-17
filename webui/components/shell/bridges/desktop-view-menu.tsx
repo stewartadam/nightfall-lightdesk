@@ -9,6 +9,7 @@
 import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js";
 import { boardDisplayName } from "../../../features/boards";
+import { OPEN_FIXTURE_EDITOR_ACTION_ID } from "../../../features/fixture-editor";
 import {
   OPEN_OBJECT_PALETTE_SHORTCUT,
   useShowfileObjectPalette,
@@ -184,6 +185,11 @@ export default function DesktopViewMenu() {
       ),
       { entry: { kind: "separator" } },
       panelItems(),
+      uiActionItem(
+        OPEN_FIXTURE_EDITOR_ACTION_ID,
+        "fixture-editor",
+        "Fixture Editor...",
+      ),
     ];
     const flat = items.flat();
     const handlers = new Map<string, () => void>();

@@ -11,6 +11,7 @@ import { createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import {
   connectionStatus,
   EngineRuntimeStatus,
+  type EngineSessionScope,
   engineRuntime,
   getWebSocketUrl,
 } from "../../../lib/engine-runtime";
@@ -42,7 +43,10 @@ function mayNeedPairing(): boolean {
  * Connects the application shell to its configured engine runtime, asking for
  * the pairing PIN first when the page runs on another device.
  */
-export default function EngineConnection() {
+export default function EngineConnection(props: {
+  /** Limits the connection to part of the engine's state; the whole show when omitted. */
+  scope?: EngineSessionScope;
+}) {
   const prompting = useStore($pairingPromptOpen);
   /** Opens or closes the PIN prompt, which also hides the connection overlay. */
   const setPrompting = (open: boolean) => $pairingPromptOpen.set(open);
@@ -55,7 +59,10 @@ export default function EngineConnection() {
   /** Starts the engine runtime against the resolved websocket endpoint. */
   const connect = () => {
     log.debug("Connecting to engine...");
-    engineRuntime.start(configuredEngineRuntime(getWebSocketUrl()));
+    engineRuntime.start(
+      configuredEngineRuntime(getWebSocketUrl()),
+      props.scope,
+    );
   };
 
   /**

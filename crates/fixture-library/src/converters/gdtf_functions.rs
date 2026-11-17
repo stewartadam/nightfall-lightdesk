@@ -38,9 +38,14 @@ pub(super) struct ChannelSemantics {
 /// the most significant bytes. gdtf-rs's `DmxValue::to` zero-pads unshifted values too, so it
 /// cannot be used here.
 pub(super) fn scaled(value: DmxValue, resolution: DmxValueResolution) -> u32 {
+    scaled_to_bytes(value, resolution.channel_width() as u8)
+}
+
+/// Converts a GDTF DMX value to a width of one to four bytes, like [`scaled`].
+pub(crate) fn scaled_to_bytes(value: DmxValue, bytes: u8) -> u32 {
     let source_bytes = value.bytes().get();
     let mut result = 0u32;
-    for index in 0..resolution.channel_width() as u8 {
+    for index in 0..bytes.min(4) {
         let byte = if index >= source_bytes && value.shifting() {
             0
         } else {
