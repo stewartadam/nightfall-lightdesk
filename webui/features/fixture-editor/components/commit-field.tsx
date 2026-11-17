@@ -33,13 +33,35 @@ export type CommitOutcome = boolean | undefined | Promise<boolean | undefined>;
  */
 export function CommitField(props: CommitFieldProps) {
   const [local, rest] = splitProps(props, ["value", "onCommit"]);
-  const [text, setText] = createSignal(local.value);
+  const field = createCommitText(local);
+  return (
+    <Input
+      density="compact"
+      {...rest}
+      value={field.text()}
+      onInput={(event) => field.type(event.currentTarget.value)}
+      onBlur={field.commit}
+      onKeyDown={field.handleKey}
+    />
+  );
+}
+
+/**
+ * Holds the text of a field that commits when editing finishes, for `CommitField` and for
+ * fields built on other inputs. It shows the draft's value until the user types, sends the
+ * typed text on `commit`, reverts it when refused, and handles Enter and Escape.
+ */
+export function createCommitText(source: {
+  value: string;
+  onCommit: (value: string) => CommitOutcome;
+}) {
+  const [text, setText] = createSignal(source.value);
   let editing = false;
 
   /** Shows the draft's value whenever it changes, unless the user is typing. */
   createEffect(
     on(
-      () => local.value,
+      () => source.value,
       (value) => {
         if (!editing) setText(value);
       },
@@ -53,36 +75,39 @@ export function CommitField(props: CommitFieldProps) {
   const commit = () => {
     editing = false;
     const value = text();
-    if (value === local.value || value === pending) return;
+    if (value === source.value || value === pending) return;
     pending = value;
-    void Promise.resolve(local.onCommit(value)).then((accepted) => {
+    void Promise.resolve(source.onCommit(value)).then((accepted) => {
       pending = null;
-      if (accepted === false && !editing) setText(local.value);
+      if (accepted === false && !editing) setText(source.value);
     });
   };
 
-  return (
-    <Input
-      density="compact"
-      {...rest}
-      value={text()}
-      onInput={(event) => {
-        editing = true;
-        setText(event.currentTarget.value);
-      }}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          commit();
-        } else if (event.key === "Escape" && editing) {
-          event.preventDefault();
-          editing = false;
-          setText(local.value);
-        }
-      }}
-    />
-  );
+  /** Records a keystroke's text without sending it. */
+  const type = (value: string) => {
+    editing = true;
+    setText(value);
+  };
+
+  /** Commits on Enter and puts the draft's value back on Escape. */
+  const handleKey = (event: KeyboardEvent) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commit();
+    } else if (event.key === "Escape" && editing) {
+      event.preventDefault();
+      editing = false;
+      setText(source.value);
+    }
+  };
+
+  /** Shows `value` and sends it at once, for a choice picked from a list. */
+  const choose = (value: string) => {
+    type(value);
+    commit();
+  };
+
+  return { text, type, commit, handleKey, choose };
 }
 
 type CommitNumberFieldProps = Omit<CommitFieldProps, "value" | "onCommit"> & {

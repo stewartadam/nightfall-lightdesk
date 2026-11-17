@@ -46,15 +46,19 @@ function AddChannelForm(props: { mode: number }) {
   const [attribute, setAttribute] = createSignal("");
   const [resolution, setResolution] = createSignal(1);
 
-  /** Adds the channel and clears the attribute for the next one. */
+  /**
+   * Adds the channel and clears the attribute for the next one, unless the user already typed
+   * the next one while the engine was answering.
+   */
   const add = async () => {
-    const name = attribute().trim();
+    const typed = attribute();
+    const name = typed.trim();
     if (!name) return;
     const added = await editing.edit({
       type: "AddChannel",
       data: { mode: props.mode, attribute: name, resolution: resolution() },
     });
-    if (added) setAttribute("");
+    if (added && attribute() === typed) setAttribute("");
   };
 
   return (

@@ -31,6 +31,11 @@ export interface MenuItemProps
    * arrow-out icon after its label and any shortcut.
    */
   external?: boolean;
+  /**
+   * Highlights the item as the keyboard's current choice while focus stays elsewhere, such as
+   * a suggestion list driven from its text field.
+   */
+  active?: boolean;
   /** Secondary line under the label that wraps instead of truncating. */
   description?: JSX.Element;
 }
@@ -47,12 +52,14 @@ export function MenuItem(props: MenuItemProps) {
     "shortcut",
     "trailing",
     "external",
+    "active",
     "description",
   ]);
   return (
     <button
       type={local.type ?? "button"}
       class={`nf-menu-item ${local.class ?? ""}`}
+      data-active={local.active || undefined}
       data-danger={local.danger || undefined}
       data-described={local.description ? "" : undefined}
       {...rest}

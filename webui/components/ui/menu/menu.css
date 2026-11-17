@@ -42,7 +42,7 @@
 .nf-menu-item:is([hidden], .hidden) {
   display: none;
 }
-.nf-menu-item:is(:hover, :focus-visible) {
+.nf-menu-item:is(:hover, :focus-visible, [data-active]) {
   background: var(--accent-soft);
   outline: none;
   box-shadow: inset 2px 0 var(--accent);
