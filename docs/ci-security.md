@@ -55,6 +55,11 @@ Publication (fresh runner; contents: write; no Apple credentials)
   snapshots rather than falling back to a token. These metadata jobs are the only
   additional read-permission exceptions; reusable-workflow caller permissions are
   ceilings, not permissions granted to the build/render jobs.
+- **Release notes editorial pass:** `release-notes-edit.yml` runs on release tags
+  after rendering, with `contents: read` and only the `CLAUDE_CODE_OAUTH_TOKEN`
+  secret. Claude reads a credential-free checkout and the rendered notes, may write
+  only the edited notes file, and has no shell. A failed or incomplete edit falls
+  back to the rendered notes. Publication downloads the result as data.
 - **Sign:** `release.yml` uses a new macOS runner and only a tar of the built app.
   It checks the tag event, app identifier, executable name, and version; rejects
   traversal, duplicate paths, symlinks, hardlinks, and special files; then copies

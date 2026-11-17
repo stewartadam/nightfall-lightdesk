@@ -32,7 +32,7 @@ This repository supplies the tagged GitHub Release assets. The `nightfall.live/d
    git push origin v0.1.0
    ```
 
-4. Inspect the desktop jobs in the CI run. Preparation collects PR release notes since the closest ancestral published release and saves a Markdown preview and JSON report. It collects four uniquely named installers and the macOS update archive, and writes `SHA256SUMS`. Uploads go to a draft release with those notes and installation information. The workflow never publishes it; the publish job's summary links to the draft.
+4. Inspect the desktop jobs in the CI run. Preparation collects PR release notes since the closest ancestral published release and saves a Markdown preview and JSON report. It collects four uniquely named installers and the macOS update archive, and writes `SHA256SUMS`. The release notes editorial pass then has Claude edit them into Highlights and feature-area sections (see [Editing a release](contributing/writing-release-notes.md#editing-a-release)). Uploads go to a draft release with those notes and installation information. The workflow never publishes it; the publish job's summary links to the draft.
 5. Review the draft under the repository's Releases. Edit its notes in the GitHub UI or with `gh release edit v0.1.0 --notes-file notes.md`, then publish it with **Publish release** or `gh release edit v0.1.0 --draft=false`. Publishing also offers the release to installed apps; see [Automatic updates](#automatic-updates).
 6. Bump the version listed on the nightfall.live Downloads page.
 

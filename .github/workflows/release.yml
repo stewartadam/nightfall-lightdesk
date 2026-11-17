@@ -209,6 +209,22 @@ jobs:
         with:
           name: release-notes-${{ github.sha }}
           path: release-notes
+      # The editorial pass is optional: without its result the draft uses the collected notes.
+      - uses: actions/download-artifact@v8.0.1
+        continue-on-error: true
+        with:
+          name: release-notes-edited-${{ github.sha }}
+          path: release-notes-edited
+      - name: Prefer the edited release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          edited=release-notes-edited/release-notes.md
+          if [[ -f "$edited" && -s "$edited" && ! -L "$edited" ]]; then
+            cp "$edited" release-notes/release-notes.md
+          else
+            echo "::warning::No edited release notes; the draft release uses the collected notes."
+          fi
       - name: Validate the release inventory
         shell: bash
         env:
