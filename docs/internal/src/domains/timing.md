@@ -19,7 +19,9 @@ Each delay and fade is a `TransitionMode`, which is either one duration or a fan
 
 A timing stores durations, but the sequence's `timebase` decides what unit they count. The web UI shows it as **Timing**, set to **Seconds** or **Beats**, and it applies to every cue trigger, delay, and fade in the sequence. A beat-timed sequence reads one stored second as one beat, so a 2-second fade-in becomes a 2-beat fade-in. The override chain and fans work the same in either unit.
 
-The unit changes how the playback's clock advances, not how the engine resolves timing. Each render pass, a seconds-timed playback's clock advances by the wall-clock time since the previous pass. A beat-timed playback's clock advances by the number of beats the show tempo moved in that time, so its fades follow tempo changes, taps, and nudges. When a timeline plays a beat-timed sequence, the sequence follows that timeline's BPM instead, and timeline lookahead, seeking, and Stop Clip convert between timeline seconds and sequence beats. In both units, the clip's speed and any speed masters that target it multiply the clock's advance.
+The unit changes how the playback's clock advances, not how the engine resolves timing. Each render pass, a seconds-timed playback's clock advances by the time since the previous pass. A beat-timed playback's clock advances by the number of beats the show tempo moved in that time, so its fades follow tempo changes, taps, and nudges. When a timeline plays a beat-timed sequence, the sequence follows that timeline's BPM instead, and timeline lookahead, seeking, and Stop Clip convert between timeline seconds and sequence beats. In both units, the clip's speed and any speed masters that target it multiply the clock's advance. The clip speed, the speed master scale, and their product each clamp to between 0 and `MAX_PLAYBACK_SPEED`, which is 1000, and a speed that isn't a finite number stops the clock. Clock positions scale with saturating helpers, so an extreme speed or tempo can't overflow a `Duration`.
+
+"The time since the previous pass" means the time between output ticks, not the moment a clock system happens to run. With a frame limiter, `RenderPass` records the DMX output tick each render is sent on, and the instance clocks and the show tempo advance to that instant, so consecutive renders sample playback exactly one output period apart. A step edge that lands on a tick then always falls on the same side of it. Hosts without a frame limiter, such as tests and the browser runtime, advance to the current time.
 
 Launch quantize can also delay when a cue starts. When the Tempo panel sets it to **Beat** or **Bar**, a live clip start, Go, or stop waits as an armed launch in the `clips` crate until the show tempo reaches the next beat or bar. Held Flash and Swop buttons, fader moves that start or stop a clip, timelines, flows, and the statements a macro runs never wait. The cue's own delays and fades start counting when the launch fires.
 
@@ -121,6 +123,8 @@ Red reaches 0% 3 seconds after Go. Blue starts moving half a second after Go and
 | `Timebase` and the sequence's `timebase` field | `crates/instances/src/lib.rs`, `crates/cues/src/cue.rs` |
 | Seconds-timed and beat-timed clock advance, with speed applied | `advance_realtime_instance_clocks` in `crates/clips/src/playback/clocks.rs` |
 | Speed masters | `apply_playback_speed_masters` in `crates/controls/src/masters.rs` |
+| Speed clamping and saturating clock scaling | `crates/common/src/playback_speed.rs`, `effective_speed` in `crates/instances/src/lib.rs` |
+| The output tick that clocks advance to | `RenderPass::output_at` in `crates/engine/src/render_pass.rs` |
 | Timeline seconds to sequence beats | `crates/timeline/src/systems/planned_cues.rs` |
 | Launch quantize and armed launches | `LaunchQuantize` in `crates/tempo/src/lib.rs`, `crates/clips/src/launch_quantize.rs` |
 

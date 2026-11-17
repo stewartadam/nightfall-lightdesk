@@ -54,7 +54,7 @@ Most layers come from clips, and a clip's priority is a setting on the clip. The
 
 When a layer has the same priority as the layer below it, Nightfall checks each attribute's merge rule before replacing the value:
 
-- **HTP**: the higher of the two values wins. When intensity is HTP, two clips that both raise it on the same fixture produce the brighter of the two, whichever started first.
+- **HTP**: the higher of the two values wins. When intensity is HTP, two clips that both raise it on the same fixture produce the brighter of the two, whichever started first. When the lower layer's value is at least as high, that layer keeps the attribute, and clients show it as the attribute's source.
 - **LTP**: the upper layer's value wins, which is the most recently activated layer.
 
 The fixture profile sets the rule for each attribute, and the importers decide it differently:
@@ -98,7 +98,7 @@ Two kinds of control scale intensity, at different points:
 
 ## Park overrides everything
 
-Park is not a layer and has no priority. A parked parameter outputs its parked value after the merge, masters, virtual dimmers and virtual relations, so nothing else can change it. A parked virtual intensity is written before virtual dimmers scale the color attributes, so the element still dims by the parked level. Park survives `clear` and is saved with the show.
+Park is not a layer and has no priority. A parameter parks at the value it outputs when parked, or at a value given with `park … @`. It then outputs its parked value after the merge, masters, virtual dimmers and virtual relations, so nothing else can change it. A parked virtual intensity is written before virtual dimmers scale the color attributes, so the element still dims by the parked level. Park survives `clear` and is saved with the show.
 
 ## Inspect the stack in the app
 

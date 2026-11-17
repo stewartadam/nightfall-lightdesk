@@ -17,7 +17,7 @@ A showfile stores what you programmed and how the desk is set up. Its JSON snaps
 |-------|----------|
 | Rig | Fixtures with their profiles embedded, DMX routes, scene objects, and color paths. |
 | Programming | Cues, sequences, groups, masters, blueprints, FX, flows, timecodes, timelines, and macros. |
-| Controls | Clips, faders, boards, MIDI and OSC mappings, and variables. |
+| Controls | Clips, faders, boards, MIDI and OSC mappings, variables, and parked parameters. |
 | Settings | Settings sections, each owned by one crate, such as IO, programming, audio, UI, and showfile backups. Also show tempo (BPM, beats per bar, and launch quantize mode) and version metadata. |
 
 The files beside the snapshot hold what doesn't fit in JSON. The manifest records file hashes and sizes so the show list loads without reading every snapshot. Timeline audio and 3D object bundles are copied into the folder, and a show can also package the fixture profiles and FX modules it uses. [The show folder on disk](#the-show-folder-on-disk) lists the exact paths.
@@ -46,8 +46,11 @@ Every show is a folder whose name ends in `.nightfall-show`. The show called `de
   drafts/<showfile-name>.nightfall-show/  working draft, same layout
   backups/<showfile-name>-<YYYYMMDD-HHMMSS>.nightfall-show/
   trash/<entry>/                          deleted shows, kept for 7 days
+  failover/                               a failover pair's show, with its own drafts and backups
   fixtures/  objects/  fx-modules/        installed libraries shared by all shows
 ```
+
+A computer that follows a primary as its failover backup stores the primary's show under `failover/`, in the same layout as the data directory, so it never adds to or overwrites its own showfiles. Its draft, autosaves, and saves stay there while it runs that show, including after a takeover. Saving under a new name makes it one of the computer's own showfiles again. The show list, trash, imports, and revisions always use the computer's own showfiles. [ADR 4](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/adr/0004-failover-primary-and-backup.md) records the failover design.
 
 The engine writes the snapshot gzip-compressed. It also reads a plain `showfile.json`, which is what a zip export contains, and prefers the compressed file when both exist. A snapshot can be at most 1 GiB uncompressed.
 
@@ -91,7 +94,7 @@ Each domain has a load contributor that applies its slice of the snapshot. The c
 ```mermaid
 flowchart TB
   accTitle: Load order between showfile domains
-  accDescr: Color paths load after fixtures and patch. Clips load after cue structure, FX, and flows. Timecodes and timelines load after scene objects, cue structure, FX, flows, and clips. Desk state, boards, and macros have no dependencies.
+  accDescr: Color paths load after fixtures and patch. Clips load after cue structure, FX, and flows. Timecodes and timelines load after scene objects, cue structure, FX, flows, and clips. Desk state, boards, macros, and park have no dependencies.
   fixtures[Fixtures and patch] --> colorpaths[Color paths]
   cues[Cue structure] --> clips[Clips]
   fx[FX] --> clips
@@ -103,7 +106,7 @@ flowchart TB
   flows --> timelines
 ```
 
-Desk state, boards, and macros have no dependencies. The crate sorts the domains with a depth-first walk of this graph and fails the load if the graph has a cycle.
+Desk state, boards, macros, and park have no dependencies. Park keys parked parameters by fixture UID, so it applies whatever loads first. The crate sorts the domains with a depth-first walk of this graph and fails the load if the graph has a cycle.
 
 Loading then runs in three phases, and each phase visits every domain in that order before the next phase starts:
 
@@ -111,13 +114,13 @@ Loading then runs in three phases, and each phase visits every domain in that or
 1. **Resolve links.** This phase is for work that needs another domain's definitions. No domain uses it today.
 1. **Materialize runtime.** Domains create the runtime objects that the frame needs, derived from the definitions: fixture parameters, step FX, clip instances such as `First playback`, timecode generators, and timelines.
 
-Keeping object creation in the last phase means every definition is in place before anything starts running against it. Before the phases run, the load also rejects a showfile that holds two different library versions of the same fixture or 3D object, and it rewrites group references in selections so they point at groups by a stable identity.
+Keeping object creation in the last phase means every definition is in place before anything starts running against it. Before the phases run, the load also rejects a showfile that holds two different library versions of the same 3D object, and it rewrites group references in selections so they point at groups by a stable identity.
 
 ## Snapshots: from world to showfile
 
 Saving runs the same domains in the other direction. Each domain has a save contributor that reads the world and returns its slice, and the crate merges the slices into the flat snapshot. Contributors sort objects by ID, so the same show always serializes to the same JSON. That stability matters, because the engine detects unsaved changes by comparing hashes.
 
-The engine keeps a hash of the clean show: the snapshot as it was last loaded or saved. To check whether the show has changed, it takes a new snapshot, serializes it with the clean snapshot's metadata in place of its own, and compares the hashes. Copying the metadata first keeps the save time and app version from counting as a change.
+The engine keeps a hash of the clean show: the snapshot as it was last loaded or saved. To check whether the show has changed, it takes a new snapshot, serializes it with the clean snapshot's metadata in place of its own, and compares the hashes. Copying the metadata first keeps the save time and app version from counting as a change. The hash covers a canonical form of the JSON with every object's keys sorted, so a persisted map that iterates in a different order doesn't count as a change either.
 
 ## Drafts: the working copy
 
@@ -129,6 +132,9 @@ The engine saves the draft when the show has changed since the last load or save
 - When the last client disconnects. Closing one browser tab while another stays open saves nothing.
 - When the engine quits through the quit command, a termination signal, or the desktop app closing.
 - When a client sends the command to save the draft.
+- Before a world swap replaces the show, such as when you open, recover, or create another show.
+
+The engine keeps the result of the latest draft save in `DraftSaveStatus` and publishes it to every client, including clients that connect later. While draft saves fail, the web UI keeps an error toast up and asks for confirmation before the page closes, and the desktop app asks before it quits.
 
 The draft's manifest records the hash of the saved show the draft started from. When you open the list of shows, a draft counts as recoverable unless both its own hash and that base hash match the saved show. The native backend doesn't open a show by itself at startup. Unless `NIGHTFALL_SAMPLE_DATA` asks for the sample show, it starts with an empty world, and the web UI offers to recover the last show's draft or to open a show. Both choices load the show through a world swap.
 
@@ -175,13 +181,14 @@ The following diagram shows a load of a named show from one client:
 ```mermaid
 sequenceDiagram
   accTitle: Loading a show through a world swap
-  accDescr: The web UI sends a load command. The outgoing world queues a swap request. After the frame, the session loop pauses the outgoing world and stages a new world from the showfile. If staging succeeds, the loop completes the command, swaps the worlds, and the new world sends WorldReplaced. The UI then resyncs. If staging fails, the loop resumes the outgoing world and fails the command.
+  accDescr: The web UI sends a load command. The outgoing world queues a swap request. After the frame, the session loop saves the outgoing world's draft, pauses the outgoing world, and stages a new world from the showfile. If staging succeeds, the loop completes the command, swaps the worlds, and the new world sends WorldReplaced. The UI then resyncs. If staging fails, the loop resumes the outgoing world and fails the command.
   participant UI as Web UI
   participant Old as Outgoing world
   participant Session as Session loop
   participant New as Staged world
   UI->>Old: LoadNamedShowfile
   Old->>Session: Queue a swap request
+  Session->>Old: Save the draft if the show changed
   Session->>Old: Pause commands and output
   Session->>New: Build world and apply the showfile
   alt Staging succeeds
@@ -200,7 +207,8 @@ sequenceDiagram
 The swap runs in these steps:
 
 1. The showfile command handler doesn't load anything itself. It queues a swap request with the command's ID, the show name, and the folder to read, and the frame finishes normally.
-1. After the frame, the session loop takes the queued requests and handles them one at a time, in the order they arrived.
+1. After the frame, the session loop takes the queued requests. Before it handles any of them, it saves the outgoing show's draft once if the show has changed. A failed save doesn't stop the switch, so a broken drafts folder never traps the operator in the current show.
+1. The session loop handles the requests one at a time, in the order they arrived.
 1. The orchestrator sets the outgoing world's app state to show loading and pauses its command processing and output. For the system sets this affects, see [the frame loop](../engine/frame-loop.md).
 1. The world factory builds the new world. For a showfile, it parses and migrates the snapshot, prepares the show's draft folder, points the fixture library at the show folder's packaged profiles, applies the snapshot, and records the clean hash. The new world stays paused.
 1. If staging succeeded, the loop completes the load command in the outgoing world and sends its result to clients straight away, because the outgoing world won't run another frame to send it.
@@ -209,7 +217,7 @@ The swap runs in these steps:
 
 Staging runs on the engine thread between two frames, so the outgoing world runs no frames while the new world builds. The DMX output workers run on their own threads. The Art-Net and sACN workers keep resending the last frames they received, so the lights hold their look until the new world renders.
 
-The outgoing world isn't saved before the swap drops it. Changes made since its last draft save, at most 60 seconds earlier, are lost when you load another show without saving first.
+Because the session loop saves the outgoing draft before the swap, edits made since the last periodic autosave survive a switch to another show. If that save fails, the session loop sends every client a sticky error toast once the swap succeeds, because the outgoing world and its draft save status are gone by then.
 
 ### What survives a swap
 
@@ -277,10 +285,12 @@ When a change renames, removes, or restructures existing JSON, also add a migrat
 | Reading and writing snapshots and manifests | `crates/app-runtime/src/systems/showfile_events/storage.rs`, `crates/app-runtime/src/systems/showfile_events/manifest.rs` |
 | Saving, drafts, backups, and trash | `crates/app-runtime/src/systems/showfile_events/save.rs`, `draft.rs`, `backup.rs`, `trash.rs` in the same folder |
 | Periodic and last-client draft saves | `crates/app-runtime/src/composition.rs` |
-| Data directory and active show folder | `crates/common/src/lib.rs` |
+| Draft save status sent to clients | `crates/app-runtime/src/systems/showfile_events/draft_status.rs` |
+| Snapshot hashing for unsaved-change checks | `crates/app-runtime/src/systems/showfile_events/storage.rs` |
+| Data directory, failover folder, and active show folder | `crates/common/src/lib.rs` |
 | World factory and bootstrap sources | `crates/app-runtime/src/world_factory.rs` |
 | Staging, pausing, and swapping worlds | `crates/app-runtime/src/swap_orchestrator.rs` |
-| Session loop and `WorldReplaced` | `crates/app-runtime/src/session.rs` |
+| Session loop, the outgoing draft save, and `WorldReplaced` | `crates/app-runtime/src/session.rs` |
 | Attaching a new world to the running server | `crates/websocket/src/lib.rs` |
 | Web UI veil during a show load | `webui/state/showfile-transition.ts`, `webui/components/shell/docking/showfile-transition-veil.tsx` |
 

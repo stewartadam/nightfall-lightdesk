@@ -4,7 +4,7 @@
 
 Nightfall is one engine that several programs can run. The engine is a Rust program that holds the show and calculates every frame. The web UI is a SolidJS app that shows the engine's state and sends it your changes. A host is the program that runs the engine and connects the UI to it. Nightfall has three hosts: a headless server, a desktop app, and a browser demo that runs the engine as WebAssembly (WASM). Knowing how these parts connect tells you where a change belongs, which builds it reaches, and why the UI never calculates the show itself.
 
-This page builds the picture in layers: the engine and the UI, then the hosts, then the inputs and outputs, and finally the showfile. The [crate map](crate-map.md) lists the Rust crates that implement each part.
+This page builds the picture in layers: the engine and the UI, then the hosts, then the inputs and outputs, then the showfile, and finally a primary and backup pair. The [crate map](crate-map.md) lists the Rust crates that implement each part.
 
 ## The engine, the web UI, and the lights
 
@@ -154,23 +154,25 @@ The following table compares the hosts. "Yes" for a native host means the defaul
 | FX modules | Yes | Yes | No |
 | Fixture library | GDTF and OFL files in the data directory | GDTF and OFL files in the data directory | Built-in profiles only |
 | Object library | Yes | Yes | No |
+| MVR rig import | Yes | Yes | No |
 | Art-Net, sACN, and USB output | Yes | Yes | No |
 | Art-Net and sACN input, MIDI, OSC | Yes | Yes | No |
 | Timeline audio | Played by the engine | Played by the engine | Played by the browser from bundled files |
 | Beat detection | Yes | Yes | No |
 | Saving showfiles and drafts | Yes | Yes | No |
 | Loading another showfile | Yes | Yes | No |
+| Primary and backup failover | Yes | Yes | No |
 | Menus, updater, and exports | No | Yes | No |
 
 The engine reports what it supports to the UI as runtime capabilities, so the UI can hide features the current host lacks. For example, the demo reports that it has no persistence, no FX modules, and only built-in fixture profiles.
 
 ### Both hosts share one show plugin list
 
-A Bevy app is assembled from plugins, and each Nightfall domain, such as cues or fixtures, adds itself to the engine as one or more plugins. The `nightfall-composition` crate groups the shared plugins by domain: `CorePlugins` (engine, logging, undo, client bridge, IO, actions, fixtures, scene objects, the fixture compositor, and clips), `DeskPlugins` (controls for masters and faders, programming, cues, showfile, boards, and macros), `FxPlugins` (tempo, FX, flow, and references), and `TimecodePlugins` (timecode and timeline). `ShowPlugins` nests the four groups in build order, and every host builds it.
+A Bevy app is assembled from plugins, and each Nightfall domain, such as cues or fixtures, adds itself to the engine as one or more plugins. The `nightfall-composition` crate groups the shared plugins by domain: `CorePlugins` (engine, logging, undo, client bridge, IO, actions, fixtures, scene objects, the fixture compositor, and clips), `DeskPlugins` (controls for masters and faders, programming, park, cues, showfile, boards, and macros), `FxPlugins` (tempo, FX, flow, and references), and `TimecodePlugins` (timecode and timeline). `ShowPlugins` nests the four groups in build order, and every host builds it.
 
 Nesting a group flattens its plugins into the parent's list, so a host can insert its own plugins next to any shared plugin they depend on, or disable one, wherever that plugin's group sits.
 
-- The native hosts build `NativePlugins`. It adds audio after the engine, the websocket server after the fixture compositor, telemetry commands after the websocket server, the fixture and object libraries after macros, and FX modules after FX, then appends the output and input groups. The systems that load, save, and swap showfiles are added separately.
+- The native hosts build `NativePlugins`. It adds audio after the engine, the websocket server after the fixture compositor, telemetry commands after the websocket server, the backup role after telemetry commands, the fixture library, MVR rig import, and the object library after macros, and FX modules after FX, then appends the output and input groups. The systems that load, save, and swap showfiles are added separately.
 - The browser demo builds `ShowPlugins` with a timeline plugin variant that asks the browser to play bundled audio, and adds a built-in fixture library after the fixture plugin. It has no sockets, threads, file system, or WASM runtime of its own, so it leaves out the native plugins above and the showfile handling systems, such as draft autosave and showfile loading.
 
 When you add a show domain plugin, add it to its domain group and both hosts pick it up. A plugin that needs a native-only service belongs in `NativePlugins`, inserted after the plugin it depends on. Report the missing feature through the runtime capabilities so the demo UI can hide it. The `check:browser-demo-dependencies` script confirms that the browser build pulls in no native-only packages, such as Tokio or Wasmtime.
@@ -204,7 +206,7 @@ The IO services live as long as the process. They start once and keep running wh
 
 ### DMX output
 
-In every frame, the engine composes one DMX frame for each output universe. DMX routes decide what goes into it: console universes routed to that output, fixtures patched straight to it, and DMX input passed through. Output workers for Art-Net and sACN each run on their own thread and transmit on a fixed schedule. These workers and the engine's frame limiter share one schedule of send times, a fixed interval apart. The engine starts each frame shortly before a send time, so each transmission carries the most recently finished frame. USB DMX output doesn't follow this schedule. It writes each frame to the interface as soon as the engine finishes it. The default DMX output rate is 44 frames a second.
+In every frame, the engine composes one DMX frame for each output universe. DMX routes decide what goes into it: console universes routed to that output, fixtures patched straight to it, and DMX input passed through. Output workers for Art-Net, sACN, and USB DMX each run on their own thread and transmit on a fixed schedule. Each worker asks the operating system for real-time priority where the platform supports it, so its sends stay on time while the engine keeps every core busy. These workers and the engine's frame limiter share one schedule of send times, a fixed interval apart. The engine starts each frame shortly before a send time, so each transmission carries the most recently finished frame. The default DMX output rate is 44 frames a second. Art-Net and sACN can also send a sync packet after each transmission, so nodes that support it apply every universe at once. The [frame loop](../engine/frame-loop.md#dmx-output-runs-on-its-own-threads) describes the workers in detail.
 
 Output transports are off until something routes to them. A console universe reaches the wire only when a DMX route sends it to a transport, as [how a show becomes light](../concepts/show-to-light.md) describes.
 
@@ -230,6 +232,18 @@ The engine also keeps a draft of unsaved work. It saves a changed draft every 60
 
 The browser demo reads its packaged demo showfile, in the same format, when it starts, but it has no storage, so it can't save or load another show.
 
+## A primary and a backup
+
+Two native hosts can run as a failover pair. The primary runs the show and sends output, and the backup follows it so it can take over. The backup stays in step in three ways:
+
+- It downloads a copy of the primary's show whenever the show changes, and loads it with a world swap.
+- It replays each command the primary accepts, as it happens, so fades and cues run on both computers at once.
+- About twice a second, it applies a checkpoint of the primary's live state, such as what plays, fader levels, tempo, and the programmer.
+
+The two hosts talk over the same HTTP server that clients use. While it follows, the backup sends sACN one priority step below the primary, mutes Art-Net and USB DMX, and refuses changes from its own clients. By default, when the primary stops answering for 3 seconds, the backup takes over and outputs the show as a normal host. [ADR 4](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/adr/0004-failover-primary-and-backup.md) records the design and its known limits.
+
+Live state isn't part of the showfile, so each domain that holds it registers how to capture and restore it with `register_live_state`. A domain that doesn't register loses its live state when the backup takes over.
+
 ## In the code
 
 | Concept | Where to look |
@@ -253,6 +267,8 @@ The browser demo reads its packaged demo showfile, in the same format, when it s
 | Browser demo dependency check | `scripts/check-browser-demo-dependencies.mjs` |
 | DMX output frames | `crates/fixtures/src/output_frames.rs` |
 | Shared send schedule (tick grid) and output workers | `crates/service_host/src/tick_grid.rs`, `crates/service_host/src/fixed_rate.rs` |
+| Primary and backup failover | `crates/backup/src/lib.rs`, `crates/backup/src/failover.rs` |
+| Live state capture and restore | `crates/engine/src/live_state.rs` |
 | Startup settings | `crates/config/src/lib.rs` |
 | Timecode clock | `crates/timecode/src/systems.rs` |
 

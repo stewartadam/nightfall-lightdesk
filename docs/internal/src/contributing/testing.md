@@ -37,10 +37,10 @@ Most engine and domain tests don't start the full engine. They build a bare Bevy
 
 Tests that only need to call one system against a prepared world skip the `App` and use a bare `World` with `run_system_once`. The showfile tests do this: a `setup_world` helper inserts every data provider and resource the save and load systems read.
 
-A bare app has the `Update` schedule but not the engine's `Render` schedule. `EnginePlugin` adds `Render` to the main schedule order, so a test without `EnginePlugin` must call `add_render_schedule` before adding systems to `Render`. The [frame loop](../engine/frame-loop.md#register-the-render-schedule-in-plugin-tests) page explains why. The `RenderPass` resource defaults to rendering, so in a test every `app.update()` runs a render pass. Some compositor tests instead add the compositor system to `Update` directly, which is fine when the test doesn't depend on the order of the render sets.
+A bare app has the `Update` schedule but not the engine's `Render` and `ApplyCommands` schedules. `EnginePlugin` adds both, so a test without `EnginePlugin` must call `add_render_schedule` before adding systems to `Render`, and `add_apply_commands` before relying on command handlers that a plugin registers in `ApplyCommands`. The [frame loop](../engine/frame-loop.md#register-the-engines-schedules-in-plugin-tests) page explains why. Many handler tests skip this by adding the handler under test to `Update` directly. The `RenderPass` resource defaults to rendering, so in a test every `app.update()` runs a render pass. Some compositor tests instead add the compositor system to `Update` directly, which is fine when the test doesn't depend on the order of the render sets.
 
 > [!WARNING]
-> A system added to `Render` in an app that never called `add_render_schedule` doesn't run, and Bevy reports no error. A test that asserts on render output then fails for a confusing reason, or passes because it only checks defaults.
+> A system added to `Render` in an app that never called `add_render_schedule`, or to `ApplyCommands` in an app that never called `add_apply_commands`, doesn't run, and Bevy reports no error. A test that asserts on render output then fails for a confusing reason, or passes because it only checks defaults.
 
 Because every `app.update()` in a test renders, tests don't exercise input-only frames. A render system that reads messages can pass its tests and still miss input in the running engine. Follow the frame loop's rules for render systems rather than relying on a test to catch this.
 
@@ -72,6 +72,14 @@ Saving and loading a show must not change it. The showfile event tests in `app-r
 When you add a persisted domain or field, seed it in the test world and add a round-trip test for it. If the save or load system reads a new resource, add it to `setup_world` too.
 
 A second test parses `crates/app-runtime/tests/data/procedural-showfile-parse-data.json`, once as written and once with native parameter units removed to imitate older showfiles. CI's Chromium product flows also seed their `default` and `sample` shows from this file, so a schema change that breaks it fails both. For a manual end-to-end check through a real data directory, follow [validating showfile restore idempotency](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/CONTRIBUTING.md#validating-showfile-restore-idempotency), which ends with `scripts/verify_showfile_roundtrip.sh`.
+
+### Schedule and output timing tests
+
+A few tests in `app-runtime` build the full set of show plugins and check rules that no single plugin test can see:
+
+- `no_ordering_crosses_the_command_schedule` fails when an `Update` system orders itself against a set whose systems run in `ApplyCommands`, or the other way round. Such an ordering silently does nothing.
+- `extra_command_runs_change_nothing_observable`, the `rerun_safety` test, runs a script of commands on the sample show twice, once with an extra run of `ApplyCommands` in every update. It fails when command results, client messages, or DMX output differ, which means a system in `ApplyCommands` isn't safe to rerun. The [frame loop](../engine/frame-loop.md#dont-assume-every-frame-renders) explains the rule.
+- `output_stays_on_grid_while_a_timeline_plays` plays a timeline on the sample show with Art-Net and sACN routed for ten seconds, and checks that each protocol's packets arrive once per output tick and within a few milliseconds of it. Load on the machine makes it fail, so nextest, the push hook, and CI skip it. Run it alone with `pnpm run test:packet-timing` on an otherwise idle machine after you change output scheduling or the frame loop.
 
 ### The GDTF regression bench
 
@@ -126,13 +134,19 @@ The wrapper's `--target` option chooses which engine the page talks to. The two 
 
 An embedded-demo run skips the Rust build, so it starts faster. A spec opts into the embedded engine by loading the page with `?engine=embedded-demo`. Native runs serve a production `e2e` build by default, and embedded-demo runs serve the Vite dev server.
 
+### Specs that need a GPU
+
+Specs that read back pixels the 3D visualizer drew carry the `@gpu` tag, `GPU_TAG` from `webui/e2e/gpu-gate.ts`. They run on a real GPU or on Mesa's llvmpipe. A shared fixture probes the browser once per worker, and skips them, with the renderer it found in the report, when the visualizer would render through a software fallback such as SwiftShader, which is what Chromium uses on a stock Ubuntu CI runner. Tag a new spec the same way when it asserts on rendered pixels, and leave specs that only inspect scene state untagged. Set `NIGHTFALL_PLAYWRIGHT_RUN_GPU_SPECS=1` to run tagged specs anyway.
+
+On a machine without a GPU, `NIGHTFALL_PLAYWRIGHT_CHROMIUM_ARGS` passes extra switches to every Chromium launch. Setting it to `--use-angle=gl-egl --ignore-gpu-blocklist`, with Mesa's EGL and GLES libraries installed, renders WebGL with llvmpipe, about ten times faster than SwiftShader, so `@gpu` specs run. Cloud agent sessions set this up in `.claude/hooks/cloud-session-start.sh`. [Running Nightfall](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/CONTRIBUTING.md#running-nightfall) in CONTRIBUTING.md has the details.
+
 ### What CI runs
 
 CI doesn't run every spec. It runs three sets:
 
 - The **Chromium product flows** job runs the five smoke specs in `pnpm run test:webui-smoke` against the backend the native job just built.
 - The **Browser demo** job, when a PR selects the browser distribution, runs `pnpm run demo:test` against the packaged demo in Chromium and Firefox.
-- The **Full Playwright suite** workflow runs every spec in six shards, but only when you start it by hand.
+- The **Full Playwright suite** workflow runs every spec in six shards, but only when you start it by hand. Its default `ubuntu-latest` runners have no GPU, so the `@gpu` specs skip there.
 
 For a change with visible UI, run the specs for that area locally, and start the full suite for broad changes.
 
@@ -146,7 +160,7 @@ Nightfall uses prek to run checks from Git hooks. Install the hooks once as desc
 
 | Stage | Checks | Triggered by |
 | --- | --- | --- |
-| Pre-commit | License headers, `actionlint`, Biome, TypeScript typecheck | Source files, workflows, and TypeScript or JavaScript files |
+| Pre-commit | License headers, `actionlint`, `zizmor`, Biome, TypeScript typecheck | Source files, workflows and composite actions, and TypeScript or JavaScript files |
 | Pre-commit | `rustfmt`, Clippy with `--all-targets`, typeshare generation | Rust files, and Cargo manifests for Clippy |
 | Pre-commit | Workspace-hack check with `cargo hakari` | Cargo manifests, `Cargo.lock`, and the hakari configuration |
 | Pre-commit | `check:command-architecture`, `check:crate-boundaries` | Rust and TypeScript sources, Cargo manifests, and the architecture configuration |
@@ -165,10 +179,10 @@ CI doesn't run everything for every pull request. `scripts/ci-scope.mjs` reads t
 ```mermaid
 flowchart TB
   accTitle: How a pull request's changes select CI jobs
-  accDescr: A draft pull request builds only its browser preview, and only when it opens. A pull request that is ready for review always runs the hook and script tests. App inputs add the WASM builds and the web UI node tests. App inputs outside the worktree dashboard add the native backend build and the Chromium product flows. Rust inputs add Rust tests, doctests, desktop shell tests, and Clippy. Documentation inputs add the book build.
+  accDescr: A draft pull request builds only its browser preview, and only when it opens. A pull request that is ready for review always runs the hook and script tests and the workflow lockfile check. App inputs add the WASM builds and the web UI node tests. App inputs outside the worktree dashboard add the native backend build and the Chromium product flows. Rust inputs add Rust tests, doctests, desktop shell tests, and Clippy. Documentation inputs add the book build.
   pr([Pull request changes]) --> draft{Draft?}
   draft -- yes --> preview[Browser preview only,<br/>built when the draft opens]
-  draft -- no --> always[Prek hooks and script tests]
+  draft -- no --> always[Prek hooks and script tests<br/>Workflow lockfile]
   draft -- no --> app{Touches app inputs?}
   draft -- no --> docs{Touches documentation inputs?}
   app -- yes --> appjobs[WASM builds<br/>TypeScript and web UI node tests]
@@ -183,7 +197,7 @@ Pushes to `main` and `develop`, and manual runs without a preview pull request n
 
 ### The job every pull request runs
 
-The **Prek hooks and script tests** job runs every pre-commit hook against all files, except Clippy and the typecheck, which have their own jobs. It also runs the script tests. It's the only validation job that runs for every pull request that's ready for review.
+The **Prek hooks and script tests** job runs every pre-commit hook against all files, except Clippy and the typecheck, which have their own jobs. It also runs the script tests. The **Workflow lockfile** job runs `gh actions-lock --verify`, which fails when `.github/workflows/actions.lock` no longer matches the actions the workflows use. These two are the only validation jobs that run for every pull request that's ready for review.
 
 ### App, native, and Rust selections
 
@@ -204,7 +218,7 @@ The scope script also decides the following:
 
 - The **Documentation** job runs for pull requests that touch `docs/`, the scope script, `ci.yml`, the Cargo tools action, or the mdBook pin. Branch pushes don't build the books. A manual preview run builds them only when the previewed pull request changes them.
 - The **Desktop check** job runs the desktop shell tests on macOS and Windows when a change touches the desktop shell or the startup, shutdown, diagnostics, and configuration code it shares with the runtime.
-- Desktop installers and the browser demo build when a change touches their packaging inputs. The [workflow README](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/.github/workflows/README.md#distribution-selection) has the full table.
+- Pull requests never build desktop installers, because they take a long time on every platform. Pushes to `develop` and version tags build them, and a manual run can package any branch. A pull request builds the browser demo when it touches the demo's packaging inputs or an input every distribution shares, such as `Cargo.lock`. The [workflow README](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/.github/workflows/README.md#distribution-selection) has the full table.
 
 ### Draft pull requests
 
@@ -212,7 +226,7 @@ A draft pull request validates nothing. When a draft from a branch in the same r
 
 ### The CI gate
 
-The **CI gate** job is the single required check. For a pull request that's ready for review, it fails if any selected hook, documentation, native, WASM, web UI, or Chromium product flow job fails. Jobs that the scope didn't select don't count. The desktop check, the desktop installers, and the browser demo job aren't part of the gate. They report as separate checks, so read their results yourself when your change selects them. On a draft's preview run, the gate passes only while the pull request is still a draft. Version tag pushes skip the validation jobs and the gate entirely.
+The **CI gate** job is the single required check. For a pull request that's ready for review, it fails if the workflow lockfile check or any selected hook, documentation, native, WASM, web UI, or Chromium product flow job fails. Jobs that the scope didn't select don't count. The desktop check, the desktop installers, and the browser demo job aren't part of the gate. They report as separate checks, so read their results yourself when your change selects them. On a draft's preview run, the gate passes only while the pull request is still a draft. Version tag pushes skip the validation jobs and the gate entirely.
 
 ## If you change X, run Y
 
@@ -232,8 +246,9 @@ The following table lists common changes and the checks to run locally before yo
 | The browser demo | `pnpm run demo:build`, then `pnpm run demo:test` | Demo product flows in Chromium and Firefox |
 | The desktop shell | `cargo test -p app-tauri --all-targets` | Desktop check on macOS and Windows |
 | A file that Rust embeds from outside `crates/` | Add it to `rustTests`, then `pnpm run test:scripts` | All Rust tests |
-| A workflow or a script in `scripts/` | `pnpm run test:scripts` | Hooks, including `actionlint` |
+| A workflow or a script in `scripts/` | `pnpm run test:scripts`, and `gh actions-lock` after changing which actions a workflow uses | Hooks, including `actionlint` and `zizmor`, and the workflow lockfile check |
 | A code example in a Rust doc comment | `pnpm exec prek run cargo-doctest --stage manual` | Doctests |
+| DMX output scheduling or the frame loop | `pnpm run test:packet-timing` on an idle machine | Not run in CI |
 | A hot path such as the compositor | The Criterion suite for it, as listed in [microbenchmarks](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/CONTRIBUTING.md#microbenchmarks) | Clippy type-checks benchmarks but does not run them |
 | Pages in either mdBook | `mdbook build`, then the documentation specs | Documentation build |
 
@@ -247,11 +262,13 @@ The following table lists common changes and the checks to run locally before yo
 | GDTF builder, invariants, and reference decoder | `crates/fixture-library/src/testing.rs` |
 | Showfile round-trip tests | `crates/app-runtime/src/systems/showfile_events/tests.rs` |
 | Showfile parse test and fixture | `crates/app-runtime/tests/showfile_data_parse.rs`, `crates/app-runtime/tests/data/` |
+| Schedule split, rerun safety, and packet timing tests | `crates/app-runtime/src/tests/schedule_split.rs`, `crates/app-runtime/src/tests/rerun_safety.rs`, `crates/app-runtime/src/tests/packet_timing.rs` |
 | Web UI node test runner | `scripts/run-webui-node-tests.mjs`, `tsconfig.node-tests.json` |
 | Web UI boundary rules | `webui/architecture-boundaries.node.test.ts`, `config/architecture/webui-boundary-exceptions.json` |
 | Rust architecture checks | `scripts/check-crate-boundaries.mjs`, `config/architecture/crate-layers.json`, `scripts/check-command-architecture.mjs` |
 | Playwright wrapper and target selection | `scripts/run-playwright.mjs`, `scripts/playwright-run-mode.mjs` |
 | Playwright configuration | `playwright.config.ts`, `playwright/docs.config.ts` |
+| `@gpu` tag and the renderer probe | `webui/e2e/gpu-gate.ts` |
 | CI smoke specs | `test:webui-smoke` in `package.json`, `.github/actions/playwright-smoke/action.yml` |
 | Git hooks | `.pre-commit-config.yaml` |
 | CI scoping policy and its tests | `scripts/ci-scope.mjs`, `scripts/ci-scope.node.test.mjs` |

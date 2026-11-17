@@ -26,8 +26,8 @@ flowchart TB
 
 A `Sequence` carries the following fields:
 
-- `steps`, the cue UIDs in playback order. Cue IDs are scoped to their sequence, so two sequences can each have a cue 1. When the engine materializes a sequence, it skips a step whose cue is missing and logs a warning.
-- `setup_cue` and `release_cue`, two embedded `Cue` values that are not part of `steps`. The setup cue's values sit underneath every step. The release cue only supplies timing when the sequence stops. After cue and sequence edits and show loads, `sync_release_cue_rows` gives the release cue one row per value-bearing step instruction, with the step's selection and values but none of its timing, so you can set release timing per fixture attribute.
+- `steps`, the cue UIDs in playback order. Cue IDs are scoped to their sequence, so two sequences can each have a cue 1. When the engine materializes a sequence, a step whose cue is missing becomes an empty placeholder cue with a `FollowPrevious` trigger, and the engine logs a warning. The placeholder keeps cue positions aligned with the authored steps, so `goto 3` still lands on the third step and a running chase flows through the gap.
+- `setup_cue` and `release_cue`, two embedded `Cue` values that are not part of `steps`. The setup cue's values sit underneath every step. The release cue only supplies timing when the sequence stops. After cue and sequence edits, programmer stores, and show loads, `sync_release_cue_rows` gives the release cue one row per value-bearing step instruction, with the step's selection and values but none of its timing, so you can set release timing per fixture attribute.
 - `default_timing`, a complete `Transition` that fills any timing a step cue leaves unset. [Timing and the override chain](timing.md) explains how timing resolves.
 - `tracking_mode`, the tracking behavior that cues inherit.
 - `wrap`, which makes Go on the last cue return to the first.
@@ -120,7 +120,7 @@ A beat-timed sequence's positions count beats instead of seconds. `sync_sequence
 > [!NOTE]
 > The **Cue Editor** shows a cue's own times in seconds even when the cue belongs to a beat-timed sequence, where playback reads them as beats.
 
-When a stored cue, sequence, or blueprint changes while a sequence runs, the engine rematerializes the affected cues in place and keeps their activation and release positions, so a running fade continues with the new values.
+When a stored cue, sequence, or blueprint changes while a sequence runs, the engine rematerializes the affected cues in place and keeps their activation and release positions, so a running fade continues with the new values. A sequence edit only reconciles playbacks of that sequence, and skips playbacks that are releasing, because their release fade runs from a frozen snapshot that rebuilding would discard. Programmer stores, cue edits, release cue row sync, and the rematerialization that follows cue and sequence edits all run in order in the same pass of the `ApplyCommands` schedule, so a stored cue reaches a running playback in the same update.
 
 Cue preview in the **Sequence Editor** uses the same types at priority 126. It spawns a standalone `MaterializedCue` or a `MaterializedSequence`.
 
@@ -143,11 +143,11 @@ stateDiagram-v2
 
 Three things move a sequence between cues:
 
-- **Go and Back.** A clip command such as `clip 1 go` reaches the clip handlers, which pass a `SequencePlaybackOperation::Go` or `Back` to the running playback. The handler runs in `EventHandling`, extends the materialized prefix, and moves the position, anchoring the new cue at the clock's current position. Go on the last cue does nothing unless `wrap` is on, and Back on the first cue does the same. [From command to state change](../engine/command-path.md) follows a command along this path.
+- **Go and Back.** A clip command such as `clip 1 go` reaches the clip handlers, which pass a `SequencePlaybackOperation::Go` or `Back` to the running playback. The handler runs in the `EventHandling` set of the `ApplyCommands` schedule, extends the materialized prefix, and moves the position, anchoring the new cue at the clock's current position. Go on the last cue does nothing unless `wrap` is on, and Back on the first cue does the same. [From command to state change](../engine/command-path.md) follows a command along this path.
 
   While the show's launch quantize mode is on, a live Go, start, or stop doesn't reach the playback at once. `forward_clip_ingress_actions` in the `clips` crate holds it in `ArmedLaunches` and releases it once the show tempo reaches the next beat or bar, or when a **Launch armed clips now** action fires everything waiting. Clip commands from the web UI, fader buttons, boards, MIDI, OSC, and the command line wait this way. A press that lands within 0.05 beat after a beat or bar fires at once. Timelines, flows, macros, held Flash and Swop buttons, and fader moves that start or stop a clip never wait. Command actions a timeline runs carry the `InternalDeskAction` origin, and the command tracker marks each statement a macro runs, so both skip quantize. Loading a show drops every armed launch and reports each one as failed with `clip.launch_dropped`.
 - **Goto.** `SequencePlaybackOperation::Goto` jumps to a position. It can carry a `PlaybackReconstructionTiming`, which also resets the playback clock. A timeline uses this to place a cue at an exact point in its own time.
-- **Automatic triggers.** In each render pass, `advance_sequences` checks whether the next cue's trigger is due. It advances as many cues as are due, up to 10,000 in one tick, and anchors each cue at the exact position where it became due rather than at the frame's time. Follow chains therefore keep exact timing at any frame rate.
+- **Automatic triggers.** In each render pass, `advance_sequences` checks whether the next cue's trigger is due. It advances as many cues as are due, up to 10,000 in one tick, and anchors each cue at the exact position where it became due rather than at the frame's time. Follow chains therefore keep exact timing at any frame rate. A wrapping sequence whose cues all take zero time would come due again at the same position forever, so when a wrap back to cue 1 would complete a cycle that took no time, the sequence holds on its last cue instead. Seek replay for timelines uses the same check, `sequence_wraparound_is_zero_length`.
 
 A cue's duration for these triggers is the longer of its materialized delay plus fade and its authored timing, so an empty cue with a 2-second fade still waits 2 seconds.
 

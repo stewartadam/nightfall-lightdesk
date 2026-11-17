@@ -31,7 +31,7 @@ The profile is static data that the patched fixture copies. The parameter entiti
 
 ## The profile model
 
-Nightfall has no single "profile" type at runtime. The fixture library keeps one entry per definition file, and a definition can have several DMX modes. When you patch a fixture, the importer converts one mode into a `Fixture`, and the show stores that converted copy. The fixture remembers its mode name and a fingerprint of the library file it came from, so it keeps working even if the library file changes or disappears.
+Nightfall has no single "profile" type at runtime. The fixture library keeps one entry per definition file, and a definition can have several DMX modes. When you patch a fixture, the importer converts one mode into a `Fixture`, and the show stores that converted copy. The fixture remembers its mode name and a fingerprint of the library file it came from, so it keeps working even if the library file changes or disappears. Because each fixture carries its own copy, one show can hold fixtures of the same make, model, and mode from different library revisions. The library command `UpdateFixturesToRevision` rebuilds selected fixtures from another revision as one undo step, and they keep their ID, UID, label, placement, and DMX patch.
 
 The following diagram shows the parts of a converted fixture:
 
@@ -61,7 +61,7 @@ Each parameter controls one attribute of one element and carries its own metadat
 | `dmx_slots` | Where the bytes go: `Sequential` (right after the previous parameter), `Explicit` (a DMX break and 1-based footprint slots for each byte, most significant first), or `Virtual` (no slot at all). |
 | `min`, `max` | The logical value range. Output is clamped to it. |
 | `value_polarity`, `native_unit` | Whether values are unsigned or centered on zero, and the unit operators see, such as percent or degrees. |
-| `offset` | A calibration offset added after merging and before clamping. |
+| `offset` | A calibration offset added after merging and before clamping. Operators set it per fixture with `store fixture … offset` or in the **Output offsets** section the **Patch** panel shows in **Properties**. |
 | `is_inverted` | Mirrors the range on output, for example for a fixture hung upside down. |
 | `merge_type` | `HTP` or `LTP`, the rule for equal-priority layers. |
 | `use_grandmaster` | Whether intensity masters scale this parameter. |
@@ -87,6 +87,8 @@ A **relation** lets a master parameter change a follower function's level:
 
 - `Multiply` scales the follower's position within its active function by the master's level. A pixel's red channel that follows the body dimmer works this way.
 - `Override` replaces the follower's position with the master's level.
+
+The master's level is the 0 to 1 level it outputs, after its calibration offset and inversion, the same level its DMX bytes encode. An inverted dimmer at full therefore blacks out its followers.
 
 The follower's active function is the first one whose DMX range contains the follower's value and whose mode master condition holds. The evaluator follows chains of masters up to `MAX_RELATION_DEPTH` (8) levels and treats anything deeper as a cycle.
 
@@ -155,7 +157,7 @@ After linking, the GDTF importer decides which virtual dimmers respond to intens
 
 A fixture isn't an entity. The engine stores `Fixture` values in `FixtureDataProviderExt`, a data provider keyed by fixture UID. Elements aren't entities either: code refers to an element with a `FixtureRef`, which holds the fixture UID and a 1-based element index. Only parameters are entities. Each one carries a `Parameter` component with the profile metadata and its live values.
 
-When the library commands `CreateFixtureFromLibrary` or `CreateFixturesFromLibrary` create fixtures, they convert the mode once, validate every requested fixture ID, store the fixtures, and spawn one parameter entity per parameter of every element. Loading a showfile spawns the same entities. A parameter index maps each (element, attribute) pair to its entity and back, so commands, layers, and routes can find the parameter that `fixture 1 red` means.
+When the library commands `CreateFixtureFromLibrary` or `CreateFixturesFromLibrary` create fixtures, they convert the mode once, validate every requested fixture ID, store the fixtures, and spawn one parameter entity per parameter of every element. The fixture command `PatchRig`, which MVR rig import uses, adds, changes, and removes a whole rig's fixtures and patches them as one change. It keeps all of the change or none of it, and spawns the same entities for each fixture it adds. Loading a showfile spawns the same entities. A parameter index maps each (element, attribute) pair to its entity and back, so commands, layers, and routes can find the parameter that `fixture 1 red` means.
 
 Each parameter starts at its profile default. When the profile gives no default, `VirtualIntensity` starts at full so that the element isn't dark, and every other parameter starts at a logical value of 0.
 
@@ -247,19 +249,19 @@ Permissive mode drops the strict rules. When a showfile loads, the engine valida
 
 ## Console universes and output transports
 
-A console universe is Nightfall's internal 512-channel address space, numbered from 1. An output transport is a concrete destination: sACN multicast or unicast, Art-Net broadcast or unicast, or a uDMX USB interface. Commands and routes name transports by target ID. Every show has the targets `sacn`, `artnet`, and `udmx`, and you can add more in **I/O Transports**.
+A console universe is Nightfall's internal 512-channel address space, numbered from 1. An output transport is a concrete destination: sACN multicast or unicast, Art-Net broadcast or unicast, or a USB DMX interface. The USB output worker drives uDMX, Enttec DMX USB Pro, and FTDI Open DMX interfaces, each through its own driver. Commands and routes name transports by target ID. Every show has the targets `sacn`, `artnet`, and `udmx`, and you can add more in **I/O Transports**. The built-in `udmx` target uses the first uDMX interface it finds. FTDI interfaces share a USB ID with generic serial adapters, so a target must select them explicitly.
 
 The `ConsoleDmxUniverses` resource holds two numbering spaces:
 
 - Console universes, keyed by console universe number. They hold fixture values at their console addresses, manual `channel` writes, and input routed to the console.
 - Direct output buffers, keyed by (transport, wire universe). They hold the values of fixtures patched straight to a transport.
 
-Every channel in both spaces records its origin: an output route, an input transport, a manual command, or a system clear. Neither space is sent as it is. Console space reaches the wire only through a console-to-transport route, which is why the tutorial runs without hardware.
+Every channel in both spaces records its origin: an output route, an input transport, or a manual command. A channel without an origin is free. Neither space is sent as it is. Console space reaches the wire only through a console-to-transport route, which is why the tutorial runs without hardware.
 
 In each render pass, the `dmx_universes` system encodes every parameter that has a console address or a direct destination, and writes its bytes to both places. It writes console channels with the output route origin and skips any channel that a manual write owns.
 
 > [!WARNING]
-> A manual `channel` write owns its console channel until you release it. On a console-patched fixture, the manual byte stays on that channel even when a higher-priority layer, such as the programmer, sets the parameter. The manual value also enters the compositor as a layer at priority -127, which is what the **Fixtures** panel shows. The wire and the parameter value can therefore disagree until you release the channel.
+> A manual `channel` write owns its console channel until you release it. On a console-patched fixture, the manual byte stays on that channel even when a higher-priority layer, such as the programmer, sets the parameter. The manual value also enters the compositor as a layer at priority -127, which is what the **Fixtures** panel shows. The engine decodes the byte through the parameter's inversion and calibration offset, so the layer holds the value that outputs that byte. The wire and the parameter value can therefore disagree until you release the channel.
 
 ## Composing an output frame
 
@@ -279,6 +281,8 @@ flowchart TB
 
 Only channels that something wrote are copied from the console and direct buffers, so an unused console channel never masks a value from another window. A frame with no data from any source isn't composed at all.
 
+The workers send each cycle's universes one after another. For effects that span several universes, the IO settings `artnet_sync_enabled` and `sacn_sync_enabled` make the workers end each cycle with an ArtSync packet, or an sACN synchronization packet on `sacn_sync_universe`, so receivers in synchronous mode apply all universes at once. Both are off by default.
+
 When a console universe, a direct fixture patch, and DMX input pass-through all target the same wire channel, the result is:
 
 | Sources writing the channel | Value on the wire |
@@ -293,7 +297,13 @@ Strict validation rejects all of these overlaps when you add a route, so in prac
 
 ## DMX input
 
-Art-Net and sACN input adapters receive frames on their own threads and publish each accepted frame to the engine. In the render pass, during `LayerGeneration`, the engine stores the frame and applies every input route whose source matches its transport and universe. The following diagram shows the three paths an input frame can take:
+Art-Net and sACN input adapters receive frames on their own threads and publish each accepted frame to the engine. When several senders transmit the same universe, the adapter keeps one buffer per sender and publishes the combined universe, not whichever packet arrived last:
+
+- sACN identifies senders by CID. The highest packet priority wins, senders tied at that priority merge HTP per channel, and a sender silent for 2.5 seconds drops out. A stream termination packet removes its sender at once.
+- Art-Net packets carry no priority, so senders, identified by IP address, merge HTP per channel and drop out after 10 seconds of silence.
+- Nightfall's own output looped back to its input is published as it is and never merged, so it can't hold channels up.
+
+In the render pass, during `LayerGeneration`, the engine stores the frame and applies every input route whose source matches its transport and universe. The following diagram shows the three paths an input frame can take:
 
 ```mermaid
 flowchart TB
@@ -310,9 +320,9 @@ Each path behaves differently:
 
 - **Input to fixtures.** The engine decodes each target parameter's bytes into an absolute value and asserts it in the input layer, which has priority -128 (`TRANSPORT_INPUT_LAYER_PRIORITY`). Every other layer overrides it. When two routes drive the same parameter, the stronger route keeps it until its route is removed or its source goes stale.
 - **Input to a console universe.** The engine writes the raw channels into console space with the input transport origin. Fixtures that are console-patched in that universe, at or after the route address, also receive their values through the input layer. Later in the same render pass, `dmx_universes` overwrites the channels those fixtures occupy with their merged output, so on fixture channels the input arrives only through the layer. Channels without a fixture keep the input value.
-- **Pass-through.** A route from an input transport to an output target copies a window of the latest input frame into the output frame, as step 3 of the composition order.
+- **Pass-through.** A route from an input transport to an output target copies a window of the latest input frame into the output frame, as step 3 of the composition order. It never writes into the stored input universes, so a frame received on the target's own transport and universe stays as it was sent.
 
-When a source stops sending, the IO setting for input signal loss decides what happens. The default policy, `Hold`, keeps the last values. With `ClearAfterTimeout`, the engine clears channels and input layer values owned by a source whose last frame is older than the timeout (2000 ms by default), and stops passing its frame through until a new one arrives. The fixture command `ReleaseStaleInputs` applies the same clear on demand.
+When a source stops sending, the IO setting for input signal loss decides what happens. The default policy, `Hold`, keeps the last values. With `ClearAfterTimeout`, the engine frees the console channels and clears the input layer values owned by a source whose last frame is older than the timeout (2000 ms by default), and stops passing its frame through until a new one arrives. A console universe left without any owned channel is dropped, so console-to-transport routes stop sending it. The fixture command `ReleaseStaleInputs` applies the same clear on demand.
 
 ## Virtual dimmers and relations at render time
 
@@ -321,6 +331,8 @@ After the compositor writes each parameter's merged value, the `VdimProcessing` 
 1. **Intensity masters** multiply every targeted parameter whose attribute is `Intensity` or `VirtualIntensity` and whose `use_grandmaster` is set. Several masters on one fixture multiply together.
 1. **Virtual dimmers** take each `VirtualIntensity` value as a level from 0 to 1, apply a gamma of 1.6 (`DEFAULT_GAMMA`), and multiply the element's color parameters by the result. The affected attributes are red, green, blue, amber, white, warm white, cool white, cyan, magenta, yellow, and UV.
 1. **Virtual relations** run the fixture model's evaluator in console scope for every fixture with at least one relation involving a virtual channel, and write the followers' new values.
+
+Park adds two steps to this set. Parked `VirtualIntensity` values are written after intensity masters and before virtual dimmers, so a parked virtual dimmer still dims its element's colors by the parked level. Every parked parameter is then written last, after virtual relations, so its parked value is exactly what `dmx_universes` encodes.
 
 The order matters. A master scales a virtual dimmer before the virtual dimmer scales the colors, so masters dim color-only lights. A master also scales a GDTF virtual dimmer before relations multiply its followers, which is why the importer silences virtual dimmers that would apply a master twice.
 
@@ -374,11 +386,16 @@ An intensity master at 50% on `Par 1` would halve the intensity to 63.75, which 
 | Input and manual channel layers | `crates/fixtures/src/compositor.rs` |
 | Applying input frames | `crates/fixtures/src/input_apply.rs` |
 | Stale input handling | `crates/fixtures/src/stale_inputs.rs` |
+| Combining several senders of one input universe | `crates/io/src/input/source_merge.rs` |
+| USB DMX drivers | `crates/output_usb/src/driver.rs`, `udmx.rs`, `usb_pro.rs`, `open_dmx.rs` in the same folder |
 | Output transports and target IDs | `crates/io/src/lib.rs` |
-| Input signal loss settings | `crates/io/src/settings.rs` |
+| Input signal loss and universe sync settings | `crates/io/src/settings.rs` |
 | Intensity masters | `crates/controls/src/masters.rs` |
 | Virtual dimmers | `crates/fixtures/src/vdim.rs` |
 | Console-side relations | `crates/fixtures/src/relations.rs` |
+| Park, written at the end of `VdimProcessing` | `crates/park/src/output.rs` |
+| Moving fixtures to another library revision | `crates/fixtures/src/library/instantiate.rs` |
+| Patching a whole rig in one change | `crates/fixtures/src/fixture_events/patch.rs` |
 
 ## Related topics
 

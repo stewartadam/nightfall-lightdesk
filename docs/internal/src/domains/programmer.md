@@ -92,12 +92,12 @@ flowchart TB
 
 For each row, the painter wraps the row in a cue with one instruction, whose UID is the row's UUID, and materializes it. A new row gets a new entity that carries the materialized cue, its layer, an instance clock, and instance metadata of kind `Programmer`. The instance metadata names each one `Programmer Instruction <uuid>`.
 
-An existing row is rematerialized in every render pass, whether it changed or not. The painter keeps the entity's original activation time and start position, so editing a value mid-fade doesn't restart its timing, and the layer keeps its place among equal-priority layers.
+An existing row is rematerialized only when its inputs change: the `Programmer` resource, the selection resolver's inputs such as the patch and groups, the fixture parameter index, or the blueprints. Otherwise the painter leaves the row's layer untouched, so the compositor's caches stay valid, and writes the row's compositing context only when the clock moved it. When it does rematerialize, the painter keeps the entity's original activation time and start position, so editing a value mid-fade doesn't restart its timing, and the layer keeps its place among equal-priority layers.
 
 When a row disappears, the painter marks its entity as releasing. If nothing has marked it yet, the painter also zeroes the layer's release timing, so the values drop out at once instead of fading with the row's authored fade-out time.
 
 > [!WARNING]
-> The `clear` and `release` handlers mark removed rows as releasing themselves, through a cue lifecycle operation that runs in `Update`, before the painter sees them. The painter then skips its zeroing step, so on that path a row with authored fade-out timing may fade out instead of dropping at once. The painter test that checks the instant drop clears the resource directly and doesn't cover the command path.
+> The `clear` and `release` handlers mark removed rows as releasing themselves, through a cue lifecycle operation that the cues domain applies in the `ApplyCommands` schedule, before the painter sees them. The painter then skips its zeroing step, so on that path a row with authored fade-out timing may fade out instead of dropping at once. The painter test that checks the instant drop clears the resource directly and doesn't cover the command path.
 
 The painter passes no color path data when it materializes rows, so a color path on a programmer row doesn't affect live output.
 
@@ -119,7 +119,12 @@ The two-step `clear` follows console convention: the first press drops the selec
 
 Partial clears and releases resolve the row's selection to concrete fixtures before removing anything. When a row uses a selection that isn't a plain fixture list, such as a group, removing part of it turns the rest into a resolved fixture list. The `selection_flatten_policy` setting of the `programming` section decides whether this flattening needs confirmation. With the `Prompt` policy, the command fails and returns a retry command that carries a one-use approval, so the client can confirm with the operator and send the retry.
 
+Releasing attributes from a blueprint row narrows the row instead of dropping it. The row's `BlueprintApplication` records the released attributes in `excluded_attributes`, and cue materialization, the programmer state sent to clients, and the **Cue Editor** all apply the selector minus those attributes. Releasing pan from a row that applies a position blueprint therefore keeps tilt live. A release only excludes attributes the blueprint holds, and the row is removed once it applies nothing the blueprint holds. A row whose selector names a single attribute is removed when that attribute is released.
+
 Once the programmer holds no rows, it also forgets the timing defaults of the last recalled cue.
+
+> [!NOTE]
+> Park isn't part of the programmer. `clear` and `release` don't unpark anything, and a parked parameter holds its value over programmer output too. See [park overrides everything](../concepts/priorities-and-merging.md#park-overrides-everything).
 
 ## Storing into a cue
 
@@ -206,7 +211,7 @@ After normalization, the store mode decides how the programmer rows, called inco
 | Update | `/update` | Overwrites values that matching existing rows already store, and the attribute timing of those attributes. Ignores new fixtures, new attributes, and row-wide timing. |
 | Remove | `/remove` | Deletes the incoming rows' attributes from matching existing rows. The incoming values do not matter. Drops rows left with no attributes. |
 
-An incoming row for one element doesn't edit an existing row for the whole fixture. Merge, Update, and Remove skip such rows and send a warning: "Element store skipped existing whole-fixture instruction rows." In Update and Remove, blueprint rows only match blueprint rows that apply the same blueprint. Merge always appends incoming blueprint rows.
+An incoming row for one element doesn't edit an existing row for the whole fixture. Merge, Update, and Remove skip such rows and send a warning: "Element store skipped existing whole-fixture instruction rows." In Update and Remove, blueprint rows only match blueprint rows that apply the same blueprint through the same selector. Released attributes don't affect the match, so a narrowed programmer row still finds the cue row it came from. Merge always appends incoming blueprint rows.
 
 The following table shows cue `Red` after storing the programmer's single row, `Par 1` at intensity 50%, with each mode. Before the store, `Red` holds one row for `Par 1` with intensity 100%, red 100%, green 0%, and blue 0%.
 
@@ -261,6 +266,7 @@ Programmer edits undo differently. Adding a row, clearing values, and releasing 
 | Carving overlapping rows and the store normalization and modes | `crates/programming/src/events/store_mode.rs` |
 | Clear and release planning | `crates/programming/src/action_model.rs`, `crates/programming/src/command_planner.rs`, `crates/programming/src/events/planning.rs` |
 | Applying clears and releases | `crates/programming/src/events/programmer/operations.rs`, `crates/programming/src/events/programmer/instruction_release.rs` |
+| `BlueprintApplication` and `excluded_attributes` | `crates/common/src/blueprint.rs` |
 | Programmer painter | `crates/programming/src/painter.rs` |
 | Store and recall handler | `crates/programming/src/events/cues.rs` |
 | Committing a store and its undo entry | `execute_cue_store_operation` in `crates/cues/src/events/actions.rs`, `CueStoreOperation` in `crates/cues/src/lib.rs` |

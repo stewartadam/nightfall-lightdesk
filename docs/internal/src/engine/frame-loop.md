@@ -104,11 +104,11 @@ The stages map onto the journey from [how a show becomes light](../concepts/show
 
 | Stage | What runs there | What happens to `Par 1` |
 |-------|-----------------|----------------------------------|
-| `ClockUpdate` | The show tempo advances first, and the timecode generators also advance here. After the tempo, `clips` adds a clock to new playbacks, `controls` applies speed masters, and `clips` advances each free-running clock. A seconds-timed clock advances by the wall-clock time since the previous render pass, and a beat-timed clock by the beats the show tempo moved in that time. | `First playback` gets its clock and moves up to one frame period into the `Red` cue's fade. |
+| `ClockUpdate` | The show tempo advances first, and the timecode generators also advance here. After the tempo, `clips` adds a clock to new playbacks, `controls` applies speed masters, and `clips` advances each free-running clock. The tempo and the clocks advance to the DMX output tick that this render's frames go out on, so consecutive render passes sample playback exactly one frame period apart. A seconds-timed clock advances by the time between the two ticks, and a beat-timed clock by the beats the show tempo moved in that time. Without a frame limiter, they advance to the current time instead. | `First playback` gets its clock and moves up to one frame period into the `Red` cue's fade. |
 | `LayerGeneration` | Each playback type paints its layer: sequences, cues, FX, Step FX, FX modules, flows, timelines, and the programmer. Incoming DMX also lands in its input layer here. | `First playback` paints a priority 0 layer with intensity and red partway up the fade. The programmer paints a priority 127 layer with intensity at 50%. |
 | Between layers and compositing | `controls` resolves held Flash and Swop buttons and scales each playback's intensity values by its level. These systems belong to no set. They order themselves after `LayerGeneration` and before `Compositing`. | If `First playback`'s fader sits at 50%, its intensity contribution halves. The programmer layer is unaffected. |
 | `Compositing` | The compositor sorts layers by priority and activation time, merges them, and writes the final value into each fixture parameter. | Intensity comes out at 50% from the programmer, and red follows `First playback`'s fade. |
-| `VdimProcessing` | Applies intensity masters, then virtual dimmers, then virtual relations to the merged values. | An intensity master that targets `Par 1` scales its intensity. Virtual dimming does not apply, because `Par 1` has a real intensity channel. |
+| `VdimProcessing` | Applies intensity masters, then virtual dimmers, then virtual relations to the merged values. Last, `park` writes each parked parameter's parked value over the result, so a parked value is exactly what goes out. | An intensity master that targets `Par 1` scales its intensity. Virtual dimming does not apply, because `Par 1` has a real intensity channel. `Par 1` isn't parked, so its values pass through. |
 | `DmxOutput` | Resolves DMX routes, packs parameter values into console universes, composes output frames, and hands them to the Art-Net, sACN, and USB outputs. | Intensity, red, green, and blue land in channels 1 to 4 of console universe 1. If a DMX route sends that universe to Art-Net, the Art-Net worker receives the new frame. |
 | `ClientOutput` | Publishes render-derived state to clients: parameter values, layer stacks, playback status, and changed show objects. | The 3D visualizer and the **Fixtures** panel receive the new values. |
 
@@ -118,7 +118,11 @@ Some sets in `Render` skip work when nothing changed. The compositor returns ear
 
 ### DMX output runs on its own threads
 
-The output systems in `DmxOutput` don't transmit anything themselves. The Art-Net and sACN outputs replace the frames that their worker thread sends, and each worker transmits the latest frames on its own fixed-rate clock. When a render pass runs late, the worker sends the previous frames again on its tick. The USB output passes each render pass's frames to its device thread, which writes them as they arrive.
+The output systems in `DmxOutput` don't transmit anything themselves. The Art-Net, sACN, and USB outputs each replace the frames that their worker thread sends, and each worker transmits the latest frames on its own fixed-rate clock. When a render pass runs late, the Art-Net and sACN workers send the previous frames again on their tick. The USB worker hands each tick's frames to the interface's driver. uDMX and DMX USB Pro interfaces hold their last universe, so it writes to them only when channels change, and Open DMX dongles get a writer thread of their own that repeats the latest frame continuously.
+
+Each worker asks the operating system for real-time priority when it starts, so a tick runs on time even when every core is busy with the engine. When the request is denied or fails, the worker logs that and runs at normal priority, where ticks can run late under load. Intel Macs don't make the request at all.
+
+When universe sync is on in the IO settings, the Art-Net worker ends each tick with an ArtSync broadcast, and the sACN worker sends a synchronization packet on the sync universe. Nodes that support sync then apply every universe of that tick at once, so an effect that spans several universes never shows parts of two frames. Both are off by default.
 
 > [!WARNING]
 > Running a system under `ClientOutput` doesn't guarantee that DMX packing has run. If your system requires DMX output values, order it after `DmxOutput`.
@@ -153,7 +157,7 @@ The engine's frame rate follows the DMX output rate. The showfile's IO settings 
 
 The DMX output workers and the frame limiter compute their deadlines from one process-wide schedule, which the code calls the tick grid. Its send times, called ticks, fall at `epoch + n * period`, from an epoch fixed when the process first asks for it. Two schedulers with the same period therefore tick at the same instants, on different threads, and across world swaps.
 
-The frame limiter starts each render pass a short lead before a tick, so the render finishes just before the output worker sends on that tick. The lead is twice the recent average render time plus 1 ms, at least 2 ms and at most half the frame period. A 3 ms render gets a 7 ms lead. If a render still runs past its tick, its frames go out on the following tick.
+The frame limiter starts each render pass a short lead before a tick, so the render finishes just before the output worker sends on that tick. It records that tick in `RenderPass`, and `ClockUpdate` advances playback to it. The lead is twice the recent average render time plus 1 ms, at least 2 ms and at most half the frame period. A 3 ms render gets a 7 ms lead. If a render still runs past its tick, its frames go out on the following tick.
 
 The following diagram shows two frames at 44 Hz, with a Go command arriving between render passes:
 
@@ -236,25 +240,29 @@ Acknowledgements of input go in `ClientFeedback` in `PostUpdate`. Render-derived
 
 ### Don't assume every frame renders
 
-`Update` systems run in input-only frames too, so they must not assume time has passed since the last render. Clocks advance only in `ClockUpdate`, by the wall-clock time or show tempo beats since the previous render pass, so playback timing stays correct however many input-only frames ran in between.
+`Update` systems run in input-only frames too, so they must not assume time has passed since the last render. Clocks advance only in `ClockUpdate`, by the time or show tempo beats since the previous render pass's output tick, so playback timing stays correct however many input-only frames ran in between.
 
 `ApplyCommands` can run more than once in a frame. A system in it whose work waits on a handler's next run, such as an undo that replays a group one entry at a time, calls `CommandRerun::request`, and `CommandApplication` runs `ApplyCommands` again before the rest of `Update`, for at most 8 ms per frame. Nothing else reruns, so input, timers, publication and the render pass still run once. Every system in `ApplyCommands` must therefore be safe to rerun: a run with no new input changes nothing and publishes nothing. The `rerun_safety` test in `app-runtime` checks this on the sample show. For the design, see [ADR 5](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/adr/0005-undo-replays-step-by-step.md).
 
-### Register the render schedule in plugin tests
+### Register the engine's schedules in plugin tests
 
-`EnginePlugin` adds the `Render` schedule to the main schedule order. A plugin test that builds an app without `EnginePlugin` must call `add_render_schedule`, or its render systems never run.
+`EnginePlugin` adds the `Render` schedule to the main schedule order, and adds the `ApplyCommands` schedule with the `Update` system that runs it. A plugin test that builds an app without `EnginePlugin` must call `add_render_schedule` and `add_apply_commands`, or its render systems and command handlers never run.
 
 ## In the code
 
 | Concept | Where to look |
 |---------|---------------|
 | Update and Render system sets and their order | `crates/engine/src/lib.rs` |
+| `ApplyCommands`, `CommandApplication`, and `CommandRerun` | `crates/engine/src/command_apply.rs` |
+| Test that every `ApplyCommands` system is safe to rerun | `crates/app-runtime/src/tests/rerun_safety.rs` |
 | `Render` schedule, `RenderPass`, and the module rules for render systems | `crates/engine/src/render_pass.rs` |
 | `FrameWaker` | `crates/engine/src/frame_waker.rs` |
 | Command and disconnect senders that wake the limiter | `crates/engine/src/client_bridge.rs` |
 | Frame limiter, render lead, and early-frame limits | `crates/framepace/src/lib.rs` |
 | Shared send schedule (tick grid) | `crates/service_host/src/tick_grid.rs` |
-| Fixed-rate output worker | `crates/service_host/src/fixed_rate.rs` |
+| Fixed-rate output worker and its real-time priority | `crates/service_host/src/fixed_rate.rs` |
+| Art-Net and sACN workers and universe sync | `crates/output_artnet/src/service.rs`, `crates/output_sacn/src/service.rs` |
+| USB output worker | `crates/output_usb/src/service.rs` |
 | Frame rate from the DMX output rate, and the 30 Hz floor | `crates/app-runtime/src/composition.rs` |
 | Default, minimum, and maximum DMX output rate | `crates/io/src/settings.rs` |
 | Pausing input and output during show loads | `crates/app-runtime/src/swap_orchestrator.rs` |
@@ -263,6 +271,7 @@ Acknowledgements of input go in `ClientFeedback` in `PostUpdate`. Render-derived
 | Armed launches for launch quantize | `forward_clip_ingress_actions` in `crates/clips/src/playback/clip_events.rs`, `crates/clips/src/launch_quantize.rs` |
 | Compositor and its removal observers | `crates/compositor/src/lib.rs`, `crates/compositor/src/system.rs` |
 | Virtual dimmers and virtual relations | `crates/fixtures/src/vdim.rs`, `crates/fixtures/src/relations.rs` |
+| Parked output | `crates/park/src/output.rs` |
 | DMX packing and output frames | `crates/fixtures/src/lib.rs`, `crates/fixtures/src/output_frames.rs` |
 
 ## Related topics
