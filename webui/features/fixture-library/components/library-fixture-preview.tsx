@@ -26,7 +26,7 @@ import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import { fetchFixtureProfile } from "../../../lib/fixture-service";
 import { fixtureProfile } from "../../../state/appStores";
 import type { Fixture, FixtureGeometry } from "../../../types";
-import { FixturePreview } from "../../visualizer";
+import { FixturePreview, profileToPreviewFixture } from "../../visualizer";
 
 type LibraryFixturePreviewProps = {
   make: string;
@@ -100,19 +100,13 @@ const LibraryFixturePreview: Component<LibraryFixturePreviewProps> = (
   });
 
   const fixtureName = createMemo(() => `${props.make} ${props.model}`);
-  const previewFixture = createMemo(() => {
-    const currentFixture = fixture();
-    if (!currentFixture) return null;
-
-    return {
-      make: currentFixture.make,
-      model: currentFixture.model,
-      geometry: geometry(),
-      elements: currentFixture.elements,
-      beamType: currentFixture.physical?.beamType,
-      layout: currentFixture.layout,
-    };
-  });
+  /** The fixture as the 3D preview draws it, from the latest profile. */
+  const previewFixture = createMemo(() =>
+    profileToPreviewFixture({
+      fixture: fixture() ?? undefined,
+      geometry: geometry() ?? undefined,
+    }),
+  );
 
   return (
     <div

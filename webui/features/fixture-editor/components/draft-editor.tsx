@@ -27,6 +27,7 @@ import { problemLocation } from "../model/draft-editing";
 import { draftOriginLabel } from "../model/start-page";
 import type { SaveOptions } from "../services/fixture-editor-client";
 import { type DraftEditing, DraftEditingContext } from "./draft-context";
+import DraftPreview from "./draft-preview";
 import InfoSection from "./info-section";
 import ModesSection from "./modes-section";
 import SaveDialog from "./save-dialog";
@@ -114,7 +115,8 @@ function LostContent(props: { paths: readonly string[] }) {
 
 /**
  * The editing page of one draft: a header with undo, redo, save and discard,
- * then the fixture's names, modes or wheels, then what is wrong with it.
+ * then the fixture's names, modes or wheels beside a live 3D preview, then what is wrong
+ * with it.
  * Every change is sent to the backend at once, so other windows showing the
  * same draft follow along.
  */
@@ -129,7 +131,7 @@ export default function DraftEditor(props: DraftEditorProps) {
   return (
     <DraftEditingContext.Provider value={props.editing}>
       <div
-        class="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6"
+        class="mx-auto flex w-full max-w-7xl flex-col gap-6 p-6"
         data-testid="fixture-draft-editor"
       >
         <div class="flex flex-wrap items-center gap-3">
@@ -196,38 +198,45 @@ export default function DraftEditor(props: DraftEditorProps) {
           </Button>
         </div>
 
-        <SegmentedTabs
-          id={tabsId}
-          label="Draft sections"
-          contentId={contentId}
-          options={[
-            { key: "info", label: "Fixture" },
-            { key: "modes", label: "Modes" },
-            { key: "wheels", label: "Wheels" },
-          ]}
-          value={tab()}
-          onChange={setTab}
-        />
-        <div
-          id={contentId}
-          role="tabpanel"
-          aria-labelledby={`${tabsId}-${tab()}`}
-        >
-          <Switch>
-            <Match when={tab() === "info"}>
-              <InfoSection />
-            </Match>
-            <Match when={tab() === "modes"}>
-              <ModesSection />
-            </Match>
-            <Match when={tab() === "wheels"}>
-              <WheelsSection />
-            </Match>
-          </Switch>
-        </div>
+        <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <aside class="lg:sticky lg:top-0 lg:order-last lg:self-start">
+            <DraftPreview />
+          </aside>
+          <div class="flex min-w-0 flex-col gap-6">
+            <SegmentedTabs
+              id={tabsId}
+              label="Draft sections"
+              contentId={contentId}
+              options={[
+                { key: "info", label: "Fixture" },
+                { key: "modes", label: "Modes" },
+                { key: "wheels", label: "Wheels" },
+              ]}
+              value={tab()}
+              onChange={setTab}
+            />
+            <div
+              id={contentId}
+              role="tabpanel"
+              aria-labelledby={`${tabsId}-${tab()}`}
+            >
+              <Switch>
+                <Match when={tab() === "info"}>
+                  <InfoSection />
+                </Match>
+                <Match when={tab() === "modes"}>
+                  <ModesSection />
+                </Match>
+                <Match when={tab() === "wheels"}>
+                  <WheelsSection />
+                </Match>
+              </Switch>
+            </div>
 
-        <ProblemList draft={draft()} />
-        <LostContent paths={draft().lost_content} />
+            <ProblemList draft={draft()} />
+            <LostContent paths={draft().lost_content} />
+          </div>
+        </div>
       </div>
       <SaveDialog
         isOpen={saving()}
