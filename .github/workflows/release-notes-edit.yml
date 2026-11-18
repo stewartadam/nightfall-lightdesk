@@ -33,10 +33,11 @@ jobs:
           cp .release-notes/release-notes.md .release-notes/edited.md
       - id: claude
         continue-on-error: true
-        uses: anthropics/claude-code-action@v1.0.268
+        # base-action runs a prompt under any event; the full action rejects tag pushes
+        # ("Unsupported event type: push") because it expects a PR, issue or dispatch.
+        uses: anthropics/claude-code-action/base-action@v1.0.268
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ github.token }}
           prompt: |
             Edit the draft release notes for ${{ github.ref_name }} of ${{ github.repository }}.
 
@@ -73,5 +74,7 @@ jobs:
         with:
           name: release-notes-edited-${{ github.sha }}
           path: .release-notes/
+          # upload-artifact skips dot-directories by default, which left this upload empty.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7

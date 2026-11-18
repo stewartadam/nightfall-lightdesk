@@ -218,8 +218,11 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
           assert.fail(`${key} uses ${step.uses}; use $/ instead`);
         }
         if (step.uses && !step.uses.startsWith("$/")) {
+          // Sub-path actions such as claude-code-action/base-action are locked under their repository.
+          const [action, ref] = step.uses.toLowerCase().split("@");
+          const repository = action.split("/").slice(0, 2).join("/");
           assert.ok(
-            lockedActions(file).includes(step.uses.toLowerCase()),
+            lockedActions(file).includes(`${repository}@${ref}`),
             `${key}: ${step.uses} is missing from actions.lock`,
           );
         }
