@@ -295,3 +295,13 @@ test("parseSwitchOutput reads a multi-line JSON summary", () => {
     extra: { n: 1 },
   });
 });
+
+/** Lines printed after the summary, in either format, do not hide it. */
+test("parseSwitchOutput ignores lines after the summary", () => {
+  assert.deepEqual(parseSwitchOutput('{"path":"/wt/a"}\ntrailing\n'), {
+    path: "/wt/a",
+  });
+  assert.deepEqual(parseSwitchOutput('{\n  "path": "/wt/b"\n}\ntrailing\n'), {
+    path: "/wt/b",
+  });
+});
