@@ -234,10 +234,7 @@ async function installStartupProbe(page: Page): Promise<void> {
 
 for (let run = 0; run < RUNS; run++) {
   test.describe(`measure ${run}`, () => {
-    test.use({
-      emptyStartupWorld: true,
-      viewport: { width: 1920, height: 1080 },
-    });
+    test.use({ viewport: { width: 1920, height: 1080 } });
 
     /**
      * Measures opening a saved showfile from the startup picker until the dock

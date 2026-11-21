@@ -9,8 +9,10 @@
 import { createHash } from "node:crypto";
 import {
   constants,
+  copyFileSync,
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   statSync,
@@ -18,6 +20,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import {
   readShowfileJsonSync,
@@ -42,6 +45,16 @@ const PLAYWRIGHT_SEED_SHOWFILES = [
   "default.nightfall-show",
   "sample.nightfall-show",
 ];
+/**
+ * Repository showfile saved as every E2E seed showfile when the source data root lacks them.
+ * It already keeps physical transports off, so it is used as is.
+ */
+const REPOSITORY_SEED_SHOWFILE = fileURLToPath(
+  new URL(
+    "../crates/app-runtime/tests/data/procedural-showfile-parse-data.json",
+    import.meta.url,
+  ),
+);
 
 /**
  * Returns a filesystem-safe label for one path segment.
@@ -125,17 +138,31 @@ export function playwrightSeedDataAvailable(sourceDataDir) {
 }
 
 /**
+ * Saves the repository seed showfile under every E2E seed showfile name in `dataDir`.
+ */
+function writeRepositorySeedShowfiles(dataDir) {
+  for (const showfileName of PLAYWRIGHT_SEED_SHOWFILES) {
+    const showfileDir = join(dataDir, showfileName);
+    mkdirSync(showfileDir, { recursive: true });
+    copyFileSync(REPOSITORY_SEED_SHOWFILE, join(showfileDir, "showfile.json"));
+  }
+}
+
+/**
  * Copies stable E2E data into a disposable root, optionally sanitizing showfiles.
+ * With `repositoryFallback`, a source without the seed showfiles gets the repository's
+ * seed showfile instead, so the backend still starts with saved shows and no world loaded.
  */
 function copyPlaywrightDataDir(
   sourceDataDir,
   temporaryRoot,
-  sanitizeShowfiles,
+  { sanitizeShowfiles, repositoryFallback },
 ) {
   const runDataDir = mkdtempSync(join(temporaryRoot, "nightfall-playwright-"));
-  const seedDataAvailable = playwrightSeedDataAvailable(sourceDataDir);
+  const sourceSeedAvailable = playwrightSeedDataAvailable(sourceDataDir);
+  const seedDataAvailable = sourceSeedAvailable || repositoryFallback;
   try {
-    if (seedDataAvailable) {
+    if (sourceSeedAvailable) {
       cpSync(sourceDataDir, runDataDir, {
         recursive: true,
         mode: constants.COPYFILE_FICLONE,
@@ -153,6 +180,16 @@ function copyPlaywrightDataDir(
           );
         }
       }
+    } else if (repositoryFallback) {
+      const skippedEntries = [...PLAYWRIGHT_SEED_ENTRIES].filter((entry) =>
+        existsSync(join(sourceDataDir, entry)),
+      );
+      if (skippedEntries.length > 0) {
+        console.warn(
+          `${sourceDataDir} lacks a saved ${PLAYWRIGHT_SEED_SHOWFILES.join(" or ")} showfile, so Playwright seeds only the repository showfile and skips its ${skippedEntries.join(", ")}.`,
+        );
+      }
+      writeRepositorySeedShowfiles(runDataDir);
     }
     return { runDataDir, seedDataAvailable };
   } catch (error) {
@@ -163,13 +200,16 @@ function copyPlaywrightDataDir(
 
 /**
  * Creates one run-scoped stable E2E seed with physical transports disabled.
- * Incomplete sources produce an empty root for backend sample-data bootstrap.
+ * Incomplete sources are replaced by the repository's seed showfile, matching CI.
  */
 export function preparePlaywrightDataDir(
   sourceDataDir,
   temporaryRoot = tmpdir(),
 ) {
-  return copyPlaywrightDataDir(sourceDataDir, temporaryRoot, true);
+  return copyPlaywrightDataDir(sourceDataDir, temporaryRoot, {
+    sanitizeShowfiles: true,
+    repositoryFallback: true,
+  });
 }
 
 /**
@@ -180,5 +220,8 @@ export function clonePlaywrightDataDir(
   sourceDataDir,
   temporaryRoot = tmpdir(),
 ) {
-  return copyPlaywrightDataDir(sourceDataDir, temporaryRoot, false);
+  return copyPlaywrightDataDir(sourceDataDir, temporaryRoot, {
+    sanitizeShowfiles: false,
+    repositoryFallback: false,
+  });
 }

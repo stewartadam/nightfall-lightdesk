@@ -9,9 +9,6 @@
 import { expect, type Locator, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
-// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
-test.use({ emptyStartupWorld: true });
-
 const PATCH_PANEL_ACTIVE_TAB_KEY = "nightfall-patch-panel:active-tab";
 
 type OwnedPatchFixtures = {

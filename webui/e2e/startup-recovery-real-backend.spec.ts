@@ -23,10 +23,6 @@ type SeededStartupDraft = {
   draftDir: string;
 };
 
-// Startup prompts only run while the backend has no world loaded (AppState Initialized).
-// Seeds go into each test backend's disposable data dir, which teardown deletes.
-test.use({ emptyStartupWorld: true });
-
 /** Return a stable folder path for one showfile name under the backend data root. */
 function showfileDir(dataRoot: string, name: string): string {
   return join(dataRoot, `${name}.${SHOWFILE_FOLDER_EXTENSION}`);

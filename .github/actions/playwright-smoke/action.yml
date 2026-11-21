@@ -20,24 +20,15 @@ runs:
       shell: bash
       run: node scripts/run-playwright.mjs install --with-deps --no-shell chromium
 
-    # Saved fixtures keep each isolated backend at its normal startup picker.
-    - name: Seed disposable showfiles from the repository fixture
-      id: seed
-      shell: bash
-      run: |
-        seed_dir=$(mktemp -d "$RUNNER_TEMP/nightfall-ci-seed.XXXXXX")
-        mkdir -p "$seed_dir/default.nightfall-show" "$seed_dir/sample.nightfall-show"
-        cp crates/app-runtime/tests/data/procedural-showfile-parse-data.json "$seed_dir/default.nightfall-show/showfile.json"
-        cp crates/app-runtime/tests/data/procedural-showfile-parse-data.json "$seed_dir/sample.nightfall-show/showfile.json"
-        echo "data-dir=$seed_dir" >> "$GITHUB_OUTPUT"
-
     - name: Test product flows
       shell: bash
       env:
         NIGHTFALL_PLAYWRIGHT_WORKERS: ${{ inputs.workers }}
-        NIGHTFALL_DATA_DIR: ${{ steps.seed.outputs.data-dir }}
         PLAYWRIGHT_SHARD: ${{ inputs.shard }}
       run: |
+        # An empty source makes the wrapper seed every backend from the repository showfile.
+        NIGHTFALL_DATA_DIR=$(mktemp -d "$RUNNER_TEMP/nightfall-ci-seed.XXXXXX")
+        export NIGHTFALL_DATA_DIR
         if [ -n "$PLAYWRIGHT_SHARD" ]; then
           pnpm run test:webui-playwright --shard="$PLAYWRIGHT_SHARD" --max-failures=20
         else

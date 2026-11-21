@@ -17,10 +17,10 @@ preparation succeeded and the job has not been cancelled.
 
 The action installs Chromium (without the headless shell) and its system
 dependencies, which include ALSA, the headless backend's only native runtime
-library. It then seeds
-disposable showfiles in the runner's temporary directory and uploads reports even
-when tests fail. With a `shard` input such as `2/6` it runs that shard of the full
-suite (`pnpm run test:webui-playwright --shard=2/6 --max-failures=20`); without one
+library. It points the test wrapper at an empty data directory, so every backend
+is seeded from the repository showfile, and uploads reports even when tests
+fail. With a `shard` input such as `2/6` it runs that shard of the full suite
+(`pnpm run test:webui-playwright --shard=2/6 --max-failures=20`); without one
 it runs only `pnpm run test:webui-smoke --max-failures=3`. The failure caps stop
 repeated setup failures before they exhaust the job timeout. It uses two
 workers by default; set the `workers` input to override this. `ci.yml` runs the

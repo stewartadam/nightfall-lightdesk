@@ -63,7 +63,6 @@ test("reveals the dock after reopening a showfile on a restarted backend", async
 
   await stopPlaywrightTestBackend(backendSlot);
   const restarted = await startPlaywrightTestBackend({
-    emptyStartupWorld: true,
     seedDataDir: process.env.NIGHTFALL_PLAYWRIGHT_SEED_DATA_DIR,
     testId: `${testInfo.testId}-restarted`,
     workerSlot,

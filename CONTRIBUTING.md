@@ -329,7 +329,10 @@ its backend port. The run sanitizes one seed copy,
 then uses copy-on-write filesystem clones for each test when supported. The seed
 includes only the stable `default`, `sample`, fixture-library, FX-module, and
 object-library data from the worktree's `NIGHTFALL_DATA_DIR`, with physical
-transports initially disabled. This keeps tests from mutating a developer
+transports initially disabled. When that directory lacks the `default` or
+`sample` showfile, as on a fresh machine or CI runner, both are seeded from
+`crates/app-runtime/tests/data/procedural-showfile-parse-data.json` instead, so
+every backend starts with saved shows and no show open. This keeps tests from mutating a developer
 session or inheriting backend world and undo state from another test. Owned
 services and disposable data are removed after each test and swept again when
 Playwright exits.
