@@ -269,7 +269,10 @@ fn send_due_reports(world: &mut World) {
         return;
     }
     let now = jiff::Timestamp::now();
-    let today = now.to_zoned(jiff::tz::TimeZone::UTC).date().to_string();
+    let today = now
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+        .date()
+        .to_string();
     let timestamp = now.round(jiff::Unit::Second).unwrap_or(now).to_string();
     let Ok(mut schedule) = service.schedule.lock() else {
         return;

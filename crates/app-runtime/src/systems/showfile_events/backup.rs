@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use clonetree::{Options, clone_tree};
-use jiff::Zoned;
+use jiff::ZonedDateTime;
 
 use super::paths::{SHOWFILE_FOLDER_EXTENSION, showfile_backup_root_dir, showfile_name_from_dir};
 
@@ -75,7 +75,7 @@ fn next_show_data_backup_dir(show_data_dir: &Path) -> Result<PathBuf, String> {
             error
         )
     })?;
-    let timestamp = Zoned::now().strftime("%Y%m%d-%H%M%S").to_string();
+    let timestamp = ZonedDateTime::now().strftime("%Y%m%d-%H%M%S").to_string();
 
     for sequence in 0..1000 {
         let mut candidate_name = format!("{show_name}-{timestamp}");
