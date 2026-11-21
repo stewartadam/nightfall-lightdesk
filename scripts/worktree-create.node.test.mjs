@@ -284,3 +284,24 @@ test("parseSwitchOutput reads the last JSON line", () => {
   assert.equal(parseSwitchOutput("no json here\n"), null);
   assert.equal(parseSwitchOutput("{not json\n"), null);
 });
+
+/** Worktrunk 0.82+ pretty-prints the summary, including nested objects, across lines. */
+test("parseSwitchOutput reads a multi-line JSON summary", () => {
+  const stdout =
+    'hook output\n{\n  "action": "created",\n  "path": "/wt/a",\n  "extra": {\n    "n": 1\n  }\n}\n';
+  assert.deepEqual(parseSwitchOutput(stdout), {
+    action: "created",
+    path: "/wt/a",
+    extra: { n: 1 },
+  });
+});
+
+/** Lines printed after the summary, in either format, do not hide it. */
+test("parseSwitchOutput ignores lines after the summary", () => {
+  assert.deepEqual(parseSwitchOutput('{"path":"/wt/a"}\ntrailing\n'), {
+    path: "/wt/a",
+  });
+  assert.deepEqual(parseSwitchOutput('{\n  "path": "/wt/b"\n}\ntrailing\n'), {
+    path: "/wt/b",
+  });
+});

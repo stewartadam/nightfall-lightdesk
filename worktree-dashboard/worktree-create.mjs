@@ -85,20 +85,27 @@ async function branchExists(run, root, branch) {
 }
 
 /**
- * Reads the summary Worktrunk prints with `--format json`, which is the last JSON
- * object on stdout, or null when there is none.
+ * Reads the summary Worktrunk prints with `--format json`: the last top-level JSON
+ * object on stdout, or null when there is none. Worktrunk 0.82 pretty-prints it across
+ * several lines while older releases print one line, so an object is taken to open on
+ * a line starting with `{` and close on that same line or a later one starting with
+ * `}`. Candidates are tried from the end, so later output wins and any lines printed
+ * after the summary are ignored.
  */
 export function parseSwitchOutput(stdout) {
-  const line = stdout
-    .split("\n")
-    .map((entry) => entry.trim())
-    .findLast((entry) => entry.startsWith("{"));
-  if (!line) return null;
-  try {
-    return JSON.parse(line);
-  } catch {
-    return null;
+  const lines = stdout.split("\n");
+  for (let start = lines.length - 1; start >= 0; start -= 1) {
+    if (!lines[start].startsWith("{")) continue;
+    for (let end = start; end < lines.length; end += 1) {
+      if (end > start && !lines[end].startsWith("}")) continue;
+      try {
+        return JSON.parse(lines.slice(start, end + 1).join("\n"));
+      } catch {
+        // Not a complete object yet; try the next closing line.
+      }
+    }
   }
+  return null;
 }
 
 /** Builds the result for a Worktrunk run that failed, led by its last error line. */
