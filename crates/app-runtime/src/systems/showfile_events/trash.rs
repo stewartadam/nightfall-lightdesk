@@ -18,7 +18,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use jiff::Zoned;
+use jiff::ZonedDateTime;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -140,7 +140,7 @@ fn move_relative_paths(
 
 /// Allocate a unique, human-readable trash entry folder name for a show.
 fn next_trash_entry_id(trash_root: &Path, showfile_name: &str) -> Result<String, String> {
-    let timestamp = Zoned::now().strftime("%Y%m%d-%H%M%S").to_string();
+    let timestamp = ZonedDateTime::now().strftime("%Y%m%d-%H%M%S").to_string();
     (0..1000)
         .map(|sequence| match sequence {
             0 => format!("{showfile_name}-{timestamp}"),
