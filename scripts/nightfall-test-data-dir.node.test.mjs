@@ -29,6 +29,23 @@ import {
 import { readShowfileJsonSync } from "./showfile-storage.mjs";
 import { defaultNightfallDataDir } from "./worktree-data-dir.mjs";
 
+/** Repository seed showfile the run seed falls back to when the source lacks seed showfiles. */
+const REPOSITORY_SEED_SHOWFILE = new URL(
+  "../crates/app-runtime/tests/data/procedural-showfile-parse-data.json",
+  import.meta.url,
+);
+
+/** Asserts both seed showfiles in a run data root hold the repository seed showfile. */
+function assertRepositorySeedShowfiles(runDataDir) {
+  const expected = readFileSync(REPOSITORY_SEED_SHOWFILE, "utf8");
+  for (const name of ["default.nightfall-show", "sample.nightfall-show"]) {
+    assert.equal(
+      readShowfileJsonSync(join(runDataDir, name, "showfile.json")),
+      expected,
+    );
+  }
+}
+
 /** Writes a small file beneath the requested seed directory. */
 function writeSeedFile(root, relativeDirectory, filename = "seed.txt") {
   const directory = join(root, relativeDirectory);
@@ -254,8 +271,8 @@ test("Playwright data roots contain only stable seed entries", () => {
   }
 });
 
-/** Verifies missing saved showfiles request backend sample-data bootstrap. */
-test("missing Playwright seed creates an empty disposable root", () => {
+/** Verifies a source without saved showfiles gets the repository seed showfile instead. */
+test("missing Playwright seed falls back to the repository showfile", () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), "nightfall-seed-test-"));
   let runDataDir;
   try {
@@ -265,16 +282,16 @@ test("missing Playwright seed creates an empty disposable root", () => {
     const prepared = preparePlaywrightDataDir(missingSeedRoot, fixtureRoot);
     runDataDir = prepared.runDataDir;
 
-    assert.equal(prepared.seedDataAvailable, false);
-    assert.equal(existsSync(runDataDir), true);
+    assert.equal(prepared.seedDataAvailable, true);
+    assertRepositorySeedShowfiles(runDataDir);
   } finally {
     if (runDataDir) rmSync(runDataDir, { force: true, recursive: true });
     rmSync(fixtureRoot, { force: true, recursive: true });
   }
 });
 
-/** Verifies incomplete saved showfiles use backend sample-data bootstrap. */
-test("incomplete Playwright seed creates an empty disposable root", () => {
+/** Verifies an incomplete source is replaced by the repository seed rather than copied. */
+test("incomplete Playwright seed falls back to the repository showfile", () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), "nightfall-seed-test-"));
   let runDataDir;
   try {
@@ -285,11 +302,26 @@ test("incomplete Playwright seed creates an empty disposable root", () => {
     const prepared = preparePlaywrightDataDir(fixtureRoot, fixtureRoot);
     runDataDir = prepared.runDataDir;
 
-    assert.equal(prepared.seedDataAvailable, false);
-    assert.equal(existsSync(join(runDataDir, "default.nightfall-show")), false);
-    assert.equal(existsSync(join(runDataDir, "sample.nightfall-show")), false);
+    assert.equal(prepared.seedDataAvailable, true);
+    assertRepositorySeedShowfiles(runDataDir);
   } finally {
     if (runDataDir) rmSync(runDataDir, { force: true, recursive: true });
+    rmSync(fixtureRoot, { force: true, recursive: true });
+  }
+});
+
+/** Verifies an empty test seed stays empty so the backend bootstraps sample data. */
+test("empty Playwright test seeds clone to an empty root", () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "nightfall-seed-test-"));
+  let testDataDir;
+  try {
+    const cloned = clonePlaywrightDataDir(fixtureRoot, fixtureRoot);
+    testDataDir = cloned.runDataDir;
+
+    assert.equal(cloned.seedDataAvailable, false);
+    assert.equal(playwrightSeedDataAvailable(testDataDir), false);
+  } finally {
+    if (testDataDir) rmSync(testDataDir, { force: true, recursive: true });
     rmSync(fixtureRoot, { force: true, recursive: true });
   }
 });

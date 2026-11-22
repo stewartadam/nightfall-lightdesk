@@ -14,10 +14,7 @@ import { sampleDataBootstrapEnvironment } from "./playwright-backend-pool.mjs";
 /** Verify an incomplete seed falls back to bootstrapping and saving the sample show. */
 test("incomplete seeds bootstrap the sample show", () => {
   assert.deepEqual(
-    sampleDataBootstrapEnvironment({
-      seedDataAvailable: false,
-      emptyStartupWorld: false,
-    }),
+    sampleDataBootstrapEnvironment({ seedDataAvailable: false }),
     {
       NIGHTFALL_SAMPLE_DATA: "1",
       NIGHTFALL_STARTUP_CMDS: "save sample; save default",
@@ -28,21 +25,7 @@ test("incomplete seeds bootstrap the sample show", () => {
 /** Verify a complete seed starts the backend without loading a world. */
 test("complete seeds leave the backend unbootstrapped", () => {
   assert.deepEqual(
-    sampleDataBootstrapEnvironment({
-      seedDataAvailable: true,
-      emptyStartupWorld: false,
-    }),
-    {},
-  );
-});
-
-/** Verify startup-flow tests keep the backend Initialized even without seed showfiles. */
-test("empty startup worlds skip the sample fallback", () => {
-  assert.deepEqual(
-    sampleDataBootstrapEnvironment({
-      seedDataAvailable: false,
-      emptyStartupWorld: true,
-    }),
+    sampleDataBootstrapEnvironment({ seedDataAvailable: true }),
     {},
   );
 });

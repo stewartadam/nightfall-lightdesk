@@ -256,14 +256,10 @@ export function stopPlaywrightWorkerSlot(workerSlot) {
 
 /**
  * Returns backend environment that bootstraps and saves the sample show when the
- * seed lacks the stable E2E showfiles. Tests of the startup flow opt out so the
- * backend stays Initialized (no world loaded) regardless of the developer's data.
+ * seed lacks the stable E2E showfiles, as for tests that ask for sample data only.
  */
-export function sampleDataBootstrapEnvironment({
-  seedDataAvailable,
-  emptyStartupWorld,
-}) {
-  if (seedDataAvailable || emptyStartupWorld) return {};
+export function sampleDataBootstrapEnvironment({ seedDataAvailable }) {
+  if (seedDataAvailable) return {};
   return {
     NIGHTFALL_SAMPLE_DATA: "1",
     NIGHTFALL_STARTUP_CMDS: "save sample; save default",
@@ -295,7 +291,6 @@ function seedTelemetryChoice(dataDir, telemetryUndecided) {
  * `dataDir` of a backend stopped with `keepDataDir`, restarts that backend with its data.
  */
 export async function startPlaywrightTestBackend({
-  emptyStartupWorld = false,
   experimentalFlows = false,
   telemetryUndecided = false,
   dataDir: existingDataDir = "",
@@ -338,10 +333,7 @@ export async function startPlaywrightTestBackend({
         NIGHTFALL_PORT: String(workerSlot.backendPort),
         NIGHTFALL_TIMELINE_AUDIO_ENABLED:
           process.env.NIGHTFALL_TIMELINE_AUDIO_ENABLED ?? "0",
-        ...sampleDataBootstrapEnvironment({
-          seedDataAvailable,
-          emptyStartupWorld,
-        }),
+        ...sampleDataBootstrapEnvironment({ seedDataAvailable }),
       },
       registryPath,
       scriptName: "run-playwright-backend.mjs",

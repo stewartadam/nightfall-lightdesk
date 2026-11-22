@@ -1211,9 +1211,6 @@ test("I/O transports panel warns about adapters sharing a serial number", async 
 
 /** Groups scenarios that create their own blank showfile through the startup picker. */
 test.describe("owned blank showfile", () => {
-  // Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
-  test.use({ emptyStartupWorld: true });
-
   /**
    * Verifies external control shares a section with interface names, addresses, and status.
    */

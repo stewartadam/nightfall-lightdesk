@@ -43,11 +43,6 @@ type TestFixtures = {
   experimentalFlows: boolean;
   /** Ignores installed shows and generates repository-owned sample data for this test. */
   sampleDataOnly: boolean;
-  /**
-   * Starts the backend with no world loaded (AppState Initialized) even when the
-   * seed lacks the stable E2E showfiles, so startup draft and showfile prompts run.
-   */
-  emptyStartupWorld: boolean;
   /** Leaves telemetry consent unanswered so the first-run prompt appears. */
   telemetryUndecided: boolean;
   backendSlot: BackendSlot;
@@ -88,7 +83,6 @@ function requiredEnvironment(name: string): string {
 export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   experimentalFlows: [false, { option: true }],
   sampleDataOnly: [false, { option: true }],
-  emptyStartupWorld: [false, { option: true }],
   telemetryUndecided: [false, { option: true }],
   guideInvitation: [false, { option: true }],
   gpuGate: [gpuGateFixture, { auto: true }],
@@ -118,28 +112,15 @@ export const test = playwrightTest.extend<TestFixtures, WorkerFixtures>({
   /** Gives each test a freshly seeded backend and destroys it afterward. */
   backendSlot: [
     async (
-      {
-        workerSlot,
-        experimentalFlows,
-        sampleDataOnly,
-        emptyStartupWorld,
-        telemetryUndecided,
-      },
+      { workerSlot, experimentalFlows, sampleDataOnly, telemetryUndecided },
       use,
       testInfo,
     ) => {
-      if (sampleDataOnly && emptyStartupWorld) {
-        // sampleDataOnly relies on the sample-data fallback that emptyStartupWorld disables.
-        throw new Error(
-          "sampleDataOnly and emptyStartupWorld cannot be combined: the backend would start with neither sample data nor a world",
-        );
-      }
       const emptySeed = sampleDataOnly
         ? await mkdtemp(join(tmpdir(), "nightfall-owned-sample-"))
         : undefined;
       try {
         const backendSlot = await startPlaywrightTestBackend({
-          emptyStartupWorld,
           experimentalFlows,
           telemetryUndecided,
           seedDataDir:

@@ -9,8 +9,7 @@
 import { expect, type Page, test } from "./playwright-fixtures";
 import { waitForDockviewApp } from "./showfile-startup";
 
-// Keep the backend unloaded so startup shows the picker even when the seed lacks showfiles.
-test.use({ experimentalFlows: true, emptyStartupWorld: true });
+test.use({ experimentalFlows: true });
 
 type OwnedFlow = {
   id: number;
