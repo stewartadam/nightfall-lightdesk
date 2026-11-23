@@ -6,8 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, type JSX, on, splitProps } from "solid-js";
+import { createSignal, type JSX, splitProps } from "solid-js";
 import { Input } from "../../../components/ui/form-controls";
+import { createEffect } from "../../../lib/solid-compat";
 
 type CommitFieldProps = Omit<
   JSX.InputHTMLAttributes<HTMLInputElement>,
@@ -60,12 +61,10 @@ export function createCommitText(source: {
 
   /** Shows the draft's value whenever it changes, unless the user is typing. */
   createEffect(
-    on(
-      () => source.value,
-      (value) => {
-        if (!editing) setText(value);
-      },
-    ),
+    () => source.value,
+    (value) => {
+      if (!editing) setText(value);
+    },
   );
 
   /** Value sent by a commit that has not been answered yet, so a blur right after Enter does not send it twice. */

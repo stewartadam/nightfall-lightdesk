@@ -8,7 +8,8 @@
 
 import { ListIcon } from "@squidlab/phosphor-solid/list";
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
-import { type Accessor, createEffect, on, onCleanup } from "solid-js";
+import type { Accessor } from "solid-js";
+import { createEffect } from "../../../lib/solid-compat";
 import { playContentEntrance } from "../../ui/content-entrance";
 import {
   SegmentedControl,
@@ -38,23 +39,21 @@ export function createCrudViewEntrance(
   content: Accessor<HTMLElement | undefined>,
 ) {
   /** Waits for the selected layout to render and cancels any superseded entrance. */
-  createEffect(
-    on(mode, (next, previous) => {
-      if (!next || !previous || next === previous) return;
-      let cancel: (() => void) | undefined;
-      const frame = requestAnimationFrame(() => {
-        const element = content();
-        if (element)
-          cancel = playContentEntrance(element, {
-            direction: next === "grid" ? "right" : "left",
-          });
-      });
-      onCleanup(() => {
-        cancelAnimationFrame(frame);
-        cancel?.();
-      });
-    }),
-  );
+  createEffect(mode, (next, previous) => {
+    if (!next || !previous || next === previous) return;
+    let cancel: (() => void) | undefined;
+    const frame = requestAnimationFrame(() => {
+      const element = content();
+      if (element)
+        cancel = playContentEntrance(element, {
+          direction: next === "grid" ? "right" : "left",
+        });
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      cancel?.();
+    };
+  });
 }
 
 interface CrudViewModeToggleProps {

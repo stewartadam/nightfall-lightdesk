@@ -14,15 +14,10 @@
  * to the FixturePreview component for rendering.
  */
 
-import {
-  type Component,
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-} from "solid-js";
+import { type Component, createMemo, createSignal } from "solid-js";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import { fetchFixtureProfile } from "../../../lib/fixture-service";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { fixtureProfile } from "../../../state/appStores";
 import type { Fixture, FixtureGeometry } from "../../../types";
@@ -54,26 +49,22 @@ const LibraryFixturePreview: Component<LibraryFixturePreviewProps> = (
 
   // Clear preview data when fixture (make/model/revision) changes so stale renders disappear.
   createEffect(
-    on(
-      () => [props.make, props.model, props.assetEtag] as const,
-      () => {
-        setFixture(null);
-        // (mode changes within same fixture should preserve geometry until new data arrives)
-        setGeometry(null);
-      },
-      { defer: true }, // Don't run on initial mount
-    ),
+    () => [props.make, props.model, props.assetEtag] as const,
+    () => {
+      setFixture(null);
+      // (mode changes within same fixture should preserve geometry until new data arrives)
+      setGeometry(null);
+    },
+    { defer: true },
   );
 
   // Fetch fixture profile when any prop changes.
   createEffect(
-    on(
-      () => [props.make, props.model, props.mode, props.assetEtag] as const,
-      ([make, model, mode, assetEtag]) => {
-        // Request profile from backend
-        fetchFixtureProfile(make, model, mode, assetEtag);
-      },
-    ),
+    () => [props.make, props.model, props.mode, props.assetEtag] as const,
+    ([make, model, mode, assetEtag]) => {
+      // Request profile from backend
+      fetchFixtureProfile(make, model, mode, assetEtag);
+    },
   );
 
   // Update preview data when the global profile store receives our requested fixture.

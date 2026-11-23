@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, on } from "solid-js";
+import { createSignal } from "solid-js";
 import {
   type CommandSequenceProgress,
   CommandSequenceRunner,
@@ -25,6 +25,7 @@ import {
   newShowfile,
   promptForNewShowfile,
 } from "../../../lib/showfile-actions";
+import { createEffect } from "../../../lib/solid-compat";
 import {
   addConsoleSendError,
   dockApi,
@@ -394,20 +395,18 @@ export function createCommandLineController(
   if (options.variant === "nav") {
     /** Fills the header input with each typed command as if the user typed it, cursor at the end. */
     createEffect(
-      on(
-        typedCommand,
-        (request) => {
-          if (!request || !inputElement) return;
-          inputElement.value = request.text;
-          onInputChange(inputElement);
-          inputElement.focus();
-          inputElement.setSelectionRange(
-            request.text.length,
-            request.text.length,
-          );
-        },
-        { defer: true },
-      ),
+      typedCommand,
+      (request) => {
+        if (!request || !inputElement) return;
+        inputElement.value = request.text;
+        onInputChange(inputElement);
+        inputElement.focus();
+        inputElement.setSelectionRange(
+          request.text.length,
+          request.text.length,
+        );
+      },
+      { defer: true },
     );
   }
 

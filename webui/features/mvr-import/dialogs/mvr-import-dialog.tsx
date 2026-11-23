@@ -11,14 +11,12 @@ import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import { CloudArrowUpIcon } from "@squidlab/phosphor-solid/cloud-arrow-up";
 import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import {
-  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
   For,
   type JSX,
   Match,
-  on,
   Show,
   Switch,
 } from "solid-js";
@@ -41,6 +39,7 @@ import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
 import { Table, TableScroll } from "../../../components/ui/table";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { fixtureLibrary } from "../../../state/appStores";
 import { pushToast } from "../../../state/notifications";
@@ -222,22 +221,21 @@ export function RigImportDialog() {
 
   /** Re-plans the import whenever an option changes after the first preview. */
   createEffect(
-    on(
+    () =>
       [
-        numbering,
-        numberingValue,
-        addToUserLibrary,
-        updateExisting,
-        groupSource,
-        scenery,
-        mappings,
-        remove,
-      ],
-      () => {
-        if (stage() === "preview") void refreshPreview();
-      },
-      { defer: true },
-    ),
+        numbering(),
+        numberingValue(),
+        addToUserLibrary(),
+        updateExisting(),
+        groupSource(),
+        scenery(),
+        mappings(),
+        remove(),
+      ] as const,
+    () => {
+      if (stage() === "preview") void refreshPreview();
+    },
+    { defer: true },
   );
 
   /** Imports the rig, then reveals the new fixtures in the patch and closes. */

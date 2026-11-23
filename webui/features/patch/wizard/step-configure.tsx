@@ -6,15 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createUniqueId,
-  on,
-  onMount,
-  Show,
-  untrack,
-} from "solid-js";
+import { createMemo, createUniqueId, onMount, Show, untrack } from "solid-js";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { NumberField } from "../../../components/widgets/number-field";
@@ -24,6 +16,7 @@ import {
   fetchFixtureProfile,
   libraryDefinitionId,
 } from "../../../lib/fixture-service";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
@@ -146,21 +139,19 @@ export function StepConfigure() {
    * unless a universe was already chosen.
    */
   createEffect(
-    on(
-      () => ({
-        assignConsoleDmx: state().assignConsoleDmx,
-        footprint: channelCount(),
-      }),
-      ({ assignConsoleDmx, footprint }) => {
-        if (
-          assignConsoleDmx &&
-          footprint !== null &&
-          untrack(state).universeId === null
-        ) {
-          untrack(fillNextAvailable);
-        }
-      },
-    ),
+    () => ({
+      assignConsoleDmx: state().assignConsoleDmx,
+      footprint: channelCount(),
+    }),
+    ({ assignConsoleDmx, footprint }) => {
+      if (
+        assignConsoleDmx &&
+        footprint !== null &&
+        untrack(state).universeId === null
+      ) {
+        untrack(fillNextAvailable);
+      }
+    },
   );
 
   const totalChannelsNeeded = createMemo(() => {

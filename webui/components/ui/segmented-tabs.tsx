@@ -6,14 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createSignal,
-  For,
-  type JSX,
-  on,
-  onCleanup,
-} from "solid-js";
+import { createSignal, For, type JSX, onCleanup } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import { type ContentEntrance, playContentEntrance } from "./content-entrance";
 import { ScrollArea } from "./scroll-area";
 import { Button } from "./visual-language/button";
@@ -95,37 +89,35 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
    * the options), and that must not replay the entrance.
    */
   createEffect(
-    on(
-      () => props.value,
-      (value, previous) => {
-        if (value === previous) return;
-        const nextIndex = props.options.findIndex(
-          (option) => option.key === value,
-        );
-        const previousIndex = props.options.findIndex(
-          (option) => option.key === previous,
-        );
-        if (nextIndex < 0 || previousIndex < 0) return;
-        const contentId = props.options[nextIndex].contentId ?? props.contentId;
-        let cancelEntrance: (() => void) | undefined;
-        const frame = requestAnimationFrame(() => {
-          const document = viewport.ownerDocument;
-          if (document.documentElement.dataset.reducedMotion === "true") return;
-          const panel = document.getElementById(contentId);
-          if (!panel) return;
-          const { backward, forward, distance } =
-            CONTENT_ENTRANCES[orientation()];
-          cancelEntrance = playContentEntrance(panel, {
-            direction: nextIndex > previousIndex ? forward : backward,
-            distance,
-          });
+    () => props.value,
+    (value, previous) => {
+      if (value === previous) return;
+      const nextIndex = props.options.findIndex(
+        (option) => option.key === value,
+      );
+      const previousIndex = props.options.findIndex(
+        (option) => option.key === previous,
+      );
+      if (nextIndex < 0 || previousIndex < 0) return;
+      const contentId = props.options[nextIndex].contentId ?? props.contentId;
+      let cancelEntrance: (() => void) | undefined;
+      const frame = requestAnimationFrame(() => {
+        const document = viewport.ownerDocument;
+        if (document.documentElement.dataset.reducedMotion === "true") return;
+        const panel = document.getElementById(contentId);
+        if (!panel) return;
+        const { backward, forward, distance } =
+          CONTENT_ENTRANCES[orientation()];
+        cancelEntrance = playContentEntrance(panel, {
+          direction: nextIndex > previousIndex ? forward : backward,
+          distance,
         });
-        onCleanup(() => {
-          cancelAnimationFrame(frame);
-          cancelEntrance?.();
-        });
-      },
-    ),
+      });
+      return () => {
+        cancelAnimationFrame(frame);
+        cancelEntrance?.();
+      };
+    },
   );
 
   /**

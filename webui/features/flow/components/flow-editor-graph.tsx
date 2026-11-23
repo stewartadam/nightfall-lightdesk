@@ -15,11 +15,9 @@ import {
 } from "@dschz/solid-flow";
 import {
   batch,
-  createEffect,
   createMemo,
   createSignal,
   For,
-  on,
   onCleanup,
   onMount,
   Show,
@@ -30,6 +28,7 @@ import {
   type SetStoreFunction,
   type Store,
 } from "solid-js/store";
+import { createEffect } from "../../../lib/solid-compat";
 import "@dschz/solid-flow/styles";
 
 import {
@@ -387,38 +386,36 @@ export default function FlowEditorGraphSolid(props: FlowEditorGraphProps) {
 
   // Initialize nodes and edges when flow definition snapshots change.
   createEffect(
-    on(
-      () => [props.flow, props.definitionsRevision] as const,
-      ([flow]) => {
-        if (!flow) {
-          setNodes([]);
-          setEdges([]);
-          setPendingAutoLayout(false);
-          return;
+    () => [props.flow, props.definitionsRevision] as const,
+    ([flow]) => {
+      if (!flow) {
+        setNodes([]);
+        setEdges([]);
+        setPendingAutoLayout(false);
+        return;
+      }
+      const connectedInputs = buildConnectedInputsSet(flow);
+      const builtNodes = buildNodes(
+        flow,
+        connectedInputs,
+        props.nodeLabelOverrides,
+        selectedNodeIdRef,
+      );
+      setNodes(builtNodes);
+      setEdges(buildEdges(flow));
+
+      // Check if this flow needs auto-layout (no existing position data)
+      const needsLayout = flowNeedsAutoLayout(flow);
+      setPendingAutoLayout(needsLayout);
+
+      // Update node internals after a short delay to ensure DOM is ready
+      setTimeout(() => {
+        const nodeIds = builtNodes.map((n) => n.id);
+        if (nodeIds.length > 0 && updateNodeInternalsRef) {
+          updateNodeInternalsRef(nodeIds);
         }
-        const connectedInputs = buildConnectedInputsSet(flow);
-        const builtNodes = buildNodes(
-          flow,
-          connectedInputs,
-          props.nodeLabelOverrides,
-          selectedNodeIdRef,
-        );
-        setNodes(builtNodes);
-        setEdges(buildEdges(flow));
-
-        // Check if this flow needs auto-layout (no existing position data)
-        const needsLayout = flowNeedsAutoLayout(flow);
-        setPendingAutoLayout(needsLayout);
-
-        // Update node internals after a short delay to ensure DOM is ready
-        setTimeout(() => {
-          const nodeIds = builtNodes.map((n) => n.id);
-          if (nodeIds.length > 0 && updateNodeInternalsRef) {
-            updateNodeInternalsRef(nodeIds);
-          }
-        }, 50);
-      },
-    ),
+      }, 50);
+    },
   );
 
   // Trigger auto-layout when pending and nodes are measured

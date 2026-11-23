@@ -8,14 +8,13 @@
 
 import {
   type Accessor,
-  createEffect,
   createSignal,
   type JSX,
-  on,
   onCleanup,
   Show,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { createEffect } from "../../lib/solid-compat";
 import { overlayHost } from "./modal/dialog-stack";
 
 export interface TooltipProps {
@@ -103,18 +102,16 @@ export default function Tooltip(props: TooltipProps) {
 
   /** Shows the tooltip for the flash period whenever the flash value changes, skipping mount. */
   createEffect(
-    on(
-      () => props.flash?.(),
-      () => {
-        clearTimeout(flashTimeoutId);
-        setFlashing(true);
-        flashTimeoutId = setTimeout(
-          () => setFlashing(false),
-          props.flashMs ?? 2000,
-        );
-      },
-      { defer: true },
-    ),
+    () => props.flash?.(),
+    () => {
+      clearTimeout(flashTimeoutId);
+      setFlashing(true);
+      flashTimeoutId = setTimeout(
+        () => setFlashing(false),
+        props.flashMs ?? 2000,
+      );
+    },
+    { defer: true },
   );
   onCleanup(() => clearTimeout(flashTimeoutId));
 

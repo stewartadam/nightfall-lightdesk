@@ -14,8 +14,9 @@
  * for previewing fixtures before adding them to the project.
  */
 
-import { type Component, createEffect, on, onCleanup, onMount } from "solid-js";
+import { type Component, onCleanup, onMount } from "solid-js";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 
 const log = getLogger(import.meta.url);
 
@@ -89,17 +90,15 @@ const FixturePreviewCanvas: Component<FixturePreviewProps> = (props) => {
 
   // Update fixture when preview data changes.
   createEffect(
-    on(
-      () => props.fixture,
-      (fixture) => {
-        if (rendererState) {
-          setPreviewFixture(rendererState, fixture, {
-            keepCamera: props.keepCamera,
-          });
-        }
-      },
-      { defer: true },
-    ),
+    () => props.fixture,
+    (fixture) => {
+      if (rendererState) {
+        setPreviewFixture(rendererState, fixture, {
+          keepCamera: props.keepCamera,
+        });
+      }
+    },
+    { defer: true },
   );
 
   onCleanup(() => {

@@ -16,15 +16,7 @@ import { Table, TableScroll } from "../../../components/ui/table";
  * Shows detailed information about selected fixture
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  on,
-  Show,
-} from "solid-js";
+import { type Accessor, createMemo, createSignal, For, Show } from "solid-js";
 import { fixtureWireLayout, parameterDmxBreak } from "../../../lib/dmx";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import { fetchFixtureProfile } from "../../../lib/fixture-service";
@@ -32,6 +24,7 @@ import {
   libraryRevisionDate,
   libraryRevisionLabel,
 } from "../../../lib/library-revision";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { fixtureLibrary, fixtureProfile } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -246,26 +239,22 @@ export default function FixtureLibraryProperties(
   );
 
   /** Keeps the selected mode valid when the selected fixture changes. */
-  createEffect(
-    on(selectedFixtureKey, () => {
-      setSelectedMode(selectedFixture()?.modes[0]);
-    }),
-  );
+  createEffect(selectedFixtureKey, () => {
+    setSelectedMode(selectedFixture()?.modes[0]);
+  });
 
   /** Requests parsed profile data for the selected mode shown in this panel. */
   createEffect(
-    on(
-      () => [selectedFixture(), selectedMode()] as const,
-      ([fixture, mode]) => {
-        if (!fixture) return;
-        fetchFixtureProfile(
-          fixture.make,
-          fixture.model,
-          mode,
-          fixture.asset_etag,
-        );
-      },
-    ),
+    () => [selectedFixture(), selectedMode()] as const,
+    ([fixture, mode]) => {
+      if (!fixture) return;
+      fetchFixtureProfile(
+        fixture.make,
+        fixture.model,
+        mode,
+        fixture.asset_etag,
+      );
+    },
   );
 
   /** Provides the profile response matching the selected fixture and mode. */

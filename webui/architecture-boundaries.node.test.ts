@@ -52,6 +52,9 @@ const exceptionsPath = resolve(
   "webui-boundary-exceptions.json",
 );
 
+/** Solid 2.0 shaped APIs on 1.x; any layer may import it, like `solid-js`. */
+const SOLID_COMPAT_MODULE = "webui/lib/solid-compat";
+
 /** Converts a platform path into a repository-relative slash-separated path. */
 function repositoryPath(path: string): string {
   return relative(repoRoot, path).split(sep).join("/");
@@ -128,6 +131,11 @@ function isFeaturePublicEntrypoint(path: string, feature: string): boolean {
 /** Describes a forbidden dependency edge for one classified source file. */
 function violatedRule(role: SourceRole, target: string): string | undefined {
   if (!target.startsWith("webui/")) {
+    return undefined;
+  }
+
+  // Framework shim with no app imports, shared by every layer like solid-js itself.
+  if (target === SOLID_COMPAT_MODULE) {
     return undefined;
   }
 
@@ -367,6 +375,15 @@ test("UI primitives reject upward dependencies", () => {
   assert.equal(
     violatedRule({ layer: "ui" }, "webui/features/cues/index"),
     "ui-must-only-depend-on-ui",
+  );
+});
+
+/** Verifies every layer, including UI primitives, may use the Solid compatibility module. */
+test("all layers may import the Solid compatibility module", () => {
+  assert.equal(violatedRule({ layer: "ui" }, SOLID_COMPAT_MODULE), undefined);
+  assert.equal(
+    violatedRule({ layer: "widgets" }, SOLID_COMPAT_MODULE),
+    undefined,
   );
 });
 

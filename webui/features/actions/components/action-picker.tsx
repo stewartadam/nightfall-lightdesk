@@ -6,17 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  type JSX,
-  on,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { $uiActionCatalog as uiActionCatalogStore } from "../../../components/providers/command-registry";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { actionCatalog } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -78,14 +71,12 @@ export function ActionPicker(props: ActionPickerProps): JSX.Element {
 
   /** Resynchronizes local state when the bound action changes from outside. */
   createEffect(
-    on(
-      () => props.value,
-      (value) => {
-        setActionId(value?.id ?? "");
-        setDraft({ ...((value?.arguments as Record<string, unknown>) ?? {}) });
-      },
-      { defer: true },
-    ),
+    () => props.value,
+    (value) => {
+      setActionId(value?.id ?? "");
+      setDraft({ ...((value?.arguments as Record<string, unknown>) ?? {}) });
+    },
+    { defer: true },
   );
 
   /** Returns selectable actions grouped by category for the source's surface and input kinds. */

@@ -7,15 +7,8 @@
  */
 
 import noUiSlider, { type API, PipsMode } from "nouislider";
-import {
-  createEffect,
-  For,
-  type JSX,
-  on,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import { withTransientOwner } from "./transient-owner";
 import "./range-slider.css";
 
@@ -219,19 +212,17 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
     });
     /** Rebuilds the scale when bounds or step change, such as when a mode switch widens the range. */
     createEffect(
-      on(
-        [min, max, step],
-        ([nextMin, nextMax, nextStep]) => {
-          syncing = true;
-          sliderApi?.updateOptions(
-            { range: { min: nextMin, max: nextMax }, step: nextStep },
-            false,
-          );
-          sliderApi?.set(values(), false);
-          syncing = false;
-        },
-        { defer: true },
-      ),
+      () => [min(), max(), step()] as const,
+      ([nextMin, nextMax, nextStep]) => {
+        syncing = true;
+        sliderApi?.updateOptions(
+          { range: { min: nextMin, max: nextMax }, step: nextStep },
+          false,
+        );
+        sliderApi?.set(values(), false);
+        syncing = false;
+      },
+      { defer: true },
     );
     /** Keeps handle names current when a mounted slider's labels change, such as after its row moves. */
     createEffect(() => {

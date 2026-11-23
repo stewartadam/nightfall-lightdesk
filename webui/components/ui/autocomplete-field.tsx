@@ -7,15 +7,14 @@
  */
 
 import {
-  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
   For,
   type JSX,
-  on,
   splitProps,
 } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import {
   type AutocompleteOption,
   filterAutocompleteOptions,
@@ -152,14 +151,12 @@ export function AutocompleteField(props: AutocompleteFieldProps) {
 
   /** Closes the list when the value changes from outside, such as a form clearing the field. */
   createEffect(
-    on(
-      () => local.value,
-      (value) => {
-        if (value !== typed) close();
-        typed = value;
-      },
-      { defer: true },
-    ),
+    () => local.value,
+    (value) => {
+      if (value !== typed) close();
+      typed = value;
+    },
+    { defer: true },
   );
 
   /** Closes the list and hands the chosen suggestion to the caller. */

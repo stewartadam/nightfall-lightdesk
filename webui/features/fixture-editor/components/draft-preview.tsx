@@ -6,17 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  on,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { NativeSelect } from "../../../components/ui/form-controls";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import type * as types from "../../../types";
 import { FixturePreview, profileToPreviewFixture } from "../../visualizer";
 import { previewDraft } from "../services/fixture-editor-client";
@@ -82,39 +75,35 @@ export default function DraftPreview() {
 
   /** Starts over when another draft is shown, so nothing of the previous draft lingers. */
   createEffect(
-    on(
-      () => draft().draft_id,
-      () => {
-        setChosenMode(null);
-        setDrawn(null);
-        setFailure(null);
-      },
-      { defer: true },
-    ),
+    () => draft().draft_id,
+    () => {
+      setChosenMode(null);
+      setDrawn(null);
+      setFailure(null);
+    },
+    { defer: true },
   );
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(timer));
 
   /** Asks for a new render after each change, keeping only the answer to the newest request. */
-  createEffect(
-    on(request, (wanted) => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        previewDraft(wanted.draftId, wanted.mode)
-          .then((profile) => {
-            if (request() !== wanted) return;
-            setFailure(null);
-            setDrawn({ request: wanted, profile });
-          })
-          .catch((cause: unknown) => {
-            if (request() !== wanted) return;
-            log.debug("Draft preview failed", { error: cause });
-            setFailure(cause instanceof Error ? cause.message : String(cause));
-          });
-      }, PREVIEW_DELAY_MS);
-    }),
-  );
+  createEffect(request, (wanted) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      previewDraft(wanted.draftId, wanted.mode)
+        .then((profile) => {
+          if (request() !== wanted) return;
+          setFailure(null);
+          setDrawn({ request: wanted, profile });
+        })
+        .catch((cause: unknown) => {
+          if (request() !== wanted) return;
+          log.debug("Draft preview failed", { error: cause });
+          setFailure(cause instanceof Error ? cause.message : String(cause));
+        });
+    }, PREVIEW_DELAY_MS);
+  });
 
   /** Previous render, to tell an edit of the same mode from a switch to another mode or draft. */
   let shownBefore: PreviewRequest | null = null;

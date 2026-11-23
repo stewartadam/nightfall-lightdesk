@@ -8,16 +8,15 @@
 
 import { DotsThreeIcon } from "@squidlab/phosphor-solid/dots-three";
 import {
-  createEffect,
   createSignal,
   type JSX,
-  on,
   onCleanup,
   onMount,
   Show,
   splitProps,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { createEffect } from "../../lib/solid-compat";
 import { createDismissable } from "./dismissable";
 import { overlayHost } from "./modal/dialog-stack";
 import { ScrollIndicators } from "./scroll-area";
@@ -259,7 +258,13 @@ export default function PanelToolbar(props: PanelToolbarProps) {
   });
 
   /** Reveals or hides the extra rows' controls whenever the toolbar unfolds or folds. */
-  createEffect(on(expanded, () => measure(), { defer: true }));
+  createEffect(
+    expanded,
+    () => {
+      measure();
+    },
+    { defer: true },
+  );
 
   return (
     <>

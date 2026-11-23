@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type Accessor, createEffect, on, untrack } from "solid-js";
+import { type Accessor, untrack } from "solid-js";
+import { createEffect } from "../../../lib/solid-compat";
 import type * as types from "../../../types";
 
 /**
@@ -32,13 +33,11 @@ export function createTimelineEventEffect<TEvent>(
   };
 
   /** Queues each new event and sends it right away when the timeline is loaded. */
-  createEffect(
-    on(event, (current) => {
-      if (current === undefined) return;
-      pending = current;
-      flush();
-    }),
-  );
+  createEffect(event, (current) => {
+    if (current === undefined) return;
+    pending = current;
+    flush();
+  });
 
   /** Sends an event that fired before the timeline reached the store, once it arrives. */
   createEffect(() => {

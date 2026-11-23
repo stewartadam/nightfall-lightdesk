@@ -83,7 +83,7 @@ Node tests scan the source tree and fail when code breaks a layer rule or bypass
 
 | Rule | Enforced by | What it means |
 |------|-------------|---------------|
-| `ui-must-only-depend-on-ui` | `architecture-boundaries.node.test.ts` | Files in `components/ui` import only other files in `components/ui`. They can't use `lib/`, so primitives don't log or read app state. |
+| `ui-must-only-depend-on-ui` | `architecture-boundaries.node.test.ts` | Files in `components/ui` import only other files in `components/ui`. They can't use `lib/`, so primitives don't log or read app state. The one exception is `lib/solid-compat.ts`, which every layer may import. |
 | `widgets-must-not-depend-on-application-runtime` | `architecture-boundaries.node.test.ts` | Widgets don't import providers, shell, overlays, features, `state/`, or `lib/engine-runtime*`. |
 | `providers-must-not-depend-on-presentation` | `architecture-boundaries.node.test.ts` | Providers don't import features, shell, or overlays. |
 | `features-must-not-depend-on-shell` | `architecture-boundaries.node.test.ts` | Features don't import shell or overlays. |
@@ -105,6 +105,8 @@ Be aware of what the tests don't see:
 
 - The boundaries test checks relative imports in `components/` and `features/` only. Package imports and files in `lib/` and `state/` are never checked.
 - The `shared-*` tests scan `.tsx` and `.jsx` files only. A role assigned in a plain `.ts` file isn't caught.
+
+`lib/solid-compat.ts` provides Solid 2.0 style APIs, such as the two-function `createEffect(compute, effect)`, built on Solid 1.x. Write new effects in that form so the 2.0 upgrade only swaps the import. Biome rejects APIs that 2.0 removes, such as `on()`.
 
 The [shared UI components README](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/webui/components/ui/README.md) explains how to use each shared component that these rules point you to, and the [dialog presentation README](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/webui/components/ui/dialog/README.md) explains dialog kinds and close behavior.
 

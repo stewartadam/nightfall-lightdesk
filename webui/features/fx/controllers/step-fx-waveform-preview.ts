@@ -7,13 +7,8 @@
  */
 
 import type { Accessor } from "solid-js";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  onCleanup,
-} from "solid-js";
+import { createMemo, createSignal, onCleanup } from "solid-js";
+import { createEffect } from "../../../lib/solid-compat";
 import { reducedMotion } from "../../../state/reduced-motion";
 import { FxDirection } from "../../../types";
 import {
@@ -98,90 +93,85 @@ export function createStepFxWaveformPreview(
 
   /** Eases mode changes without making the continuously moving waveform trail its playhead. */
   createEffect(
-    on(
-      () => props.centerSelectedFixture,
-      (centerFixture, previousCenterFixture) => {
-        // Draft replacements re-notify the prop without changing the mode.
-        if (centerFixture === previousCenterFixture) return;
-        if (centerModeFrame !== undefined)
-          cancelAnimationFrame(centerModeFrame);
-        centerModeFrame = undefined;
-        const targetBlend = centerFixture ? 1 : 0;
-        if (previousCenterFixture === undefined || reducedMotion.get()) {
-          setCenterModeBlend(targetBlend);
-          setCenterModeTransitioning(false);
+    () => props.centerSelectedFixture,
+    (centerFixture, previousCenterFixture) => {
+      // Draft replacements re-notify the prop without changing the mode.
+      if (centerFixture === previousCenterFixture) return;
+      if (centerModeFrame !== undefined) cancelAnimationFrame(centerModeFrame);
+      centerModeFrame = undefined;
+      const targetBlend = centerFixture ? 1 : 0;
+      if (previousCenterFixture === undefined || reducedMotion.get()) {
+        setCenterModeBlend(targetBlend);
+        setCenterModeTransitioning(false);
+        return;
+      }
+
+      const initialBlend = centerModeBlend();
+      const startedAt = performance.now();
+      setCenterModeTransitioning(true);
+
+      /** Advances the eased interpolation while live beat sampling continues independently. */
+      const animateModeTransition = (now: number): void => {
+        const progress = Math.min(
+          1,
+          (now - startedAt) / PREVIEW_TRANSITION_DURATION_MS,
+        );
+        const easedProgress = easeOutCubic(progress);
+        setCenterModeBlend(
+          initialBlend + (targetBlend - initialBlend) * easedProgress,
+        );
+        if (progress < 1) {
+          centerModeFrame = requestAnimationFrame(animateModeTransition);
           return;
         }
+        centerModeFrame = undefined;
+        setCenterModeTransitioning(false);
+      };
 
-        const initialBlend = centerModeBlend();
-        const startedAt = performance.now();
-        setCenterModeTransitioning(true);
-
-        /** Advances the eased interpolation while live beat sampling continues independently. */
-        const animateModeTransition = (now: number): void => {
-          const progress = Math.min(
-            1,
-            (now - startedAt) / PREVIEW_TRANSITION_DURATION_MS,
-          );
-          const easedProgress = easeOutCubic(progress);
-          setCenterModeBlend(
-            initialBlend + (targetBlend - initialBlend) * easedProgress,
-          );
-          if (progress < 1) {
-            centerModeFrame = requestAnimationFrame(animateModeTransition);
-            return;
-          }
-          centerModeFrame = undefined;
-          setCenterModeTransitioning(false);
-        };
-
-        centerModeFrame = requestAnimationFrame(animateModeTransition);
-      },
-    ),
+      centerModeFrame = requestAnimationFrame(animateModeTransition);
+    },
   );
 
   /** Blends old and new direction mappings so the live preview does not jump. */
   createEffect(
-    on(
-      () => props.direction,
-      (direction, previousDirection) => {
-        // Draft replacements (such as autosave acknowledgements) re-notify an unchanged direction.
-        if (direction === previousDirection) return;
-        if (directionFrame !== undefined) cancelAnimationFrame(directionFrame);
-        directionFrame = undefined;
-        if (previousDirection === undefined || reducedMotion.get()) {
-          setDirectionFrom(direction);
-          setDirectionTo(direction);
-          setDirectionBlend(1);
-          setDirectionTransitioning(false);
+    () => props.direction,
+    (direction, previousDirection) => {
+      // Draft replacements (such as autosave acknowledgements) re-notify an unchanged direction.
+      if (direction === previousDirection) return;
+      if (directionFrame !== undefined) cancelAnimationFrame(directionFrame);
+      directionFrame = undefined;
+      if (previousDirection === undefined || reducedMotion.get()) {
+        setDirectionFrom(direction);
+        setDirectionTo(direction);
+        setDirectionBlend(1);
+        setDirectionTransitioning(false);
+        return;
+      }
+
+      setDirectionFrom(directionTo());
+      setDirectionTo(direction);
+      setDirectionBlend(0);
+      setDirectionTransitioning(true);
+      const startedAt = performance.now();
+
+      /** Advances the direction remap while both endpoint samples continue moving. */
+      const animateDirectionTransition = (now: number): void => {
+        const progress = Math.min(
+          1,
+          (now - startedAt) / PREVIEW_TRANSITION_DURATION_MS,
+        );
+        setDirectionBlend(easeOutCubic(progress));
+        if (progress < 1) {
+          directionFrame = requestAnimationFrame(animateDirectionTransition);
           return;
         }
+        directionFrame = undefined;
+        setDirectionFrom(direction);
+        setDirectionTransitioning(false);
+      };
 
-        setDirectionFrom(directionTo());
-        setDirectionTo(direction);
-        setDirectionBlend(0);
-        setDirectionTransitioning(true);
-        const startedAt = performance.now();
-
-        /** Advances the direction remap while both endpoint samples continue moving. */
-        const animateDirectionTransition = (now: number): void => {
-          const progress = Math.min(
-            1,
-            (now - startedAt) / PREVIEW_TRANSITION_DURATION_MS,
-          );
-          setDirectionBlend(easeOutCubic(progress));
-          if (progress < 1) {
-            directionFrame = requestAnimationFrame(animateDirectionTransition);
-            return;
-          }
-          directionFrame = undefined;
-          setDirectionFrom(direction);
-          setDirectionTransitioning(false);
-        };
-
-        directionFrame = requestAnimationFrame(animateDirectionTransition);
-      },
-    ),
+      directionFrame = requestAnimationFrame(animateDirectionTransition);
+    },
   );
 
   /** Samples every requested phase index from one interpolated backend clock instant. */

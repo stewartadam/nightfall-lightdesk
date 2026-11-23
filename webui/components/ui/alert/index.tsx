@@ -13,15 +13,14 @@ import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import { WarningOctagonIcon } from "@squidlab/phosphor-solid/warning-octagon";
 import {
   type Accessor,
-  createEffect,
   createSignal,
   type JSX,
-  on,
   onCleanup,
   Show,
   splitProps,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { createEffect } from "../../../lib/solid-compat";
 import type { AppIcon } from "../icon";
 import "./alert.css";
 
@@ -106,18 +105,16 @@ export function Alert(props: AlertProps) {
 
   /** Shows the alert for the flash period whenever the flash value changes, skipping mount. */
   createEffect(
-    on(
-      () => local.flash?.(),
-      () => {
-        clearTimeout(flashTimeoutId);
-        setFlashing(true);
-        flashTimeoutId = setTimeout(
-          () => setFlashing(false),
-          local.flashMs ?? 2000,
-        );
-      },
-      { defer: true },
-    ),
+    () => local.flash?.(),
+    () => {
+      clearTimeout(flashTimeoutId);
+      setFlashing(true);
+      flashTimeoutId = setTimeout(
+        () => setFlashing(false),
+        local.flashMs ?? 2000,
+      );
+    },
+    { defer: true },
   );
 
   /** Whether callers currently want the alert visible, through `show` or an active flash. */
@@ -129,20 +126,18 @@ export function Alert(props: AlertProps) {
 
   /** Mounts immediately on show and keeps the alert mounted until its exit animation finishes. */
   createEffect(
-    on(
-      wantsVisible,
-      (visible) => {
-        clearTimeout(exitTimeoutId);
-        if (visible) {
-          setMounted(true);
-        } else if (transitionMs() === 0 || prefersReducedMotion()) {
-          setMounted(false);
-        } else {
-          exitTimeoutId = setTimeout(() => setMounted(false), transitionMs());
-        }
-      },
-      { defer: true },
-    ),
+    wantsVisible,
+    (visible) => {
+      clearTimeout(exitTimeoutId);
+      if (visible) {
+        setMounted(true);
+      } else if (transitionMs() === 0 || prefersReducedMotion()) {
+        setMounted(false);
+      } else {
+        exitTimeoutId = setTimeout(() => setMounted(false), transitionMs());
+      }
+    },
+    { defer: true },
   );
   onCleanup(() => {
     clearTimeout(flashTimeoutId);

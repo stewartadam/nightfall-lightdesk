@@ -7,7 +7,7 @@
  */
 
 import { PlugsConnectedIcon } from "@squidlab/phosphor-solid/plugs-connected";
-import { createEffect, createMemo, on, onCleanup, Show } from "solid-js";
+import { createMemo, onCleanup, Show } from "solid-js";
 import { useUiAction } from "../../../components/providers/command-registry";
 import { Button } from "../../../components/ui/visual-language/button";
 import { commandFailure } from "../../../lib/command-result";
@@ -15,6 +15,7 @@ import { commandClient } from "../../../lib/engine-commands";
 import { resyncGeneration } from "../../../lib/engine-runtime";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import {
   controllerMappingMode,
@@ -115,29 +116,25 @@ export function MappingModeController() {
   const active = createMemo(() => $mode().active);
 
   /** Enters or leaves backend mapping mode whenever this client's mapping mode toggles. */
-  createEffect(
-    on(active, (active, wasActive) => {
-      if (active !== (wasActive ?? false)) sendMappingMode(active);
-      if (active) {
-        observeShowGeneration(controllerMappingMode.get().show_generation);
-      }
-    }),
-  );
+  createEffect(active, (active, wasActive) => {
+    if (active !== (wasActive ?? false)) sendMappingMode(active);
+    if (active) {
+      observeShowGeneration(controllerMappingMode.get().show_generation);
+    }
+  });
 
   /**
    * Renews the backend hold on an interval while mapping, so controllers stay paused only
    * while this window keeps responding.
    */
-  createEffect(
-    on(active, (active) => {
-      if (!active) return;
-      const timer = setInterval(
-        () => void renewMappingMode(),
-        MAPPING_MODE_RENEW_INTERVAL_MS,
-      );
-      onCleanup(() => clearInterval(timer));
-    }),
-  );
+  createEffect(active, (active) => {
+    if (!active) return;
+    const timer = setInterval(
+      () => void renewMappingMode(),
+      MAPPING_MODE_RENEW_INTERVAL_MS,
+    );
+    return () => clearInterval(timer);
+  });
 
   /**
    * Renews backend mapping mode after a resync. A reconnected session has no hold, so the
@@ -145,13 +142,11 @@ export function MappingModeController() {
    * Show loads are detected from the show generation instead.
    */
   createEffect(
-    on(
-      resyncGeneration,
-      () => {
-        if ($mappingMode.get().active) void renewMappingMode();
-      },
-      { defer: true },
-    ),
+    resyncGeneration,
+    () => {
+      if ($mappingMode.get().active) void renewMappingMode();
+    },
+    { defer: true },
   );
 
   useUiAction({

@@ -8,15 +8,7 @@
 
 import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  Match,
-  on,
-  Show,
-  Switch,
-} from "solid-js";
+import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useAppShell } from "../../components/providers/app-shell";
 import { CountBadge } from "../../components/ui/badge";
@@ -34,6 +26,7 @@ import {
 } from "../../lib/app-metadata";
 import { writeClipboardText } from "../../lib/clipboard";
 import { getLogger } from "../../lib/logger";
+import { createEffect } from "../../lib/solid-compat";
 import {
   getNightfallDataDirectoryPath,
   isTauriRuntime,
@@ -101,12 +94,10 @@ export function AboutDialog() {
   });
 
   /** Opens the dialog on Info each time, and forgets the notices so they reload when next opened. */
-  createEffect(
-    on(isAboutOpen, () => {
-      setNoticesLoaded(false);
-      setTab("info");
-    }),
-  );
+  createEffect(isAboutOpen, () => {
+    setNoticesLoaded(false);
+    setTab("info");
+  });
 
   /** Leaves the Updates tab when the desktop app stops reporting an update status. */
   createEffect(() => {

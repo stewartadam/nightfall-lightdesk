@@ -12,13 +12,11 @@ import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import {
-  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
   For,
   Index,
-  on,
   Show,
 } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
@@ -27,6 +25,7 @@ import { NativeSelect } from "../../../components/ui/form-controls";
 import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
 import { Table } from "../../../components/ui/table";
 import { Button } from "../../../components/ui/visual-language/button";
+import { createEffect } from "../../../lib/solid-compat";
 import {
   addressLabel,
   channelAttributes,
@@ -112,9 +111,13 @@ function ModeChannels(props: { mode: number }) {
 
   /** Clears the selection when another mode is shown, since its index belonged to the old one. */
   createEffect(
-    on([() => props.mode, modeCount], () => setSelected(null), {
+    () => [props.mode, modeCount()] as const,
+    () => {
+      setSelected(null);
+    },
+    {
       defer: true,
-    }),
+    },
   );
 
   /** Clears a selection that a removal or a change elsewhere left pointing past the end. */

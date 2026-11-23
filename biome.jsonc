@@ -47,7 +47,19 @@
         "noExplicitAny": "off"
       },
       "style": {
-        "noNonNullAssertion": "off"
+        "noNonNullAssertion": "off",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              // Solid 2.0 removes these; webui/lib/solid-compat.ts has the 2.0 form.
+              "solid-js": {
+                "importNames": ["on"],
+                "message": "Use the two-function createEffect from webui/lib/solid-compat instead of on(); Solid 2.0 removes on()."
+              }
+            }
+          }
+        }
       },
       "correctness": {
         "useJsxKeyInIterable": "off",

@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import {
   connectionStatus,
   EngineRuntimeStatus,
@@ -25,6 +25,7 @@ import {
   configuredEngineRuntime,
   isEmbeddedDemoRuntime,
 } from "../../../lib/runtime-config";
+import { createEffect } from "../../../lib/solid-compat";
 import { isTauriRuntime } from "../../../lib/tauri";
 import { useStore } from "../../../lib/use-nanostore";
 import { PairingPrompt, pairingErrorMessage } from "../../overlays/pairing";
@@ -112,35 +113,33 @@ export default function EngineConnection(props: {
    * refused. Stops the runtime and asks for the PIN instead of retrying.
    */
   createEffect(
-    on(
-      connectionStatus,
-      (status) => {
-        if (
-          status !== EngineRuntimeStatus.Disconnected ||
-          prompting() ||
-          checking ||
-          !pairingRequired ||
-          !mayNeedPairing()
-        ) {
-          return;
-        }
-        checking = true;
-        fetchPairingStatus()
-          .then((pairing) => {
-            if (disposed || pairing.paired || prompting()) return;
-            log.info("This device is no longer paired; asking for the PIN");
-            engineRuntime.stop();
-            setPrompting(true);
-          })
-          .catch(() => {
-            // The backend is still unreachable; the runtime keeps reconnecting.
-          })
-          .finally(() => {
-            checking = false;
-          });
-      },
-      { defer: true },
-    ),
+    connectionStatus,
+    (status) => {
+      if (
+        status !== EngineRuntimeStatus.Disconnected ||
+        prompting() ||
+        checking ||
+        !pairingRequired ||
+        !mayNeedPairing()
+      ) {
+        return;
+      }
+      checking = true;
+      fetchPairingStatus()
+        .then((pairing) => {
+          if (disposed || pairing.paired || prompting()) return;
+          log.info("This device is no longer paired; asking for the PIN");
+          engineRuntime.stop();
+          setPrompting(true);
+        })
+        .catch(() => {
+          // The backend is still unreachable; the runtime keeps reconnecting.
+        })
+        .finally(() => {
+          checking = false;
+        });
+    },
+    { defer: true },
   );
 
   onMount(() => {

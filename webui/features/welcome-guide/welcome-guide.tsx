@@ -8,11 +8,9 @@
 
 import { createDraggable } from "@neodrag/solid";
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
-  on,
   onCleanup,
   Show,
   untrack,
@@ -36,6 +34,7 @@ import {
   openOrFocusPanelDefinition,
   type PanelOpenTarget,
 } from "../../lib/panel-open-command";
+import { createEffect } from "../../lib/solid-compat";
 import { testHooksEnabled } from "../../lib/test-mode";
 import { useStore } from "../../lib/use-nanostore";
 import { pushToast, runtimeCapabilities } from "../../state/appStores";
@@ -240,13 +239,11 @@ export default function WelcomeGuide() {
   };
   /** Leaves the Lesson layout and removes it whenever a lesson ends, whether finished, exited or replaced by the menu. */
   createEffect(
-    on(
-      lessonId,
-      (id, previous) => {
-        if (previous && !id) void returnToLayout().then(removeLessonLayout);
-      },
-      { defer: true },
-    ),
+    lessonId,
+    (id, previous) => {
+      if (previous && !id) void returnToLayout().then(removeLessonLayout);
+    },
+    { defer: true },
   );
   const [workspace, setWorkspace] = createSignal<GuidePanelSnapshot>({
     panels: [],
@@ -407,7 +404,9 @@ export default function WelcomeGuide() {
   /** Furthest part of the current step the user has reached; finished parts stay finished. */
   const [reachedPart, setReachedPart] = createSignal(0);
   /** Starts every step, including one revisited with Back, at its first part. */
-  createEffect(on(step, () => setReachedPart(0)));
+  createEffect(step, () => {
+    setReachedPart(0);
+  });
   /** Moves the current step's highlight on to the next part once its `until` holds. */
   createEffect(() => {
     const parts = step()?.parts;
@@ -498,35 +497,33 @@ export default function WelcomeGuide() {
    * Waits a frame and skips cells already rendered, so a reveal the wizard just made, which also
    * selects the new fixtures, isn't replaced.
    */
-  createEffect(
-    on(shownPatchFixture, (key) => {
-      const target = step()?.targetPatchFixture;
-      const selector = actionSelector();
-      if (!key || !target || !selector) return;
-      /** Reports a matching cell shown inside its Patch panel, not hidden or scrolled out. */
-      const cellShown = () =>
-        [...document.querySelectorAll<HTMLElement>(selector)].some((cell) => {
-          const panel = cell.closest('[data-panel-kind="patch"]');
-          if (!panel || !cell.checkVisibility()) return false;
-          const box = cell.getBoundingClientRect();
-          const bounds = panel.getBoundingClientRect();
-          return (
-            box.top >= bounds.top &&
-            box.bottom <= bounds.bottom &&
-            box.left >= bounds.left &&
-            box.right <= bounds.right
-          );
-        });
-      const frame = requestAnimationFrame(() => {
-        if (!cellShown())
-          revealPatchFixtures([target.id], {
-            select: false,
-            column: target.column,
-          });
+  createEffect(shownPatchFixture, (key) => {
+    const target = step()?.targetPatchFixture;
+    const selector = actionSelector();
+    if (!key || !target || !selector) return;
+    /** Reports a matching cell shown inside its Patch panel, not hidden or scrolled out. */
+    const cellShown = () =>
+      [...document.querySelectorAll<HTMLElement>(selector)].some((cell) => {
+        const panel = cell.closest('[data-panel-kind="patch"]');
+        if (!panel || !cell.checkVisibility()) return false;
+        const box = cell.getBoundingClientRect();
+        const bounds = panel.getBoundingClientRect();
+        return (
+          box.top >= bounds.top &&
+          box.bottom <= bounds.bottom &&
+          box.left >= bounds.left &&
+          box.right <= bounds.right
+        );
       });
-      onCleanup(() => cancelAnimationFrame(frame));
-    }),
-  );
+    const frame = requestAnimationFrame(() => {
+      if (!cellShown())
+        revealPatchFixtures([target.id], {
+          select: false,
+          column: target.column,
+        });
+    });
+    return () => cancelAnimationFrame(frame);
+  });
   /**
    * Names the fixtures the current step selects in Patch while its Fixtures view shows, so they
    * are selected again whenever that view comes back into sight.
@@ -539,14 +536,12 @@ export default function WelcomeGuide() {
       : undefined,
   );
   /** Selects and scrolls to the step's fixtures in Patch once the Fixtures view has mounted. */
-  createEffect(
-    on(shownPatchSelection, (key) => {
-      const ids = step()?.selectPatchFixtures;
-      if (!key || !ids) return;
-      const frame = requestAnimationFrame(() => revealPatchFixtures(ids));
-      onCleanup(() => cancelAnimationFrame(frame));
-    }),
-  );
+  createEffect(shownPatchSelection, (key) => {
+    const ids = step()?.selectPatchFixtures;
+    if (!key || !ids) return;
+    const frame = requestAnimationFrame(() => revealPatchFixtures(ids));
+    return () => cancelAnimationFrame(frame);
+  });
   /** Aims the card at the step's action, or at what reveals a missing panel while prerequisites are unmet. */
   const targetSelector = createMemo(() =>
     blocked() ? prerequisiteSelector() : actionSelector(),
