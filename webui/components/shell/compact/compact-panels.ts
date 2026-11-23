@@ -7,15 +7,9 @@
  */
 
 import type { DockviewApi } from "dockview";
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  untrack,
-} from "solid-js";
+import { type Accessor, createMemo, createSignal, untrack } from "solid-js";
 import { getComponentRegistration } from "../../../lib/panel-registry";
+import { createEffect } from "../../../lib/solid-compat";
 import type { AppIcon } from "../../ui/icon";
 import { compactPanelOrder } from "../docking/dockview/compact-presentation";
 import {
@@ -61,8 +55,7 @@ export function createCompactPanels(
   const [activeId, setActiveId] = createSignal<string>();
 
   /** Rebuilds the entries from Dockview so order always matches the folded group. */
-  createEffect(() => {
-    const dock = api();
+  createEffect(api, (dock) => {
     if (!dock) {
       setPanels([]);
       setActiveId(undefined);
@@ -129,11 +122,11 @@ export function createCompactPanels(
     ];
     const stopOrderListener = compactPanelOrderPreference.listen(refresh);
     onStructureChange();
-    onCleanup(() => {
+    return () => {
       stopOrderListener();
       for (const subscription of subscriptions) subscription.dispose();
       for (const listener of titleListeners.values()) listener.dispose();
-    });
+    };
   });
 
   /** Activates a panel through Dockview so focus and Properties follow it. */

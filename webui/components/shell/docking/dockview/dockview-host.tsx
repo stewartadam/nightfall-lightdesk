@@ -14,7 +14,6 @@ import {
 } from "dockview";
 import {
   type Component,
-  createEffect,
   createSignal,
   For,
   type JSX,
@@ -22,6 +21,7 @@ import {
   onMount,
 } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
+import { createEffect } from "../../../../lib/solid-compat";
 import { bindPanelAppearance } from "./panel-appearance";
 
 export const visualLanguageDockTheme: DockviewTheme = {
@@ -94,12 +94,14 @@ export function DockviewHost(props: DockviewHostProps) {
     api.layout(element.clientWidth, element.clientHeight);
     props.onReady(api, element);
     /** Moves existing and future tab strips without rebuilding panels or their state. */
-    createEffect(() => {
-      const position = props.tabPosition ?? "top";
-      api?.updateOptions({ defaultHeaderPosition: position });
-      for (const group of api?.groups ?? [])
-        group.api.setHeaderPosition(position);
-    });
+    createEffect(
+      () => props.tabPosition ?? "top",
+      (position) => {
+        api?.updateOptions({ defaultHeaderPosition: position });
+        for (const group of api?.groups ?? [])
+          group.api.setHeaderPosition(position);
+      },
+    );
   });
 
   /** Disposes docking listeners while Solid tears down the owned panel portals. */

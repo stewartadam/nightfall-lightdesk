@@ -8,15 +8,7 @@
 
 /** biome-ignore-all lint/a11y/noSvgWithoutTitle: the actual command label is adjacent to the icon */
 
-import {
-  type Component,
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Show,
-  untrack,
-} from "solid-js";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import {
   isPaletteNavigationKey,
@@ -28,6 +20,7 @@ import {
   panelOpenPlacementFromModifiers,
   panelOpenPlacementLabel,
 } from "../../../lib/panel-open-command";
+import { createEffect } from "../../../lib/solid-compat";
 import type { UiAction } from "../../providers/command-registry";
 import { DialogBackdrop } from "../../ui/dialog";
 import { KbdShortcut } from "../../ui/kbd";
@@ -55,18 +48,16 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
   const [search, setSearch] = createSignal("");
   const [lastSelectionQuery, setLastSelectionQuery] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
-  const [filteredCommands, setFilteredCommands] = createSignal<UiAction[]>([]);
   const [modifierState, setModifierState] =
     createSignal<PanelOpenModifierState>({});
   let inputRef: HTMLInputElement | undefined;
   let containerRef: HTMLDivElement | undefined;
   let scrollContainerRef: HTMLDivElement | undefined;
 
-  /** Filters commands based on the current search input. */
-  createEffect(() => {
-    const allCommands = props.commands || [];
-    setFilteredCommands(rankCommandPaletteCommands(allCommands, search()));
-  });
+  /** Ranks the registered commands against the current search input. */
+  const filteredCommands = createMemo(() =>
+    rankCommandPaletteCommands(props.commands || [], search()),
+  );
 
   /** Selects a command by visible index and records its id for later list updates. */
   const selectCommandAtIndex = (
@@ -215,63 +206,68 @@ const CommandPaletteUI: Component<CommandPaletteProps> = (props) => {
    */
 
   /** Focuses and clears the search input each time the palette opens. */
-  createEffect(() => {
-    if (props.isOpen) {
+  createEffect(
+    () => props.isOpen,
+    (isOpen) => {
+      setModifierState({});
+      if (!isOpen) return;
       setTimeout(() => {
         inputRef?.focus();
         inputRef?.select();
       }, 0);
       setSearch("");
-      setModifierState({});
-    } else {
-      setModifierState({});
-    }
-  });
+    },
+  );
 
   /** Repositions the command list whenever the selected row changes. */
-  createEffect(() => {
-    const index = selectedIndex();
-    const commands = flattenedCommands();
-    if (index >= 0 && index < commands.length) {
-      positionSelectedCommand(index);
-    }
-  });
+  createEffect(
+    () => ({ index: selectedIndex(), count: flattenedCommands().length }),
+    ({ index, count }) => {
+      if (index >= 0 && index < count) {
+        positionSelectedCommand(index);
+      }
+    },
+  );
 
   /** Selects the best result for new queries while preserving explicit navigation. */
-  createEffect(() => {
-    const cmds = flattenedCommands();
-    const query = search().trim();
-    if (cmds.length === 0) {
-      setLastSelectionQuery(query);
-      return;
-    }
-
-    if (query !== untrack(lastSelectionQuery)) {
-      setLastSelectionQuery(query);
-      if (query.length > 0) {
-        selectCommandAtIndex(cmds, 0);
+  createEffect(
+    () => ({
+      cmds: flattenedCommands(),
+      query: search().trim(),
+      selectedId: props.selectedCommandId,
+    }),
+    ({ cmds, query, selectedId }) => {
+      if (cmds.length === 0) {
+        setLastSelectionQuery(query);
         return;
       }
-    }
 
-    const selectedId = props.selectedCommandId;
-    const selectedIdIndex = selectedId
-      ? cmds.findIndex((cmd) => cmd.id === selectedId)
-      : -1;
-
-    if (selectedIdIndex >= 0) {
-      if (untrack(selectedIndex) !== selectedIdIndex) {
-        setSelectedIndex(selectedIdIndex);
+      if (query !== lastSelectionQuery()) {
+        setLastSelectionQuery(query);
+        if (query.length > 0) {
+          selectCommandAtIndex(cmds, 0);
+          return;
+        }
       }
-      return;
-    }
 
-    const fallbackIndex = Math.min(
-      Math.max(untrack(selectedIndex), 0),
-      cmds.length - 1,
-    );
-    selectCommandAtIndex(cmds, fallbackIndex);
-  });
+      const selectedIdIndex = selectedId
+        ? cmds.findIndex((cmd) => cmd.id === selectedId)
+        : -1;
+
+      if (selectedIdIndex >= 0) {
+        if (selectedIndex() !== selectedIdIndex) {
+          setSelectedIndex(selectedIdIndex);
+        }
+        return;
+      }
+
+      const fallbackIndex = Math.min(
+        Math.max(selectedIndex(), 0),
+        cmds.length - 1,
+      );
+      selectCommandAtIndex(cmds, fallbackIndex);
+    },
+  );
 
   /** Close when clicking outside */
   const handleClickOutside = (e: MouseEvent) => {

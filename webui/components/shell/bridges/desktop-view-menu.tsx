@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, onCleanup, onMount } from "solid-js";
+import { createMemo, onCleanup, onMount } from "solid-js";
 import { boardDisplayName } from "../../../features/boards";
 import { OPEN_FIXTURE_EDITOR_ACTION_ID } from "../../../features/fixture-editor";
 import {
@@ -15,6 +15,7 @@ import {
 } from "../../../features/showfile";
 import { getLogger } from "../../../lib/logger";
 import { findPanelDefinitionByName } from "../../../lib/panel-definitions";
+import { createEffect } from "../../../lib/solid-compat";
 import {
   type DesktopMenuEntry,
   registerTauriMenuListener,
@@ -225,7 +226,7 @@ export default function DesktopViewMenu() {
    * Pushes the menu whenever its contents change. Layout storage and the action registry update
    * often, on every panel resize or mount, so identical menus are skipped rather than rebuilt.
    */
-  createEffect(() => pushMenu());
+  createEffect(menu, () => pushMenu());
 
   /** Reclaims the shared native menu for this window's layouts and actions when it gains focus. */
   const reclaimMenu = () => pushMenu(true);

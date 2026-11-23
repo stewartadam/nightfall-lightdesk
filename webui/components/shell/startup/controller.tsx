@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, onCleanup, untrack } from "solid-js";
+import { createSignal, onCleanup } from "solid-js";
 import type { AvailableShowfilesResponse } from "../../../features/showfile";
 import { getBackendUrl } from "../../../lib/api";
 import {
@@ -17,6 +17,7 @@ import {
 import { getLogger } from "../../../lib/logger";
 import { expectedStartupShowfileName } from "../../../lib/showfile-loading";
 import { selectStartupDraftRecovery } from "../../../lib/showfile-startup";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import {
   appLifecycle,
@@ -105,100 +106,117 @@ export function StartupController(props: StartupControllerProps) {
   };
 
   /** Advances startup UI from backend state without implicitly loading showfiles. */
-  createEffect(() => {
-    const state = lifecycle();
-    const backendState = effectiveBackendAppState();
-
-    if (
-      state.phase === "interactive" &&
-      backendState === types.AppState.Initialized &&
-      !props.bypassShowfilePrompt &&
-      !bypassBackendReadinessForE2E() &&
-      connectionStatus() === EngineRuntimeStatus.Connected
-    ) {
-      restartAppLifecycleForBackendSessionReset();
-      return;
-    }
-    // Choosing to continue as primary lasts until this computer becomes a backup again.
-    if (backup().primary_address && untrack(continuedAsPrimary)) {
-      setContinuedAsPrimary(false);
-    }
-    if (state.phase === "startup-backup-prompt") {
-      // A show is open and, unless this computer follows a primary, sent from here, as after a
-      // takeover; a backup opens once it holds its primary's show.
+  createEffect(
+    () => ({
+      state: lifecycle(),
+      backendState: effectiveBackendAppState(),
+      connected: connectionStatus() === EngineRuntimeStatus.Connected,
+      backupState: backup(),
+      resynced: resyncComplete(),
+      backupRoleWaited: backupRoleWaitOver(),
+      bypassShowfilePrompt: props.bypassShowfilePrompt,
+      enabled: props.enabled,
+    }),
+    ({
+      state,
+      backendState,
+      connected,
+      backupState,
+      resynced,
+      backupRoleWaited,
+      bypassShowfilePrompt,
+      enabled,
+    }) => {
       if (
-        backendState === types.AppState.Ready &&
-        resyncComplete() &&
-        (!backup().primary_address ||
-          backup().link === types.BackupLinkStatus.Synced)
+        state.phase === "interactive" &&
+        backendState === types.AppState.Initialized &&
+        !bypassShowfilePrompt &&
+        !bypassBackendReadinessForE2E() &&
+        connected
       ) {
+        restartAppLifecycleForBackendSessionReset();
+        return;
+      }
+      // Choosing to continue as primary lasts until this computer becomes a backup again.
+      if (backupState.primary_address && continuedAsPrimary()) {
+        setContinuedAsPrimary(false);
+      }
+      if (state.phase === "startup-backup-prompt") {
+        // A show is open and, unless this computer follows a primary, sent from here, as after a
+        // takeover; a backup opens once it holds its primary's show.
+        if (
+          backendState === types.AppState.Ready &&
+          resynced &&
+          (!backupState.primary_address ||
+            backupState.link === types.BackupLinkStatus.Synced)
+        ) {
+          transitionAppLifecycle({ type: "interactive" });
+          return;
+        }
+        // After leaving the pair, or continuing as its primary, startup goes on as usual.
+        if (!needsBackupPairPrompt(backupState)) {
+          restartAppLifecycleForBackendSessionReset();
+        }
+        return;
+      }
+      // A computer that joins a pair while picking a show, such as a primary that steps down for
+      // a backup that took over, gets the pair dialog instead.
+      if (
+        !bypassShowfilePrompt &&
+        (state.phase === "startup-showfile-prompt" ||
+          state.phase === "startup-draft-prompt") &&
+        needsBackupPairPrompt(backupState)
+      ) {
+        transitionAppLifecycle({ type: "backup-prompt" });
+        return;
+      }
+      // Prompt and world-swap phases are owned by the user's recovery choice.
+      // The old world's Ready state can remain visible while a swap is in
+      // flight or after it fails back to a prompt.
+      if (
+        state.phase !== "backend-connecting" &&
+        state.phase !== "startup-checking-draft"
+      )
+        return;
+      if (backendState === types.AppState.Ready) {
         transitionAppLifecycle({ type: "interactive" });
         return;
       }
-      // After leaving the pair, or continuing as its primary, startup goes on as usual.
-      if (!needsBackupPairPrompt(backup())) {
-        restartAppLifecycleForBackendSessionReset();
+      if (
+        draftCheckInFlight ||
+        backendState !== types.AppState.Initialized ||
+        (!bypassBackendReadinessForE2E() && !connected)
+      ) {
+        return;
       }
-      return;
-    }
-    // A computer that joins a pair while picking a show, such as a primary that steps down for
-    // a backup that took over, gets the pair dialog instead.
-    if (
-      !props.bypassShowfilePrompt &&
-      (state.phase === "startup-showfile-prompt" ||
-        state.phase === "startup-draft-prompt") &&
-      needsBackupPairPrompt(backup())
-    ) {
-      transitionAppLifecycle({ type: "backup-prompt" });
-      return;
-    }
-    // Prompt and world-swap phases are owned by the user's recovery choice.
-    // The old world's Ready state can remain visible while a swap is in
-    // flight or after it fails back to a prompt.
-    if (
-      state.phase !== "backend-connecting" &&
-      state.phase !== "startup-checking-draft"
-    )
-      return;
-    if (backendState === types.AppState.Ready) {
-      transitionAppLifecycle({ type: "interactive" });
-      return;
-    }
-    if (
-      draftCheckInFlight ||
-      backendState !== types.AppState.Initialized ||
-      (!bypassBackendReadinessForE2E() &&
-        connectionStatus() !== EngineRuntimeStatus.Connected)
-    ) {
-      return;
-    }
-    // The backup role decides which prompt comes next, so wait for it, but not forever, in case
-    // this backend has no backup support. The embedded demo has none and skips every prompt.
-    if (
-      !props.bypassShowfilePrompt &&
-      !backup().available &&
-      !backupRoleWaitOver()
-    ) {
-      backupRoleTimer ??= setTimeout(
-        () => setBackupRoleWaitOver(true),
-        BACKUP_ROLE_WAIT_MS,
-      );
-      return;
-    }
-    // A computer in a backup pair picks its role before any show: a backup takes its show
-    // from its primary, and a primary may need to follow a backup that took over.
-    if (!props.bypassShowfilePrompt && needsBackupPairPrompt(backup())) {
-      transitionAppLifecycle({ type: "backup-prompt" });
-      return;
-    }
-    if (!props.enabled || state.startupDraftRecoveryChecked) {
-      transitionAppLifecycle({
-        type: props.bypassShowfilePrompt ? "interactive" : "showfile-prompt",
-      });
-      return;
-    }
-    void checkStartupDraftRecovery();
-  });
+      // The backup role decides which prompt comes next, so wait for it, but not forever, in case
+      // this backend has no backup support. The embedded demo has none and skips every prompt.
+      if (
+        !bypassShowfilePrompt &&
+        !backupState.available &&
+        !backupRoleWaited
+      ) {
+        backupRoleTimer ??= setTimeout(
+          () => setBackupRoleWaitOver(true),
+          BACKUP_ROLE_WAIT_MS,
+        );
+        return;
+      }
+      // A computer in a backup pair picks its role before any show: a backup takes its show
+      // from its primary, and a primary may need to follow a backup that took over.
+      if (!bypassShowfilePrompt && needsBackupPairPrompt(backupState)) {
+        transitionAppLifecycle({ type: "backup-prompt" });
+        return;
+      }
+      if (!enabled || state.startupDraftRecoveryChecked) {
+        transitionAppLifecycle({
+          type: bypassShowfilePrompt ? "interactive" : "showfile-prompt",
+        });
+        return;
+      }
+      void checkStartupDraftRecovery();
+    },
+  );
 
   return null;
 }

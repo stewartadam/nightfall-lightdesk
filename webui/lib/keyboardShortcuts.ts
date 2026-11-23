@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, onCleanup, untrack } from "solid-js";
+import { createSignal } from "solid-js";
 import { matchKeybindingPress, parseKeybinding, tinykeys } from "tinykeys";
 import {
   dialogBlocksBackgroundKeys,
@@ -26,7 +26,7 @@ import {
   targetOwnsActivationKey,
 } from "./keyboard-shortcut-targets";
 import { getLogger } from "./logger";
-
+import { createEffect } from "./solid-compat";
 import { useWorkspaceActivity } from "./workspace-activity";
 
 const log = getLogger(import.meta.url);
@@ -819,13 +819,12 @@ export function useKeyboardShortcut(
 ) {
   const workspaceActive = useWorkspaceActivity();
   /** Registers shortcuts only while their owning workspace can receive input. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    // Register the keyboard shortcut when component mounts
-    let unregister: (() => void) | null = null;
+  createEffect(workspaceActive, (active) => {
+    if (!active) return;
+    let unregister: () => void;
 
     try {
-      unregister = untrack(() => registerKeyboardShortcut(binding, options));
+      unregister = registerKeyboardShortcut(binding, options);
     } catch (error) {
       if (error instanceof ShortcutCollisionError) {
         log.error(
@@ -839,12 +838,7 @@ export function useKeyboardShortcut(
       throw error;
     }
 
-    // Cleanup function to unregister when component unmounts
-    onCleanup(() => {
-      if (unregister) {
-        unregister();
-      }
-    });
+    return unregister;
   });
 }
 

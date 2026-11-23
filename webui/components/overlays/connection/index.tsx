@@ -7,14 +7,7 @@
  */
 
 import { InfoIcon } from "@squidlab/phosphor-solid/info";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { matchKeybindingPress, parseKeybinding } from "tinykeys";
 import { getWebSocketUrl } from "../../../lib/api";
 import {
@@ -24,6 +17,7 @@ import {
 import { allShortcuts } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import { $pairingPromptOpen } from "../../../lib/pairing";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { appLifecycle } from "../../../state/app-lifecycle";
 import { $backupState } from "../../../state/settings";
@@ -160,26 +154,30 @@ const ConnectionOverlay = () => {
   };
 
   /** Sync overlay presentation with websocket status after startup mode ends. */
-  createEffect(() => {
-    const status = connectionStatus();
-    const connected = status === EngineRuntimeStatus.Connected;
-    const startupActive = lifecycle().phase !== "interactive";
+  createEffect(
+    () => ({
+      connected: connectionStatus() === EngineRuntimeStatus.Connected,
+      startupActive: lifecycle().phase !== "interactive",
+    }),
+    ({ connected, startupActive }) => {
+      if (startupActive) {
+        suppressStartupTransition(connected);
+        return;
+      }
 
-    if (startupActive) {
-      suppressStartupTransition(connected);
-      return;
-    }
+      setIsConnected(connected);
+      if (connected) {
+        handleReconnected();
+      } else {
+        handleDisconnected();
+      }
+    },
+  );
 
-    setIsConnected(connected);
-    if (connected) {
-      handleReconnected();
-    } else {
-      handleDisconnected();
-    }
-  });
-
-  // Block keyboard events that would interact with the page, but allow browser shortcuts
-  createEffect(() => {
+  /** Blocks keyboard events that would interact with the page, but allows browser shortcuts. */
+  createEffect(isOverlayPresented, (presented) => {
+    if (!presented) return;
+    /** Swallows keys the disconnected overlay must not pass to the app. */
     const blockKeyboard = (e: KeyboardEvent) => {
       if (!shouldBlockDisconnectedOverlayKey(e, hasMatchingAppShortcut)) return;
 
@@ -188,18 +186,16 @@ const ConnectionOverlay = () => {
       e.stopImmediatePropagation();
     };
 
-    if (isOverlayPresented()) {
-      // Capture phase to intercept before other handlers
-      document.addEventListener("keydown", blockKeyboard, true);
-      document.addEventListener("keyup", blockKeyboard, true);
-      document.addEventListener("keypress", blockKeyboard, true);
+    // Capture phase to intercept before other handlers
+    document.addEventListener("keydown", blockKeyboard, true);
+    document.addEventListener("keyup", blockKeyboard, true);
+    document.addEventListener("keypress", blockKeyboard, true);
 
-      onCleanup(() => {
-        document.removeEventListener("keydown", blockKeyboard, true);
-        document.removeEventListener("keyup", blockKeyboard, true);
-        document.removeEventListener("keypress", blockKeyboard, true);
-      });
-    }
+    return () => {
+      document.removeEventListener("keydown", blockKeyboard, true);
+      document.removeEventListener("keyup", blockKeyboard, true);
+      document.removeEventListener("keypress", blockKeyboard, true);
+    };
   });
 
   // Clean up timeouts on unmount

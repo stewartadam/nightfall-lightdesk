@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import { useStore } from "../../lib/use-nanostore";
 import { compactViewport } from "../../state/viewport";
 import { useAppShell } from "../providers/app-shell";
@@ -23,9 +23,12 @@ export default function ShellOverlayHosts() {
    * Closes layout management when the window narrows into the compact shell,
    * whose one-panel view must never be stored as a named layout.
    */
-  createEffect(() => {
-    if (compact() && isLayoutManagerVisible()) hideLayoutManager();
-  });
+  createEffect(
+    () => compact() && isLayoutManagerVisible(),
+    (shouldHide) => {
+      if (shouldHide) hideLayoutManager();
+    },
+  );
 
   return (
     <>

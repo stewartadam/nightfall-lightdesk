@@ -11,7 +11,7 @@ import { ArrowLeftIcon } from "@squidlab/phosphor-solid/arrow-left";
 import { ArrowRightIcon } from "@squidlab/phosphor-solid/arrow-right";
 import { BrowsersIcon } from "@squidlab/phosphor-solid/browsers";
 import { XSquareIcon } from "@squidlab/phosphor-solid/x-square";
-import { createEffect } from "solid-js";
+import { createMemo, mapArray } from "solid-js";
 import { isPanelOpenable } from "../../../../lib/experimental-features";
 import { panelDefinitionsForPalette } from "../../../../lib/panel-definitions";
 import {
@@ -32,10 +32,19 @@ export function DockviewCommands(props: DockviewCommandsProps) {
   const { dockviewApi } = useAppShell();
   const capabilities = useStore(runtimeCapabilities);
 
-  /** Registers palette commands for every dockable panel component. */
-  createEffect(() => {
-    for (const definition of panelDefinitionsForPalette()) {
-      if (!isPanelOpenable(definition.componentName, capabilities())) continue;
+  /** Lists the dockable panels this runtime can open. */
+  const openableDefinitions = createMemo(() =>
+    panelDefinitionsForPalette().filter((definition) =>
+      isPanelOpenable(definition.componentName, capabilities()),
+    ),
+  );
+
+  /**
+   * Registers a palette command for each openable panel. Each command lives as long as its panel
+   * stays openable, so a capability change only adds or removes the affected commands.
+   */
+  createMemo(
+    mapArray(openableDefinitions, (definition) => {
       useUiAction({
         id: definition.panelId,
         name: `Open ${definition.title}`,
@@ -51,8 +60,8 @@ export function DockviewCommands(props: DockviewCommandsProps) {
           );
         },
       });
-    }
-  });
+    }),
+  );
 
   useUiAction({
     id: "reset-layout",

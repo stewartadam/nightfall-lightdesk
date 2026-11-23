@@ -14,14 +14,7 @@
  * importer is hot-updated, so the context identity is also retained explicitly
  * through Vite's per-module hot data.
  */
-import {
-  type Context,
-  createContext,
-  createEffect,
-  onCleanup,
-  untrack,
-  useContext,
-} from "solid-js";
+import { type Context, createContext, useContext } from "solid-js";
 import {
   type PanelCapabilityContractInstance,
   type PanelCapabilityHandler,
@@ -37,7 +30,7 @@ import {
   type PanelCapabilityRegistry,
   panelCapabilityDeclarationStatus,
 } from "../../../lib/panel-capability-registry";
-
+import { createEffect } from "../../../lib/solid-compat";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 
 export type {
@@ -96,12 +89,9 @@ export function usePanelCapability<
   const { registerPanelCapability } = usePanelCapabilityRegistry();
   const workspaceActive = useWorkspaceActivity();
   /** Prevents hidden copies of a panel from receiving active-workspace requests. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const unregister = untrack(() =>
-      registerPanelCapability(panelId, capability, handler, options),
-    );
-    onCleanup(unregister);
+  createEffect(workspaceActive, (active) => {
+    if (!active) return;
+    return registerPanelCapability(panelId, capability, handler, options);
   });
 }
 

@@ -6,15 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createSignal,
-  type JSX,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createSignal, type JSX, Show } from "solid-js";
 import { resyncComplete, resyncGeneration } from "../../../lib/engine-runtime";
 import { currentShowfileRevision } from "../../../lib/showfile-loading";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { pendingPanelComponentLoads } from "../../../state/panel-component-loads";
 import {
@@ -86,45 +81,58 @@ export default function ShowfileTransitionVeil(props: {
   const [settling, setSettling] = createSignal(false);
   const [fading, setFading] = createSignal(false);
 
-  /** Reveals the dock once the pending replacement's data and layout are ready. */
-  createEffect(() => {
-    const pending = transition();
+  /** The pending transition's run, which a newer transition or the reveal cancels. */
+  let activeRun: { cancelled: boolean } | undefined;
+
+  /** Starts each pending replacement hidden, with a timeout that reveals the dock regardless. */
+  createEffect(transition, (pending) => {
     if (!pending) return;
     setFading(false);
     setSettling(false);
-    let cancelled = false;
+    const run = { cancelled: false };
+    activeRun = run;
     const timeout = window.setTimeout(endShowfileTransition, MAX_HIDDEN_MS);
-    onCleanup(() => {
-      cancelled = true;
+    return () => {
+      run.cancelled = true;
       window.clearTimeout(timeout);
-    });
+    };
+  });
 
-    /** Waits for data readiness, then for panels to finish mounting. */
-    createEffect(() => {
-      const ready = showfileTransitionDataReady(pending, {
+  /** Reveals the dock once the pending replacement's data is ready and panels finish mounting. */
+  createEffect(
+    () => {
+      const pending = transition();
+      if (!pending || settling()) return false;
+      return showfileTransitionDataReady(pending, {
         resyncComplete: resyncComplete(),
         resyncGeneration: resyncGeneration(),
         showfileRevision: showfileRevision(),
         layoutShowfileRevision: layoutShowfileRevision(),
       });
-      if (!ready || settling()) return;
+    },
+    (ready) => {
+      const run = activeRun;
+      if (!ready || !run || run.cancelled) return;
       setSettling(true);
-      void waitForQuietFrames(() => cancelled).then(() => {
-        if (!cancelled) endShowfileTransition();
+      void waitForQuietFrames(() => run.cancelled).then(() => {
+        if (!run.cancelled) endShowfileTransition();
       });
-    });
-  });
+    },
+  );
 
   /** Fades the veil out after the dock is revealed instead of cutting it. */
-  createEffect(() => {
-    if (transition() || !settling()) return;
-    setFading(true);
-    const timeout = window.setTimeout(() => {
-      setFading(false);
-      setSettling(false);
-    }, FADE_MS);
-    onCleanup(() => window.clearTimeout(timeout));
-  });
+  createEffect(
+    () => !transition() && settling(),
+    (revealed) => {
+      if (!revealed) return;
+      setFading(true);
+      const timeout = window.setTimeout(() => {
+        setFading(false);
+        setSettling(false);
+      }, FADE_MS);
+      return () => window.clearTimeout(timeout);
+    },
+  );
 
   const hidden = () => transition() !== null;
 

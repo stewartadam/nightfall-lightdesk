@@ -12,7 +12,6 @@ import {
   type DockviewGroupPanel,
   type EdgeGroupPosition,
 } from "dockview";
-import { createEffect, onCleanup } from "solid-js";
 import {
   createSerializedLayout,
   type SerializedLayout,
@@ -23,6 +22,7 @@ import {
   currentShowfileName,
   currentShowfileRevision,
 } from "../../../../lib/showfile-loading";
+import { createEffect } from "../../../../lib/solid-compat";
 import { useStore } from "../../../../lib/use-nanostore";
 import {
   activeLayoutId,
@@ -208,180 +208,184 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
    * workspace starts it over and then opens the showfile's default named layout.
    * Settings snapshots from other devices never rearrange this one.
    */
-  createEffect(() => {
-    const api = dockviewApi();
-    if (!api) return;
+  createEffect(
+    () => ({
+      api: dockviewApi(),
+      snapshotRevision: settingsSnapshotRevision(),
+      revision: showfileRevision(),
+    }),
+    ({ api, snapshotRevision, revision }) => {
+      if (!api || snapshotRevision === 0) return;
 
-    const snapshotRevision = settingsSnapshotRevision();
-    if (snapshotRevision === 0) return;
-
-    const revision = showfileRevision();
-    if (revision !== appliedShowfile.revision) {
-      clearLayoutSessions();
-      const keep =
-        hasSessionLayoutFor(currentShowfileName.get()) &&
-        (hasInitializedLayout || Boolean(props.hasSessionLayout?.()));
-      if (!keep) {
-        isRestoringLayout = true;
-        log.debug("No arrangement on this device for the showfile");
-        if (props.onArrangeShowfile?.() ?? false) persistSession(api);
-        window.queueMicrotask(() => {
-          isRestoringLayout = false;
-        });
+      if (revision !== appliedShowfile.revision) {
+        clearLayoutSessions();
+        const keep =
+          hasSessionLayoutFor(currentShowfileName.get()) &&
+          (hasInitializedLayout || Boolean(props.hasSessionLayout?.()));
+        if (!keep) {
+          isRestoringLayout = true;
+          log.debug("No arrangement on this device for the showfile");
+          if (props.onArrangeShowfile?.() ?? false) persistSession(api);
+          window.queueMicrotask(() => {
+            isRestoringLayout = false;
+          });
+        }
+        appliedShowfile.revision = revision;
+        appliedShowfile.keptDeviceArrangement = keep;
       }
-      appliedShowfile.revision = revision;
-      appliedShowfile.keptDeviceArrangement = keep;
-    }
-    hasInitializedLayout = true;
-    markDockviewLayoutReady(
-      revision,
-      snapshotRevision,
-      appliedShowfile.keptDeviceArrangement,
-    );
-  });
+      hasInitializedLayout = true;
+      markDockviewLayoutReady(
+        revision,
+        snapshotRevision,
+        appliedShowfile.keptDeviceArrangement,
+      );
+    },
+  );
 
   /** Registers Dockview layout persistence listeners. */
-  createEffect(() => {
-    const api = dockviewApi();
-    if (!api || props.persist === false) return;
+  createEffect(
+    () => (props.persist === false ? undefined : dockviewApi()),
+    (api) => {
+      if (!api) return;
 
-    /** Persists the current Dockview layout to local session storage. */
-    const persistActiveLayout = () => {
-      if (isRestoringLayout || props.isActivating?.()) return;
-      saveLayout(api);
-      const id = activeLayoutId.get();
-      if (id) rememberLayoutSession(id, createSerializedLayout(api));
-    };
+      /** Persists the current Dockview layout to local session storage. */
+      const persistActiveLayout = () => {
+        if (isRestoringLayout || props.isActivating?.()) return;
+        saveLayout(api);
+        const id = activeLayoutId.get();
+        if (id) rememberLayoutSession(id, createSerializedLayout(api));
+      };
 
-    let saveQueued = false;
-    let disposed = false;
-    let geometryGesture:
-      | { id: string; before: SerializedLayout; pointerId: number }
-      | undefined;
-    /** Captures explicit Dockview divider, floating resize, and floating move gestures before geometry changes. */
-    const beginGeometryGesture = (event: PointerEvent) => {
-      if (
-        event.button !== 0 ||
-        props.isActivating?.() ||
-        !(event.target instanceof Element)
-      )
-        return;
-      const target = event.target;
-      if (!target.closest('[data-workspace-active="true"]')) return;
-      const handle = target.closest(
-        '.dv-sash, [class*="dv-resize-handle-"], .dv-floating-titlebar, .dv-resize-container .dv-tabs-and-actions-container',
-      );
-      if (
-        !handle &&
-        !(event.shiftKey && target.closest(".dv-resize-container"))
-      )
-        return;
-      const id = activeLayoutId.get();
-      if (id)
-        geometryGesture = {
-          id,
-          before: createSerializedLayout(api),
-          pointerId: event.pointerId,
-        };
-    };
-    /** Commits only geometry changed during the gesture after Dockview processes its final pointer event. */
-    const endGeometryGesture = (event: PointerEvent) => {
-      const gesture = geometryGesture;
-      if (!gesture || gesture.pointerId !== event.pointerId) return;
-      geometryGesture = undefined;
-      queueMicrotask(() => {
-        if (!disposed) {
-          rememberLayoutResize(
-            gesture.id,
-            gesture.before,
-            createSerializedLayout(api),
-          );
-          saveLayout(api);
-        }
-      });
-    };
-    window.addEventListener("pointerdown", beginGeometryGesture, true);
-    window.addEventListener("pointerup", endGeometryGesture);
-    window.addEventListener("pointercancel", endGeometryGesture);
-    /** Coalesces layout changes and captures sizes after Dockview finishes the operation. */
-    const saveActiveLayout = () => {
-      if (!hasInitializedLayout || isRestoringLayout || saveQueued) return;
-      saveQueued = true;
-      window.queueMicrotask(() => {
-        try {
-          // Serialization temporarily restores maximized groups and emits resize events.
-          // Keep the save queued until it finishes so those events cannot queue another save.
-          if (!disposed) persistActiveLayout();
-        } finally {
-          saveQueued = false;
-        }
-      });
-    };
+      let saveQueued = false;
+      let disposed = false;
+      let geometryGesture:
+        | { id: string; before: SerializedLayout; pointerId: number }
+        | undefined;
+      /** Captures explicit Dockview divider, floating resize, and floating move gestures before geometry changes. */
+      const beginGeometryGesture = (event: PointerEvent) => {
+        if (
+          event.button !== 0 ||
+          props.isActivating?.() ||
+          !(event.target instanceof Element)
+        )
+          return;
+        const target = event.target;
+        if (!target.closest('[data-workspace-active="true"]')) return;
+        const handle = target.closest(
+          '.dv-sash, [class*="dv-resize-handle-"], .dv-floating-titlebar, .dv-resize-container .dv-tabs-and-actions-container',
+        );
+        if (
+          !handle &&
+          !(event.shiftKey && target.closest(".dv-resize-container"))
+        )
+          return;
+        const id = activeLayoutId.get();
+        if (id)
+          geometryGesture = {
+            id,
+            before: createSerializedLayout(api),
+            pointerId: event.pointerId,
+          };
+      };
+      /** Commits only geometry changed during the gesture after Dockview processes its final pointer event. */
+      const endGeometryGesture = (event: PointerEvent) => {
+        const gesture = geometryGesture;
+        if (!gesture || gesture.pointerId !== event.pointerId) return;
+        geometryGesture = undefined;
+        queueMicrotask(() => {
+          if (!disposed) {
+            rememberLayoutResize(
+              gesture.id,
+              gesture.before,
+              createSerializedLayout(api),
+            );
+            saveLayout(api);
+          }
+        });
+      };
+      window.addEventListener("pointerdown", beginGeometryGesture, true);
+      window.addEventListener("pointerup", endGeometryGesture);
+      window.addEventListener("pointercancel", endGeometryGesture);
+      /** Coalesces layout changes and captures sizes after Dockview finishes the operation. */
+      const saveActiveLayout = () => {
+        if (!hasInitializedLayout || isRestoringLayout || saveQueued) return;
+        saveQueued = true;
+        window.queueMicrotask(() => {
+          try {
+            // Serialization temporarily restores maximized groups and emits resize events.
+            // Keep the save queued until it finishes so those events cannot queue another save.
+            if (!disposed) persistActiveLayout();
+          } finally {
+            saveQueued = false;
+          }
+        });
+      };
 
-    // Structural mutations exclude focus changes, but do not include resizing.
-    const groupLayoutListeners = new Map<string, Disposable>();
-    /** Tracks resizing and serialized panel metadata for current and newly restored groups. */
-    const observeGroupLayout = (group: DockviewGroupPanel) => {
-      groupLayoutListeners.get(group.id)?.dispose();
-      groupLayoutListeners.set(
-        group.id,
-        new DockviewCompositeDisposable(
-          group.api.onDidDimensionsChange(saveActiveLayout),
-          group.model.onDidPanelTitleChange(saveActiveLayout),
-          group.model.onDidPanelParametersChange(saveActiveLayout),
-        ),
-      );
-    };
-    for (const group of api.groups) observeGroupLayout(group);
-    /** Reads floating window bounds, whose movement has no dedicated public API event. */
-    const floatingBounds = () =>
-      api.groups.some((group) => group.api.location.type === "floating")
-        ? JSON.stringify(
-            api.toJSON().floatingGroups?.map((group) => group.position),
-          )
-        : undefined;
-    let lastFloatingBounds = floatingBounds();
-    const disposeLayoutChange = new DockviewCompositeDisposable(
-      api.onDidMutateLayout(saveActiveLayout),
-      api.onDidLayoutChange(() => {
-        const nextFloatingBounds = floatingBounds();
-        if (nextFloatingBounds === lastFloatingBounds) return;
-        lastFloatingBounds = nextFloatingBounds;
-        saveActiveLayout();
-      }),
-      api.onDidAddGroup(observeGroupLayout),
-      api.onDidRemoveGroup((group) => {
+      // Structural mutations exclude focus changes, but do not include resizing.
+      const groupLayoutListeners = new Map<string, Disposable>();
+      /** Tracks resizing and serialized panel metadata for current and newly restored groups. */
+      const observeGroupLayout = (group: DockviewGroupPanel) => {
         groupLayoutListeners.get(group.id)?.dispose();
-        groupLayoutListeners.delete(group.id);
-      }),
-      api.onDidPopoutGroupSizeChange(saveActiveLayout),
-      api.onDidPopoutGroupPositionChange(saveActiveLayout),
-      api.onDidPanelPinnedChange(saveActiveLayout),
-      api.onDidTabGroupChange(saveActiveLayout),
-      api.onDidTabGroupCollapsedChange(saveActiveLayout),
-    );
+        groupLayoutListeners.set(
+          group.id,
+          new DockviewCompositeDisposable(
+            group.api.onDidDimensionsChange(saveActiveLayout),
+            group.model.onDidPanelTitleChange(saveActiveLayout),
+            group.model.onDidPanelParametersChange(saveActiveLayout),
+          ),
+        );
+      };
+      for (const group of api.groups) observeGroupLayout(group);
+      /** Reads floating window bounds, whose movement has no dedicated public API event. */
+      const floatingBounds = () =>
+        api.groups.some((group) => group.api.location.type === "floating")
+          ? JSON.stringify(
+              api.toJSON().floatingGroups?.map((group) => group.position),
+            )
+          : undefined;
+      let lastFloatingBounds = floatingBounds();
+      const disposeLayoutChange = new DockviewCompositeDisposable(
+        api.onDidMutateLayout(saveActiveLayout),
+        api.onDidLayoutChange(() => {
+          const nextFloatingBounds = floatingBounds();
+          if (nextFloatingBounds === lastFloatingBounds) return;
+          lastFloatingBounds = nextFloatingBounds;
+          saveActiveLayout();
+        }),
+        api.onDidAddGroup(observeGroupLayout),
+        api.onDidRemoveGroup((group) => {
+          groupLayoutListeners.get(group.id)?.dispose();
+          groupLayoutListeners.delete(group.id);
+        }),
+        api.onDidPopoutGroupSizeChange(saveActiveLayout),
+        api.onDidPopoutGroupPositionChange(saveActiveLayout),
+        api.onDidPanelPinnedChange(saveActiveLayout),
+        api.onDidTabGroupChange(saveActiveLayout),
+        api.onDidTabGroupCollapsedChange(saveActiveLayout),
+      );
 
-    const disposeEdgeGroupSizePersistence = createEdgeGroupSizePersistence(
-      api,
-      saveActiveLayout,
-    );
+      const disposeEdgeGroupSizePersistence = createEdgeGroupSizePersistence(
+        api,
+        saveActiveLayout,
+      );
 
-    // Clean up event listeners on unmount
-    onCleanup(() => {
-      log.trace("unmounting");
-      disposed = true;
-      window.removeEventListener("pointerdown", beginGeometryGesture, true);
-      window.removeEventListener("pointerup", endGeometryGesture);
-      window.removeEventListener("pointercancel", endGeometryGesture);
-      disposeLayoutChange.dispose();
-      for (const listener of groupLayoutListeners.values()) listener.dispose();
-      disposeEdgeGroupSizePersistence.dispose();
-    });
-  });
+      // Clean up event listeners on unmount
+      return () => {
+        log.trace("unmounting");
+        disposed = true;
+        window.removeEventListener("pointerdown", beginGeometryGesture, true);
+        window.removeEventListener("pointerup", endGeometryGesture);
+        window.removeEventListener("pointercancel", endGeometryGesture);
+        disposeLayoutChange.dispose();
+        for (const listener of groupLayoutListeners.values())
+          listener.dispose();
+        disposeEdgeGroupSizePersistence.dispose();
+      };
+    },
+  );
 
   /** Moves keyboard focus into the command line when its panel is activated. */
-  createEffect(() => {
-    const api = dockviewApi();
+  createEffect(dockviewApi, (api) => {
     if (!api) return;
     const disposeFocusChange = api.onDidActivePanelChange((event) => {
       // TODO: ideally we would pass on this notification to the underlying component
@@ -389,7 +393,7 @@ export function DockviewEventListener(props: DockviewEventListenerProps) {
         focusCommandLinePanelInputIfNeeded(api);
       }
     });
-    onCleanup(() => disposeFocusChange.dispose());
+    return () => disposeFocusChange.dispose();
   });
 
   // This component doesn't render anything

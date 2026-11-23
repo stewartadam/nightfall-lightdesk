@@ -6,16 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Index,
-  type JSX,
-  Show,
-  untrack,
-} from "solid-js";
+import { createMemo, createSignal, For, Index, type JSX, Show } from "solid-js";
 import { getFocusedComponentId } from "../../../lib/componentFocusContext";
 import {
   allShortcuts,
@@ -25,6 +16,7 @@ import {
   findPanelDefinitionById,
   findPanelDefinitionByName,
 } from "../../../lib/panel-definitions";
+import { createEffect } from "../../../lib/solid-compat";
 import { useAppShell } from "../../providers/app-shell";
 import { Badge } from "../../ui/badge";
 import { Dialog, DialogBody } from "../../ui/dialog";
@@ -54,13 +46,10 @@ export default function ShortcutsPopup() {
    * Starts every opening of the dialog with the full, unfiltered list, and remembers which panel
    * was active when it opened so that panel's shortcuts can be listed first.
    */
-  createEffect(() => {
-    if (isShortcutsPopupVisible()) {
+  createEffect(isShortcutsPopupVisible, (visible) => {
+    if (visible) {
       setActiveComponentId(
-        untrack(
-          () =>
-            getFocusedComponentId() ?? dockviewApi()?.activePanel?.id ?? null,
-        ),
+        getFocusedComponentId() ?? dockviewApi()?.activePanel?.id ?? null,
       );
     } else {
       setQuery("");
