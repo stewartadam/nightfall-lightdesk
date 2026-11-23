@@ -1,25 +1,28 @@
 name: Claude mergeability review
 
 # Claude reviews ready PRs against .github/claude-review.md and clears small, low-risk ones for
-# auto-merge, which then merges only after the required checks pass. pull_request_target runs this
-# file, the rubric and the policy script from the default branch, so a PR cannot change the rules
-# it is judged by. PR code is only ever read as data: Claude gets read-only file tools and no shell.
+# auto-merge, which then merges only after the required checks pass. A PR higher in a stack can be
+# cleared as low risk but never auto-merges, because merging it would also land the PRs below it.
+# pull_request_target runs this file, the rubric and the policy script from the default branch, so
+# a PR cannot change the rules it is judged by. PR code is only ever read as data: Claude gets read-only file tools and no shell.
 # Maintainers can also rerun the review by commenting `/review` on a PR, or `/review skip-policy`
 # to waive the size and path check for the commit it reviews.
 # See "Claude mergeability review" in .github/workflows/README.md.
 on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] runs default-branch code; PR code is data only
-    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, edited]
   issue_comment: # zizmor: ignore[dangerous-triggers] default-branch code, write-access commenters only
     types: [created]
 
 permissions: {}
 
 # A maintainer's /review comment shares its PR's group, so the newest request or push wins. Every
-# other comment gets a group of its own, so it never cancels a review.
+# other comment, and every PR edit that keeps its base, gets a group of its own, so it never
+# cancels a review.
 concurrency:
   group: >-
-    claude-review-${{ github.event.pull_request.number || (
+    claude-review-${{ ((github.event.action != 'edited' || github.event.changes.base) &&
+    github.event.pull_request.number) || (
     github.event.issue.pull_request && startsWith(github.event.comment.body, '/review') &&
     contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
     github.event.issue.number) || github.run_id }}
@@ -54,8 +57,7 @@ jobs:
           skip_reviews: true
       # A maintainer asked, so the author checks of the automatic review do not apply; the PR must
       # still come from this repository without no-auto-merge and target develop, directly or
-      # through the PRs below it in a stack. A PR higher in a stack is reviewed on its own diff but
-      # never auto-merges, so there is no size and path check to waive on it.
+      # through the PRs below it in a stack.
       - id: start
         name: Check the PR and open a check run
         if: steps.command.outputs.continue == 'true'
@@ -83,14 +85,12 @@ jobs:
           pr="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER")"
           # A PR higher in a stack targets the branch of the PR below it; the stack's base says
           # where the whole stack lands.
-          why="$(jq -r --arg repo "$GH_REPO" --argjson skip "$skip_policy" '
+          why="$(jq -r --arg repo "$GH_REPO" '
             (.stack != null and .stack.base.ref != .base.ref) as $higher
             | (if $higher then .stack.base.ref else .base.ref end) as $target
             | if $target != "develop" then "it targets \($target), not develop."
             elif .head.repo.full_name != $repo then "it comes from a fork."
             elif any(.labels[]; .name == "no-auto-merge") then "it has the no-auto-merge label."
-            elif $skip and $higher then
-              "it builds on other PRs in a stack, so it never auto-merges and there is no size and path check to waive; use `/review`."
             else empty end' <<< "$pr")"
           [[ -z "$why" ]] || refuse "$why"
           sha="$(jq -r .head.sha <<< "$pr")"
@@ -107,13 +107,14 @@ jobs:
 
   revoke:
     name: Withdraw a stale auto-merge
-    # A push, reopen or return to draft invalidates an earlier clearance before CI can merge it, and
-    # a requested review replaces it.
+    # A push, reopen, retarget or return to draft invalidates an earlier clearance before CI can
+    # merge it, and a requested review replaces it.
     needs: command
     if: >-
       !cancelled() && (
         (contains(github.event.pull_request.labels.*.name, 'low-risk') &&
-        contains(fromJSON('["synchronize","reopened","converted_to_draft"]'), github.event.action)) ||
+        (contains(fromJSON('["synchronize","reopened","converted_to_draft"]'), github.event.action) ||
+        (github.event.action == 'edited' && github.event.changes.base))) ||
         (contains(github.event.issue.labels.*.name, 'low-risk') && needs.command.outputs.number != '')
       )
     runs-on: ubuntu-latest
@@ -129,7 +130,8 @@ jobs:
           MERGE_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number || needs.command.outputs.number }}
         run: |
-          if [[ "$(gh pr view "$PR_NUMBER" --json autoMergeRequest --jq '.autoMergeRequest != null')" == true ]]; then
+          pr="$(gh pr view "$PR_NUMBER" --json autoMergeRequest,baseRefName)"
+          if jq -e '.autoMergeRequest != null' <<< "$pr" > /dev/null; then
             GH_TOKEN="${MERGE_TOKEN:-$GH_TOKEN}" gh pr merge "$PR_NUMBER" --disable-auto
           fi
           # An overlapping run may have removed it already.
@@ -140,27 +142,35 @@ jobs:
             | head -n 1)"
           if [[ -n "$comment" ]]; then
             if [[ "$GITHUB_EVENT_NAME" == issue_comment ]]; then
-              why='Auto-merge is off while Claude reviews this PR again on request.'
+              why='The clearance is off while Claude reviews this PR again on request.'
+            elif [[ "$(jq -r .baseRefName <<< "$pr")" != develop ]]; then
+              # Pushes to a PR higher in a stack, such as every restack, are not reviewed.
+              why="The PR changed after it was cleared, so the clearance is off. It is reviewed again once it targets develop, or on a \`/review\` comment."
             else
-              why='The PR changed after it was cleared, so auto-merge is off. A ready PR is reviewed again.'
+              why='The PR changed after it was cleared, so the clearance is off. A ready PR is reviewed again.'
             fi
-            body="$(printf '%s\n%s\n\n%s' "$marker" '### Claude review: auto-merge withdrawn' "$why")"
+            body="$(printf '%s\n%s\n\n%s' "$marker" '### Claude review: clearance withdrawn' "$why")"
             gh api --method PATCH "repos/$GH_REPO/issues/comments/$comment" -f body="$body" > /dev/null
           fi
 
   metadata:
     name: Acquire PR metadata and review policy
-    # Only ready, unstacked, same-repository PRs into develop from people with write access. Bots
-    # (Dependabot cannot read the token anyway) and PRs labelled no-auto-merge are skipped. An
-    # accepted /review comment has already checked its PR.
+    # Only ready, same-repository PRs into develop, directly or through a stack, from people with
+    # write access. Bots (Dependabot cannot read the token anyway) and PRs labelled no-auto-merge
+    # are skipped. A PR higher in a stack is reviewed when it becomes ready and again once it
+    # targets develop, but not on its pushes, so a restack does not review every PR in the stack.
+    # Edits run only when they change the base. An accepted /review comment has already checked
+    # its PR.
     needs: command
     if: >-
       !cancelled() && (needs.command.outputs.sha != '' || (
         github.event_name == 'pull_request_target' &&
         github.event.action != 'converted_to_draft' &&
+        (github.event.action != 'edited' || github.event.changes.base) &&
+        (github.event.action != 'synchronize' || github.event.pull_request.base.ref == 'develop') &&
         !github.event.pull_request.draft &&
-        github.event.pull_request.stack == null &&
-        github.event.pull_request.base.ref == 'develop' &&
+        (github.event.pull_request.base.ref == 'develop' ||
+        github.event.pull_request.stack.base.ref == 'develop') &&
         github.event.pull_request.head.repo.full_name == github.repository &&
         github.event.pull_request.user.type == 'User' &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) &&
@@ -174,6 +184,7 @@ jobs:
       diff: ${{ steps.snapshot.outputs.diff }}
       number: ${{ github.event.pull_request.number || needs.command.outputs.number }}
       sha: ${{ github.event.pull_request.head.sha || needs.command.outputs.sha }}
+      base: ${{ steps.snapshot.outputs.base }}
     steps:
       # Acquire the default branch's policy script as data; it runs only on the next runner.
       - uses: actions/checkout@v5.1.0
@@ -203,18 +214,31 @@ jobs:
             echo "::error::The PR moved past $HEAD_SHA before its snapshot."
             exit 1
           fi
+          jq -r '"base=\(.base)"' "$dir/pr.json" >> "$GITHUB_OUTPUT"
           gh api --paginate "repos/$GH_REPO/pulls/$PR_NUMBER/files" \
             --jq '.[] | {filename, previous_filename, status, additions, deletions} | tojson' \
             > "$dir/files.jsonl"
-          # The API refuses diffs far beyond the policy's size limit; Claude skips any PR whose diff
-          # it cannot fetch.
-          if gh api "repos/$GH_REPO/pulls/$PR_NUMBER" -H 'Accept: application/vnd.github.diff' \
-            > "$dir/pr.diff"; then
-            echo 'diff=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'The diff is too large for the GitHub API.' > "$dir/pr.diff"
-            echo 'diff=false' >> "$GITHUB_OUTPUT"
-          fi
+          # The API refuses diffs far beyond the policy's size limit with HTTP 406, and Claude skips
+          # such a PR. Server errors are retried, and any other failure fails the run rather than
+          # passing for a diff that is too large.
+          for delay in 5 15 30 0; do
+            if gh api "repos/$GH_REPO/pulls/$PR_NUMBER" -H 'Accept: application/vnd.github.diff' \
+              > "$dir/pr.diff" 2> "$RUNNER_TEMP/diff-error"; then
+              echo 'diff=true' >> "$GITHUB_OUTPUT"
+              break
+            fi
+            cat "$RUNNER_TEMP/diff-error" >&2
+            if grep -q 'HTTP 406' "$RUNNER_TEMP/diff-error"; then
+              echo 'The diff is too large for the GitHub API.' > "$dir/pr.diff"
+              echo 'diff=false' >> "$GITHUB_OUTPUT"
+              break
+            fi
+            if ! grep -qE 'HTTP 5[0-9]{2}' "$RUNNER_TEMP/diff-error" || [[ "$delay" == 0 ]]; then
+              echo "::error::Could not fetch the diff of #$PR_NUMBER."
+              exit 1
+            fi
+            sleep "$delay"
+          done
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: claude-review-${{ github.event.pull_request.head.sha || needs.command.outputs.sha }}
@@ -335,6 +359,7 @@ jobs:
           MERGE_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN }}
           PR_NUMBER: ${{ needs.metadata.outputs.number }}
           HEAD_SHA: ${{ needs.metadata.outputs.sha }}
+          BASE_REF: ${{ needs.metadata.outputs.base }}
           SKIP_POLICY: ${{ needs.command.outputs.skip-policy }}
           REVOKE_RESULT: ${{ needs.revoke.result }}
           POLICY_RESULT: ${{ needs.policy.result }}
@@ -345,10 +370,11 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           marker='<!-- claude-mergeability-review -->'
-          # A newer push has its own run; never label or merge a head this run did not review.
+          # A newer push or retarget has its own run; never label or merge a head this run did not
+          # review against the base it reviewed it on.
           pr="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER")"
-          state="$(jq -r '"\(.head.sha) \(.state) \(.draft)"' <<< "$pr")"
-          if [[ "$state" != "$HEAD_SHA open false" ]]; then
+          state="$(jq -r '"\(.head.sha) \(.state) \(.draft) \(.base.ref)"' <<< "$pr")"
+          if [[ "$state" != "$HEAD_SHA open false $BASE_REF" ]]; then
             echo "::notice::PR moved on since this review ($state); leaving it to the newer run."
             printf '%s\n' 'conclusion=skipped' 'title=The PR changed during the review' >> "$GITHUB_OUTPUT"
             exit 0
@@ -357,15 +383,10 @@ jobs:
             echo "::error::Could not withdraw the earlier auto-merge; not posting a new verdict."
             exit 1
           fi
-          # Merging a PR higher in a stack would also land the unmerged PRs below it, so it never
-          # auto-merges and no waiver applies. Read live: a retarget does not change the head.
-          if [[ -n "$ASSESSMENT" ]] &&
-            jq -e '.stack != null and .stack.base.ref != .base.ref' <<< "$pr" > /dev/null; then
-            ASSESSMENT="$(jq '.eligible = false
-              | .reasons = ["It builds on other PRs in a stack, so it merges with the stack by hand."] + .reasons' \
-              <<< "$ASSESSMENT")"
-            SKIP_POLICY=false
-          fi
+          # Only a PR straight into develop auto-merges. Any other PR reviewed here builds on the PRs
+          # below it in a stack, and merging it would land them too, so a clearance only labels it
+          # low risk.
+          stacked="$(jq '.base.ref != "develop"' <<< "$pr")"
 
           # Every path that is not a successful policy pass plus a successful auto-merge verdict
           # ends in needs-human with the reasons that apply.
@@ -377,7 +398,7 @@ jobs:
             ! jq -e '.verdict | IN("auto-merge", "needs-human")' <<< "$VERDICT" > /dev/null; then
             if [[ "$REVIEW_RESULT" == skipped ]]; then
               summary="Claude did not review this PR."
-              why="The GitHub API did not return its diff; see the [workflow run]($RUN_URL)."
+              why="The GitHub API refused its diff as too large; see the [workflow run]($RUN_URL)."
             else
               summary="The Claude review did not finish."
               why="See the [workflow run]($RUN_URL) for the error."
@@ -416,12 +437,18 @@ jobs:
           fi
 
           status=""
-          if [[ "$(jq -r .verdict <<< "$verdict")" == auto-merge ]]; then
+          if [[ "$(jq -r .verdict <<< "$verdict")" == auto-merge && "$stacked" == true ]]; then
+            gh label create low-risk --color 0E8A16 \
+              --description 'Cleared as low risk by the Claude mergeability review' \
+              2> /dev/null || true
+            gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/labels" -f 'labels[]=low-risk' > /dev/null
+            status="It builds on other PRs in a stack, so it does not auto-merge: merge it with its stack."
+          elif [[ "$(jq -r .verdict <<< "$verdict")" == auto-merge ]]; then
             if [[ -z "$MERGE_TOKEN" ]]; then
               status="Auto-merge is not set up: add the \`AUTO_MERGE_TOKEN\` secret to turn it on."
             else
               gh label create low-risk --color 0E8A16 \
-                --description 'Cleared by the Claude mergeability review for auto-merge' \
+                --description 'Cleared as low risk by the Claude mergeability review' \
                 2> /dev/null || true
               gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/labels" -f 'labels[]=low-risk' > /dev/null
               # --match-head-commit refuses if a push landed since the review.
@@ -438,9 +465,11 @@ jobs:
 
           # Workflow-made verdicts carry plain reasons. Claude verdicts carry one entry per check,
           # listed with failed checks first.
-          body="$(jq -r --arg marker "$marker" --arg sha "${HEAD_SHA:0:7}" --arg status "$status" '
-            (if .verdict == "auto-merge" then "### Claude review: ready to auto-merge"
-             else "### Claude review: needs a human" end) as $title
+          body="$(jq -r --arg marker "$marker" --arg sha "${HEAD_SHA:0:7}" --arg status "$status" \
+            --argjson stacked "$stacked" '
+            (if .verdict != "auto-merge" then "### Claude review: needs a human"
+             elif $stacked then "### Claude review: low risk"
+             else "### Claude review: ready to auto-merge" end) as $title
             | {scope: "Auto-merge scope", bugs: "Bugs", risk: "Risk", tests: "Tests",
                showfile: "Showfile compatibility", docs: "Docs", description: "Description", "release-notes": "Release notes",
                conventions: "Conventions"} as $names
@@ -464,8 +493,10 @@ jobs:
             gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -f body="$body" > /dev/null
           fi
           jq -r '"Verdict: \(.verdict)"' <<< "$verdict" >> "$GITHUB_STEP_SUMMARY"
-          jq -r 'if .verdict == "auto-merge" then "conclusion=success\ntitle=Ready to auto-merge"
-            else "conclusion=neutral\ntitle=Needs a human" end' <<< "$verdict" >> "$GITHUB_OUTPUT"
+          jq -r --argjson stacked "$stacked" '
+            if .verdict != "auto-merge" then "conclusion=neutral\ntitle=Needs a human"
+            elif $stacked then "conclusion=success\ntitle=Low risk, merges with its stack"
+            else "conclusion=success\ntitle=Ready to auto-merge" end' <<< "$verdict" >> "$GITHUB_OUTPUT"
           exit "${failed:-0}"
 
   finish:

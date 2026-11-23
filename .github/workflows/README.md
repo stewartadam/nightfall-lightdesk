@@ -180,8 +180,8 @@ none executes PR code. The steps are gated by
 ## Claude mergeability review
 
 `claude-review.yml` lets small, low-risk PRs merge without waiting for a maintainer. When a
-same-repository PR into `develop` from someone with write access is opened ready or marked ready
-for review, or gets new commits while ready, and is not part of a stack:
+same-repository PR into `develop`, directly or through the PRs below it in a stack, from someone
+with write access is opened ready or marked ready for review, or gets new commits while ready:
 
 1. A size and path check (`scripts/merge-policy.mjs`) blocks auto-merge for PRs over 20 files or
    800 changed lines, PRs changing binary files, and PRs touching risky areas: CI, build and test
@@ -202,13 +202,17 @@ for review, or gets new commits while ready, and is not part of a stack:
 3. The verdict is posted as one comment that later runs update, listing each check as passed or
    failed with a note. On "ready to auto-merge", the PR gets the `low-risk` label and GitHub
    auto-merge, so it merges only once the required checks pass. A reported bug or a failed check
-   overrides an auto-merge verdict.
+   overrides an auto-merge verdict. A PR higher in a stack is reviewed on its own diff against the
+   PR below it, and a clearance only gives it the `low-risk` label: it never auto-merges, because
+   merging it would also land the unmerged PRs it builds on. It is reviewed when it becomes ready
+   and again once it targets `develop` after the PRs below it merge, but not on its pushes, so a
+   restack does not review every PR in the stack. The lowest PR of a stack targets `develop` and
+   is reviewed like any other PR.
 
-Pushing to a cleared PR, reopening it or converting it to draft disables its auto-merge, removes
-the label and marks the comment as withdrawn before any new review starts. This keys off the label:
+Pushing to a cleared PR, reopening it, changing its base or converting it to draft disables its
+auto-merge, removes the label and marks the comment as withdrawn before any new review starts. This keys off the label:
 removing the label by hand leaves auto-merge on, so disable auto-merge itself to stop a merge. To keep a PR out of the review entirely, add the
-`no-auto-merge` label before marking it ready. Drafts, stacked PRs and bot PRs are never reviewed
-on their own.
+`no-auto-merge` label before marking it ready. Drafts and bot PRs are never reviewed on their own.
 
 A maintainer can comment `/review` on a ready PR to review its current commit again, for example
 after the rubric changed or a review failed. The request shows on the PR as a **Claude review**
@@ -216,12 +220,9 @@ check that links to the run and ends with the verdict, while the verdict comment
 `/review skip-policy` waives the size and path check for that commit: the "Auto-merge scope" check
 passes with a note naming who waived it, so a PR Claude clears gets auto-merge. The waiver lasts
 until the next push, whose automatic review applies the check again. Requested reviews work on bot
-PRs and on PRs in a stack on `develop` too, but never on drafts, fork PRs, PRs into other branches
-or PRs labelled `no-auto-merge`; the workflow says why in a comment instead. A PR higher in a stack
-is reviewed on its own diff against the PR below it and never auto-merges, because merging it
-would also land the unmerged PRs it builds on: its "Auto-merge scope" check fails with that reason,
-and `/review skip-policy` is refused on it. The lowest PR of a stack targets `develop` and is
-reviewed like any other PR. A request on a cleared PR first
+PRs too, but never on drafts, fork PRs, PRs into other branches or PRs labelled `no-auto-merge`;
+the workflow says why in a comment instead. On a PR higher in a stack, `/review skip-policy` can
+earn the `low-risk` label but still never auto-merge. A request on a cleared PR first
 withdraws its auto-merge, and a newer request or push cancels a running one.
 
 The workflow runs on `pull_request_target`, so the workflow, the rubric and the policy script
