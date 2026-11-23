@@ -7,6 +7,7 @@
  */
 
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
+
 /**
  * Object Library Explorer Panel
  *
@@ -17,7 +18,6 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
  * - View detailed information in properties panel
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Component,
   createEffect,
@@ -56,6 +56,7 @@ import {
 import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useStore } from "../../../lib/use-nanostore";
 import { objectLibrary } from "../../../state/appStores";
 import type { ObjectLibraryCommand } from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";

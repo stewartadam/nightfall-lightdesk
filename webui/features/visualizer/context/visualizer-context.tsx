@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Accessor,
   createContext,
@@ -16,6 +15,7 @@ import {
 } from "solid-js";
 import { commandClient } from "../../../lib/engine-commands";
 import { setStoreAction } from "../../../lib/nanostore-action";
+import { useStore } from "../../../lib/use-nanostore";
 import { visualizerSceneObjectSelection } from "../../../state/appStores";
 import type * as types from "../../../types";
 import type { VisualizerInteractionMode } from "../rendering/renderers/renderer-api";

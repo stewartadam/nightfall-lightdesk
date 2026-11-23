@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import { FastForwardIcon } from "@squidlab/phosphor-solid/fast-forward";
 import { LightningIcon } from "@squidlab/phosphor-solid/lightning";
@@ -25,6 +24,7 @@ import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import { isEditableKeyboardTarget } from "../../../components/widgets/data-grid/event-adapter";
 import { commandClient } from "../../../lib/engine-commands";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useStore } from "../../../lib/use-nanostore";
 import { armedLaunches, showTempo } from "../../../state/appStores";
 import { LaunchQuantize } from "../../../types";
 import { TempoBeatIndicator } from "../components/tempo-beat-indicator";

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
@@ -33,6 +32,7 @@ import {
   serializeTimelineInsertDragPayload,
   TIMELINE_INSERT_DRAG_MIME,
 } from "../../../lib/timeline-insert-drag";
+import { useStore } from "../../../lib/use-nanostore";
 import { clips } from "../../../state/appStores";
 import * as types from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";

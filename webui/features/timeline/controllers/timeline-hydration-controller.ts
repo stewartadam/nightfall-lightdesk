@@ -6,11 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, untrack } from "solid-js";
 import { resyncComplete } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
 import { resolveTimelineAudioUrl } from "../../../lib/timeline-audio";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   useConditionalShallowStore,
   useShallowStore,

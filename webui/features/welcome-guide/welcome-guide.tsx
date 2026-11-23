@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createDraggable } from "@neodrag/solid";
 import {
   createEffect,
@@ -38,6 +37,7 @@ import {
   type PanelOpenTarget,
 } from "../../lib/panel-open-command";
 import { testHooksEnabled } from "../../lib/test-mode";
+import { useStore } from "../../lib/use-nanostore";
 import { pushToast, runtimeCapabilities } from "../../state/appStores";
 import { activeLayoutId, whenLayoutSettled } from "../../state/layout-switcher";
 import { patchPanelActiveTab, revealPatchFixtures } from "../patch";

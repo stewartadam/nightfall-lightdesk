@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createSignal,
@@ -32,6 +31,7 @@ import { commandClient } from "../../../lib/engine-commands";
 import { backendAppState } from "../../../lib/engine-runtime";
 import { documentationPageUrl } from "../../../lib/feedback";
 import { getLogger } from "../../../lib/logger";
+import { useStore } from "../../../lib/use-nanostore";
 import { $backupState } from "../../../state/settings";
 import {
   AppState,

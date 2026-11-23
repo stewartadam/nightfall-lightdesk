@@ -6,12 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal } from "solid-js";
 import {
   cueWithUnconfirmedEdit,
   sequenceWithUnconfirmedEdit,
 } from "../../../lib/cue-service";
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
   cues,

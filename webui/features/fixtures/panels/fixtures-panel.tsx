@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createScheduled,
   leadingAndTrailing,
@@ -60,6 +59,7 @@ import {
 } from "../../../lib/parked-parameters";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
 import { recordExternalPerformanceMeasure } from "../../../lib/performance-measure-collector";
+import { useStore } from "../../../lib/use-nanostore";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";

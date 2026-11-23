@@ -6,13 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createMemo, Show } from "solid-js";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import {
   computeFixtureChannelCount,
   libraryDefinitionId,
 } from "../../../lib/fixture-service";
+import { useStore } from "../../../lib/use-nanostore";
 import { fixtureLibrary, fixtureProfile } from "../../../state/appStores";
 import { LibraryFixturePreview } from "../../fixture-library";
 import {

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { For, type JSX } from "solid-js";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import {
@@ -15,6 +14,7 @@ import {
 } from "../../../lib/command-result";
 import { commandClient } from "../../../lib/engine-commands";
 import { engineRuntime } from "../../../lib/engine-runtime";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   armedLaunches,
   faders,

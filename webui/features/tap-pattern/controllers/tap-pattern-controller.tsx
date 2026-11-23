@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import { writeClipboardText } from "../../../lib/clipboard";
@@ -14,6 +13,7 @@ import { sendCueUpdate, sendSequenceUpdate } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useStore } from "../../../lib/use-nanostore";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { cues, dockApi, pushToast, sequences } from "../../../state/appStores";

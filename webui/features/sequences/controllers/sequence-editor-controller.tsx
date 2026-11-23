@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import type { DockviewPanelApi } from "dockview";
 import {
   createEffect,
@@ -32,6 +31,7 @@ import {
 } from "../../../lib/keyboardShortcuts";
 import { buildSequencePreviewCue } from "../../../lib/sequence-preview-cue";
 import { timeDisplayUnitFromPreference } from "../../../lib/time-display-units";
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
   cueDurationProfiles,

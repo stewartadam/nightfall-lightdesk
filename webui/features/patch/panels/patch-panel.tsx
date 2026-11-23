@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
@@ -27,6 +26,7 @@ import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import { bestEffortPersistentAtom } from "../../../lib/best-effort-persistent-atom";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   clearDmxRouteNavigationRequest,
   dmxRouteNavigationRequest,

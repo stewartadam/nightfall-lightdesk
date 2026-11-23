@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createMemo,
@@ -33,6 +32,7 @@ import {
 } from "../../../lib/duration";
 import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
+import { useStore } from "../../../lib/use-nanostore";
 import { colorPaths } from "../../../state/appStores";
 import type * as types from "../../../types";
 import {

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
 import {
   createEffect,
@@ -21,6 +20,7 @@ import {
 } from "solid-js";
 import { DropdownMenu } from "../../../components/ui/dropdown-menu";
 import { dragCarriesObject } from "../../../lib/object-drag";
+import { useStore } from "../../../lib/use-nanostore";
 import { armedLaunches } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { ObjectType } from "../../../types";

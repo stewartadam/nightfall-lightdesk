@@ -6,10 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-// Track component that only renders track content (no headers)
-import { useStore } from "@nanostores/solid";
 import { createMemo, For, Show } from "solid-js";
 import { TIMELINE_INSERT_DRAG_MIME } from "../../../lib/timeline-insert-drag";
+// Track component that only renders track content (no headers)
+import { useStore } from "../../../lib/use-nanostore";
 import { durationToMs } from "../../../lib/utils";
 import {
   timelineActionKey,

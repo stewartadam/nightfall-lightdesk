@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { CopySimpleIcon } from "@squidlab/phosphor-solid/copy-simple";
 import { FloppyDiskIcon } from "@squidlab/phosphor-solid/floppy-disk";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
@@ -25,6 +24,7 @@ import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { REVEAL_OBJECT_CAPABILITY } from "../../../lib/panel-capabilities";
 import { openOrFocusPanel } from "../../../lib/panel-open-command";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   blueprintDependencies,
   blueprints,

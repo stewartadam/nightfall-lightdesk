@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowCounterClockwiseIcon } from "@squidlab/phosphor-solid/arrow-counter-clockwise";
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { CaretRightIcon } from "@squidlab/phosphor-solid/caret-right";
@@ -46,6 +45,7 @@ import {
   currentShowfileName,
   normalizedShowfileName,
 } from "../../../lib/showfile-loading";
+import { useStore } from "../../../lib/use-nanostore";
 import { pushToast } from "../../../state/appStores";
 import { FollowPrimarySection } from "../../io";
 import {

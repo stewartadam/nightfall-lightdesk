@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { type Accessor, createMemo } from "solid-js";
+import { useStore } from "../../../lib/use-nanostore";
 import { formatShortcutHint } from "../../ui/kbd-keys";
 import { $uiActionCatalog } from "./ui-action-registry";
 

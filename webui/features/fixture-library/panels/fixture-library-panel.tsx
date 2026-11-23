@@ -8,6 +8,7 @@
 
 import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
+
 /**
  * Fixture Library Explorer Panel
  *
@@ -18,7 +19,6 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
  * - View detailed information in properties panel
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Component,
   createEffect,
@@ -70,6 +70,7 @@ import {
 import { getLogger } from "../../../lib/logger";
 import { REVEAL_LIBRARY_FIXTURE_CAPABILITY } from "../../../lib/panel-capabilities";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   fixtureLibrary,
   fixtures as patchedFixtures,

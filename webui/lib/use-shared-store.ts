@@ -43,7 +43,7 @@ function createSharedEntry<Value>(store: ReadableAtom<Value>): SharedEntry {
  * Subscribes to a Nanostore through one reconciled Solid store shared by every
  * mounted consumer.
  *
- * Behaves like `useStore` from `@nanostores/solid` (unchanged nested values
+ * Behaves like `useStore` from `lib/use-nanostore` (unchanged nested values
  * keep their identity, so keyed lists only update changed rows), but large
  * snapshot stores are wrapped and reconciled once per update instead of once
  * per component. The shared store is released when its last consumer unmounts.

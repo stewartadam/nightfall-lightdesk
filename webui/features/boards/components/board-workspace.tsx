@@ -6,9 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, onCleanup } from "solid-js";
 import { registerComponentFocus } from "../../../lib/componentFocusContext";
+import { useStore } from "../../../lib/use-nanostore";
 import { boards } from "../../../state/appStores";
 import { activeBoardWorkspace } from "../../../state/layout-switcher";
 import { createBoardPanelController } from "../controllers/board-panel-controller";

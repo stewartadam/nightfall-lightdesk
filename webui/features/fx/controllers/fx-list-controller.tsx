@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
@@ -41,6 +40,7 @@ import {
 } from "../../../lib/fx-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   availableFxModules,

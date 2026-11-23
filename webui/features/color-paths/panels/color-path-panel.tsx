@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { CopySimpleIcon } from "@squidlab/phosphor-solid/copy-simple";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
@@ -30,6 +29,7 @@ import {
   storeColorPath,
 } from "../../../lib/color-path-service";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useStore } from "../../../lib/use-nanostore";
 import { colorPaths } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { FadeCurve, HueDirection } from "../../../types";

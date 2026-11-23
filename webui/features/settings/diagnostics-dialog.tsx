@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { invoke } from "@tauri-apps/api/core";
 import {
   createEffect,
@@ -39,6 +38,7 @@ import { PRIVACY_CONTACT_EMAIL } from "../../lib/privacy";
 import { showfileExportOptions } from "../../lib/showfile-export-options";
 import { collectSystemInfo } from "../../lib/system-info";
 import { isTauriRuntime } from "../../lib/tauri";
+import { useStore } from "../../lib/use-nanostore";
 import { activeShellDialog, closeDiagnostics } from "../../state/shell-dialog";
 
 /** Status shown when System Info cannot be copied, so it can be withdrawn after a later copy works. */

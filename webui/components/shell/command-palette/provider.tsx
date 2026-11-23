@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createMemo,
   createSignal,
@@ -16,6 +15,7 @@ import {
 import { actionAllowsSurface } from "../../../features/actions";
 import { $mappingMode, bindArmedSource } from "../../../features/io";
 import { invokeBoundAction } from "../../../features/keybindings";
+import { useStore } from "../../../lib/use-nanostore";
 import { actionCatalog } from "../../../state/appStores";
 import {
   ActionInputKind,

@@ -6,9 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect } from "solid-js";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { timelineDefinitionsLoaded, timelines } from "../../../state/appStores";
 import { TimelineController } from "../controllers/timeline-controller";

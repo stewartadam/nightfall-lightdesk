@@ -6,11 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal, Show } from "solid-js";
 import { Input, Textarea } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getLogger } from "../../../lib/logger";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   formatSpatialSelection,

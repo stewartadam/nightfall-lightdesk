@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createMemo,
@@ -22,6 +21,7 @@ import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { ToggleToolbarButton } from "../../../components/ui/toolbar-button";
 import ObjectSelector from "../../../components/widgets/object-selector";
 import { commandClient } from "../../../lib/engine-commands";
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {

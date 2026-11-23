@@ -44,7 +44,7 @@ function isInfrastructureFrame(frame: string): boolean {
   return (
     frame.includes("nanostore-listener-performance") ||
     frame.includes("use-shallow-store") ||
-    frame.includes("@nanostores/solid") ||
+    frame.includes("use-nanostore") ||
     frame.includes("/nanostores/") ||
     frame.includes("/solid-js/") ||
     frame.includes("/node_modules/")

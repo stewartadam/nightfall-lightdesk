@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArchiveIcon } from "@squidlab/phosphor-solid/archive";
 import { XIcon } from "@squidlab/phosphor-solid/x";
 import {
@@ -54,6 +53,7 @@ import {
   showfileObjectResultLabel,
   showfileObjectTypeDefinition,
 } from "../../../lib/showfile-object-search";
+import { useStore } from "../../../lib/use-nanostore";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import {
   blueprints,

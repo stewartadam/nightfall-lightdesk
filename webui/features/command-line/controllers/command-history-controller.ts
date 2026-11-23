@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Accessor,
   createEffect,
@@ -14,6 +13,7 @@ import {
   createSignal,
   type Setter,
 } from "solid-js";
+import { useStore } from "../../../lib/use-nanostore";
 import { consoleScrollback } from "../../../state/appStores";
 import { isHistorySearchShortcut } from "../model/keyboard";
 import { commandLineHistory } from "../state/history";

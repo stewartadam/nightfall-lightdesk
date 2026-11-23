@@ -16,7 +16,6 @@
  * - Panel is scrolled out of view (IntersectionObserver)
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Component,
   createEffect,
@@ -29,6 +28,7 @@ import {
 import { consumeVisualizerQualityUrlOverride } from "../../../lib/feature-flags";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useStore } from "../../../lib/use-nanostore";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { usePropertiesInspector } from "../../property-inspector";

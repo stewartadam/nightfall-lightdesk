@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createMemo,
@@ -17,6 +16,7 @@ import { ErrorFallback } from "../../../components/ui/error-fallback";
 import { applyFlowDelta } from "../../../lib/flow-service";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   flowDefinitionsRevision,
   flowPortValues,

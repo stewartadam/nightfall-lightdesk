@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createMemo,
   createResource,
@@ -34,6 +33,7 @@ import {
 } from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
 import { saveShowfileAndAwait } from "../../../lib/showfile-actions";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   fixtureLibrary,
   fixtures,

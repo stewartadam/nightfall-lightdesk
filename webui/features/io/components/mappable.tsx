@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import {
   createEffect,
@@ -25,6 +24,7 @@ import {
   MenuSurface,
 } from "../../../components/ui/menu";
 import { Popover } from "../../../components/ui/popover";
+import { useStore } from "../../../lib/use-nanostore";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import {
   actionCatalog,

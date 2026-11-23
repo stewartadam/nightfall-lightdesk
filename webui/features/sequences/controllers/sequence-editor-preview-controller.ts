@@ -6,12 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { previewSequence, stopPreviewInstance } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
 import { normalizeFixtureUid } from "../../../lib/route-utils";
 import { buildSequencePreviewPayload } from "../../../lib/sequence-preview-cue";
+import { useStore } from "../../../lib/use-nanostore";
 import { activeInstances } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { activeCueUidFromPreviewInstance } from "../../cue-sequences";

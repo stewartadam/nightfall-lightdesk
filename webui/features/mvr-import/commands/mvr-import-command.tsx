@@ -6,11 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { CloudArrowUpIcon } from "@squidlab/phosphor-solid/cloud-arrow-up";
 import { onMount, Show } from "solid-js";
 import { useUiAction } from "../../../components/providers/command-registry";
 import { hasDiskStorage } from "../../../lib/disk-storage";
+import { useStore } from "../../../lib/use-nanostore";
 import { runtimeCapabilities } from "../../../state/appStores";
 import { openRigImportDialog } from "../model/mvr-import-model";
 

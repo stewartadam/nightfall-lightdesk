@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { CaretLeftIcon } from "@squidlab/phosphor-solid/caret-left";
 import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import { CloudArrowUpIcon } from "@squidlab/phosphor-solid/cloud-arrow-up";
@@ -42,6 +41,7 @@ import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
 import { Table, TableScroll } from "../../../components/ui/table";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getLogger } from "../../../lib/logger";
+import { useStore } from "../../../lib/use-nanostore";
 import { fixtureLibrary } from "../../../state/appStores";
 import { pushToast } from "../../../state/notifications";
 import * as types from "../../../types";

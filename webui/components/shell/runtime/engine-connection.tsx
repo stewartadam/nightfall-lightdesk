@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import {
   connectionStatus,
@@ -27,6 +26,7 @@ import {
   isEmbeddedDemoRuntime,
 } from "../../../lib/runtime-config";
 import { isTauriRuntime } from "../../../lib/tauri";
+import { useStore } from "../../../lib/use-nanostore";
 import { PairingPrompt, pairingErrorMessage } from "../../overlays/pairing";
 
 const log = getLogger(import.meta.url);

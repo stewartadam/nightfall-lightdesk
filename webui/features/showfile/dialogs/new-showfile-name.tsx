@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { FilePlusIcon } from "@squidlab/phosphor-solid/file-plus";
 import {
   createEffect,
@@ -29,6 +28,7 @@ import {
   newShowfileNamePrompt,
   submitNewShowfileNamePrompt,
 } from "../../../lib/new-showfile-name-prompt";
+import { useStore } from "../../../lib/use-nanostore";
 
 /** Collects a new show name and optional sample data before creation. */
 export default function NewShowfileNameModal() {

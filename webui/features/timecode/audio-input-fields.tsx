@@ -6,9 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createMemo, For, Show } from "solid-js";
 import { NativeSelect } from "../../components/ui/form-controls";
+import { useStore } from "../../lib/use-nanostore";
 import { audioInputDevices } from "../../state/appStores";
 import type * as types from "../../types";
 

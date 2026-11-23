@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import {
@@ -40,6 +39,7 @@ import {
   isTauriRuntime,
   openDataDirectory,
 } from "../../lib/tauri";
+import { useStore } from "../../lib/use-nanostore";
 import { pushToast, serverVersion } from "../../state/appStores";
 import { AboutUpdateStatus, createAboutUpdates } from "./about-updates";
 import ThirdPartyNotices from "./third-party-notices";

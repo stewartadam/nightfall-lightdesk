@@ -6,10 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
 import { onMount, Show } from "solid-js";
 import { hasDiskStorage } from "../../../../lib/disk-storage";
+import { useStore } from "../../../../lib/use-nanostore";
 import { runtimeCapabilities } from "../../../../state/appStores";
 import { useAppShell } from "../../../providers/app-shell";
 import { useUiAction } from "../../../providers/command-registry";

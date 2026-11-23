@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { Alert } from "../../../components/ui/alert";
 import { Collapsible } from "../../../components/ui/collapsible";
@@ -17,6 +16,7 @@ import {
   addShortcutPreemptor,
   allShortcuts,
 } from "../../../lib/keyboardShortcuts";
+import { useStore } from "../../../lib/use-nanostore";
 import * as types from "../../../types";
 import {
   ActionPicker,

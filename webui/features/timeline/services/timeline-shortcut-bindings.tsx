@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -20,6 +19,7 @@ import {
   type TimelineClipboardEntry,
 } from "../../../lib/timeline-clipboard";
 import { timelinePlacementPosition } from "../../../lib/timeline-placement";
+import { useStore } from "../../../lib/use-nanostore";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { pushToast } from "../../../state/appStores";
 import { $settings } from "../../../state/settings";

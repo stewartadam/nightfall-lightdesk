@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect } from "solid-js";
+import { useStore } from "../../lib/use-nanostore";
 import { compactViewport } from "../../state/viewport";
 import { useAppShell } from "../providers/app-shell";
 import LayoutManager from "../shell/docking/layout-manager";

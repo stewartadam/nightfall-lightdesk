@@ -20,7 +20,6 @@
  * 2. Use createCueEditorContextValue() and pass the value via props to share state
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Accessor,
   createContext,
@@ -42,6 +41,7 @@ import {
 } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
 import { normalizeFixtureUid } from "../../../lib/route-utils";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   activeInstances,
   cueDefinitionsLoaded,

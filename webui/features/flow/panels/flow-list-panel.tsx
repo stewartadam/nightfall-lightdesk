@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
@@ -43,6 +42,7 @@ import {
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useStore } from "../../../lib/use-nanostore";
 import { dockApi, flows } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { PencilRulerIcon } from "@squidlab/phosphor-solid/pencil-ruler";
 import { createEffect, createMemo, createSignal, on, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
@@ -17,6 +16,7 @@ import {
   EngineRuntimeStatus,
 } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
+import { useStore } from "../../../lib/use-nanostore";
 import { fixtureDrafts } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { createDraftQueue, type DraftChange } from "../services/draft-queue";

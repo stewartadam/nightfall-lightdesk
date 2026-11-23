@@ -6,11 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { BookmarkIcon } from "@squidlab/phosphor-solid/bookmark";
 import { LayoutIcon } from "@squidlab/phosphor-solid/layout";
 import { QuestionIcon } from "@squidlab/phosphor-solid/question";
 import { Show } from "solid-js";
+import { useStore } from "../../../lib/use-nanostore";
 import { compactViewport } from "../../../state/viewport";
 import { useAppShell } from "../../providers/app-shell";
 import { useUiAction } from "../command-palette";

@@ -7,7 +7,6 @@
  */
 
 import "./patch-wizard.css";
-import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { Alert } from "../../../components/ui/alert";
 import {
@@ -18,6 +17,7 @@ import {
 } from "../../../components/ui/dialog";
 import { Button } from "../../../components/ui/visual-language/button";
 import { libraryDefinitionId } from "../../../lib/fixture-service";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   fixtureLibrary,
   fixtureProfile,

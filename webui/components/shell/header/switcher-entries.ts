@@ -6,12 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import type { DockviewApi } from "dockview";
 import { createMemo } from "solid-js";
 import { sortBoardsById } from "../../../features/boards";
 import { activateStoredLayout } from "../../../lib/layout-activation";
 import { layoutStorageStore } from "../../../lib/layoutStorage";
+import { useStore } from "../../../lib/use-nanostore";
 import { boards, pushToast } from "../../../state/appStores";
 import {
   activeBoardWorkspace,

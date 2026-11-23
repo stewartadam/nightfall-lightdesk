@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Accessor,
   createEffect,
@@ -17,6 +16,7 @@ import {
   untrack,
 } from "solid-js";
 import { getLogger } from "../../lib/logger";
+import { useStore } from "../../lib/use-nanostore";
 import { fixtureLibrary } from "../../state/appStores";
 import { activeShellDialog } from "../../state/shell-dialog";
 import type {

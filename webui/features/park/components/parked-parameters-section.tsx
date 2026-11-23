@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { LockOpenIcon } from "@squidlab/phosphor-solid/lock-open";
 import { createMemo, For, Show } from "solid-js";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -16,6 +15,7 @@ import {
   parkedAttributeName,
   parkedParameterKeys,
 } from "../../../lib/parked-parameters";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { fixtures, parkedParameters } from "../../../state/appStores";
 import type * as types from "../../../types";

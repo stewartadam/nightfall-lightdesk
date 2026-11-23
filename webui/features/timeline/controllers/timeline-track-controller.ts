@@ -6,13 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createSignal, untrack } from "solid-js";
 import { getLogger } from "../../../lib/logger";
 import {
   type MoveTimelineActionOptions,
   moveTimelineActions,
 } from "../../../lib/timeline-actions";
+import { useStore } from "../../../lib/use-nanostore";
 import { msToDuration } from "../../../lib/utils";
 import type * as types from "../../../types";
 import type {

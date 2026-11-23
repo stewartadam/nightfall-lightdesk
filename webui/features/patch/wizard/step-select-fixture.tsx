@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, Show } from "solid-js";
 import { SearchField } from "../../../components/ui/search-field";
 import {
@@ -34,6 +33,7 @@ import {
   libraryRevisionDate,
   libraryRevisionLabel,
 } from "../../../lib/library-revision";
+import { useStore } from "../../../lib/use-nanostore";
 import { fixtureLibrary, runtimeCapabilities } from "../../../state/appStores";
 import type { AvailableFixtureInfo } from "../../../types";
 import { LibraryFixturePreview } from "../../fixture-library";

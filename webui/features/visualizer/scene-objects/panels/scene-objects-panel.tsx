@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
@@ -71,6 +70,7 @@ import {
   updateSceneObjectProperties,
   updateSceneObjectsFromLibrary,
 } from "../../../../lib/scene-object-service";
+import { useStore } from "../../../../lib/use-nanostore";
 import { useSharedStore } from "../../../../lib/use-shared-store";
 import {
   fanNumbersByColumn,

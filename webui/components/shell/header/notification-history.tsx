@@ -6,11 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { BellIcon } from "@squidlab/phosphor-solid/bell";
 import { BellRingingIcon } from "@squidlab/phosphor-solid/bell-ringing";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   clearNotificationHistory,
   type NotificationHistoryEntry,

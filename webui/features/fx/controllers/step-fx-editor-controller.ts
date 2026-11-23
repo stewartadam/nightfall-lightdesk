@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -20,6 +19,7 @@ import {
   storeStepFxAndWait,
   updateStepFxPreview,
 } from "../../../lib/fx-service";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   pushToast,
   stepFxPreviews as stepFxPreviewsStore,

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type DockviewApi,
   DockviewCompositeDisposable,
@@ -24,6 +23,7 @@ import {
   currentShowfileName,
   currentShowfileRevision,
 } from "../../../../lib/showfile-loading";
+import { useStore } from "../../../../lib/use-nanostore";
 import {
   activeLayoutId,
   clearLayoutSessions,

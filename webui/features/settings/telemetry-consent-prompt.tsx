@@ -6,9 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
+import { useStore } from "../../lib/use-nanostore";
 import { pushToast } from "../../state/notifications";
 import { $telemetryState } from "../../state/settings";
 import { setTelemetryConsent } from "./privacy-settings";

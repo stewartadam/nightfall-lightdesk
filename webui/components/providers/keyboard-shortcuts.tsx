@@ -6,13 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { type JSX, onCleanup, onMount } from "solid-js";
 import {
   initKeyboardShortcuts,
   setDockApiGetter,
 } from "../../lib/keyboardShortcuts";
 import { getLogger } from "../../lib/logger";
+import { useStore } from "../../lib/use-nanostore";
 import { dockApi } from "../../state/appStores";
 import { activeBoardWorkspace } from "../../state/layout-switcher";
 

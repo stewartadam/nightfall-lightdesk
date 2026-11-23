@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { type Accessor, createSignal, onCleanup, type Setter } from "solid-js";
 import {
   isIntentSuggestion,
@@ -15,6 +14,7 @@ import {
   type RankedCommandTokenSuggestion,
 } from "../../../lib/command-autocomplete";
 import { validateCommandSemantics } from "../../../lib/command-semantic-validation";
+import { useStore } from "../../../lib/use-nanostore";
 import { validateCommand } from "../../../lib/wasm-bridge";
 import { $ioSettings } from "../../../state/settings";
 import type {

@@ -6,11 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { type Accessor, createMemo, For, Match, Show, Switch } from "solid-js";
 import { Alert } from "../../../components/ui/alert";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, Textarea } from "../../../components/ui/form-controls";
+import { useStore } from "../../../lib/use-nanostore";
 import { durationToMs, msToDuration } from "../../../lib/utils";
 import { timelineLookaheadActionStatuses } from "../../../state/appStores";
 import * as types from "../../../types";

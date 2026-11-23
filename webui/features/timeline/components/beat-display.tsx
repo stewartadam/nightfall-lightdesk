@@ -6,9 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-// BeatDisplay component - shows current beat/bar position
-import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal } from "solid-js";
+// BeatDisplay component - shows current beat/bar position
+import { useStore } from "../../../lib/use-nanostore";
 import { durationToMs } from "../../../lib/utils";
 import { timelineBeatgridPreview } from "../../../state/appStores";
 import "./timeline-footer.css";

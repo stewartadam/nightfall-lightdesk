@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import {
   APP_BUILD_ID,
@@ -19,6 +18,7 @@ import {
   INITIAL_FADER_BEAT_STATE,
   nextFaderBeatState,
 } from "../../../lib/startup-fader-animation";
+import { useStore } from "../../../lib/use-nanostore";
 import { reducedMotion } from "../../../state/reduced-motion";
 import type { StartupPhase } from "./model";
 

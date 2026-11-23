@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowClockwiseIcon } from "@squidlab/phosphor-solid/arrow-clockwise";
 import {
   createEffect,
@@ -31,6 +30,7 @@ import {
 import { commandClient } from "../../lib/engine-commands";
 import { setStoreAction } from "../../lib/nanostore-action";
 import { PRIVACY_POLICY_URL } from "../../lib/privacy";
+import { useStore } from "../../lib/use-nanostore";
 import { $telemetryState } from "../../state/settings";
 import type { TelemetryConsent } from "../../types";
 

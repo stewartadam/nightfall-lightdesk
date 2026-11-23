@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createMemo,
@@ -17,6 +16,7 @@ import {
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import { getLogger } from "../../../lib/logger";
 import { RENDER_PROPERTIES_CAPABILITY } from "../../../lib/panel-capabilities";
+import { useStore } from "../../../lib/use-nanostore";
 import { dockApi } from "../../../state/appStores";
 import {
   PropertiesContext,
