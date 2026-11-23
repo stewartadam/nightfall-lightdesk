@@ -6,13 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-} from "solid-js";
+import { type Accessor, createMemo, createSignal } from "solid-js";
 import {
   createKeyedDataGridCellProvider,
   type DataGridCellDecorationCallback,
@@ -29,6 +23,7 @@ import {
   type RichTimeDisplayUnit,
 } from "../../../lib/datagrid-rich-cells";
 import { msToDuration } from "../../../lib/duration";
+import { createEffect } from "../../../lib/solid-compat";
 import type { DropdownGridCell } from "../../../lib/tanstack-dropdown-cell";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
@@ -92,22 +87,23 @@ export function createSequenceEditorGridController(
   const [previewClockMs, setPreviewClockMs] = createSignal(performance.now());
 
   /** Advances progress decoration while preview or live playback can change. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    if (!ctx.previewEnabled() && Object.keys($activeInstances()).length === 0) {
-      return;
-    }
+  createEffect(
+    () =>
+      workspaceActive() &&
+      (ctx.previewEnabled() || Object.keys($activeInstances()).length > 0),
+    (running) => {
+      if (!running) return;
+      let frameId = 0;
 
-    let frameId = 0;
-
-    /** Queues the next animation-frame clock update for timing progress. */
-    const tick = () => {
-      setPreviewClockMs(performance.now());
+      /** Queues the next animation-frame clock update for timing progress. */
+      const tick = () => {
+        setPreviewClockMs(performance.now());
+        frameId = requestAnimationFrame(tick);
+      };
       frameId = requestAnimationFrame(tick);
-    };
-    frameId = requestAnimationFrame(tick);
-    onCleanup(() => cancelAnimationFrame(frameId));
-  });
+      return () => cancelAnimationFrame(frameId);
+    },
+  );
 
   /** Invalidates intrinsic sizing only when width-relevant sequence state changes. */
   const contentSizingKey = createMemo(() => ({

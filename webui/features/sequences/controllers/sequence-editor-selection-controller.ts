@@ -6,17 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createSignal,
-  untrack,
-} from "solid-js";
+import { type Accessor, createMemo, createSignal, untrack } from "solid-js";
 import type { GridColumn, GridSelection } from "../../../lib/data-grid-types";
 import { CompactSelection } from "../../../lib/data-grid-types";
 import { getSelectedRowIndices } from "../../../lib/datagrid";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { dockApi } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -364,43 +359,48 @@ export function createSequenceEditorSelectionController(
    * Runs after the current reactive flush so the grid has already remapped its
    * own selection to the new rows and adopts this selection last.
    */
-  createEffect(() => {
-    const pending = pendingDeleteSelection();
-    if (!pending) return;
-    const currentRows = rows();
-    const rowKeys = currentRows.map(sequenceGridRowKey);
-    if (rowKeys.some((rowKey) => pending.deletedRowKeys.has(rowKey))) return;
+  createEffect(
+    () => {
+      const pending = pendingDeleteSelection();
+      return pending ? { pending, currentRows: rows() } : undefined;
+    },
+    (deletion) => {
+      if (!deletion) return;
+      const { pending, currentRows } = deletion;
+      const rowKeys = currentRows.map(sequenceGridRowKey);
+      if (rowKeys.some((rowKey) => pending.deletedRowKeys.has(rowKey))) return;
 
-    setPendingDeleteSelection(undefined);
-    const target = pending.target;
-    const rowCount = selectableRowCount(currentRows);
-    const keyedRow = target ? rowKeys.indexOf(target.rowKey) : -1;
-    const row = !target
-      ? undefined
-      : keyedRow >= 0
-        ? keyedRow
-        : rowCount > 0
-          ? Math.min(target.row, rowCount - 1)
-          : undefined;
-    queueMicrotask(() => {
-      storeGridSelection(
-        target && row !== undefined
-          ? {
-              columns: CompactSelection.empty(),
-              rows: CompactSelection.empty(),
-              current: {
-                cell: [target.column, row],
-                range: { x: target.column, y: row, width: 1, height: 1 },
-                rangeStack: [],
+      setPendingDeleteSelection(undefined);
+      const target = pending.target;
+      const rowCount = selectableRowCount(currentRows);
+      const keyedRow = target ? rowKeys.indexOf(target.rowKey) : -1;
+      const row = !target
+        ? undefined
+        : keyedRow >= 0
+          ? keyedRow
+          : rowCount > 0
+            ? Math.min(target.row, rowCount - 1)
+            : undefined;
+      queueMicrotask(() => {
+        storeGridSelection(
+          target && row !== undefined
+            ? {
+                columns: CompactSelection.empty(),
+                rows: CompactSelection.empty(),
+                current: {
+                  cell: [target.column, row],
+                  range: { x: target.column, y: row, width: 1, height: 1 },
+                  rangeStack: [],
+                },
+              }
+            : {
+                columns: CompactSelection.empty(),
+                rows: CompactSelection.empty(),
               },
-            }
-          : {
-              columns: CompactSelection.empty(),
-              rows: CompactSelection.empty(),
-            },
-      );
-    });
-  });
+        );
+      });
+    },
+  );
 
   /** Returns rendered row indexes expected to disappear after a structural delete. */
   const deletedVisualRowIndicesForTargets = (

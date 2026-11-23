@@ -6,11 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import {
   cueWithUnconfirmedEdit,
   sequenceWithUnconfirmedEdit,
 } from "../../../lib/cue-service";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
@@ -117,21 +118,22 @@ export function createSequenceEditorSourceController(sequenceUid: string) {
   const selectCue = (cueUid: string | undefined) => setSelectedCueUid(cueUid);
 
   /** Keeps selection on the first available cue after source changes. */
-  createEffect(() => {
-    const rows = cueRows();
-    const current = selectedCueUid();
-    if (
-      current &&
-      rows.some((row) => row.cueUid === current && !row.isMissing)
-    ) {
-      return;
-    }
-    const firstUsableRow =
-      rows.find(
-        (row) => !row.isMissing && !row.isSetupCue && !row.isReleaseCue,
-      ) ?? rows.find((row) => !row.isMissing);
-    setSelectedCueUid(firstUsableRow?.cueUid);
-  });
+  createEffect(
+    () => ({ rows: cueRows(), current: selectedCueUid() }),
+    ({ rows, current }) => {
+      if (
+        current &&
+        rows.some((row) => row.cueUid === current && !row.isMissing)
+      ) {
+        return;
+      }
+      const firstUsableRow =
+        rows.find(
+          (row) => !row.isMissing && !row.isSetupCue && !row.isReleaseCue,
+        ) ?? rows.find((row) => !row.isMissing);
+      setSelectedCueUid(firstUsableRow?.cueUid);
+    },
+  );
 
   return {
     sequenceUid,

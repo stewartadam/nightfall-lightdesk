@@ -100,14 +100,20 @@ export function AboutDialog() {
   });
 
   /** Leaves the Updates tab when the desktop app stops reporting an update status. */
-  createEffect(() => {
-    if (tab() === "updates" && !hasUpdates()) setTab("info");
-  });
+  createEffect(
+    () => tab() === "updates" && !hasUpdates(),
+    (orphaned) => {
+      if (orphaned) setTab("info");
+    },
+  );
 
   /** Keeps the notices loaded once opened, so switching tabs keeps their search and expanded entries. */
-  createEffect(() => {
-    if (tab() === "notices") setNoticesLoaded(true);
-  });
+  createEffect(
+    () => tab() === "notices",
+    (showingNotices) => {
+      if (showingNotices) setNoticesLoaded(true);
+    },
+  );
 
   /** Prefers the connected engine version and falls back to the bundled UI version. */
   const displayedVersion = () => connectedVersion() || APP_VERSION;

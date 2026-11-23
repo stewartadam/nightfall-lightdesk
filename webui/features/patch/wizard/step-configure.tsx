@@ -176,20 +176,20 @@ export function StepConfigure() {
     patchFieldInvalid(state().startAddress, fieldValidity().startAddress);
 
   /** Publishes the first overrun or conflicting channel of the configured patch to the wizard. */
-  createEffect(() => {
-    const footprint = channelCount();
-    if (!state().assignConsoleDmx || footprint === null) {
-      setPatchProblem(null);
-      return;
-    }
-    setPatchProblem(
-      findConsolePatchProblem(
+  createEffect(
+    () => {
+      const footprint = channelCount();
+      if (!state().assignConsoleDmx || footprint === null) return null;
+      return findConsolePatchProblem(
         occupiedConsoleAddresses(),
         placements(),
         footprint,
-      ),
-    );
-  });
+      );
+    },
+    (problem) => {
+      setPatchProblem(problem);
+    },
+  );
 
   const handleLabelChange = (value: string) => {
     updateState({ label: value });

@@ -6,13 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect } from "solid-js";
 import { commandClient } from "../../lib/engine-commands";
 import {
   connectionStatus,
   EngineRuntimeStatus,
 } from "../../lib/engine-runtime";
 import { getLogger } from "../../lib/logger";
+import { createEffect } from "../../lib/solid-compat";
 import { isTauriRuntime } from "../../lib/tauri";
 import { useStore } from "../../lib/use-nanostore";
 import { $telemetryState } from "../../state/settings";
@@ -74,33 +74,38 @@ export function GraphicsReporter() {
   let reportedForConnection = false;
 
   /** Sends the report after each connection once sharing is on, and re-arms on disconnect. */
-  createEffect(() => {
-    const connected = connectionStatus() === EngineRuntimeStatus.Connected;
-    if (!connected) {
-      reportedForConnection = false;
-      return;
-    }
-    const { available, consent } = state();
-    if (
-      reportedForConnection ||
-      !isTauriRuntime() ||
-      !available ||
-      !consent.share_usage
-    ) {
-      return;
-    }
-    reportedForConnection = true;
-    void collectGraphicsReport()
-      .then((report) =>
-        commandClient.emit("TelemetryCommand", {
-          type: "ReportGraphics",
-          data: report,
-        }),
-      )
-      .catch((error: unknown) => {
-        log.warn("Could not report graphics hardware", { error });
-      });
-  });
+  createEffect(
+    () =>
+      connectionStatus() === EngineRuntimeStatus.Connected
+        ? state()
+        : undefined,
+    (current) => {
+      if (!current) {
+        reportedForConnection = false;
+        return;
+      }
+      const { available, consent } = current;
+      if (
+        reportedForConnection ||
+        !isTauriRuntime() ||
+        !available ||
+        !consent.share_usage
+      ) {
+        return;
+      }
+      reportedForConnection = true;
+      void collectGraphicsReport()
+        .then((report) =>
+          commandClient.emit("TelemetryCommand", {
+            type: "ReportGraphics",
+            data: report,
+          }),
+        )
+        .catch((error: unknown) => {
+          log.warn("Could not report graphics hardware", { error });
+        });
+    },
+  );
 
   return null;
 }

@@ -8,7 +8,6 @@
 
 import { ArrowClockwiseIcon } from "@squidlab/phosphor-solid/arrow-clockwise";
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -30,6 +29,7 @@ import {
 import { commandClient } from "../../lib/engine-commands";
 import { setStoreAction } from "../../lib/nanostore-action";
 import { PRIVACY_POLICY_URL } from "../../lib/privacy";
+import { createEffect } from "../../lib/solid-compat";
 import { useStore } from "../../lib/use-nanostore";
 import { $telemetryState } from "../../state/settings";
 import type { TelemetryConsent } from "../../types";
@@ -197,15 +197,17 @@ function TelemetrySettings() {
    * reports an error, so a failed reset can be retried. On error the ID was not replaced, so
    * any "keep a note of the prior ID" prompt for it is withdrawn.
    */
-  createEffect(() => {
-    const current = state();
-    if (current.error) {
-      setResettingId(undefined);
-      setUncopiedId(undefined);
-    } else if (current.install_id !== resettingId()) {
-      setResettingId(undefined);
-    }
-  });
+  createEffect(
+    () => ({ current: state(), resetting: resettingId() }),
+    ({ current, resetting }) => {
+      if (current.error) {
+        setResettingId(undefined);
+        setUncopiedId(undefined);
+      } else if (current.install_id !== resetting) {
+        setResettingId(undefined);
+      }
+    },
+  );
   /**
    * Replaces the Install ID so future reports cannot be linked to past ones. The old ID is
    * copied to the clipboard, since it is needed to request deletion of data sent under it and

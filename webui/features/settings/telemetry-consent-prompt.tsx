@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
+import { createEffect } from "../../lib/solid-compat";
 import { useStore } from "../../lib/use-nanostore";
 import { pushToast } from "../../state/notifications";
 import { $telemetryState } from "../../state/settings";
@@ -29,8 +29,7 @@ export function TelemetryConsentPrompt() {
    * Shows the notice the first time the host reports an unanswered choice, and withdraws it
    * once a choice is recorded, whether from the notice, Settings, or another device.
    */
-  createEffect(() => {
-    const current = state();
+  createEffect(state, (current) => {
     if (current.consent.decided) {
       closeNotice?.();
       closeNotice = undefined;
