@@ -7,7 +7,7 @@
  */
 
 import { CheckCircleIcon } from "@squidlab/phosphor-solid/check-circle";
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { createSignal, onCleanup, Show } from "solid-js";
 import notice from "../../assets/models/beat-this/NOTICE.md?raw";
 import { Alert } from "../../components/ui/alert";
 import { Collapsible } from "../../components/ui/collapsible";
@@ -19,6 +19,7 @@ import {
 } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/visual-language/button";
 import { getBackendUrl } from "../../lib/api";
+import { createEffect } from "../../lib/solid-compat";
 
 interface ModelStatus {
   phase:
@@ -48,16 +49,17 @@ export function createBeatModelDownload() {
   let downloadButton: HTMLButtonElement | undefined;
 
   /** Focus the available primary action so Enter activates the consented download. */
-  createEffect(() => {
-    if (
-      !open() ||
-      busy() ||
-      !["missing", "failed", "cancelled"].includes(status()?.phase ?? "")
-    )
-      return;
-    const frame = requestAnimationFrame(() => downloadButton?.focus());
-    onCleanup(() => cancelAnimationFrame(frame));
-  });
+  createEffect(
+    () =>
+      open() &&
+      !busy() &&
+      ["missing", "failed", "cancelled"].includes(status()?.phase ?? ""),
+    (actionable) => {
+      if (!actionable) return;
+      const frame = requestAnimationFrame(() => downloadButton?.focus());
+      return () => cancelAnimationFrame(frame);
+    },
+  );
 
   /** Stop polling and discard an authoring action when its dialog is dismissed. */
   const close = () => {

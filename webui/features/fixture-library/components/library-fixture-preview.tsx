@@ -67,28 +67,32 @@ const LibraryFixturePreview: Component<LibraryFixturePreviewProps> = (
     },
   );
 
-  // Update preview data when the global profile store receives our requested fixture.
-  createEffect(() => {
-    const profile = $fixtureProfile();
-    if (!profile) return;
+  /** Shows the profile store's fixture and geometry once it holds the requested make, model and mode. */
+  createEffect(
+    () => {
+      const profile = $fixtureProfile();
+      if (!profile) return undefined;
 
-    // Verify the response matches our current props (including empty mode responses).
-    const modeMatches =
-      !props.mode ||
-      profile.requested_mode === props.mode ||
-      profile.fixture?.mode === props.mode;
+      // Verify the response matches our current props (including empty mode responses).
+      const modeMatches =
+        !props.mode ||
+        profile.requested_mode === props.mode ||
+        profile.fixture?.mode === props.mode;
 
-    const revisionMatches = profileMatchesRevision(profile, {
-      make: props.make,
-      model: props.model,
-      asset_etag: props.assetEtag,
-    });
+      const revisionMatches = profileMatchesRevision(profile, {
+        make: props.make,
+        model: props.model,
+        asset_etag: props.assetEtag,
+      });
 
-    if (revisionMatches && modeMatches) {
+      return revisionMatches && modeMatches ? profile : undefined;
+    },
+    (profile) => {
+      if (!profile) return;
       setFixture(profile.fixture ?? null);
       setGeometry(profile.geometry ?? null);
-    }
-  });
+    },
+  );
 
   const fixtureName = createMemo(() => `${props.make} ${props.model}`);
   /** The fixture as the 3D preview draws it, from the latest profile. */

@@ -49,30 +49,12 @@ export type EffectOptions = {
  * returns a fresh array or object runs it on every change of its inputs.
  * Return a cleanup instead of calling `onCleanup` inside `effect`. Derived
  * values belong in `createMemo`, not in an effect that sets a signal.
- *
- * The one-function overload forwards to Solid 1.x's `createEffect` so that a
- * file can import a single `createEffect` while its effects are converted.
  */
 export function createEffect<Next>(
   compute: (prev: Next | undefined) => Next,
   effect: EffectFunction<Next>,
   options?: EffectOptions,
-): void;
-/** @deprecated One-function effects go away in Solid 2.0; pass `compute` and `effect` instead. */
-export function createEffect(fn: () => void): void;
-export function createEffect<Next>(
-  compute: (prev: Next | undefined) => Next,
-  effect?: EffectFunction<Next>,
-  options?: EffectOptions,
 ): void {
-  if (!effect) {
-    /** Runs a one-function effect unchanged on Solid 1.x. */
-    createSolidEffect(() => {
-      compute(undefined);
-    });
-    return;
-  }
-
   let initialized = false;
   let previous: Next | undefined;
   // Owned here rather than by the inner computation, so a compute rerun that

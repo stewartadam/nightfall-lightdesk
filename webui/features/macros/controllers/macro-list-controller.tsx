@@ -11,11 +11,12 @@ import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-lin
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import { createEffect, createMemo, createSignal } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import { createCrudListState } from "../../../components/widgets/crud/model/crud-list-state";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
+import { createEffect } from "../../../lib/solid-compat";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { macroRuns, macros } from "../../../state/appStores";
 import { pushToast } from "../../../state/notifications";
@@ -70,10 +71,8 @@ export function createMacroListController(options: MacroListControllerOptions) {
   /** ID of the last macro this panel created, kept until the store holds it. */
   let lastCreatedId: number | undefined;
   /** Forgets the last created ID once the store echoes it, so a later delete frees it. */
-  createEffect(() => {
-    if (
-      allMacroList().some((macro) => macro.identifiers.id === lastCreatedId)
-    ) {
+  createEffect(allMacroList, (macros) => {
+    if (macros.some((macro) => macro.identifiers.id === lastCreatedId)) {
       lastCreatedId = undefined;
     }
   });

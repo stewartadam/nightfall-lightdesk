@@ -6,12 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
 import { normalizeFixtureUid } from "../../../lib/route-utils";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import {
@@ -363,37 +364,38 @@ export function LayerPanelController(props: BasePanelComponentProps) {
     });
   };
 
-  createEffect(() => {
-    const request = $layerObjectNavigationRequest();
-    if (!request) {
-      return;
-    }
+  /** Opens the layer object a navigation request points at once layers have loaded. */
+  createEffect(
+    () => ({ request: $layerObjectNavigationRequest(), layers: $layersRaw() }),
+    ({ request, layers }) => {
+      if (!request || layers.length === 0) {
+        return;
+      }
 
-    const layers = $layersRaw();
-    if (layers.length === 0) {
-      return;
-    }
+      if (request.layerIndex < 0 || request.layerIndex >= layers.length) {
+        clearLayerObjectNavigationRequest(request.requestId);
+        return;
+      }
 
-    if (request.layerIndex < 0 || request.layerIndex >= layers.length) {
+      const layer = layers[request.layerIndex];
+      handleNavigateToLayerObject(layer);
       clearLayerObjectNavigationRequest(request.requestId);
-      return;
-    }
+    },
+  );
 
-    const layer = layers[request.layerIndex];
-    handleNavigateToLayerObject(layer);
-    clearLayerObjectNavigationRequest(request.requestId);
-  });
-
-  createEffect(() => {
-    const currentKeys = new Set(layerEntries().map((entry) => entry.key));
-    setOpenLayerKeys((prev) => {
-      const next = new Set(
-        Array.from(prev).filter((key) => currentKeys.has(key)),
-      );
-      // This effect only prunes stale keys, so equal size means membership is unchanged.
-      return next.size !== prev.size ? next : prev;
-    });
-  });
+  /** Forgets open state for layers that no longer exist. */
+  createEffect(
+    () => new Set(layerEntries().map((entry) => entry.key)),
+    (currentKeys) => {
+      setOpenLayerKeys((prev) => {
+        const next = new Set(
+          Array.from(prev).filter((key) => currentKeys.has(key)),
+        );
+        // This effect only prunes stale keys, so equal size means membership is unchanged.
+        return next.size !== prev.size ? next : prev;
+      });
+    },
+  );
 
   return (
     <Show

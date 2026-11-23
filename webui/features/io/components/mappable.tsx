@@ -8,7 +8,6 @@
 
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -24,6 +23,7 @@ import {
   MenuSurface,
 } from "../../../components/ui/menu";
 import { Popover } from "../../../components/ui/popover";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import {
@@ -286,11 +286,15 @@ export function Mappable(props: MappableProps): JSX.Element {
    * Closes the popover when mapping mode ends, and once it has nothing left to
    * offer, such as after removing the last binding with no control armed.
    */
-  createEffect(() => {
-    if (!open()) return;
-    const empty = options().length === 0 && existingBindings().length === 0;
-    if (!$mode().active || empty) setOpen(false);
-  });
+  createEffect(
+    () =>
+      open() &&
+      (!$mode().active ||
+        (options().length === 0 && existingBindings().length === 0)),
+    (stale) => {
+      if (stale) setOpen(false);
+    },
+  );
 
   return (
     <div class={`relative ${local.class ?? ""}`} {...rest}>

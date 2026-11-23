@@ -6,17 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Match,
-  onCleanup,
-  Show,
-  Switch,
-  untrack,
-} from "solid-js";
+import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
@@ -32,6 +22,7 @@ import {
 } from "../../../lib/duration";
 import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { colorPaths } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -374,31 +365,37 @@ export default function CueProperties() {
   };
 
   /** Initializes local timing and trigger controls from the current cue data. */
-  createEffect(() => {
-    const cue = ctx.cue();
-    if (cue === undefined) return;
-
-    const transitions = activeTransitions();
-    log.trace("Setting cue transition signals from context:", transitions);
-    setFadeInValue(
-      durationToMs(transitionModeToDuration(transitions.fade_in)) / 1000,
-    );
-    setDelayInValue(
-      durationToMs(transitionModeToDuration(transitions.delay_in)) / 1000,
-    );
-    setFadeOutValue(
-      durationToMs(transitionModeToDuration(transitions.fade_out)) / 1000,
-    );
-    setDelayOutValue(
-      durationToMs(transitionModeToDuration(transitions.delay_out)) / 1000,
-    );
-    setTriggerType(cue.trigger.type);
-    if (isDurationTrigger(cue.trigger)) {
-      setAfterDelayValue(durationToMs(cue.trigger.data) / 1000);
-    } else {
-      setAfterDelayValue(0.0);
-    }
-  });
+  createEffect(
+    () => {
+      const cue = ctx.cue();
+      return cue === undefined
+        ? undefined
+        : { cue, transitions: activeTransitions() };
+    },
+    (current) => {
+      if (!current) return;
+      const { cue, transitions } = current;
+      log.trace("Setting cue transition signals from context:", transitions);
+      setFadeInValue(
+        durationToMs(transitionModeToDuration(transitions.fade_in)) / 1000,
+      );
+      setDelayInValue(
+        durationToMs(transitionModeToDuration(transitions.delay_in)) / 1000,
+      );
+      setFadeOutValue(
+        durationToMs(transitionModeToDuration(transitions.fade_out)) / 1000,
+      );
+      setDelayOutValue(
+        durationToMs(transitionModeToDuration(transitions.delay_out)) / 1000,
+      );
+      setTriggerType(cue.trigger.type);
+      if (isDurationTrigger(cue.trigger)) {
+        setAfterDelayValue(durationToMs(cue.trigger.data) / 1000);
+      } else {
+        setAfterDelayValue(0.0);
+      }
+    },
+  );
 
   const emptyCueTransitionDurations = {
     delayIn: 0,
@@ -474,10 +471,8 @@ export default function CueProperties() {
   });
 
   /** Advances the preview progress clock while cue preview is active. */
-  createEffect(() => {
-    if (!ctx.previewActive()) {
-      return;
-    }
+  createEffect(ctx.previewActive, (active) => {
+    if (!active) return;
 
     setPreviewClockMs(performance.now());
 
@@ -488,88 +483,109 @@ export default function CueProperties() {
       frameId = requestAnimationFrame(tick);
     };
     frameId = requestAnimationFrame(tick);
-    onCleanup(() => cancelAnimationFrame(frameId));
+    return () => cancelAnimationFrame(frameId);
   });
 
   /** Persists local timing and trigger control changes back into the active cue. */
-  createEffect((prev) => {
-    const cue = untrack(ctx.cue);
-    log.debug("Updating cue properties", cue, prev);
+  let primed = false;
+  createEffect(
+    () => ({
+      inValues: [fadeInValue(), delayInValue()],
+      outValues: [fadeOutValue(), delayOutValue()],
+      trigger: triggerType(),
+      afterDelaySeconds: afterDelayValue(),
+      currentTransitions: activeTransitions(),
+    }),
+    ({
+      inValues,
+      outValues,
+      trigger,
+      afterDelaySeconds,
+      currentTransitions,
+    }) => {
+      const cue = ctx.cue();
+      log.debug("Updating cue properties", cue, primed);
 
-    // Load signals before conditions to track dependencies
-    const inValues = [fadeInValue(), delayInValue()];
-    const outValues = [fadeOutValue(), delayOutValue()];
-    const trigger = triggerType();
-    const afterDelaySeconds = afterDelayValue();
-    const currentTransitions = activeTransitions();
-
-    // Do not run if cue is not loaded yet or if this is the initial load of cue data
-    if (cue === undefined) return;
-    if (prev === undefined) return true;
-
-    const unchangedTimings =
-      secondsNearlyEqual(
-        transitionModeToSeconds(currentTransitions.fade_in),
-        inValues[0],
-      ) &&
-      secondsNearlyEqual(
-        transitionModeToSeconds(currentTransitions.delay_in),
-        inValues[1],
-      ) &&
-      secondsNearlyEqual(
-        transitionModeToSeconds(currentTransitions.fade_out),
-        outValues[0],
-      ) &&
-      secondsNearlyEqual(
-        transitionModeToSeconds(currentTransitions.delay_out),
-        outValues[1],
-      );
-    const currentTriggerDurationSeconds = isDurationTrigger(cue.trigger)
-      ? durationToMs(cue.trigger.data) / 1000
-      : 0;
-    const unchangedTrigger =
-      ctx.partId !== 0 ||
-      (cue.trigger.type === trigger &&
-        (!isDurationTriggerType(trigger) ||
-          secondsNearlyEqual(
-            currentTriggerDurationSeconds,
-            afterDelaySeconds,
-          )));
-    if (unchangedTimings && unchangedTrigger) return true;
-
-    log.trace("Updating cue after properties update");
-    const updatedCue: types.Cue = JSON.parse(JSON.stringify(cue));
-    const ms_per_s = 1000;
-    const transitions: types.PartialTransition = {
-      fade_in: { type: "Fixed", data: msToDuration(inValues[0] * ms_per_s) },
-      delay_in: { type: "Fixed", data: msToDuration(inValues[1] * ms_per_s) },
-      fade_out: { type: "Fixed", data: msToDuration(outValues[0] * ms_per_s) },
-      delay_out: { type: "Fixed", data: msToDuration(outValues[1] * ms_per_s) },
-    };
-
-    if (ctx.partId === 0) {
-      updatedCue.transitions = transitions;
-      if (isDurationTriggerType(trigger)) {
-        updatedCue.trigger = {
-          type: trigger,
-          data: msToDuration(afterDelaySeconds * ms_per_s),
-        };
-      } else {
-        updatedCue.trigger = { type: trigger };
+      // Do not run if cue is not loaded yet or if this is the initial load of cue data
+      if (cue === undefined) {
+        primed = false;
+        return;
       }
-    } else {
-      const index = activePartIndex();
-      if (index === undefined || !updatedCue.parts?.[index]) return true;
-      updatedCue.parts[index] = {
-        ...updatedCue.parts[index],
-        transitions,
+      if (!primed) {
+        primed = true;
+        return;
+      }
+
+      const unchangedTimings =
+        secondsNearlyEqual(
+          transitionModeToSeconds(currentTransitions.fade_in),
+          inValues[0],
+        ) &&
+        secondsNearlyEqual(
+          transitionModeToSeconds(currentTransitions.delay_in),
+          inValues[1],
+        ) &&
+        secondsNearlyEqual(
+          transitionModeToSeconds(currentTransitions.fade_out),
+          outValues[0],
+        ) &&
+        secondsNearlyEqual(
+          transitionModeToSeconds(currentTransitions.delay_out),
+          outValues[1],
+        );
+      const currentTriggerDurationSeconds = isDurationTrigger(cue.trigger)
+        ? durationToMs(cue.trigger.data) / 1000
+        : 0;
+      const unchangedTrigger =
+        ctx.partId !== 0 ||
+        (cue.trigger.type === trigger &&
+          (!isDurationTriggerType(trigger) ||
+            secondsNearlyEqual(
+              currentTriggerDurationSeconds,
+              afterDelaySeconds,
+            )));
+      if (unchangedTimings && unchangedTrigger) return;
+
+      log.trace("Updating cue after properties update");
+      const updatedCue: types.Cue = JSON.parse(JSON.stringify(cue));
+      const ms_per_s = 1000;
+      const transitions: types.PartialTransition = {
+        fade_in: { type: "Fixed", data: msToDuration(inValues[0] * ms_per_s) },
+        delay_in: { type: "Fixed", data: msToDuration(inValues[1] * ms_per_s) },
+        fade_out: {
+          type: "Fixed",
+          data: msToDuration(outValues[0] * ms_per_s),
+        },
+        delay_out: {
+          type: "Fixed",
+          data: msToDuration(outValues[1] * ms_per_s),
+        },
       };
-    }
 
-    log.trace("Updating cue transitions:", transitions);
+      if (ctx.partId === 0) {
+        updatedCue.transitions = transitions;
+        if (isDurationTriggerType(trigger)) {
+          updatedCue.trigger = {
+            type: trigger,
+            data: msToDuration(afterDelaySeconds * ms_per_s),
+          };
+        } else {
+          updatedCue.trigger = { type: trigger };
+        }
+      } else {
+        const index = activePartIndex();
+        if (index === undefined || !updatedCue.parts?.[index]) return;
+        updatedCue.parts[index] = {
+          ...updatedCue.parts[index],
+          transitions,
+        };
+      }
 
-    ctx.commitEditedCue(updatedCue);
-  });
+      log.trace("Updating cue transitions:", transitions);
+
+      ctx.commitEditedCue(updatedCue);
+    },
+  );
 
   return (
     <Switch>

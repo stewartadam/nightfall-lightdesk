@@ -15,7 +15,6 @@ import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import {
   type Component,
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -45,6 +44,7 @@ import {
   currentShowfileName,
   normalizedShowfileName,
 } from "../../../lib/showfile-loading";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { pushToast } from "../../../state/appStores";
 import { FollowPrimarySection } from "../../io";
@@ -174,13 +174,16 @@ export function OpenShowfileModal(props: OpenShowfileModalProps) {
   };
 
   /** Refresh the available showfile list whenever the dialog opens. */
-  createEffect(() => {
-    if (!props.open) {
-      abortController?.abort();
-      return;
-    }
-    void loadShowfiles();
-  });
+  createEffect(
+    () => props.open,
+    (open) => {
+      if (!open) {
+        abortController?.abort();
+        return;
+      }
+      void loadShowfiles();
+    },
+  );
 
   onCleanup(() => abortController?.abort());
 

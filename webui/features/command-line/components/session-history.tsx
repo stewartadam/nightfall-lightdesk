@@ -7,7 +7,6 @@
  */
 
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -25,6 +24,7 @@ import { writeClipboardText } from "../../../lib/clipboard";
 import { commandOutputValue } from "../../../lib/command-result";
 import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import type {
   SessionHistoryCommand,
   SessionHistoryEntry,
@@ -111,9 +111,12 @@ export function SessionHistory() {
   /** Sources present in the history, for the source filter. */
   const sources = createMemo(() => sessionHistorySources(entries()));
   /** Clears the source filter once its source leaves the history, so the list never hides everything. */
-  createEffect(() => {
-    if (source() && !sources().includes(source())) setSource("");
-  });
+  createEffect(
+    () => source() !== "" && !sources().includes(source()),
+    (stale) => {
+      if (stale) setSource("");
+    },
+  );
   /** Entries matching the filters, newest first. */
   const shown = createMemo(() =>
     filterSessionHistory(entries(), {

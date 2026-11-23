@@ -77,15 +77,20 @@ export default function FixtureEditorWindow() {
   });
 
   /** Withdraws the discard confirmation once its draft is closed elsewhere. */
-  createEffect(() => {
-    if (discardId() !== null && connected() && !pendingDiscard())
-      setDiscardId(null);
-  });
+  createEffect(
+    () => discardId() !== null && connected() && !pendingDiscard(),
+    (withdrawn) => {
+      if (withdrawn) setDiscardId(null);
+    },
+  );
 
   /** Returns to the start page when the open draft is discarded, here or in another window. */
-  createEffect(() => {
-    if (openId() !== null && connected() && !openView()) setOpenId(null);
-  });
+  createEffect(
+    () => openId() !== null && connected() && !openView(),
+    (discarded) => {
+      if (discarded) setOpenId(null);
+    },
+  );
 
   /** Runs one editor command, showing its failure above the page. */
   const run = async (work: () => Promise<void>) => {

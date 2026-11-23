@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal, For, onMount } from "solid-js";
+import { createMemo, createSignal, For, onMount } from "solid-js";
 import { Alert } from "../../../components/ui/alert";
 import { Table, TableScroll } from "../../../components/ui/table";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
@@ -29,6 +29,7 @@ import {
   usbDmxOutputsFromSettings,
 } from "../../../lib/network-dmx-output-targets";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import {
   networkOutputSendFailures,
@@ -169,14 +170,21 @@ export function IoTransportsController() {
     })),
   );
   /** Selects the first unused USB device as hardware enumeration changes. */
-  createEffect(() => {
-    const availableDeviceIds = availableNewUsbDeviceIds();
-    const selectedDevice = newUsbDevice();
-    if (selectedDevice !== "" && availableDeviceIds.includes(selectedDevice)) {
-      return;
-    }
-    setNewUsbDevice(availableDeviceIds[0] ?? "");
-  });
+  createEffect(
+    () => ({
+      availableDeviceIds: availableNewUsbDeviceIds(),
+      selectedDevice: newUsbDevice(),
+    }),
+    ({ availableDeviceIds, selectedDevice }) => {
+      if (
+        selectedDevice !== "" &&
+        availableDeviceIds.includes(selectedDevice)
+      ) {
+        return;
+      }
+      setNewUsbDevice(availableDeviceIds[0] ?? "");
+    },
+  );
   const sendFailuresByTargetId = createMemo(() => {
     const failures = sendFailures();
     const entries = targets()

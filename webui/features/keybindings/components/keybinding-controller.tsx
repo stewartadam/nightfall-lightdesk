@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, onCleanup } from "solid-js";
+import { onCleanup } from "solid-js";
 import { isInputField } from "../../../lib/keyboard-shortcut-targets";
 import {
   addShortcutPreemptor,
@@ -69,25 +69,22 @@ export function KeybindingController() {
   onCleanup(addShortcutPreemptor(handleKeybinding));
 
   /** Keeps the shortcut dispatcher's disabled list in step with the persisted one. */
-  createEffect(() => {
-    const unsubscribe =
-      $disabledBuiltInShortcuts.subscribe(setDisabledShortcuts);
-    onCleanup(() => {
-      unsubscribe();
-      setDisabledShortcuts([]);
-    });
+  const unsubscribeDisabledShortcuts =
+    $disabledBuiltInShortcuts.subscribe(setDisabledShortcuts);
+  onCleanup(() => {
+    unsubscribeDisabledShortcuts();
+    setDisabledShortcuts([]);
   });
 
   /** Runs forwarded `ui.*` actions when this client opted in to controller UI actions. */
-  createEffect(() => {
-    const unsubscribe = clientActionInvocation.listen((invocation) => {
+  onCleanup(
+    clientActionInvocation.listen((invocation) => {
       if (!invocation || !$respondToControllerUiActions.get()) return;
       runBoundUiAction(invocation.action.id, {
         source: invocation.surface === "osc" ? "osc" : "midi",
       });
-    });
-    onCleanup(unsubscribe);
-  });
+    }),
+  );
 
   return null;
 }

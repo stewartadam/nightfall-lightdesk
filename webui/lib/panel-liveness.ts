@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
-
+import { type Accessor, createSignal, onCleanup } from "solid-js";
+import { createEffect } from "./solid-compat";
 import { useWorkspaceActivity } from "./workspace-activity";
 
 export interface PanelLivenessRegistration {
@@ -67,8 +67,8 @@ export function registerPanelLiveness(
   const unregister = addPanelLivenessEntry(entry);
 
   /** Publishes panel-owned liveness without making DockApp track panel internals. */
-  createEffect(() => {
-    setIsAlive(registration.isAlive());
+  createEffect(registration.isAlive, (alive) => {
+    setIsAlive(alive);
   });
 
   return unregister;

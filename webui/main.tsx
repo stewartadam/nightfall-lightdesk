@@ -9,14 +9,7 @@
 import "./lib/install-diagnostic-console";
 import "./lib/report-uncaught-errors";
 import "./lib/idle-callback";
-import {
-  createEffect,
-  createSignal,
-  lazy,
-  onCleanup,
-  onMount,
-  Suspense,
-} from "solid-js";
+import { createSignal, lazy, onCleanup, onMount, Suspense } from "solid-js";
 import { render } from "solid-js/web";
 import DiagnosticsRuntime from "./components/shell/runtime/diagnostics";
 import EngineConnection from "./components/shell/runtime/engine-connection";
@@ -44,6 +37,7 @@ import { showfileTransition } from "./state/showfile-transition";
 import "./index.css";
 import "./components/shell/app/shell.css";
 import "./components/widgets/crud/crud-cards.css";
+import { createEffect } from "./lib/solid-compat";
 
 type InteractiveAppModule =
   typeof import("./components/shell/app/interactive-app");
@@ -96,24 +90,27 @@ function InteractiveShellMount(props: InteractiveShellMountProps) {
   let disposed = false;
 
   /** Latches the interactive shell mount so later parent reconciliation cannot move it. */
-  createEffect(() => {
-    if (!props.active || mounted() || !mountRef) {
-      return;
-    }
-
-    setMounted(true);
-    void loadInteractiveApp().then((module) => {
-      if (disposed || !mountRef) {
+  createEffect(
+    () => props.active && !mounted(),
+    (shouldMount) => {
+      if (!shouldMount || !mountRef) {
         return;
       }
 
-      const LoadedInteractiveApp = module.default;
-      disposeInteractiveShell = render(
-        () => <LoadedInteractiveApp onReady={props.onReady} />,
-        mountRef,
-      );
-    }, ignoreReportedLoadFailure);
-  });
+      setMounted(true);
+      void loadInteractiveApp().then((module) => {
+        if (disposed || !mountRef) {
+          return;
+        }
+
+        const LoadedInteractiveApp = module.default;
+        disposeInteractiveShell = render(
+          () => <LoadedInteractiveApp onReady={props.onReady} />,
+          mountRef,
+        );
+      }, ignoreReportedLoadFailure);
+    },
+  );
 
   onCleanup(() => {
     disposed = true;
@@ -134,15 +131,15 @@ function useDocumentAppearance(): void {
   const appearance = useStore(appearanceSettings);
 
   /** Mirrors the appearance settings onto the document's CSS variables and data attributes. */
-  createEffect(() => {
-    document.documentElement.style.setProperty("--accent", appearance().accent);
-    document.body.dataset.tabAlignment = appearance().tabAlignment;
+  createEffect(appearance, (current) => {
+    document.documentElement.style.setProperty("--accent", current.accent);
+    document.body.dataset.tabAlignment = current.tabAlignment;
     document.body.dataset.muteUnfocusedAccents = String(
-      appearance().muteUnfocusedAccents,
+      current.muteUnfocusedAccents,
     );
     document.documentElement.style.setProperty(
       "--data-grid-column-border",
-      appearance().gridlines ? "#ffffff18" : "transparent",
+      current.gridlines ? "#ffffff18" : "transparent",
     );
   });
 }
@@ -181,11 +178,12 @@ function App() {
    * open the error dialog, since notifications would sit behind the splash or a
    * startup prompt.
    */
-  createEffect(() => {
-    setWorkspaceVisible(
-      lifecycle().phase === "interactive" && !holdStartupSplash(),
-    );
-  });
+  createEffect(
+    () => lifecycle().phase === "interactive" && !holdStartupSplash(),
+    (visible) => {
+      setWorkspaceVisible(visible);
+    },
+  );
 
   /** Starts loading the interactive shell after the first startup paint. */
   onMount(() => {

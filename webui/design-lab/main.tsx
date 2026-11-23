@@ -11,7 +11,6 @@ import { ArrowRightIcon } from "@squidlab/phosphor-solid/arrow-right";
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
 import type { DockviewApi } from "dockview";
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -65,6 +64,7 @@ import { PrelineAdvancedSelect } from "../components/widgets/advanced-select";
 import { ObjectTile } from "../components/widgets/object-tile";
 import { getLogger } from "../lib/logger";
 import { initializePrelineRuntime } from "../lib/preline-runtime";
+import { createEffect } from "../lib/solid-compat";
 import { pushToast } from "../state/appStores";
 import { AnimationsDemo } from "./animations-demo";
 import { CollapsibleDemo } from "./collapsible-demo";
@@ -412,34 +412,37 @@ function DesignLab() {
     });
   });
   /** Keeps the selected accent consistent in panel content and portaled overlays. */
-  createEffect(() => {
-    const value = accent().value;
-    document.documentElement.style.setProperty("--accent", value);
-    for (const popoutWindow of popoutWindows) {
-      if (!popoutWindow.closed)
-        popoutWindow.document.documentElement.style.setProperty(
-          "--accent",
-          value,
-        );
-    }
-  });
+  createEffect(
+    () => accent().value,
+    (value) => {
+      document.documentElement.style.setProperty("--accent", value);
+      for (const popoutWindow of popoutWindows) {
+        if (!popoutWindow.closed)
+          popoutWindow.document.documentElement.style.setProperty(
+            "--accent",
+            value,
+          );
+      }
+    },
+  );
 
   /** Shares the corner preference with panel content, body portals, and detached windows. */
-  createEffect(() => {
-    const radius = roundedCorners() ? "var(--nf-corner-radius-default)" : "0px";
-    document.documentElement.style.setProperty("--nf-corner-radius", radius);
-    for (const popoutWindow of popoutWindows) {
-      if (!popoutWindow.closed)
-        popoutWindow.document.documentElement.style.setProperty(
-          "--nf-corner-radius",
-          radius,
-        );
-    }
-  });
+  createEffect(
+    () => (roundedCorners() ? "var(--nf-corner-radius-default)" : "0px"),
+    (radius) => {
+      document.documentElement.style.setProperty("--nf-corner-radius", radius);
+      for (const popoutWindow of popoutWindows) {
+        if (!popoutWindow.closed)
+          popoutWindow.document.documentElement.style.setProperty(
+            "--nf-corner-radius",
+            radius,
+          );
+      }
+    },
+  );
 
   /** Applies tab alignment to the workspace, floating groups, and detached windows. */
-  createEffect(() => {
-    const alignment = tabAlignment();
+  createEffect(tabAlignment, (alignment) => {
     document.body.dataset.tabAlignment = alignment;
     for (const popoutWindow of popoutWindows) {
       if (!popoutWindow.closed)
@@ -448,14 +451,16 @@ function DesignLab() {
   });
 
   /** Keeps inactive panel accents consistent across the workspace and detached windows. */
-  createEffect(() => {
-    const enabled = String(muteUnfocusedAccents());
-    document.body.dataset.muteUnfocusedAccents = enabled;
-    for (const popoutWindow of popoutWindows) {
-      if (!popoutWindow.closed)
-        popoutWindow.document.body.dataset.muteUnfocusedAccents = enabled;
-    }
-  });
+  createEffect(
+    () => String(muteUnfocusedAccents()),
+    (enabled) => {
+      document.body.dataset.muteUnfocusedAccents = enabled;
+      for (const popoutWindow of popoutWindows) {
+        if (!popoutWindow.closed)
+          popoutWindow.document.body.dataset.muteUnfocusedAccents = enabled;
+      }
+    },
+  );
 
   /** Opens shared context-menu commands for one sample object. */
   function showTileMenu(

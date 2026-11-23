@@ -6,9 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, onCleanup, onMount } from "solid-js";
+import { onCleanup, onMount } from "solid-js";
 import { RangeSlider } from "../../../components/ui/range-slider";
 import { colorPathSamples } from "../../../lib/color-path-sampling";
+import { createTrackedEffect } from "../../../lib/solid-compat";
 import type * as types from "../../../types";
 import {
   percentInputFraction,
@@ -93,7 +94,8 @@ export function ColorPathGradientCanvas(props: ColorPathGradientCanvasProps) {
     paintColorPathGradientCanvas(canvas, path, start, end);
   };
 
-  createEffect(paint);
+  /** Repaints whenever any value the paint routine reads changes. */
+  createTrackedEffect(paint);
 
   onMount(() => {
     paint();

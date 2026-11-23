@@ -6,13 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createSignal,
-  type Setter,
-} from "solid-js";
+import { type Accessor, createMemo, createSignal, type Setter } from "solid-js";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { consoleScrollback } from "../../../state/appStores";
 import { isHistorySearchShortcut } from "../model/keyboard";
@@ -129,17 +124,24 @@ export function createCommandHistoryController(
   };
 
   /** Keeps a panel's console scrollback pinned to the newest entry or queued command. */
-  createEffect(() => {
-    if (options.variant !== "panel") return;
-    const entries = consoleEntries();
-    const pendingCount = options.pendingCount();
-    if (!scrollbackElement || (entries.length === 0 && pendingCount === 0))
-      return;
-    queueMicrotask(() => {
-      if (scrollbackElement)
-        scrollbackElement.scrollTop = scrollbackElement.scrollHeight;
-    });
-  });
+  createEffect(
+    () =>
+      options.variant === "panel"
+        ? { entries: consoleEntries(), pendingCount: options.pendingCount() }
+        : undefined,
+    (scrollback) => {
+      if (
+        !scrollback ||
+        !scrollbackElement ||
+        (scrollback.entries.length === 0 && scrollback.pendingCount === 0)
+      )
+        return;
+      queueMicrotask(() => {
+        if (scrollbackElement)
+          scrollbackElement.scrollTop = scrollbackElement.scrollHeight;
+      });
+    },
+  );
 
   return {
     consoleEntries,

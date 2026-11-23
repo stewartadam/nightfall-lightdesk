@@ -6,21 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Match,
-  Show,
-  Switch,
-} from "solid-js";
+import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Checkbox, Input } from "../../../components/ui/form-controls";
 import { ToggleToolbarButton } from "../../../components/ui/toolbar-button";
 import ObjectSelector from "../../../components/widgets/object-selector";
 import { commandClient } from "../../../lib/engine-commands";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
@@ -86,18 +79,16 @@ export default function ClipProperties(props: ClipPropertiesProps) {
       clip()?.options?.deactivate_on_sequence_end ?? false,
   }));
 
-  createEffect(() => {
-    const currentSource = source();
-    if (currentSource) {
-      setSourceKind(currentSource.type);
-    } else {
-      setSourceKind("Sequence");
-    }
-  });
+  /** Resets the source kind picker to the stored source's kind whenever it changes. */
+  createEffect(
+    () => source()?.type ?? "Sequence",
+    (kind) => {
+      setSourceKind(kind);
+    },
+  );
 
   /** Keeps the clip label draft aligned outside active typing. */
-  createEffect(() => {
-    const currentClip = clip();
+  createEffect(clip, (currentClip) => {
     if (document.activeElement?.getAttribute("aria-label") === "Clip label") {
       return;
     }
@@ -105,8 +96,7 @@ export default function ClipProperties(props: ClipPropertiesProps) {
   });
 
   /** Keeps the clip priority draft aligned outside active numeric edits. */
-  createEffect(() => {
-    const currentClip = clip();
+  createEffect(clip, (currentClip) => {
     if (
       document.activeElement?.getAttribute("aria-label") === "Clip priority"
     ) {

@@ -6,13 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createSignal,
-  createUniqueId,
-  For,
-  Show,
-} from "solid-js";
+import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { Alert } from "../../../components/ui/alert";
 import {
   Dialog,
@@ -29,6 +23,7 @@ import {
   showfileExportOptions,
 } from "../../../lib/showfile-export-options";
 import { currentShowfileName } from "../../../lib/showfile-loading";
+import { createEffect } from "../../../lib/solid-compat";
 import { isTauriRuntime } from "../../../lib/tauri";
 import { pushToast } from "../../../state/notifications";
 
@@ -52,12 +47,15 @@ export function ExportShowfileModal(props: {
   const [error, setError] = createSignal("");
 
   /** Starts each export with the current show's name and the complete reference policy. */
-  createEffect(() => {
-    if (!props.open) return;
-    setName(`${currentShowfileName.get()}-export`);
-    setPolicy("allReferences");
-    setError("");
-  });
+  createEffect(
+    () => props.open,
+    (open) => {
+      if (!open) return;
+      setName(`${currentShowfileName.get()}-export`);
+      setPolicy("allReferences");
+      setError("");
+    },
+  );
 
   /** Keeps the export dialog present until native selection and disk writes have finished. */
   const close = () => {

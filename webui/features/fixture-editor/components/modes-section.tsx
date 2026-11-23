@@ -121,10 +121,15 @@ function ModeChannels(props: { mode: number }) {
   );
 
   /** Clears a selection that a removal or a change elsewhere left pointing past the end. */
-  createEffect(() => {
-    const index = selected();
-    if (index !== null && index >= channels().length) setSelected(null);
-  });
+  createEffect(
+    () => {
+      const index = selected();
+      return index !== null && index >= channels().length;
+    },
+    (pastEnd) => {
+      if (pastEnd) setSelected(null);
+    },
+  );
 
   /** Moves a channel and keeps it selected at its new place. */
   const move = async (from: number, to: number) => {

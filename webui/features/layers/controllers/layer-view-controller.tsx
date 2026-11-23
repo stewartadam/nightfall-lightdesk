@@ -9,7 +9,6 @@
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import {
   type Accessor,
-  createEffect,
   createMemo,
   createSignal,
   type Setter,
@@ -50,6 +49,7 @@ import {
 } from "../../../lib/datagrid-filtering";
 import { makeColorSwatchCell } from "../../../lib/datagrid-rich-cells";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import type { LayerState } from "../../../lib/ws/types";
@@ -274,37 +274,44 @@ export function LayerViewController(props: LayerViewProps) {
     };
   });
 
-  createEffect(() => {
-    const request = props.navigationRequest;
-    if (!request || request.layerIndex !== layerIndex()) {
-      return;
-    }
+  /** Opens this layer, expands the requested fixture and selects its row for a navigation request. */
+  createEffect(
+    () => ({
+      request: props.navigationRequest,
+      matches: props.navigationRequest?.layerIndex === layerIndex(),
+      rows: displayRows(),
+    }),
+    ({ request, matches, rows }) => {
+      if (!request || !matches) {
+        return;
+      }
 
-    if (props.onOpenChange) {
-      props.onOpenChange(true);
-    } else {
-      setLocalIsOpen(true);
-    }
+      if (props.onOpenChange) {
+        props.onOpenChange(true);
+      } else {
+        setLocalIsOpen(true);
+      }
 
-    if (request.elementIndex !== undefined) {
-      setExpandedFixtures((prev) => {
-        if (prev.has(request.fixtureUid)) {
-          return prev;
-        }
-        const next = new Set(prev);
-        next.add(request.fixtureUid);
-        return next;
-      });
-    }
+      if (request.elementIndex !== undefined) {
+        setExpandedFixtures((prev) => {
+          if (prev.has(request.fixtureUid)) {
+            return prev;
+          }
+          const next = new Set(prev);
+          next.add(request.fixtureUid);
+          return next;
+        });
+      }
 
-    const rowIndex = findRequestedRowIndex(displayRows(), request);
-    if (rowIndex < 0) {
-      return;
-    }
+      const rowIndex = findRequestedRowIndex(rows, request);
+      if (rowIndex < 0) {
+        return;
+      }
 
-    setSelectedRowIndex(rowIndex);
-    props.onNavigationHandled?.(request.requestId);
-  });
+      setSelectedRowIndex(rowIndex);
+      props.onNavigationHandled?.(request.requestId);
+    },
+  );
 
   /** Indexes current layer values for visible-cell projection. */
   const layerValueMaps = createMemo(() =>

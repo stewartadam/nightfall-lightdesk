@@ -6,11 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../components/ui/form-controls";
 import { commandSucceeded } from "../../lib/command-result";
 import { commandClient } from "../../lib/engine-commands";
+import { createEffect } from "../../lib/solid-compat";
 import { useStore } from "../../lib/use-nanostore";
 import { durationToMs, msToDuration } from "../../lib/utils";
 import { timecodes } from "../../state/appStores";
@@ -62,19 +63,24 @@ export default function TimecodeProperties(props: TimecodePropertiesProps) {
    * Drops pending edits once the engine reports all of them. The timecode
    * store is only written by the engine, so a match confirms the edits.
    */
-  createEffect(() => {
-    const pending = pendingEdit();
-    if (!pending) return;
-    const timecode = $timecodes()[pending.uid]?.[0];
-    const settled =
-      !timecode ||
-      Object.entries(pending.patch).every(
-        ([key, value]) =>
-          JSON.stringify(timecode[key as keyof types.Timecode]) ===
-          JSON.stringify(value),
+  createEffect(
+    () => {
+      const pending = pendingEdit();
+      if (!pending) return false;
+      const timecode = $timecodes()[pending.uid]?.[0];
+      return (
+        !timecode ||
+        Object.entries(pending.patch).every(
+          ([key, value]) =>
+            JSON.stringify(timecode[key as keyof types.Timecode]) ===
+            JSON.stringify(value),
+        )
       );
-    if (settled) setPendingEdit(undefined);
-  });
+    },
+    (settled) => {
+      if (settled) setPendingEdit(undefined);
+    },
+  );
 
   /**
    * Stores `patch` merged with any pending edits onto the reported timecode,

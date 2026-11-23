@@ -17,7 +17,7 @@
  */
 
 import type { ReadableAtom } from "nanostores";
-import { createEffect, createRoot, createSignal } from "solid-js";
+import { createRoot, createSignal } from "solid-js";
 import { registerUiAction } from "../components/providers/command-registry";
 import {
   dockviewLayoutSettingsSnapshotRevision,
@@ -51,6 +51,7 @@ import {
   currentShowfileRevision,
   normalizedShowfileName,
 } from "./showfile-loading";
+import { createEffect } from "./solid-compat";
 import { testHooksEnabled } from "./test-mode";
 import { handleUiNotification } from "./ws/desk-handlers";
 
@@ -239,15 +240,19 @@ function waitForReadiness<Result>(
       }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
       /** Re-evaluates readiness on every tracked signal or store change. */
-      createEffect(() => {
-        storeChange();
-        if (settled) return;
-        const state = readiness();
-        const result = accept(state);
-        if (result === undefined) return;
-        finish();
-        resolve(result);
-      });
+      createEffect(
+        () => {
+          storeChange();
+          return { state: readiness() };
+        },
+        ({ state }) => {
+          if (settled) return;
+          const result = accept(state);
+          if (result === undefined) return;
+          finish();
+          resolve(result);
+        },
+      );
     });
   });
 }
