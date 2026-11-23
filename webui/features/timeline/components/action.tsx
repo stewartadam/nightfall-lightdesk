@@ -8,14 +8,7 @@
 
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import { focusTrackedComponent } from "../../../lib/componentFocusContext";
@@ -164,9 +157,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
   const ctx = useTimelineContext();
   const $dockApi = useStore(dockApi);
   const { invokePanelCapability } = usePanelCapabilityRegistry();
-  const [left, setLeft] = createSignal(0);
   const [isDragging, setIsDragging] = createSignal(false);
-  const [isSelected, setIsSelected] = createSignal(false);
 
   let elementRef: HTMLDivElement | undefined;
   let pendingDragSession: DragSession | undefined;
@@ -216,22 +207,21 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     return lane ? { trackId, lane } : undefined;
   };
 
-  createEffect(() => {
-    const offsetPx =
-      props.leftOverridePx ?? props.position * (ctx.zoom() / 1000);
-    setLeft(offsetPx);
-  });
+  /** Places the action at its timeline position, or at a drag preview's override. */
+  const left = createMemo(
+    () => props.leftOverridePx ?? props.position * (ctx.zoom() / 1000),
+  );
 
-  createEffect(() => {
-    const selectedActions = ctx.actions.selectedActions();
-    setIsSelected(
-      selectedActions.some(
+  /** Whether this action is part of the timeline's current selection. */
+  const isSelected = createMemo(() =>
+    ctx.actions
+      .selectedActions()
+      .some(
         (selection) =>
           selection.trackId === props.trackId &&
           selection.actionId === props.id,
       ),
-    );
-  });
+  );
 
   /** Returns the flag start position for the current drag pointer. */
   const dragPositionFromPointer = (

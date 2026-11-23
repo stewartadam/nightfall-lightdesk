@@ -10,7 +10,7 @@ import { RepeatIcon } from "@squidlab/phosphor-solid/repeat";
 import { SkipBackIcon } from "@squidlab/phosphor-solid/skip-back";
 import { SkipForwardIcon } from "@squidlab/phosphor-solid/skip-forward";
 import { TagIcon } from "@squidlab/phosphor-solid/tag";
-import { createEffect, createMemo, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, onCleanup, onMount, Show } from "solid-js";
 import { NativeSelect } from "../../../components/ui/form-controls";
 import PanelToolbar, {
   ToolbarSeparator,
@@ -21,6 +21,7 @@ import {
 } from "../../../components/ui/toolbar-button";
 import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import {
   useConditionalShallowStore,
   useShallowStore,
@@ -487,17 +488,21 @@ export const TimelineController = (props: TimelineControllerProps) => {
     };
 
     // Recompute scroll when playhead position, scroll mode, zoom, or timeline end changes.
-    createEffect(() => {
-      if (!workspaceActive()) return;
-      const position = ctx.position();
-      const scrollMode = ctx.scrollMode();
-      const zoom = ctx.zoom();
-      // Track end for reactive updates
-      void ctx.end();
-
-      // Update scroll position when position, scroll mode, or zoom changes
-      updateScrollForPlayhead(position, scrollMode, zoom);
-    });
+    createEffect(
+      () =>
+        workspaceActive()
+          ? {
+              position: ctx.position(),
+              scrollMode: ctx.scrollMode(),
+              zoom: ctx.zoom(),
+              end: ctx.end(),
+            }
+          : undefined,
+      (view) => {
+        if (view)
+          updateScrollForPlayhead(view.position, view.scrollMode, view.zoom);
+      },
+    );
 
     // Handle infinite scroll
     onMount(() => {

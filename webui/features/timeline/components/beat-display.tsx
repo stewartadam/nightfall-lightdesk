@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal } from "solid-js";
 // BeatDisplay component - shows current beat/bar position
+import { createMemo } from "solid-js";
 import { useStore } from "../../../lib/use-nanostore";
 import { durationToMs } from "../../../lib/utils";
 import { timelineBeatgridPreview } from "../../../state/appStores";
@@ -23,10 +23,9 @@ export type BeatDisplayProps = {
 export const BeatDisplay = (props: BeatDisplayProps) => {
   const context = useTimelineContext();
   const $timelineBeatgridPreview = useStore(timelineBeatgridPreview);
-  const [beatDisplay, setBeatDisplay] = createSignal("--");
 
-  /** Updates the readout when playback position or beat-grid settings change. */
-  createEffect(() => {
+  /** Formats the bar and beat readout for the playback position and beat-grid settings. */
+  const beatDisplay = createMemo(() => {
     const previewMarkers =
       $timelineBeatgridPreview()[context.timelineUid]?.markers ?? [];
     // Only calculate beat info if beatgrid is enabled or we're explicitly told to show
@@ -61,8 +60,7 @@ export const BeatDisplay = (props: BeatDisplayProps) => {
         const totalBeat = Math.max(0, anchorBeat + beatFromAnchor);
         const bar = Math.floor(totalBeat / beatsPerBar) + 1;
         const beatInBar = (totalBeat % beatsPerBar) + 1;
-        setBeatDisplay(`${bar}:${beatInBar}`);
-        return;
+        return `${bar}:${beatInBar}`;
       }
 
       // Get beat and bar information
@@ -70,10 +68,9 @@ export const BeatDisplay = (props: BeatDisplayProps) => {
 
       // Create display string: "Bar:Beat"
       const beatInBar = beatInfo.beatInBar + 1; // Convert to 1-based for display
-      setBeatDisplay(`${beatInfo.bar}:${beatInBar}`);
-    } else {
-      setBeatDisplay("--");
+      return `${beatInfo.bar}:${beatInBar}`;
     }
+    return "--";
   });
 
   return (

@@ -40,7 +40,10 @@ export function createTimelineEventEffect<TEvent>(
   });
 
   /** Sends an event that fired before the timeline reached the store, once it arrives. */
-  createEffect(() => {
-    if (timeline()) untrack(flush);
-  });
+  createEffect(
+    () => Boolean(timeline()),
+    (loaded) => {
+      if (loaded) flush();
+    },
+  );
 }
