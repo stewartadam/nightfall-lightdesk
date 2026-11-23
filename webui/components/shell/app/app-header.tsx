@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowCounterClockwiseIcon } from "@squidlab/phosphor-solid/arrow-counter-clockwise";
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { FileIcon } from "@squidlab/phosphor-solid/file";
@@ -18,6 +17,7 @@ import { useShowfileObjectPalette } from "../../../features/showfile";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
 import { currentShowfileName } from "../../../lib/showfile-loading";
+import { useStore } from "../../../lib/use-nanostore";
 import { compactViewport } from "../../../state/viewport";
 import { useCommandPalette } from "../../providers/command-registry";
 import { DropdownMenuItem } from "../../ui/dropdown-menu";

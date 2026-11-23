@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal, onCleanup, untrack } from "solid-js";
 import type { AvailableShowfilesResponse } from "../../../features/showfile";
 import { getBackendUrl } from "../../../lib/api";
@@ -18,6 +17,7 @@ import {
 import { getLogger } from "../../../lib/logger";
 import { expectedStartupShowfileName } from "../../../lib/showfile-loading";
 import { selectStartupDraftRecovery } from "../../../lib/showfile-startup";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   appLifecycle,
   beginAppLifecycleStartup,

@@ -6,13 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { NativeSelect } from "../../components/ui/form-controls";
 import { SettingsRow, SettingsSection } from "../../components/ui/settings-row";
 import { SettingsSearchItem } from "../../components/ui/settings-search";
 import { ToggleSwitch } from "../../components/ui/toggle-switch";
 import { AccentPicker } from "../../components/ui/visual-language/accent-picker";
 import { TabAlignmentSelect } from "../../components/ui/visual-language/tab-alignment-select";
+import { useStore } from "../../lib/use-nanostore";
 import {
   appearanceSettings,
   type ReducedMotionPreference,

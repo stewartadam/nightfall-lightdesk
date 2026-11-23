@@ -6,13 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Accessor,
   createEffect,
   createMemo,
   createSignal,
 } from "solid-js";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { resolveSpatialSelection } from "../../../lib/wasm-bridge";
 import {

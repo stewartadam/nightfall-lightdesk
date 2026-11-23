@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js";
 import { boardDisplayName } from "../../../features/boards";
 import { OPEN_FIXTURE_EDITOR_ACTION_ID } from "../../../features/fixture-editor";
@@ -23,6 +22,7 @@ import {
   toTauriAccelerator,
   WEB_MENU_ID_PREFIX,
 } from "../../../lib/tauri-menu";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   activeBoardWorkspace,
   activeLayoutId,

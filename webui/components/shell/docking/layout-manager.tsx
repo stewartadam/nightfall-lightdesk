@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { CopySimpleIcon } from "@squidlab/phosphor-solid/copy-simple";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
@@ -31,6 +30,7 @@ import {
   layoutStorageStore,
   type StoredPanelLayout,
 } from "../../../lib/layoutStorage";
+import { useStore } from "../../../lib/use-nanostore";
 import { boards as boardStore, pushToast } from "../../../state/appStores";
 import {
   activeBoardWorkspace,

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { BookOpenIcon } from "@squidlab/phosphor-solid/book-open";
 import { CloudArrowUpIcon } from "@squidlab/phosphor-solid/cloud-arrow-up";
 import { FileArrowDownIcon } from "@squidlab/phosphor-solid/file-arrow-down";
@@ -33,6 +32,7 @@ import {
   invokeTauriMenuAction,
   TAURI_MENU_SHORTCUTS,
 } from "../../../lib/tauri-menu";
+import { useStore } from "../../../lib/use-nanostore";
 import { runtimeCapabilities } from "../../../state/appStores";
 import { useAppShell } from "../../providers/app-shell";
 import { useUiActionShortcutHint } from "../../providers/command-registry";

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createMemo,
   createSignal,
@@ -30,6 +29,7 @@ import {
 import { getLogger } from "../../../lib/logger";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import { timeDisplayUnitFromPreference } from "../../../lib/time-display-units";
+import { useStore } from "../../../lib/use-nanostore";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { dockApi } from "../../../state/appStores";
 import { $settings } from "../../../state/settings";

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { CopyIcon } from "@squidlab/phosphor-solid/copy";
 import { PencilSimpleIcon } from "@squidlab/phosphor-solid/pencil-simple";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
@@ -15,6 +14,7 @@ import { Badge } from "../../../components/ui/badge";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { SearchField } from "../../../components/ui/search-field";
 import { Button } from "../../../components/ui/visual-language/button";
+import { useStore } from "../../../lib/use-nanostore";
 import { fixtureLibrary } from "../../../state/appStores";
 import type * as types from "../../../types";
 import {

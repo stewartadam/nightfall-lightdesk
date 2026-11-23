@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createSignal,
@@ -16,6 +15,7 @@ import {
 } from "solid-js";
 import { resyncComplete, resyncGeneration } from "../../../lib/engine-runtime";
 import { currentShowfileRevision } from "../../../lib/showfile-loading";
+import { useStore } from "../../../lib/use-nanostore";
 import { pendingPanelComponentLoads } from "../../../state/panel-component-loads";
 import {
   endShowfileTransition,

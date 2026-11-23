@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import type { DockviewPanelApi } from "dockview";
 import {
   createEffect,
@@ -18,6 +17,7 @@ import {
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { OPEN_PANEL_SETTINGS_CAPABILITY } from "../../../lib/panel-capabilities";
+import { useStore } from "../../../lib/use-nanostore";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import {
   blueprints,

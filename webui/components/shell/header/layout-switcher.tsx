@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { DotsThreeIcon } from "@squidlab/phosphor-solid/dots-three";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { SquaresFourIcon } from "@squidlab/phosphor-solid/squares-four";
@@ -26,6 +25,7 @@ import {
 } from "../../../lib/layoutStorage";
 import { currentShowfileRevision } from "../../../lib/showfile-loading";
 import { isTauriRuntime } from "../../../lib/tauri";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   activeBoardWorkspace,
   activeLayoutId,

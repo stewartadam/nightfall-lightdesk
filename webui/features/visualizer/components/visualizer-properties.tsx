@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Component,
   createEffect,
@@ -24,6 +23,7 @@ import {
   sendFixturePlacementUpdates,
 } from "../../../lib/fixture-service";
 import { normalizeFixtureUid } from "../../../lib/route-utils";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   colorPathDefaults,

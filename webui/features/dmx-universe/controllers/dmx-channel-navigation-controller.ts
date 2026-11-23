@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import { LayoutIcon } from "@squidlab/phosphor-solid/layout";
 import { type Accessor, createMemo } from "solid-js";
@@ -19,6 +18,7 @@ import {
   usbDmxOutputsFromSettings,
 } from "../../../lib/network-dmx-output-targets";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import type { LayerElementParameterValues } from "../../../lib/ws/types";

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { InfoIcon } from "@squidlab/phosphor-solid/info";
 import {
   createEffect,
@@ -25,6 +24,7 @@ import {
 import { allShortcuts } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import { $pairingPromptOpen } from "../../../lib/pairing";
+import { useStore } from "../../../lib/use-nanostore";
 import { appLifecycle } from "../../../state/app-lifecycle";
 import { $backupState } from "../../../state/settings";
 import { BackupPeerState } from "../../../types";

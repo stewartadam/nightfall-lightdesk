@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import type { DockviewApi } from "dockview";
 import {
   createContext,
@@ -14,6 +13,7 @@ import {
   type ParentComponent,
   useContext,
 } from "solid-js";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   $requestedSettings,
   type SettingsTarget,

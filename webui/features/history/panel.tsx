@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowUUpLeftIcon } from "@squidlab/phosphor-solid/arrow-u-up-left";
 import { ArrowUUpRightIcon } from "@squidlab/phosphor-solid/arrow-u-up-right";
 import { createMemo, For, Show } from "solid-js";
@@ -15,6 +14,7 @@ import { Badge } from "../../components/ui/badge";
 import { EmptyState } from "../../components/ui/empty-state";
 import type { AppIcon } from "../../components/ui/icon";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
+import { useStore } from "../../lib/use-nanostore";
 import { undoState } from "../../state/appStores";
 import type * as types from "../../types";
 

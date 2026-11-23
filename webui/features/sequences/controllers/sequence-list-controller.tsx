@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { CopySimpleIcon } from "@squidlab/phosphor-solid/copy-simple";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
@@ -40,6 +39,7 @@ import {
   createDefaultSequence,
   nextAvailableIdentifierId,
 } from "../../../lib/sequence-factory";
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
   clearSequenceNavigationRequest,

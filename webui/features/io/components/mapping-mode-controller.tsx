@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { PlugsConnectedIcon } from "@squidlab/phosphor-solid/plugs-connected";
 import { createEffect, createMemo, on, onCleanup, Show } from "solid-js";
 import { useUiAction } from "../../../components/providers/command-registry";
@@ -16,6 +15,7 @@ import { commandClient } from "../../../lib/engine-commands";
 import { resyncGeneration } from "../../../lib/engine-runtime";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   controllerMappingMode,
   midiControlTouches,

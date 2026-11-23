@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowUUpLeftIcon } from "@squidlab/phosphor-solid/arrow-u-up-left";
 import { ArrowUUpRightIcon } from "@squidlab/phosphor-solid/arrow-u-up-right";
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
@@ -23,6 +22,7 @@ import { commandFailure, commandSucceeded } from "../../../lib/command-result";
 import { commandClient } from "../../../lib/engine-commands";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
+import { useStore } from "../../../lib/use-nanostore";
 import { undoState } from "../../../state/appStores";
 import { DropdownMenu } from "../../ui/dropdown-menu";
 import { ScrollArea } from "../../ui/scroll-area";

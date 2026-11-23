@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
 import {
   createEffect,
@@ -60,6 +59,7 @@ import {
 } from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
 import { setStoreAction } from "../../../lib/nanostore-action";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   fanNumbersByColumn,

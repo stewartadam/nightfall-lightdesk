@@ -13,7 +13,6 @@
  * including a 3D preview of the model.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Component,
   createEffect,
@@ -27,6 +26,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { getBackendUrl } from "../../../lib/api";
 import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
+import { useStore } from "../../../lib/use-nanostore";
 import { objectProfile } from "../../../state/appStores";
 import type { AvailableObjectInfo } from "../../../types";
 

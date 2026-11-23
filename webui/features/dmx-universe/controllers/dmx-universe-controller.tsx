@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createMemo } from "solid-js";
 import { fixtureValueTransitionColor } from "../../../lib/datagrid";
 import { fixtureValueSourceState } from "../../../lib/fixture-value-state";
@@ -19,6 +18,7 @@ import {
   buildFixturePatchMapFromRoutes,
   type FixturePatchEntry,
 } from "../../../lib/route-utils";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import {

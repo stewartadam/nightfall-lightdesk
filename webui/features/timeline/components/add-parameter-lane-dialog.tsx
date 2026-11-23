@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import {
   Dialog,
@@ -16,6 +15,7 @@ import {
 } from "../../../components/ui/dialog";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
+import { useStore } from "../../../lib/use-nanostore";
 import { clips } from "../../../state/appStores";
 import type { ParameterType } from "../../../types";
 

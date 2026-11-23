@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { Key } from "@solid-primitives/keyed";
 import { createMemo, createSignal, Show } from "solid-js";
 import { Portal } from "solid-js/web";
@@ -20,6 +19,7 @@ import {
   timelinePlacementPosition,
   timelinePlacementPreference,
 } from "../../../lib/timeline-placement";
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { msToDuration, msToPixels, pixelsToMs } from "../../../lib/utils";

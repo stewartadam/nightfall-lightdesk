@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Accessor,
   createEffect,
@@ -17,6 +16,7 @@ import {
 import { useAppShell } from "../../components/providers/app-shell";
 import { useCommandPalette } from "../../components/providers/command-registry";
 import { libraryDefinitionId } from "../../lib/fixture-service";
+import { useStore } from "../../lib/use-nanostore";
 import { useConditionalShallowStore } from "../../lib/use-shallow-store";
 import {
   activeInstances,

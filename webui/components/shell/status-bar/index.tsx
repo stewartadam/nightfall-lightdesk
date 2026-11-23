@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { AppWindowIcon } from "@squidlab/phosphor-solid/app-window";
 import { CaretLeftIcon } from "@squidlab/phosphor-solid/caret-left";
 import { CaretRightIcon } from "@squidlab/phosphor-solid/caret-right";
@@ -24,6 +23,7 @@ import { getLogger } from "../../../lib/logger";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
 import { currentShowfileName } from "../../../lib/showfile-loading";
 import { isE2eBuild } from "../../../lib/test-mode";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   frameStats,
   smoothedEngineMetrics,

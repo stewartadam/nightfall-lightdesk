@@ -9,7 +9,6 @@
 import "./lib/install-diagnostic-console";
 import "./lib/report-uncaught-errors";
 import "./lib/idle-callback";
-import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createSignal,
@@ -35,6 +34,7 @@ import {
   reportFatalError,
   setWorkspaceVisible,
 } from "./lib/uncaught-error-reporter";
+import { useStore } from "./lib/use-nanostore";
 import { appLifecycle } from "./state/app-lifecycle";
 import "./state/reduced-motion";
 import { appearanceSettings } from "./state/appearance";

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Accessor,
   createEffect,
@@ -18,6 +17,7 @@ import type { GridColumn, GridSelection } from "../../../lib/data-grid-types";
 import { CompactSelection } from "../../../lib/data-grid-types";
 import { getSelectedRowIndices } from "../../../lib/datagrid";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
+import { useStore } from "../../../lib/use-nanostore";
 import { dockApi } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { formatCueEditorTitle } from "../../cues";

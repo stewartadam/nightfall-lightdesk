@@ -6,9 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import type { Component } from "solid-js";
 import { ExperimentalPanel } from "../../../components/ui/experimental-panel";
+import { useStore } from "../../../lib/use-nanostore";
 import { runtimeCapabilities } from "../../../state/appStores";
 
 /** Keeps saved flow panels restorable while preventing disabled components from mounting. */

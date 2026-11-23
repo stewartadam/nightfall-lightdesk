@@ -21,13 +21,13 @@ import { SunIcon } from "@squidlab/phosphor-solid/sun";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { VideoCameraIcon } from "@squidlab/phosphor-solid/video-camera";
 import { v4 as uuidv4 } from "uuid";
+
 /**
  * Toolbar for Visualizer interaction modes and view/debug toggles.
  *
  * Tooltips include the panel-local shortcut for each action.
  */
 
-import { useStore } from "@nanostores/solid";
 import { type Component, createSignal } from "solid-js";
 import {
   DropdownMenu,
@@ -52,6 +52,7 @@ import { sendDeleteFixture } from "../../../lib/fixture-service";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { setStoreAction } from "../../../lib/nanostore-action";
 import { deleteSceneObject } from "../../../lib/scene-object-service";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   fixtures,

@@ -14,7 +14,6 @@
  * to the FixturePreview component for rendering.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Component,
   createEffect,
@@ -24,6 +23,7 @@ import {
 } from "solid-js";
 import { profileMatchesRevision } from "../../../lib/fixture-profile-match";
 import { fetchFixtureProfile } from "../../../lib/fixture-service";
+import { useStore } from "../../../lib/use-nanostore";
 import { fixtureProfile } from "../../../state/appStores";
 import type { Fixture, FixtureGeometry } from "../../../types";
 import { FixturePreview, profileToPreviewFixture } from "../../visualizer";

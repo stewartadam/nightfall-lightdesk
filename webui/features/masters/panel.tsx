@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { DotsSixVerticalIcon } from "@squidlab/phosphor-solid/dots-six-vertical";
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { useRevealObjectCapability } from "../../components/providers/panel-capabilities/context-core";
@@ -16,6 +15,7 @@ import { Table, TableEmptyRow, TableScroll } from "../../components/ui/table";
 import { Button } from "../../components/ui/visual-language/button";
 import { setObjectDragData } from "../../lib/object-drag";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
+import { useStore } from "../../lib/use-nanostore";
 import { useSharedStore } from "../../lib/use-shared-store";
 import { clips, groups, masters } from "../../state/appStores";
 import * as types from "../../types";

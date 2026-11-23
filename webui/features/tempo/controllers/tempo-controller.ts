@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { debounce } from "@solid-primitives/scheduled";
 import {
   type Accessor,
@@ -18,6 +17,7 @@ import {
 } from "solid-js";
 import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
+import { useStore } from "../../../lib/use-nanostore";
 import { showTempo } from "../../../state/appStores";
 import type { TempoCommand, TempoSnapshot } from "../../../types";
 import {

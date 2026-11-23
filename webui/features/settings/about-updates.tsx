@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowClockwiseIcon } from "@squidlab/phosphor-solid/arrow-clockwise";
 import { type Accessor, createMemo, createSignal, For, Show } from "solid-js";
 import { Alert } from "../../components/ui/alert";
@@ -29,6 +28,7 @@ import {
   setDesktopUpdateChannel,
   setDesktopUpdateMode,
 } from "../../lib/desktop-updates";
+import { useStore } from "../../lib/use-nanostore";
 
 /** Update status and actions shared by the About dialog's update controls. */
 export interface AboutUpdates {

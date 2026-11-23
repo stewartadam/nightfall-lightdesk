@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import AttributeSlider, {
   type AttributeMode,
@@ -18,6 +17,7 @@ import { sortedAttributes } from "../../../lib/attribute-ordering";
 import { parseHexColor } from "../../../lib/color-utils";
 import { commandClient } from "../../../lib/engine-commands";
 import { getFixtureAttributeNames } from "../../../lib/fixture-attributes";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import { fixtures, programmerSelection } from "../../../state/appStores";

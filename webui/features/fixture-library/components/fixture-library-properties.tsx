@@ -10,12 +10,12 @@ import { Alert } from "../../../components/ui/alert";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { NativeSelect } from "../../../components/ui/form-controls";
 import { Table, TableScroll } from "../../../components/ui/table";
+
 /**
  * Properties panel for Fixture Library
  * Shows detailed information about selected fixture
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Accessor,
   createEffect,
@@ -32,6 +32,7 @@ import {
   libraryRevisionDate,
   libraryRevisionLabel,
 } from "../../../lib/library-revision";
+import { useStore } from "../../../lib/use-nanostore";
 import { fixtureLibrary, fixtureProfile } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { GdtfSharePageLink, GdtfShareUpdateDetails } from "../../gdtf-share";

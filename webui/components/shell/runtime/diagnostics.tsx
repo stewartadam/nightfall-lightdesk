@@ -6,10 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { lazy, onCleanup, onMount, Show } from "solid-js";
 import { getLogger } from "../../../lib/logger";
 import { registerTauriMenuListener } from "../../../lib/tauri-menu";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   activeShellDialog,
   openDiagnostics,

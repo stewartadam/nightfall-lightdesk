@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createMemo, For, Show } from "solid-js";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -15,6 +14,7 @@ import {
   computeFixtureChannelCount,
   libraryDefinitionId,
 } from "../../../lib/fixture-service";
+import { useStore } from "../../../lib/use-nanostore";
 import { fixtureLibrary, fixtureProfile } from "../../../state/appStores";
 import { LibraryFixturePreview } from "../../fixture-library";
 import { usePatchWizard } from "./wizard-context";

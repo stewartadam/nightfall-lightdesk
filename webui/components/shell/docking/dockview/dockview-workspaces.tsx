@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { BoardWorkspace } from "../../../../features/boards";
 import {
@@ -25,6 +24,7 @@ import {
 import { getLogger } from "../../../../lib/logger";
 import { setStoreAction } from "../../../../lib/nanostore-action";
 import { currentShowfileRevision } from "../../../../lib/showfile-loading";
+import { useStore } from "../../../../lib/use-nanostore";
 import { WorkspaceActivityContext } from "../../../../lib/workspace-activity";
 import { appLifecycle } from "../../../../state/app-lifecycle";
 import { dockApi } from "../../../../state/appStores";

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { LayoutIcon } from "@squidlab/phosphor-solid/layout";
 import { LockIcon } from "@squidlab/phosphor-solid/lock";
 import { LockOpenIcon } from "@squidlab/phosphor-solid/lock-open";
@@ -33,6 +32,7 @@ import {
   parkedEntriesForCell,
   parkedParameterKeys,
 } from "../../../lib/parked-parameters";
+import { useStore } from "../../../lib/use-nanostore";
 import type { LayerState } from "../../../lib/ws/types";
 import { dockApi, requestLayerNavigation } from "../../../state/appStores";
 import type {

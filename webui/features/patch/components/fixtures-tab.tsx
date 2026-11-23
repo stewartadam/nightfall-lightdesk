@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import {
   createEffect,
@@ -56,6 +55,7 @@ import {
   computeRouteOverlapAnalysis,
   type RouteConflictColumn,
 } from "../../../lib/route-overlap";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { dmxUniverseList, fixtures, routes } from "../../../state/appStores";
 import {

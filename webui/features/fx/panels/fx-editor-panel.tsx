@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import type { DockviewPanelApi } from "dockview";
@@ -27,6 +26,7 @@ import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialo
 import { TimebaseControl } from "../../../components/widgets/timebase-control";
 import { createDefaultFlowWaveform } from "../../../lib/fx-waveform";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
   fixtures as fixturesStore,

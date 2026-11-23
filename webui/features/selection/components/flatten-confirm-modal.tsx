@@ -6,9 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
 import { engineRuntime } from "../../../lib/engine-runtime";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   decideSelectionFlattenConfirmation,
   pushToast,

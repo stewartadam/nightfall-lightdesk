@@ -6,9 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import type { Accessor } from "solid-js";
 import { connectionStatus } from "../../../lib/engine-runtime";
+import { useStore } from "../../../lib/use-nanostore";
 import { wsStats } from "../../../state/appStores";
 import Tooltip from "../../ui/tooltip";
 

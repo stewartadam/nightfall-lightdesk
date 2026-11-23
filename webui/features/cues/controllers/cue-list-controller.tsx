@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
@@ -25,6 +24,7 @@ import {
   serializeTimelineInsertDragPayload,
   TIMELINE_INSERT_DRAG_MIME,
 } from "../../../lib/timeline-insert-drag";
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { cues, dockApi, pushToast, sequences } from "../../../state/appStores";
 import type { Cue, Sequence } from "../../../types";

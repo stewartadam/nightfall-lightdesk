@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Accessor,
   createEffect,
@@ -38,6 +37,7 @@ import {
   type RichTimeDisplayUnit,
 } from "../../../lib/datagrid-rich-cells";
 import { msToDuration } from "../../../lib/duration";
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { normalizeAttributeName } from "../../../lib/utils";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";

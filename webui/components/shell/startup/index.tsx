@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal } from "solid-js";
 import { BackupPairStartupDialog } from "../../../features/io";
 import { OpenShowfileModal } from "../../../features/showfile";
@@ -20,6 +19,7 @@ import {
   newShowfileAndAwait,
   type OpenShowfileSelection,
 } from "../../../lib/showfile-actions";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   appLifecycle,
   transitionAppLifecycle,

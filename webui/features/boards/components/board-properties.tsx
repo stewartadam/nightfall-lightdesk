@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createSignal,
@@ -22,6 +21,7 @@ import {
 } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { hasDiskStorage } from "../../../lib/disk-storage";
+import { useStore } from "../../../lib/use-nanostore";
 import { pushToast, runtimeCapabilities } from "../../../state/appStores";
 import type * as types from "../../../types";
 import type { BoardPanelController } from "../controllers/board-panel-controller";

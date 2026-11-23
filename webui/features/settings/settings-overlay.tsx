@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import { CubeIcon } from "@squidlab/phosphor-solid/cube";
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
@@ -48,6 +47,7 @@ import { durationToMs, msToDuration } from "../../lib/duration";
 import { commandClient } from "../../lib/engine-commands";
 import { getLogger } from "../../lib/logger";
 import { setStoreAction } from "../../lib/nanostore-action";
+import { useStore } from "../../lib/use-nanostore";
 import {
   routeValidationSettings,
   runtimeCapabilities,

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { createMemo, createSignal } from "solid-js";
@@ -18,6 +17,7 @@ import { createCrudListState } from "../../../components/widgets/crud/model/crud
 import { commandClient } from "../../../lib/engine-commands";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   useConditionalShallowStore,
   useShallowStore,

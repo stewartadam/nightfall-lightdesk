@@ -6,11 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createMemo, For, Show } from "solid-js";
 import { NativeSelect } from "../../../components/ui/form-controls";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import { commandClient } from "../../../lib/engine-commands";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   $availableNetworkInterfaces,
   $externalControlState,

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { DotsSixVerticalIcon } from "@squidlab/phosphor-solid/dots-six-vertical";
 import { PushPinIcon } from "@squidlab/phosphor-solid/push-pin";
 import { PushPinSlashIcon } from "@squidlab/phosphor-solid/push-pin-slash";
@@ -24,6 +23,7 @@ import { Dynamic } from "solid-js/web";
 import { isPanelOpenable } from "../../../lib/experimental-features";
 import { panelDefinitionsForPalette } from "../../../lib/panel-definitions";
 import { openOrFocusPanelDefinition } from "../../../lib/panel-open-command";
+import { useStore } from "../../../lib/use-nanostore";
 import { runtimeCapabilities } from "../../../state/appStores";
 import { useAppShell } from "../../providers/app-shell";
 import { Dialog, DialogBody } from "../../ui/dialog";

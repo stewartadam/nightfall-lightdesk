@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import { QrCodeIcon } from "@squidlab/phosphor-solid/qr-code";
 import {
@@ -30,6 +29,7 @@ import {
   formatPairingPin,
   regeneratePairingPin,
 } from "../../../lib/pairing";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   $availableNetworkInterfaces,
   $externalControlState,

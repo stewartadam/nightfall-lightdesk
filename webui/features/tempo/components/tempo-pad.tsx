@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { Show } from "solid-js";
+import { useStore } from "../../../lib/use-nanostore";
 import { showTempo } from "../../../state/appStores";
 import { createBeatInBar } from "../controllers/tempo-controller";
 import { formatBpm } from "../model";

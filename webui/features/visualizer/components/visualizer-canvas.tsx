@@ -12,6 +12,7 @@ import { LightbulbIcon } from "@squidlab/phosphor-solid/lightbulb";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { v4 as uuidv4 } from "uuid";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
+
 /**
  * Visualizer canvas component.
  * Handles Three.js renderer lifecycle and browser events.
@@ -23,7 +24,6 @@ import { useWorkspaceActivity } from "../../../lib/workspace-activity";
  * Uses Comlink for worker communication, providing a clean typed API.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Component,
   createEffect,
@@ -53,6 +53,7 @@ import {
   deleteSceneObject,
   updateSceneObjectPlacement,
 } from "../../../lib/scene-object-service";
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {

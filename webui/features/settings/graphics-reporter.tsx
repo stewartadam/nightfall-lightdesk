@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect } from "solid-js";
 import { commandClient } from "../../lib/engine-commands";
 import {
@@ -15,6 +14,7 @@ import {
 } from "../../lib/engine-runtime";
 import { getLogger } from "../../lib/logger";
 import { isTauriRuntime } from "../../lib/tauri";
+import { useStore } from "../../lib/use-nanostore";
 import { $telemetryState } from "../../state/settings";
 import type { GraphicsReport } from "../../types";
 

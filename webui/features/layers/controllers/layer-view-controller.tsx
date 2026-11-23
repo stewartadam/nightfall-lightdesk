@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import {
   type Accessor,
@@ -51,6 +50,7 @@ import {
 } from "../../../lib/datagrid-filtering";
 import { makeColorSwatchCell } from "../../../lib/datagrid-rich-cells";
 import { measurePerformanceScope } from "../../../lib/performance-marks";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import type { LayerState } from "../../../lib/ws/types";
 import type { LayerNavigationRequest } from "../../../state/appStores";

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { AppWindowIcon } from "@squidlab/phosphor-solid/app-window";
 import { ArrowLeftIcon } from "@squidlab/phosphor-solid/arrow-left";
 import { ArrowRightIcon } from "@squidlab/phosphor-solid/arrow-right";
@@ -20,6 +19,7 @@ import {
   panelOpenPlacementFromExecutionContext,
 } from "../../../../lib/panel-open-command";
 import { isTauriRuntime } from "../../../../lib/tauri";
+import { useStore } from "../../../../lib/use-nanostore";
 import { runtimeCapabilities } from "../../../../state/appStores";
 import { useAppShell } from "../../../providers/app-shell";
 import { useUiAction } from "../../../providers/command-registry";

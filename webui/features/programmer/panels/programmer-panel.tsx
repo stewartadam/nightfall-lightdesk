@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createMemo, createSignal, Show } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import DataGrid, {
@@ -57,6 +56,7 @@ import {
   buildParkedParameterLookup,
   parkedEntriesForCell,
 } from "../../../lib/parked-parameters";
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { normalizeAttributeName } from "../../../lib/utils";

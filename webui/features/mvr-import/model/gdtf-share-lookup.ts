@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Accessor,
   createEffect,
@@ -16,6 +15,7 @@ import {
   onCleanup,
 } from "solid-js";
 import { getLogger } from "../../../lib/logger";
+import { useStore } from "../../../lib/use-nanostore";
 import { activeShellDialog } from "../../../state/shell-dialog";
 import type * as types from "../../../types";
 import {

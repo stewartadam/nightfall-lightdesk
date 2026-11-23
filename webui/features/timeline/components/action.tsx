@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createDraggable } from "@neodrag/solid";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
@@ -27,6 +26,7 @@ import {
   focusOrAddPanel,
   openOrFocusPanel,
 } from "../../../lib/panel-open-command";
+import { useStore } from "../../../lib/use-nanostore";
 import { durationToMs } from "../../../lib/utils";
 import { dockApi } from "../../../state/appStores";
 import * as types from "../../../types";

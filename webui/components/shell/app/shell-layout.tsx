@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { onCleanup, onMount, Show } from "solid-js";
 import { BoardPaletteCommands } from "../../../features/boards";
 import { ReleaseHeldButtonsCommand } from "../../../features/clips";
@@ -35,6 +34,7 @@ import {
 import { ShowfileDialogs } from "../../../features/showfile";
 import { GuideInvitation, WelcomeGuide } from "../../../features/welcome-guide";
 import { isTauriRuntime } from "../../../lib/tauri";
+import { useStore } from "../../../lib/use-nanostore";
 import { compactViewport } from "../../../state/viewport";
 import ConnectionOverlay from "../../overlays/connection";
 import ShellOverlayHosts from "../../overlays/shell-hosts";

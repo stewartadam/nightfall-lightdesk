@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import {
   CONSOLE_TRANSPORT,
@@ -16,6 +15,7 @@ import {
 } from "../../../lib/dmx-universe-data";
 import { watchDmxUniverse } from "../../../lib/dmx-universe-watch";
 import { commandClient } from "../../../lib/engine-commands";
+import { useStore } from "../../../lib/use-nanostore";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { dmxUniverseChannels, dmxUniverseList } from "../../../state/appStores";

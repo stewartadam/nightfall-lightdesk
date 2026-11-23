@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import {
   $desktopUpdate,
@@ -16,6 +15,7 @@ import {
   startDesktopUpdates,
 } from "../../lib/desktop-updates";
 import { getLogger } from "../../lib/logger";
+import { useStore } from "../../lib/use-nanostore";
 import { pushToast } from "../../state/notifications";
 import {
   snoozeUpdateNotice,

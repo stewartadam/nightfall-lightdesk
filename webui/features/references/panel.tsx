@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import {
   createMemo,
@@ -26,6 +25,7 @@ import { SegmentedTabs } from "../../components/ui/segmented-tabs";
 import { ToolbarButton } from "../../components/ui/toolbar-button";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
 import { flattenReferenceList } from "../../lib/reference-list";
+import { useStore } from "../../lib/use-nanostore";
 import { referenceHealth, referenceList } from "../../state/appStores";
 import {
   ReferenceHealthTable,

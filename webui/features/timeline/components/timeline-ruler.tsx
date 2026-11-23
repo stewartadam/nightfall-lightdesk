@@ -6,14 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-// TimelineRuler component
-import { useStore } from "@nanostores/solid";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { commandClient } from "../../../lib/engine-commands";
 import {
   setStoreAction,
   setStoreKeyAction,
 } from "../../../lib/nanostore-action";
+// TimelineRuler component
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
   durationToMs,

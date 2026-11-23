@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { ArrowClockwiseIcon } from "@squidlab/phosphor-solid/arrow-clockwise";
 import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import {
@@ -38,6 +37,7 @@ import {
   type GridSelection,
 } from "../../lib/data-grid-types";
 import { getLogger } from "../../lib/logger";
+import { useStore } from "../../lib/use-nanostore";
 import { fixtureLibrary } from "../../state/appStores";
 import { activeShellDialog } from "../../state/shell-dialog";
 import type {

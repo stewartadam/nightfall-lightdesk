@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { createEffect, createMemo, createSignal, For, onMount } from "solid-js";
 import { Alert } from "../../../components/ui/alert";
 import { Table, TableScroll } from "../../../components/ui/table";
@@ -30,6 +29,7 @@ import {
   usbDmxOutputsFromSettings,
 } from "../../../lib/network-dmx-output-targets";
 import { isEmbeddedDemoRuntime } from "../../../lib/runtime-config";
+import { useStore } from "../../../lib/use-nanostore";
 import {
   networkOutputSendFailures,
   runtimeCapabilities,

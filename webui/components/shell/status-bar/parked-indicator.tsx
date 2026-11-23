@@ -6,10 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { LockIcon } from "@squidlab/phosphor-solid/lock";
 import { Show } from "solid-js";
 import { showParkedFixtures } from "../../../features/fixtures";
+import { useStore } from "../../../lib/use-nanostore";
 import { parkedParameters } from "../../../state/appStores";
 import { useAppShell } from "../../providers/app-shell";
 import { ToolbarButton } from "../../ui/toolbar-button";

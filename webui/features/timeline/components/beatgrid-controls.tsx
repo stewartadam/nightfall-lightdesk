@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { createEffect, createSignal, mergeProps } from "solid-js";
 import {
@@ -19,6 +18,7 @@ import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import { Button } from "../../../components/ui/visual-language/button";
 import { commandClient } from "../../../lib/engine-commands";
 import { setStoreAction } from "../../../lib/nanostore-action";
+import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
   timelineBeatgridDetectionStatus,

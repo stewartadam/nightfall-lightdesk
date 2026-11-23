@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type Component,
   createMemo,
@@ -34,6 +33,7 @@ import {
 import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import { createSceneObject } from "../../../lib/scene-object-service";
+import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { objectLibrary, sceneObjects } from "../../../state/appStores";
 import type { ObjectLibraryCommand } from "../../../types";

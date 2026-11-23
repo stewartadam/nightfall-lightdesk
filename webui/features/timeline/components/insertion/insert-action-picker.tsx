@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   createEffect,
   createMemo,
@@ -33,6 +32,7 @@ import {
   type PaletteNavigationKey,
   visiblePaletteRowCount,
 } from "../../../../lib/palette-navigation";
+import { useStore } from "../../../../lib/use-nanostore";
 import { useWorkspaceActivity } from "../../../../lib/workspace-activity";
 import { actionCatalog } from "../../../../state/appStores";
 import type * as types from "../../../../types";

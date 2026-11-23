@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { useStore } from "@nanostores/solid";
 import {
   type CreateComponentOptions,
   createDockview,
@@ -35,6 +34,7 @@ import {
   getComponentRegistration,
 } from "../../../../lib/panel-registry";
 import { describeUncaughtError } from "../../../../lib/uncaught-error";
+import { useStore } from "../../../../lib/use-nanostore";
 import { useWorkspaceActivity } from "../../../../lib/workspace-activity";
 import { appearanceSettings } from "../../../../state/appearance";
 import { usePanelCapabilityRegistry } from "../../../providers/panel-capabilities/context-core";
