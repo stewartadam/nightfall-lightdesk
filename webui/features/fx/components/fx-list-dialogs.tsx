@@ -216,8 +216,8 @@ export function FxPropertiesPanel(props: FxPropertiesPanelProps) {
 
   /** Keeps the configuration textarea aligned with the selected module FX. */
   createEffect(
-    () => formatConfigText(props.moduleFx?.config ?? {}),
-    (text) => {
+    () => ({ text: formatConfigText(props.moduleFx?.config ?? {}) }),
+    ({ text }) => {
       setConfigText(text);
     },
   );

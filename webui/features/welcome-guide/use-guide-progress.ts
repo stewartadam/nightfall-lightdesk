@@ -147,6 +147,9 @@ export function useGuideSnapshot(
   });
 }
 
+/** One visit to a step's observation; see `entry` in useGuideProgress. */
+type GuideEntry = { target: GuideObservation };
+
 /**
  * Advances on fresh actions, or immediately when a state-based condition is already met.
  * A step the user went Back to only advances on a fresh change, so it can be read again.
@@ -161,25 +164,34 @@ export function useGuideProgress(
   const { isSettingsOpen } = useAppShell();
 
   /**
-   * Interactions observed through DOM listeners, each tagged with the observation it was
-   * recorded for, so entering a new step starts from a clean slate without resetting signals.
+   * One visit to a step's observation. Each entry, including a return with Back, is a new
+   * object, so interactions recorded on an earlier visit never count toward this one.
    */
-  const [accentPickedFor, setAccentPickedFor] =
-    createSignal<GuideObservation>();
+  const entry = createMemo((): GuideEntry | undefined => {
+    const target = observation();
+    return target ? { target } : undefined;
+  });
+
+  /**
+   * Interactions observed through DOM listeners, each tagged with the entry it was recorded
+   * for, so entering a step starts from a clean slate without resetting signals.
+   */
+  const [accentPickedFor, setAccentPickedFor] = createSignal<GuideEntry>();
   const [saveShowfilePressedFor, setSaveShowfilePressedFor] =
-    createSignal<GuideObservation>();
+    createSignal<GuideEntry>();
   const [submittedCommand, setSubmittedCommand] = createSignal<{
-    target: GuideObservation;
+    entry: GuideEntry;
     command: string;
   }>();
   const [selectedTimelineActions, setSelectedTimelineActions] = createSignal<{
-    target: GuideObservation;
+    entry: GuideEntry;
     actions: GuideSnapshot["selectedTimelineActions"];
   }>();
 
-  /** Attaches the DOM listeners the current observation needs, and removes them on navigation or exit. */
-  createEffect(observation, (target) => {
-    if (!target) return;
+  /** Attaches the DOM listeners the current entry needs, and removes them on navigation or exit. */
+  createEffect(entry, (current) => {
+    if (!current) return;
+    const { target } = current;
     const cleanups: (() => void)[] = [];
     /** Observes the enabled save menu action, including keyboard-generated clicks. */
     const pressSaveShowfile = (event: MouseEvent) => {
@@ -189,7 +201,7 @@ export function useGuideProgress(
           '[data-component="DropdownMenuItem"]:has([data-guide-target="save-showfile"]):not([disabled])',
         )
       )
-        setSaveShowfilePressedFor(target);
+        setSaveShowfilePressedFor(current);
     };
     if (target.type === "save-showfile") {
       document.addEventListener("click", pressSaveShowfile, true);
@@ -205,7 +217,7 @@ export function useGuideProgress(
               "#header-cmdline, #cmdline",
             )
           : null;
-      if (input) setSubmittedCommand({ target, command: input.value });
+      if (input) setSubmittedCommand({ entry: current, command: input.value });
     };
     if (target.type === "command-submitted") {
       document.addEventListener("submit", submitCommand, true);
@@ -216,7 +228,7 @@ export function useGuideProgress(
     /** Mirrors selected timeline action chips, whose selection is local to each editor. */
     const readSelectedTimelineActions = () =>
       setSelectedTimelineActions({
-        target,
+        entry: current,
         actions: [
           ...document.querySelectorAll<HTMLElement>(
             '[data-timeline-surface="true"] [data-timeline-action="true"][data-selected="true"]:not([data-drag-preview])',
@@ -246,7 +258,7 @@ export function useGuideProgress(
         event.target instanceof Element &&
         event.target.closest('[aria-label="Settings"] .nf-accent-picker button')
       )
-        setAccentPickedFor(target);
+        setAccentPickedFor(current);
     };
     if (target.type === "accent-settings-closed") {
       document.addEventListener("click", pickAccent, true);
@@ -261,22 +273,22 @@ export function useGuideProgress(
 
   /** Reads a pure completion token for the current observation from the acknowledged application snapshot. */
   const token = createMemo(() => {
-    const target = observation();
-    if (!target) return undefined;
+    const current = entry();
+    if (!current) return undefined;
     const command = submittedCommand();
     const timelineActions = selectedTimelineActions();
-    return guideCompletionToken(target, {
+    return guideCompletionToken(current.target, {
       ...snapshot(),
-      accentPicked: accentPickedFor() === target,
-      saveShowfilePressed: saveShowfilePressedFor() === target,
+      accentPicked: accentPickedFor() === current,
+      saveShowfilePressed: saveShowfilePressedFor() === current,
       submittedCommand:
-        command?.target === target ? command.command : undefined,
+        command?.entry === current ? command.command : undefined,
       selectedTimelineActions:
-        timelineActions?.target === target ? timelineActions.actions : [],
+        timelineActions?.entry === current ? timelineActions.actions : [],
     });
   });
 
-  let armedFor: GuideObservation | undefined;
+  let armedFor: GuideEntry | undefined;
   let previous: string | undefined;
   let pending: ReturnType<typeof setTimeout> | undefined;
   /** Cancels a scheduled advancement when the observation changes or the guide closes. */
@@ -293,11 +305,12 @@ export function useGuideProgress(
    * the instructions appeared advances once they do.
    */
   createEffect(
-    () => ({ target: observation(), next: token(), held: held() }),
-    ({ target, next, held }) => {
-      if (target !== armedFor) {
+    () => ({ current: entry(), next: token(), held: held() }),
+    ({ current, next, held }) => {
+      const target = current?.target;
+      if (current !== armedFor) {
         cancelPending();
-        armedFor = target;
+        armedFor = current;
         previous =
           !revisited() &&
           (target?.type === "sample-panels" ||

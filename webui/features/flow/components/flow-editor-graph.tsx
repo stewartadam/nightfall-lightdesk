@@ -442,7 +442,7 @@ export default function FlowEditorGraphSolid(props: FlowEditorGraphProps) {
     },
   );
 
-  // Update selection when selectedNodeId prop changes
+  /** Mirrors the selectedNodeId prop into the graph's node selection. */
   createEffect(
     () => props.selectedNodeId ?? null,
     (selectedNodeId) => {

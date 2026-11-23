@@ -112,6 +112,7 @@ export function StartupController(props: StartupControllerProps) {
       backendState: effectiveBackendAppState(),
       connected: connectionStatus() === EngineRuntimeStatus.Connected,
       backupState: backup(),
+      continuedAsPrimary: continuedAsPrimary(),
       resynced: resyncComplete(),
       backupRoleWaited: backupRoleWaitOver(),
       bypassShowfilePrompt: props.bypassShowfilePrompt,

@@ -1040,9 +1040,9 @@ export default function TanStackDataGrid(props: DataGridProps) {
    * selection, and reports the empty selection so owners stop showing it.
    */
   createEffect(
-    () => selectionModeUsesGridSelection(props.selectionMode),
-    (usesGridSelection) => {
-      if (usesGridSelection) return;
+    () => props.selectionMode,
+    (selectionMode) => {
+      if (selectionModeUsesGridSelection(selectionMode)) return;
       selectionController.dispose();
       if (selectionState() === initialDataGridSelectionState) return;
       selectionController.setSelectionState(initialDataGridSelectionState);

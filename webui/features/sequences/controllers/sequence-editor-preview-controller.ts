@@ -282,6 +282,8 @@ export function createSequenceEditorPreviewController(
           cue,
           applyTransitions: previewApplyTransitions(),
           trackValues: previewTrackValues(),
+          sequence: source.sequence(),
+          cueMap: source.cueMap(),
         };
       }
       return {

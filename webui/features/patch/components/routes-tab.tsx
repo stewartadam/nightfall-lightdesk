@@ -213,6 +213,7 @@ export default function DmxRoutesTab(props: DmxRoutesTabProps) {
     }, 500);
   };
 
+  /** Selects and reveals the route a navigation request names once its row is displayed. */
   createEffect(
     () => {
       const navigateRequest = props.navigateToRoute;

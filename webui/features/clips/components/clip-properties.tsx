@@ -80,12 +80,9 @@ export default function ClipProperties(props: ClipPropertiesProps) {
   }));
 
   /** Resets the source kind picker to the stored source's kind whenever it changes. */
-  createEffect(
-    () => source()?.type ?? "Sequence",
-    (kind) => {
-      setSourceKind(kind);
-    },
-  );
+  createEffect(source, (currentSource) => {
+    setSourceKind(currentSource?.type ?? "Sequence");
+  });
 
   /** Keeps the clip label draft aligned outside active typing. */
   createEffect(clip, (currentClip) => {

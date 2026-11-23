@@ -415,11 +415,13 @@ export default function WelcomeGuide() {
   createEffect(
     () => {
       const parts = step()?.parts;
-      return parts?.length
-        ? activePart(parts, untrack(reachedPart))
-        : undefined;
+      return {
+        part: parts?.length
+          ? activePart(parts, untrack(reachedPart))
+          : undefined,
+      };
     },
-    (part) => {
+    ({ part }) => {
       if (part !== undefined) setReachedPart(part);
     },
   );

@@ -157,8 +157,8 @@ export function FlowNodeProperties(props: {
 
   /** Resets the label draft whenever the selected node or its label changes. */
   createEffect(
-    () => props.node()?.label ?? "",
-    (label) => {
+    () => ({ label: props.node()?.label ?? "" }),
+    ({ label }) => {
       setLabelDraft(label);
     },
   );
