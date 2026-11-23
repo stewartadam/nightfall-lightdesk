@@ -366,7 +366,13 @@ export function LayerPanelController(props: BasePanelComponentProps) {
 
   /** Opens the layer object a navigation request points at once layers have loaded. */
   createEffect(
-    () => ({ request: $layerObjectNavigationRequest(), layers: $layersRaw() }),
+    () => {
+      const request = $layerObjectNavigationRequest();
+      return {
+        request: request ? { ...request } : undefined,
+        layers: $layersRaw(),
+      };
+    },
     ({ request, layers }) => {
       if (!request || layers.length === 0) {
         return;

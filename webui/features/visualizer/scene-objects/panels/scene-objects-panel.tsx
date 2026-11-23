@@ -634,7 +634,7 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     () => {
       const request = $sceneObjectNavigationRequest();
       return request
-        ? { request, rows: rows(), displayRows: displayRows() }
+        ? { request: { ...request }, rows: rows(), displayRows: displayRows() }
         : undefined;
     },
     (navigation) => {

@@ -126,9 +126,15 @@ export default function ColorPathPanel(props: BasePanelComponentProps) {
   );
 
   /** Refreshes the edit draft when the selected persisted path changes. */
-  createEffect(selectedPath, (path) => {
-    if (path) setDraft(cloneColorPath(path));
-  });
+  createEffect(
+    () => {
+      const path = selectedPath();
+      return path ? cloneColorPath(path) : undefined;
+    },
+    (copy) => {
+      if (copy) setDraft(copy);
+    },
+  );
 
   /** Selects and reveals a color path requested by the showfile object palette. */
   useRevealObjectCapability(

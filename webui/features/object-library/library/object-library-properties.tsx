@@ -181,7 +181,13 @@ const ObjectLibraryProperties: Component<ObjectLibraryPropertiesProps> = (
       const profile = $objectProfile();
       if (!selected || !profile || !sceneRef) return undefined;
       if (profile.info.name !== selected.name) return undefined;
-      return { selected, profile };
+      // Reads the fields the load uses, so a refreshed profile for the same object reloads it.
+      return {
+        selected,
+        profile,
+        modelPath: profile.info.modelPath,
+        scale: profile.metadata.scale,
+      };
     },
     (match) => {
       if (!match) return;

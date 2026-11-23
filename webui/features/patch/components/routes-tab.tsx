@@ -218,7 +218,7 @@ export default function DmxRoutesTab(props: DmxRoutesTabProps) {
     () => {
       const navigateRequest = props.navigateToRoute;
       return navigateRequest
-        ? { navigateRequest, rows: displayRows() }
+        ? { navigateRequest: { ...navigateRequest }, rows: displayRows() }
         : undefined;
     },
     (navigation) => {

@@ -198,12 +198,16 @@ function TelemetrySettings() {
    * any "keep a note of the prior ID" prompt for it is withdrawn.
    */
   createEffect(
-    () => ({ current: state(), resetting: resettingId() }),
-    ({ current, resetting }) => {
-      if (current.error) {
+    () => ({
+      error: state().error,
+      installId: state().install_id,
+      resetting: resettingId(),
+    }),
+    ({ error, installId, resetting }) => {
+      if (error) {
         setResettingId(undefined);
         setUncopiedId(undefined);
-      } else if (current.install_id !== resetting) {
+      } else if (installId !== resetting) {
         setResettingId(undefined);
       }
     },

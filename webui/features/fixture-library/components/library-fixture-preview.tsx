@@ -85,13 +85,17 @@ const LibraryFixturePreview: Component<LibraryFixturePreviewProps> = (
         asset_etag: props.assetEtag,
       });
 
-      return revisionMatches && modeMatches ? { profile } : undefined;
+      return revisionMatches && modeMatches
+        ? {
+            fixture: profile.fixture ?? null,
+            geometry: profile.geometry ?? null,
+          }
+        : undefined;
     },
     (match) => {
       if (!match) return;
-      const { profile } = match;
-      setFixture(profile.fixture ?? null);
-      setGeometry(profile.geometry ?? null);
+      setFixture(match.fixture);
+      setGeometry(match.geometry);
     },
   );
 

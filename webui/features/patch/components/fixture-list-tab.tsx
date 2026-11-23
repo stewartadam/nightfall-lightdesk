@@ -866,7 +866,7 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
       const request = revealRequest();
       return request
         ? {
-            request,
+            request: { ...request },
             rows: rows(),
             displayRows: displayRows(),
             displayColumns: displayColumns(),

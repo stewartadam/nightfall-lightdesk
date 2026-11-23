@@ -123,7 +123,8 @@ export const BeatgridControls = (props: BeatgridControlsProps) => {
 
   /** Remembers which detection request a manual Detect press started. */
   createEffect(
-    () => (awaitingManualDetectionStart() ? detectionStatus() : undefined),
+    () =>
+      awaitingManualDetectionStart() ? { ...detectionStatus() } : undefined,
     (status) => {
       if (status?.phase !== "detecting" || !status.requestId) return;
 
@@ -135,8 +136,8 @@ export const BeatgridControls = (props: BeatgridControlsProps) => {
   /** Applies the proposal of a manually started detection once it is ready. */
   createEffect(
     () => ({
-      proposal: beatgridProposal(),
-      status: detectionStatus(),
+      proposal: beatgridProposal() ? { ...beatgridProposal() } : undefined,
+      status: { ...detectionStatus() },
       timelineValue: timeline(),
       pendingRequestId: pendingManualDetectionRequestId(),
       lastAppliedRequestId: lastAppliedDetectionRequestId(),
@@ -176,7 +177,7 @@ export const BeatgridControls = (props: BeatgridControlsProps) => {
   /** Ends a manual detection that failed, whether or not it had started. */
   createEffect(
     () => ({
-      status: detectionStatus(),
+      status: { ...detectionStatus() },
       pendingRequestId: pendingManualDetectionRequestId(),
       awaiting: awaitingManualDetectionStart(),
     }),

@@ -131,17 +131,20 @@ function useDocumentAppearance(): void {
   const appearance = useStore(appearanceSettings);
 
   /** Mirrors the appearance settings onto the document's CSS variables and data attributes. */
-  createEffect(appearance, (current) => {
-    document.documentElement.style.setProperty("--accent", current.accent);
-    document.body.dataset.tabAlignment = current.tabAlignment;
-    document.body.dataset.muteUnfocusedAccents = String(
-      current.muteUnfocusedAccents,
-    );
-    document.documentElement.style.setProperty(
-      "--data-grid-column-border",
-      current.gridlines ? "#ffffff18" : "transparent",
-    );
-  });
+  createEffect(
+    () => ({ ...appearance() }),
+    (current) => {
+      document.documentElement.style.setProperty("--accent", current.accent);
+      document.body.dataset.tabAlignment = current.tabAlignment;
+      document.body.dataset.muteUnfocusedAccents = String(
+        current.muteUnfocusedAccents,
+      );
+      document.documentElement.style.setProperty(
+        "--data-grid-column-border",
+        current.gridlines ? "#ffffff18" : "transparent",
+      );
+    },
+  );
 }
 
 /** Renders the fixture editor window, which loads no workspace shell or startup flow. */

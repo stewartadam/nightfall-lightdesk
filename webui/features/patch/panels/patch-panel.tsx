@@ -183,11 +183,17 @@ export default function PatchPanel(props: PatchPanelProps) {
   };
 
   /** Shows the routes tab, ungrouped, when another surface asks to reveal a route. */
-  createEffect($dmxRouteNavigationRequest, (request) => {
-    if (!request) return;
-    setRoutesGroupBy("none");
-    setActiveTab("routes");
-  });
+  createEffect(
+    () => {
+      const request = $dmxRouteNavigationRequest();
+      return request ? { ...request } : undefined;
+    },
+    (request) => {
+      if (!request) return;
+      setRoutesGroupBy("none");
+      setActiveTab("routes");
+    },
+  );
 
   const isStrictOverlapValidation = () =>
     $routeValidationSettings().mode === "Strict";

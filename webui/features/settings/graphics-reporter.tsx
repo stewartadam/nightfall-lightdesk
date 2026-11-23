@@ -77,19 +77,21 @@ export function GraphicsReporter() {
   createEffect(
     () =>
       connectionStatus() === EngineRuntimeStatus.Connected
-        ? state()
+        ? {
+            available: state().available,
+            shareUsage: state().consent.share_usage,
+          }
         : undefined,
     (current) => {
       if (!current) {
         reportedForConnection = false;
         return;
       }
-      const { available, consent } = current;
       if (
         reportedForConnection ||
         !isTauriRuntime() ||
-        !available ||
-        !consent.share_usage
+        !current.available ||
+        !current.shareUsage
       ) {
         return;
       }

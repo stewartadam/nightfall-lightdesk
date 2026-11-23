@@ -277,7 +277,9 @@ export function LayerViewController(props: LayerViewProps) {
   /** Opens this layer, expands the requested fixture and selects its row for a navigation request. */
   createEffect(
     () => ({
-      request: props.navigationRequest,
+      request: props.navigationRequest
+        ? { ...props.navigationRequest }
+        : undefined,
       matches: props.navigationRequest?.layerIndex === layerIndex(),
       rows: displayRows(),
     }),

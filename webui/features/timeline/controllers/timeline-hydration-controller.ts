@@ -208,14 +208,21 @@ export function createTimelineHydrationController(
   });
 
   /** Stops local playback when the backend broadcasts a newer stop event. */
-  createEffect($timelineStopEvent, (stopEvent) => {
-    if (!stopEvent || stopEvent.revision <= handledTimelineStopRevision) return;
-    handledTimelineStopRevision = stopEvent.revision;
-    const timeline = $timelines()?.[options.timelineUid];
-    if (timeline?.identifiers.id === stopEvent.timelineId) {
-      playback.stopLocalPlaybackState();
-    }
-  });
+  createEffect(
+    () => {
+      const stopEvent = $timelineStopEvent();
+      return stopEvent ? { ...stopEvent } : undefined;
+    },
+    (stopEvent) => {
+      if (!stopEvent || stopEvent.revision <= handledTimelineStopRevision)
+        return;
+      handledTimelineStopRevision = stopEvent.revision;
+      const timeline = $timelines()?.[options.timelineUid];
+      if (timeline?.identifiers.id === stopEvent.timelineId) {
+        playback.stopLocalPlaybackState();
+      }
+    },
+  );
 
   /**
    * Mirrors the timeline into the local editing signals whenever the engine's copy or this

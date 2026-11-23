@@ -108,10 +108,10 @@ export function StartupController(props: StartupControllerProps) {
   /** Advances startup UI from backend state without implicitly loading showfiles. */
   createEffect(
     () => ({
-      state: lifecycle(),
+      state: { ...lifecycle() },
       backendState: effectiveBackendAppState(),
       connected: connectionStatus() === EngineRuntimeStatus.Connected,
-      backupState: backup(),
+      backupState: { ...backup() },
       continuedAsPrimary: continuedAsPrimary(),
       resynced: resyncComplete(),
       backupRoleWaited: backupRoleWaitOver(),

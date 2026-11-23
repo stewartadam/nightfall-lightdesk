@@ -465,7 +465,7 @@ export function createSequenceListController(
       const request = $sequenceNavigationRequest();
       return request
         ? {
-            request,
+            request: { ...request },
             allRows: allDisplayRows(),
             visibleRows: displayRows(),
             filtering: search.isFiltering(),

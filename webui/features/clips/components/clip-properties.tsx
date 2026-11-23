@@ -80,27 +80,36 @@ export default function ClipProperties(props: ClipPropertiesProps) {
   }));
 
   /** Resets the source kind picker to the stored source's kind whenever it changes. */
-  createEffect(source, (currentSource) => {
-    setSourceKind(currentSource?.type ?? "Sequence");
-  });
+  createEffect(
+    () => ({ clip: clip(), kind: source()?.type ?? "Sequence" }),
+    ({ kind }) => {
+      setSourceKind(kind);
+    },
+  );
 
   /** Keeps the clip label draft aligned outside active typing. */
-  createEffect(clip, (currentClip) => {
-    if (document.activeElement?.getAttribute("aria-label") === "Clip label") {
-      return;
-    }
-    setDraftLabel(currentClip?.identifiers.label ?? "");
-  });
+  createEffect(
+    () => ({ label: clip()?.identifiers.label ?? "" }),
+    ({ label }) => {
+      if (document.activeElement?.getAttribute("aria-label") === "Clip label") {
+        return;
+      }
+      setDraftLabel(label);
+    },
+  );
 
   /** Keeps the clip priority draft aligned outside active numeric edits. */
-  createEffect(clip, (currentClip) => {
-    if (
-      document.activeElement?.getAttribute("aria-label") === "Clip priority"
-    ) {
-      return;
-    }
-    setDraftPriority(String(currentClip?.priority ?? 0));
-  });
+  createEffect(
+    () => ({ priority: String(clip()?.priority ?? 0) }),
+    ({ priority }) => {
+      if (
+        document.activeElement?.getAttribute("aria-label") === "Clip priority"
+      ) {
+        return;
+      }
+      setDraftPriority(priority);
+    },
+  );
 
   const sendClipCommand = (command: types.ClipCommand) => {
     commandClient.emit("ClipCommand", command);

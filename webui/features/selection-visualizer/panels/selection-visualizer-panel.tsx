@@ -142,16 +142,19 @@ export default function SelectionVisualizerPanel() {
 
   /** Keep the selected step and z layer inside the resolved selection bounds. */
   createEffect(
-    () => ({
-      resolved: $resolvedSelection(),
-      step: activeStep(),
-      z: activeZ(),
-    }),
-    ({ resolved, step, z }) => {
-      const nextStep = clampSelectionStep(step, resolved);
+    () => {
+      const resolved = $resolvedSelection();
+      const step = activeStep();
+      return {
+        step,
+        nextStep: clampSelectionStep(step, resolved),
+        layers: listSelectionZLayers(resolved),
+        z: activeZ(),
+      };
+    },
+    ({ step, nextStep, layers, z }) => {
       if (nextStep !== step) setActiveStep(nextStep);
 
-      const layers = listSelectionZLayers(resolved);
       if (layers.length === 0) {
         if (z !== 0) setActiveZ(0);
         return;

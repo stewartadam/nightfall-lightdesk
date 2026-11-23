@@ -203,13 +203,22 @@ export function createBoardPanelController(
   let savedBoardUid = options.initialBoardUid;
 
   /** Persists the shown board in the saved layout and names the tab after it. */
-  createEffect(board, (current) => {
-    options.panelApi?.setTitle(current ? boardDisplayName(current) : "Board");
-    if (current && current.identifiers.uid !== savedBoardUid) {
-      savedBoardUid = current.identifiers.uid;
-      options.panelApi?.updateParameters({ boardId: savedBoardUid });
-    }
-  });
+  createEffect(
+    () => {
+      const current = board();
+      return {
+        title: current ? boardDisplayName(current) : "Board",
+        uid: current?.identifiers.uid,
+      };
+    },
+    ({ title, uid }) => {
+      options.panelApi?.setTitle(title);
+      if (uid && uid !== savedBoardUid) {
+        savedBoardUid = uid;
+        options.panelApi?.updateParameters({ boardId: savedBoardUid });
+      }
+    },
+  );
 
   /** Drops the element selection, pop-outs and paste spot when edit mode ends. */
   createEffect(editing, (isEditing) => {

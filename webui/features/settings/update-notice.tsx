@@ -90,7 +90,7 @@ export function UpdateNotice() {
    * end of a running snooze. A fresh object on every change reconsiders both notices.
    */
   const noticeInputs = () => ({
-    current: update(),
+    current: update() ? { ...update() } : update(),
     snoozes: snoozes(),
     snoozeEnded: snoozeEnded(),
   });
