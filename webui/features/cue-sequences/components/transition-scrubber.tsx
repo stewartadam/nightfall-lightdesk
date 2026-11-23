@@ -14,13 +14,13 @@ import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   onCleanup,
   Show,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
+import { createAsyncValue } from "../../../lib/async-value";
 import { seekPreviewInstance } from "../../../lib/cue-service";
 import { calculateCueTransitionDurations } from "../../../lib/cue-timing-values";
 import { getLogger } from "../../../lib/logger";
@@ -39,7 +39,7 @@ export function TransitionScrubber(props: {
 }) {
   const [now, setNow] = createSignal(Date.now());
   const [pendingPosition, setPendingPosition] = createSignal<number>();
-  const [durations] = createResource(
+  const durations = createAsyncValue(
     () => props.cue,
     calculateCueTransitionDurations,
   );
@@ -49,7 +49,7 @@ export function TransitionScrubber(props: {
   let sending = false;
 
   /** Resolves the complete transition span, including per-fixture and part timing. */
-  const duration = createMemo(() => durations()?.totalDuration ?? 0);
+  const duration = createMemo(() => durations.value()?.totalDuration ?? 0);
   /** Follows authoritative preview time unless a newer drag position is pending. */
   const position = createMemo(() =>
     Math.min(

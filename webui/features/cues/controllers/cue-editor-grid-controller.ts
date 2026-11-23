@@ -10,11 +10,11 @@ import {
   type Accessor,
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   onCleanup,
 } from "solid-js";
 import { createKeyedDataGridCellProvider } from "../../../components/widgets/data-grid";
+import { createAsyncValue } from "../../../lib/async-value";
 import { sortedAttributes } from "../../../lib/attribute-ordering";
 import { isColorPathDrivenAttribute } from "../../../lib/color-path-driven-attributes";
 import { TIMING_COLUMNS } from "../../../lib/cue-timing-values";
@@ -163,7 +163,7 @@ export function createCueEditorGridController(
   });
 
   /** Derives visible cue grid rows from Rust-projected spatial timing indexes. */
-  const [processedData] = createResource(
+  const processedData = createAsyncValue(
     processedDataInput,
     async (input) => {
       if (!input.cue || input.fixtures.length === 0) {
@@ -198,7 +198,7 @@ export function createCueEditorGridController(
   );
 
   /** Returns the current flattened grid row list. */
-  const flatRows = () => processedData().flatRows;
+  const flatRows = () => processedData.value().flatRows;
 
   /** Returns whether the editor should show its toolbar despite an empty grid. */
   const canShowEmptyCueToolbar = () =>

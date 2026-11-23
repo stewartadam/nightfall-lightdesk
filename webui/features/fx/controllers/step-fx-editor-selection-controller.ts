@@ -9,12 +9,11 @@
 import {
   type Accessor,
   batch,
-  createComputed,
   createEffect,
   createMemo,
   createSignal,
 } from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
+import { createProjection } from "../../../lib/solid-compat";
 import type * as types from "../../../types";
 import {
   type StepFxTrackKind,
@@ -93,17 +92,16 @@ export function createStepFxEditorSelectionController(
     return lane ? stepFxTrack(lane, trackKind()) : undefined;
   });
 
-  const [stepRows, setStepRows] = createStore<types.FxStep[]>([]);
   /**
    * Mirrors the active track's steps into a uid-keyed store. Every edit clones
    * the draft, so rendering the cloned objects directly would remount each
    * sheet row and drop keyboard focus from its controls after every change.
    */
-  createComputed(() =>
-    setStepRows(
-      // Cloned so reconcile never mutates step objects owned by earlier drafts.
-      reconcile(structuredClone(activeTrack()?.steps ?? []), { key: "uid" }),
-    ),
+  const stepRows = createProjection<types.FxStep[]>(
+    // Cloned so reconcile never mutates step objects owned by earlier drafts.
+    () => structuredClone(activeTrack()?.steps ?? []),
+    [],
+    { key: "uid" },
   );
 
   /** Keeps step selection valid when lanes, tracks, or rows change. */

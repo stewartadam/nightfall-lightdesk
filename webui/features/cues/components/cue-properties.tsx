@@ -9,7 +9,6 @@
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   For,
   Match,
@@ -22,6 +21,7 @@ import { v4 as uuidv4 } from "uuid";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
+import { createAsyncValue } from "../../../lib/async-value";
 import { calculateCueTransitionDurations } from "../../../lib/cue-timing-values";
 import {
   durationToMs,
@@ -411,7 +411,7 @@ export default function CueProperties() {
   };
 
   /** Calculates the resolved timing spans for the active cue. */
-  const [cueTransitionDurations] = createResource(
+  const cueTransitionDurations = createAsyncValue(
     () => {
       const loadingState = ctx.loadingState();
       return {
@@ -422,24 +422,28 @@ export default function CueProperties() {
     { initialValue: emptyCueTransitionDurations },
   );
   /** Returns the longest in-transition span for the active cue. */
-  const inDuration = createMemo(() => cueTransitionDurations().inDuration);
+  const inDuration = createMemo(
+    () => cueTransitionDurations.value().inDuration,
+  );
   /** Returns the longest out-transition span for the active cue. */
-  const outDuration = createMemo(() => cueTransitionDurations().outDuration);
+  const outDuration = createMemo(
+    () => cueTransitionDurations.value().outDuration,
+  );
   /** Returns the duration used by the properties progress indicator. */
   const totalDuration = createMemo(
-    () => cueTransitionDurations().totalDuration,
+    () => cueTransitionDurations.value().totalDuration,
   );
   /** Returns the delay segment shown in the transition duration bar. */
   const timelineDelayValue = createMemo(() =>
     outDuration() > inDuration()
-      ? cueTransitionDurations().delayOut
-      : cueTransitionDurations().delayIn,
+      ? cueTransitionDurations.value().delayOut
+      : cueTransitionDurations.value().delayIn,
   );
   /** Returns the fade segment shown in the transition duration bar. */
   const timelineFadeValue = createMemo(() =>
     outDuration() > inDuration()
-      ? cueTransitionDurations().fadeOut
-      : cueTransitionDurations().fadeIn,
+      ? cueTransitionDurations.value().fadeOut
+      : cueTransitionDurations.value().fadeIn,
   );
   /** Returns the delay segment width as a percentage of total transition time. */
   const timelineDelayPercentage = createMemo(() => {

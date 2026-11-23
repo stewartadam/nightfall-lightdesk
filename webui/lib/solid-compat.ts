@@ -16,10 +16,12 @@
  */
 
 import {
+  createComputed,
   createEffect as createSolidEffect,
   onCleanup,
   untrack,
 } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 
 /** Side effect half of a two-function effect; may return a cleanup. */
 export type EffectFunction<Next, Prev = Next> = (
@@ -95,4 +97,36 @@ export function createEffect<Next>(
       cleanup = typeof next === "function" ? next : undefined;
     });
   });
+}
+
+/** Options shared by the 1.x shim and Solid 2.0's `createProjection`. */
+export type ProjectionOptions = {
+  /** Property that identifies array items, so reconciling keeps their identity. */
+  key?: string;
+};
+
+/**
+ * Creates a read-only store that mirrors the value `fn` derives.
+ *
+ * `fn` is tracked and returns the next value, which is reconciled into the
+ * store so unchanged items keep their identity and readers of unchanged keys
+ * don't update. Use it instead of an effect that copies derived data into a
+ * store.
+ *
+ * This matches the returned-value form of Solid 2.0's `createProjection`.
+ * `fn` must return a fresh value rather than objects owned elsewhere, since
+ * reconciling adopts them into the store.
+ */
+export function createProjection<Value extends object>(
+  fn: () => Value,
+  seed: Value,
+  options?: ProjectionOptions,
+): Value {
+  const [state, setState] = createStore<Value>(seed);
+  /** Reconciles each derived value into the store before readers run. */
+  createComputed(() => {
+    const next = fn();
+    setState(reconcile(next, { key: options?.key ?? "id" }));
+  });
+  return state;
 }

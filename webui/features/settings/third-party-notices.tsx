@@ -6,9 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { Collapsible } from "../../components/ui/collapsible";
 import { Button } from "../../components/ui/visual-language/button";
+import { createAsyncValueOnce } from "../../lib/async-value";
 import { getLogger } from "../../lib/logger";
 
 interface Notice {
@@ -43,9 +44,11 @@ async function fetchNotices(): Promise<NoticesDocument> {
 /** Present searchable component attributions while keeping long license texts collapsed. */
 export default function ThirdPartyNotices() {
   const [query, setQuery] = createSignal("");
-  const [document, { refetch }] = createResource(fetchNotices);
+  const notices = createAsyncValueOnce(fetchNotices);
   /** Keep recoverable loading failures inside the dialog instead of the app error boundary. */
-  const loaded = createMemo(() => (document.error ? undefined : document()));
+  const loaded = createMemo(() =>
+    notices.error() ? undefined : notices.value(),
+  );
   /** Match package names, licenses, source URLs, and copyright holders. */
   const entries = createMemo(() => {
     const needle = query().trim().toLocaleLowerCase();
@@ -58,16 +61,16 @@ export default function ThirdPartyNotices() {
 
   /** Retry a failed resource request and record the failure through the app logger. */
   function retry() {
-    log.warn("Retrying third-party notice loading", { error: document.error });
-    void refetch();
+    log.warn("Retrying third-party notice loading", { error: notices.error() });
+    notices.refetch();
   }
 
   return (
     <div class="space-y-3">
-      <Show when={document.loading}>
+      <Show when={notices.loading()}>
         <p role="status">Loading third-party notices…</p>
       </Show>
-      <Show when={document.error}>
+      <Show when={notices.error()}>
         <p role="alert">Third-party notices could not be loaded.</p>
         <Button size="compact" onClick={retry}>
           Retry

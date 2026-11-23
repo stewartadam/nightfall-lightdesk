@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createDraggable } from "@neodrag/solid";
 import {
   createMemo,
   createSignal,
@@ -24,6 +23,7 @@ import {
 } from "../../components/ui/modal/dialog-stack";
 import { Button } from "../../components/ui/visual-language/button";
 import { hasDiskStorage } from "../../lib/disk-storage";
+import { draggable } from "../../lib/draggable";
 import { getLogger } from "../../lib/logger";
 import {
   type PanelComponentName,
@@ -585,8 +585,6 @@ export default function WelcomeGuide() {
     const timer = setTimeout(() => setRevealPending(false), REVEAL_TIMEOUT_MS);
     onCleanup(() => clearTimeout(timer));
   });
-  const { draggable } = createDraggable();
-  void draggable;
   /** Locates the drag source by sample clip identity in either card or list view. */
   const clipHighlightSelector = createMemo(() => {
     const id = step()?.highlightClipId;
@@ -785,19 +783,21 @@ export default function WelcomeGuide() {
   /** The card itself, docked beside the app for the lesson library and floating during lessons. */
   const cardView = () => (
     <aside
-      ref={setCard}
+      ref={(node) => {
+        setCard(node);
+        draggable(() => ({
+          disabled: !lesson(),
+          handle: ".nf-guide-move",
+          position: lesson() ? floating.position() : { x: 0, y: 0 },
+          bounds: { left: 12, right: 12, top: 12, bottom: 12 },
+          onDrag: ({ offsetX, offsetY }) =>
+            floating.move({ x: offsetX, y: offsetY }),
+        }))(node);
+      }}
       class="nf-welcome-guide"
       classList={{
         "nf-guide-floating": Boolean(lesson()) || revealPending(),
         "nf-guide-revealing": revealPending(),
-      }}
-      use:draggable={{
-        disabled: !lesson(),
-        handle: ".nf-guide-move",
-        position: lesson() ? floating.position() : { x: 0, y: 0 },
-        bounds: { left: 12, right: 12, top: 12, bottom: 12 },
-        onDrag: ({ offsetX, offsetY }) =>
-          floating.move({ x: offsetX, y: offsetY }),
       }}
       aria-label="Welcome guide"
       data-testid="welcome-guide"

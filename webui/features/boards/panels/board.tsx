@@ -6,14 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createResource, Match, Switch } from "solid-js";
-import { getLogger } from "../../../lib/logger";
+import { Match, Switch } from "solid-js";
+import { createAsyncValueOnce } from "../../../lib/async-value";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { BoardPanelView } from "../components/board-panel-view";
 import { createBoardPanelController } from "../controllers/board-panel-controller";
 import { loadBoardPlacement } from "../model/board-placement";
-
-const log = getLogger(import.meta.url);
 
 export interface BoardPanelProps extends BasePanelComponentProps {
   /** UID of the board this panel instance showed when the layout was saved. */
@@ -35,18 +33,13 @@ function LoadedBoardPanel(props: BoardPanelProps) {
  * every edit the panel offers is checked against them.
  */
 export default function BoardPanel(props: BoardPanelProps) {
-  const [placement] = createResource(() =>
-    loadBoardPlacement().catch((error: unknown) => {
-      log.error("Failed to load board placement rules:", error);
-      throw error;
-    }),
-  );
+  const placement = createAsyncValueOnce(loadBoardPlacement);
   return (
     <Switch>
-      <Match when={placement.state === "ready"}>
+      <Match when={placement.ready()}>
         <LoadedBoardPanel {...props} />
       </Match>
-      <Match when={placement.state === "errored"}>
+      <Match when={placement.error() !== undefined}>
         <div class="p-4 text-neutral-500">
           This board could not load. Reload the page to try again.
         </div>

@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createDraggable } from "@neodrag/solid";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import {
@@ -20,6 +19,7 @@ import {
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import { focusTrackedComponent } from "../../../lib/componentFocusContext";
+import { draggable } from "../../../lib/draggable";
 import { getLogger } from "../../../lib/logger";
 import { REVEAL_OBJECT_CAPABILITY } from "../../../lib/panel-capabilities";
 import {
@@ -232,9 +232,6 @@ export const Action = (props: ActionProps & { trackId: string }) => {
       ),
     );
   });
-
-  const { draggable } = createDraggable();
-  void draggable;
 
   /** Returns the flag start position for the current drag pointer. */
   const dragPositionFromPointer = (
@@ -573,7 +570,6 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     <>
       {/** biome-ignore lint/a11y/useKeyWithClickEvents: TODO: keyboard movement not supported yet */}
       <div
-        ref={elementRef}
         data-component="Action"
         data-timeline-action="true"
         data-track-id={props.trackId}
@@ -582,57 +578,60 @@ export const Action = (props: ActionProps & { trackId: string }) => {
         data-drag-preview={props.isDragPreview ? "true" : undefined}
         data-selected={isSelected() ? "true" : "false"}
         tabIndex={-1}
-        use:draggable={{
-          disabled: props.isDragPreview === true,
-          axis: "both",
-          grid: [1, 1],
-          bounds: { left: 0 },
-          transform: () => "translate3d(0px, 0px, 0px)",
-          onDragStart: () => {
-            if (props.isDragPreview) return;
-            dragSession = pendingDragSession ?? createDragSession();
-            pendingDragSession = undefined;
-            lastDragPreview = undefined;
-            setIsDragging(true);
-            startEscapeDragListener();
-          },
-          onDrag: ({ event }) => {
-            if (!dragSession || dragSession.canceled) return;
-            const preview = dragPreviewFromPointer(event);
-            if (preview) {
-              lastDragPreview = preview;
-              props.onDragPreview?.(preview);
-            }
-          },
-          onDragEnd: (data) => {
-            const session = dragSession;
-            const preview =
-              session && !session.canceled
-                ? (dragPreviewFromPointer(data.event) ?? lastDragPreview)
-                : undefined;
-            setIsDragging(false);
-            finishDragInteraction(data.event);
-            props.onDragPreviewClear?.();
-            removeEscapeDragListener?.();
-            pendingDragSession = undefined;
-            dragSession = undefined;
-            lastDragPreview = undefined;
+        ref={(node) => {
+          elementRef = node;
+          draggable(() => ({
+            disabled: props.isDragPreview === true,
+            axis: "both",
+            grid: [1, 1],
+            bounds: { left: 0 },
+            transform: () => "translate3d(0px, 0px, 0px)",
+            onDragStart: () => {
+              if (props.isDragPreview) return;
+              dragSession = pendingDragSession ?? createDragSession();
+              pendingDragSession = undefined;
+              lastDragPreview = undefined;
+              setIsDragging(true);
+              startEscapeDragListener();
+            },
+            onDrag: ({ event }) => {
+              if (!dragSession || dragSession.canceled) return;
+              const preview = dragPreviewFromPointer(event);
+              if (preview) {
+                lastDragPreview = preview;
+                props.onDragPreview?.(preview);
+              }
+            },
+            onDragEnd: (data) => {
+              const session = dragSession;
+              const preview =
+                session && !session.canceled
+                  ? (dragPreviewFromPointer(data.event) ?? lastDragPreview)
+                  : undefined;
+              setIsDragging(false);
+              finishDragInteraction(data.event);
+              props.onDragPreviewClear?.();
+              removeEscapeDragListener?.();
+              pendingDragSession = undefined;
+              dragSession = undefined;
+              lastDragPreview = undefined;
 
-            if (!session || session.canceled) {
-              return;
-            }
+              if (!session || session.canceled) {
+                return;
+              }
 
-            if (!preview) return;
+              if (!preview) return;
 
-            ctx.actions.repositionActions(
-              preview.actions.map((action) => ({
-                trackId: action.sourceTrackId,
-                actionId: action.actionId,
-                newPosition: action.positionMs,
-                newTrackId: action.trackId,
-              })),
-            );
-          },
+              ctx.actions.repositionActions(
+                preview.actions.map((action) => ({
+                  trackId: action.sourceTrackId,
+                  actionId: action.actionId,
+                  newPosition: action.positionMs,
+                  newTrackId: action.trackId,
+                })),
+              );
+            },
+          }))(node);
         }}
         class={`absolute top-0 bottom-0 select-none outline-none focus:outline-none focus-visible:outline-none ${
           props.isDragPreview

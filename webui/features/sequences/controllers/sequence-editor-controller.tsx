@@ -10,7 +10,6 @@ import type { DockviewPanelApi } from "dockview";
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   Match,
   onCleanup,
@@ -19,6 +18,7 @@ import {
 } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { EmptyState } from "../../../components/ui/empty-state";
+import { createAsyncValue } from "../../../lib/async-value";
 import type {
   GridColumn,
   GridSelection,
@@ -196,7 +196,7 @@ export function SequenceEditorController(props: {
   );
 
   /** Stores async conflict IDs keyed by cue UID for visible sequence rows. */
-  const [cuePartConflictIdsByCueUid] = createResource(
+  const cuePartConflictIdsByCueUid = createAsyncValue(
     cuePartConflictInput,
     async (cueRows) => {
       const entries: Array<[string, Set<number>]> = [];
@@ -217,7 +217,7 @@ export function SequenceEditorController(props: {
   }));
 
   /** Stores Rust-computed sequence start offsets and duration values for cue rows. */
-  const [durationSummary] = createResource(
+  const durationSummary = createAsyncValue(
     sequenceDurationSummaryInput,
     ({ cueRows, sequence, cueDurationProfiles }) =>
       sequenceDurationSummary(cueRows, sequence, cueDurationProfiles),
@@ -234,8 +234,8 @@ export function SequenceEditorController(props: {
     const sequence = ctx.sequence();
     const defaultTiming = sequence?.default_timing;
     const expanded = expandedCueUids();
-    const conflictIdsByCueUid = cuePartConflictIdsByCueUid();
-    const currentDurationSummary = durationSummary();
+    const conflictIdsByCueUid = cuePartConflictIdsByCueUid.value();
+    const currentDurationSummary = durationSummary.value();
     const lookaheadStatesByRowKey = sequenceLookaheadRowsByKey(
       sequence
         ? $sequenceLookaheadStates()[sequence.identifiers.uid]
@@ -353,7 +353,7 @@ export function SequenceEditorController(props: {
     context: ctx,
     rows,
     columns,
-    cuePartConflictIdsByCueUid,
+    cuePartConflictIdsByCueUid: cuePartConflictIdsByCueUid.value,
   });
 
   const handlePriorityKeyDown = (event: KeyboardEvent) => {

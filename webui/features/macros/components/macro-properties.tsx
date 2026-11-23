@@ -12,7 +12,6 @@ import { StopIcon } from "@squidlab/phosphor-solid/stop";
 import {
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   For,
   onCleanup,
@@ -21,6 +20,7 @@ import {
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, Textarea } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
+import { createAsyncValue } from "../../../lib/async-value";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { macroRuns, macros } from "../../../state/appStores";
 import type { Macro } from "../../../types";
@@ -190,7 +190,7 @@ function CommandBodyField(props: CommandBodyFieldProps) {
   onCleanup(() => scheduleCheck.clear());
   /** Re-checks the body once typing pauses, so the grammar isn't run on every keystroke. */
   createEffect(() => scheduleCheck(props.draft.value()));
-  const [problems] = createResource(checkedBody, findMacroBodyProblems, {
+  const problems = createAsyncValue(checkedBody, findMacroBodyProblems, {
     initialValue: [],
   });
   return (
@@ -201,7 +201,7 @@ function CommandBodyField(props: CommandBodyFieldProps) {
           density="compact"
           ref={props.draft.ref}
           aria-label={props.ariaLabel}
-          aria-invalid={problems.latest.length > 0}
+          aria-invalid={problems.value().length > 0}
           class="mt-1 min-h-24 w-full font-mono text-xs"
           spellcheck={false}
           autocapitalize="off"
@@ -224,12 +224,12 @@ function CommandBodyField(props: CommandBodyFieldProps) {
         />
       </label>
       <p class="text-xs text-neutral-500">{props.hint}</p>
-      <Show when={problems.latest.length > 0}>
+      <Show when={problems.value().length > 0}>
         <ul
           class="space-y-0.5 text-xs text-amber-300"
           data-macro-body-problems={props.ariaLabel}
         >
-          <For each={problems.latest}>
+          <For each={problems.value()}>
             {(problem) => (
               <li>
                 Line {problem.line} ({problem.statement}): {problem.message}
