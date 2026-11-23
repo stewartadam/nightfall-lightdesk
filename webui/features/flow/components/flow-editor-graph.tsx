@@ -330,27 +330,16 @@ export default function FlowEditorGraphSolid(props: FlowEditorGraphProps) {
     const ops = buildDeleteNodeOps(nodeId, flow);
     sendDelta(ops);
 
+    // One write per store, so no step reads a store it has just written.
     batch(() => {
-      // Remove edges connected to this node
-      const edgeIndicesToRemove: number[] = [];
-      edges.forEach((edge, i) => {
-        if (
-          edge.data?.edge?.from.node_id === nodeId ||
-          edge.data?.edge?.to.node_id === nodeId
-        ) {
-          edgeIndicesToRemove.push(i);
-        }
-      });
-      // Remove in reverse order to maintain indices
-      for (let i = edgeIndicesToRemove.length - 1; i >= 0; i--) {
-        setEdges(produce((e) => e.splice(edgeIndicesToRemove[i], 1)));
-      }
-
-      // Remove the node
-      const nodeIndex = nodes.findIndex((n) => n.data.nodeId === nodeId);
-      if (nodeIndex !== -1) {
-        setNodes(produce((n) => n.splice(nodeIndex, 1)));
-      }
+      setEdges((current) =>
+        current.filter(
+          (edge) =>
+            edge.data?.edge?.from.node_id !== nodeId &&
+            edge.data?.edge?.to.node_id !== nodeId,
+        ),
+      );
+      setNodes((current) => current.filter((n) => n.data.nodeId !== nodeId));
     });
   };
 

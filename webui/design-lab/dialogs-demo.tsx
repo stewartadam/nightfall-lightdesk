@@ -51,8 +51,9 @@ export function DialogsDemo() {
     setBusy(true);
     saveTimer = setTimeout(() => {
       setBusy(false);
-      setName(draft().trim() || name());
-      close(`Saved sample: ${draft().trim() || name()}`);
+      const saved = draft().trim() || name();
+      setName(saved);
+      close(`Saved sample: ${saved}`);
     }, 1200);
   };
 

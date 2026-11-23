@@ -154,9 +154,10 @@ export default function PanelToolbar(props: PanelToolbarProps) {
   /**
    * Shows the "More actions" button while controls wrap past the first row,
    * clips the toolbar to that row, and takes the hidden controls out of the
-   * tab order so keyboard users only reach what they can see.
+   * tab order so keyboard users only reach what they can see. `wantExpanded`
+   * lets a caller that just changed `expanded` pass the value it wrote.
    */
-  function measure() {
+  function measure(wantExpanded = expanded()) {
     if (scrolls() || !toolbar.isConnected) return;
     // Decide without the room reserved for "More actions", so a toolbar folds
     // and unfolds at the same width, then read the rows as they lay out with it.
@@ -175,18 +176,19 @@ export default function PanelToolbar(props: PanelToolbarProps) {
     setEdge(
       `${style[`border${side}Width`]} ${style[`border${side}Style`]} ${style[`border${side}Color`]}`,
     );
-    if (!wraps) setExpanded(false);
+    let unfolded = wraps && wantExpanded;
     // A control that takes focus as it lands on a folded row, such as a
     // search field opening in place of its button, unfolds the rows so the
     // person keeps typing where they can see it.
     const focused = document.activeElement;
     if (
-      !expanded() &&
+      !unfolded &&
       focused instanceof Node &&
       rows.overflowed.some((item) => item.contains(focused))
     )
-      setExpanded(true);
-    const hide = new Set(expanded() ? [] : rows.overflowed);
+      unfolded = true;
+    setExpanded(unfolded);
+    const hide = new Set(unfolded ? [] : rows.overflowed);
     for (const item of hidden) {
       if (!hide.has(item)) item.inert = false;
     }
@@ -206,7 +208,7 @@ export default function PanelToolbar(props: PanelToolbarProps) {
     )
       moreButton?.focus();
     setExpanded(false);
-    measure();
+    measure(false);
   }
 
   createDismissable({
@@ -238,8 +240,9 @@ export default function PanelToolbar(props: PanelToolbarProps) {
    */
   onMount(() => {
     const overflow = getComputedStyle(toolbar).overflowX;
-    setScrolls(overflow === "auto" || overflow === "scroll");
-    if (scrolls()) return;
+    const scrollable = overflow === "auto" || overflow === "scroll";
+    setScrolls(scrollable);
+    if (scrollable) return;
     const resize = new ResizeObserver(schedule);
     resize.observe(toolbar);
     for (const group of toolbar.querySelectorAll(":scope > .nf-toolbar-group"))
