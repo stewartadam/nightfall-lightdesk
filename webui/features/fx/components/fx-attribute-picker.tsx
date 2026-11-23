@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { Input } from "../../../components/ui/form-controls";
 import {
   MenuItem,
@@ -16,6 +16,7 @@ import {
 import { Popover } from "../../../components/ui/popover";
 import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Button } from "../../../components/ui/visual-language/button";
+import { createEffect } from "../../../lib/solid-compat";
 
 /** Default common fixture attributes available for FX animation. Components
  * may provide a dynamic `availableAttributes` prop (derived from selected
@@ -126,31 +127,33 @@ export function FxAttributePicker(props: FxAttributePickerProps) {
   };
 
   /** Moves focus into the active search field whenever the menu opens. */
-  createEffect(() => {
-    if (isDropdownOpen()) {
-      queueMicrotask(() => {
-        searchInputRef?.focus();
-      });
-    }
-  });
-
-  /** Opens and selects search text in response to an editor shortcut request. */
-  createEffect(() => {
-    const request = props.focusSearchRequest;
-    if (!request) return;
-    setIsDropdownOpen(true);
+  createEffect(isDropdownOpen, (open) => {
+    if (!open) return;
     queueMicrotask(() => {
       searchInputRef?.focus();
-      searchInputRef?.select();
     });
   });
 
+  /** Opens and selects search text in response to an editor shortcut request. */
+  createEffect(
+    () => props.focusSearchRequest,
+    (request) => {
+      if (!request) return;
+      setIsDropdownOpen(true);
+      queueMicrotask(() => {
+        searchInputRef?.focus();
+        searchInputRef?.select();
+      });
+    },
+  );
+
   /** Dismisses the menu when its owning editor handles Escape elsewhere. */
-  createEffect(() => {
-    const request = props.dismissRequest;
-    if (!request) return;
-    dismiss();
-  });
+  createEffect(
+    () => props.dismissRequest,
+    (request) => {
+      if (request) dismiss();
+    },
+  );
 
   return (
     <div class="flex flex-col gap-2">

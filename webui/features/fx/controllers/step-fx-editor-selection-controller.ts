@@ -6,14 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  batch,
-  createEffect,
-  createMemo,
-  createSignal,
-} from "solid-js";
-import { createProjection } from "../../../lib/solid-compat";
+import { type Accessor, batch, createMemo, createSignal } from "solid-js";
+import { createEffect, createProjection } from "../../../lib/solid-compat";
 import type * as types from "../../../types";
 import {
   type StepFxTrackKind,
@@ -105,21 +99,25 @@ export function createStepFxEditorSelectionController(
   );
 
   /** Keeps step selection valid when lanes, tracks, or rows change. */
-  createEffect(() => {
-    const track = activeTrack();
-    const selectedIdentities = new Set(
-      Array.from(selectedStepUids(), stepFxStepSelectionIdentity),
-    );
-    const retained = new Set(
-      track?.steps
-        .filter((step) =>
-          selectedIdentities.has(stepFxStepSelectionIdentity(step.uid)),
-        )
-        .map((step) => step.uid) ?? [],
-    );
-    if (!stringSetsEqual(retained, selectedStepUids()))
-      setSelectedStepUids(retained);
-  });
+  createEffect(
+    () => {
+      const selected = selectedStepUids();
+      const selectedIdentities = new Set(
+        Array.from(selected, stepFxStepSelectionIdentity),
+      );
+      const retained = new Set(
+        activeTrack()
+          ?.steps.filter((step) =>
+            selectedIdentities.has(stepFxStepSelectionIdentity(step.uid)),
+          )
+          .map((step) => step.uid) ?? [],
+      );
+      return { selected, retained };
+    },
+    ({ selected, retained }) => {
+      if (!stringSetsEqual(retained, selected)) setSelectedStepUids(retained);
+    },
+  );
 
   /** Returns the row selection affected by a cell edit. */
   const editSelectionFor = (uid: string): Set<string> => {

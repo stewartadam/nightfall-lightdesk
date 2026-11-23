@@ -7,7 +7,7 @@
  */
 
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { Collapsible } from "../../../../components/ui/collapsible";
 import {
   DropdownMenu,
@@ -20,6 +20,7 @@ import {
   type SegmentedControlOption,
 } from "../../../../components/ui/segmented-control";
 import { Button } from "../../../../components/ui/visual-language/button";
+import { createEffect } from "../../../../lib/solid-compat";
 import type * as types from "../../../../types";
 import {
   type StepFxPositionUnit,
@@ -74,15 +75,17 @@ export function StepFxStartPositionControls(props: {
   /** Returns the direction sign currently applied to spread magnitude controls. */
   const spreadSign = (): -1 | 1 => (spreadValue() < 0 ? -1 : 1);
   /** Reports whether the open menu is actively exposing common spread controls. */
-  createEffect(() => {
-    props.onSpreadEditingChange(
-      props.open && stepFxStartPositionMode(props.phase) === "spread",
-    );
-  });
+  createEffect(
+    () => props.open && stepFxStartPositionMode(props.phase) === "spread",
+    (editing) => props.onSpreadEditingChange(editing),
+  );
   /** Reveals the advanced field before forwarding a shortcut focus request. */
-  createEffect(() => {
-    if (props.advancedFocusRequest > 0) setAdvancedOpen(true);
-  });
+  createEffect(
+    () => props.advancedFocusRequest,
+    (request) => {
+      if (request > 0) setAdvancedOpen(true);
+    },
+  );
   onCleanup(() => props.onSpreadEditingChange(false));
   /** Publishes a mode change using predictable defaults around the current start. */
   const setMode = (mode: StepFxStartPositionMode): void => {

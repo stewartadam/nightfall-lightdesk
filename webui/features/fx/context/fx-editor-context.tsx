@@ -10,7 +10,6 @@ import { debounce } from "@solid-primitives/scheduled";
 import {
   type Accessor,
   createContext,
-  createEffect,
   createSignal,
   type JSX,
   onCleanup,
@@ -32,6 +31,7 @@ import {
   fxWaveformToFlowWaveform,
 } from "../../../lib/fx-waveform";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { fx } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -168,37 +168,45 @@ export function FxEditorProvider(props: FxEditorProviderProps) {
   };
 
   // Convert stored Fx to internal format when UID changes or store updates
-  createEffect(() => {
-    const stored = $fx()[props.initialFxUid];
-    const pending = pendingSavedFx();
+  createEffect(
+    () => {
+      const stored = $fx()[props.initialFxUid];
+      if (!stored) return undefined;
+      const pending = pendingSavedFx();
+      // Avoid clobbering local editor state from stale store values immediately
+      // after save. Only resume store sync once backend/store reflect the save.
+      if (pending && !fxEquals(stored, pending)) return undefined;
 
-    // Avoid clobbering local editor state from stale store values immediately
-    // after save. Only resume store sync once backend/store reflect the save.
-    if (stored && pending) {
-      if (!fxEquals(stored, pending)) {
-        return;
-      }
-      setPendingSavedFx(undefined);
-    }
-
-    if (stored && !isDirty()) {
       // Convert FxWaveform attributes to FlowWaveform + is_relative
       const waveforms: Record<string, FlowWaveform> = {};
       const isRelative: Record<string, boolean> = {};
-
       for (const [attr, fxWaveform] of Object.entries(stored.attributes)) {
         waveforms[attr] = fxWaveformToFlowWaveform(fxWaveform);
         isRelative[attr] = fxWaveform.is_relative;
       }
-
+      return {
+        saveConfirmed: Boolean(pending),
+        dirty: isDirty(),
+        identifiers: stored.identifiers,
+        uid: stored.identifiers.uid,
+        waveforms,
+        isRelative,
+        selection: stored.selection,
+        timebase: stored.timebase ?? Timebase.Seconds,
+      };
+    },
+    (stored) => {
+      if (!stored) return;
+      if (stored.saveConfirmed) setPendingSavedFx(undefined);
+      if (stored.dirty) return;
       setLocalIdentifiers(stored.identifiers);
-      setLocalUid(stored.identifiers.uid);
-      setLocalWaveforms(waveforms);
-      setLocalIsRelative(isRelative);
+      setLocalUid(stored.uid);
+      setLocalWaveforms(stored.waveforms);
+      setLocalIsRelative(stored.isRelative);
       setLocalSelection(stored.selection);
-      setLocalTimebase(stored.timebase ?? Timebase.Seconds);
-    }
-  });
+      setLocalTimebase(stored.timebase);
+    },
+  );
 
   /** Build Fx from internal state (for preview/save) */
   const buildFx = (): types.Fx | undefined => {
@@ -223,40 +231,39 @@ export function FxEditorProvider(props: FxEditorProviderProps) {
   // Auto-start preview when FX is first loaded
   let hasInitialized = false;
 
-  createEffect(() => {
-    const uid = localUid();
-    if (uid && !previewActive() && !hasInitialized) {
+  createEffect(
+    () => Boolean(localUid()) && !previewActive(),
+    (canStart) => {
+      if (!canStart || hasInitialized) return;
       hasInitialized = true;
       setPreviewActive(true);
       const built = buildFx();
       if (built) startFxPreview(built);
-    }
-  });
+    },
+  );
 
   // Re-trigger preview upon reconnection after resync is complete
   let wasConnected = connectionStatus() === EngineRuntimeStatus.Connected;
   let shouldRestartPreview = false;
 
-  createEffect(() => {
-    const status = connectionStatus();
-    const isConnected = status === EngineRuntimeStatus.Connected;
-
-    if (isConnected && !wasConnected) {
-      if (previewActive()) {
+  /** Marks a running preview for restart when the connection comes back. */
+  createEffect(
+    () => connectionStatus() === EngineRuntimeStatus.Connected,
+    (isConnected) => {
+      if (isConnected && !wasConnected && previewActive()) {
         shouldRestartPreview = true;
       }
-    }
+      wasConnected = isConnected;
+    },
+  );
 
-    wasConnected = isConnected;
-  });
-
-  createEffect(() => {
-    if (resyncComplete() && shouldRestartPreview) {
-      const built = buildFx();
-      if (built) {
-        startFxPreview(built);
-        shouldRestartPreview = false;
-      }
+  /** Restarts a marked preview once the resync after reconnecting completes. */
+  createEffect(resyncComplete, (complete) => {
+    if (!complete || !shouldRestartPreview) return;
+    const built = buildFx();
+    if (built) {
+      startFxPreview(built);
+      shouldRestartPreview = false;
     }
   });
 

@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { createMemo, createSignal, onCleanup } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import {
   connectionStatus,
@@ -19,6 +19,7 @@ import {
   storeStepFxAndWait,
   updateStepFxPreview,
 } from "../../../lib/fx-service";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import {
   pushToast,
@@ -95,109 +96,135 @@ export function createStepFxEditorController(
   );
 
   /** Loads stored state, acknowledges saves, and detects concurrent replacement. */
-  createEffect(() => {
-    const stored = $stepFx()[initialUid];
-    const current = draft();
-    const pending = pendingSave();
-    if (!current && stored) {
-      setDraft(cloneStepFx(stored));
-      setBaseline(cloneStepFx(stored));
-      setIsNew(false);
-      return;
-    }
-    if (!stored && current && !isNew() && !deletedExternally()) {
-      setDeletedExternally(true);
-      setConflict(false);
-      setPendingSave(undefined);
-      setSaveCommandSucceeded(false);
-      setSaving(false);
-      if (autoSaveTimer) clearTimeout(autoSaveTimer);
-      autoSaveTimer = undefined;
-      if (previewTimer) clearTimeout(previewTimer);
-      previewTimer = undefined;
-      if (previewStarted) stopStepFxPreview(previewSessionId);
-      previewStarted = false;
-      setPreviewActive(false);
-      if (!isDirty()) {
-        if (options.onCleanDeletion) options.onCleanDeletion();
-        else {
-          setDraft(undefined);
-          setBaseline(undefined);
-        }
-      }
-      return;
-    }
-    if (!stored || !current) return;
-    if (pending) {
-      if (!saveCommandSucceeded()) return;
-      const editedDuringSave = !stepFxEquals(current, pending);
-      setBaseline(cloneStepFx(stored));
-      if (!editedDuringSave && !stepFxEquals(current, stored))
-        setDraft(cloneStepFx(stored));
-      setPendingSave(undefined);
-      setSaveCommandSucceeded(false);
-      setSaving(false);
-      setIsNew(false);
-      setConflict(false);
-      return;
-    }
-    const previous = baseline();
-    if (previous && !stepFxEquals(stored, previous)) {
-      if (isDirty()) {
-        setConflict(true);
-      } else {
+  createEffect(
+    () => {
+      const stored = $stepFx()[initialUid];
+      return {
+        // A deep copy reads, and so tracks, every field of the stored definition.
+        stored: stored ? cloneStepFx(stored) : undefined,
+        current: draft(),
+        pending: pendingSave(),
+        previous: baseline(),
+        isNew: isNew(),
+        deletedExternally: deletedExternally(),
+        saveCommandSucceeded: saveCommandSucceeded(),
+        dirty: isDirty(),
+      };
+    },
+    ({
+      stored,
+      current,
+      pending,
+      previous,
+      isNew: unsaved,
+      deletedExternally: alreadyDeleted,
+      saveCommandSucceeded: saveAcknowledged,
+      dirty,
+    }) => {
+      if (!current && stored) {
         setDraft(cloneStepFx(stored));
         setBaseline(cloneStepFx(stored));
+        setIsNew(false);
+        return;
       }
-    }
-  });
+      if (!stored && current && !unsaved && !alreadyDeleted) {
+        setDeletedExternally(true);
+        setConflict(false);
+        setPendingSave(undefined);
+        setSaveCommandSucceeded(false);
+        setSaving(false);
+        if (autoSaveTimer) clearTimeout(autoSaveTimer);
+        autoSaveTimer = undefined;
+        if (previewTimer) clearTimeout(previewTimer);
+        previewTimer = undefined;
+        if (previewStarted) stopStepFxPreview(previewSessionId);
+        previewStarted = false;
+        setPreviewActive(false);
+        if (!dirty) {
+          if (options.onCleanDeletion) options.onCleanDeletion();
+          else {
+            setDraft(undefined);
+            setBaseline(undefined);
+          }
+        }
+        return;
+      }
+      if (!stored || !current) return;
+      if (pending) {
+        if (!saveAcknowledged) return;
+        const editedDuringSave = !stepFxEquals(current, pending);
+        setBaseline(cloneStepFx(stored));
+        if (!editedDuringSave && !stepFxEquals(current, stored))
+          setDraft(cloneStepFx(stored));
+        setPendingSave(undefined);
+        setSaveCommandSucceeded(false);
+        setSaving(false);
+        setIsNew(false);
+        setConflict(false);
+        return;
+      }
 
-  /** Starts or updates only this editor's preview when the draft is valid. */
-  createEffect(() => {
-    const current = draft();
-    const valid = issues().length === 0;
-    const enabled = previewActive();
-    const connected = connectionStatus() === EngineRuntimeStatus.Connected;
-    const synchronized = resyncComplete();
-    if (
-      !current ||
-      !valid ||
-      !enabled ||
-      deletedExternally() ||
-      !connected ||
-      !synchronized
-    )
-      return;
-    if (!previewStarted) {
-      previewStarted = startStepFxPreview(
-        previewSessionId,
-        cloneStepFx(current),
-      );
-      return;
-    }
-    if (previewTimer) clearTimeout(previewTimer);
-    previewTimer = setTimeout(() => {
-      previewTimer = undefined;
-      // The backend treats Update as an upsert, so a stopped session must not be revived.
-      if (previewStarted)
-        updateStepFxPreview(previewSessionId, cloneStepFx(current));
-    }, 150);
-  });
+      if (previous && !stepFxEquals(stored, previous)) {
+        if (dirty) {
+          setConflict(true);
+        } else {
+          setDraft(cloneStepFx(stored));
+          setBaseline(cloneStepFx(stored));
+        }
+      }
+    },
+  );
+
+  /**
+   * Starts or updates only this editor's preview when the draft is valid. The compute returns
+   * the draft to preview, or undefined while previewing is off or impossible.
+   */
+  createEffect(
+    () => {
+      const current = draft();
+      const previewable =
+        issues().length === 0 &&
+        previewActive() &&
+        !deletedExternally() &&
+        connectionStatus() === EngineRuntimeStatus.Connected &&
+        resyncComplete();
+      return previewable ? current : undefined;
+    },
+    (current) => {
+      if (!current) return;
+      if (!previewStarted) {
+        previewStarted = startStepFxPreview(
+          previewSessionId,
+          cloneStepFx(current),
+        );
+        return;
+      }
+      if (previewTimer) clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => {
+        previewTimer = undefined;
+        // The backend treats Update as an upsert, so a stopped session must not be revived.
+        if (previewStarted)
+          updateStepFxPreview(previewSessionId, cloneStepFx(current));
+      }, 150);
+    },
+  );
 
   let wasConnected = connectionStatus() === EngineRuntimeStatus.Connected;
   let restartPreviewAfterResync = false;
 
   /** Remembers enabled preview ownership across websocket reconnection. */
-  createEffect(() => {
-    const connected = connectionStatus() === EngineRuntimeStatus.Connected;
-    if (connected && !wasConnected && previewActive())
-      restartPreviewAfterResync = true;
-    wasConnected = connected;
-  });
+  createEffect(
+    () => connectionStatus() === EngineRuntimeStatus.Connected,
+    (connected) => {
+      if (connected && !wasConnected && previewActive())
+        restartPreviewAfterResync = true;
+      wasConnected = connected;
+    },
+  );
 
   /** Recreates this editor's session only after the backend resync completes. */
-  createEffect(() => {
-    if (!resyncComplete() || !restartPreviewAfterResync) return;
+  createEffect(resyncComplete, (complete) => {
+    if (!complete || !restartPreviewAfterResync) return;
     restartPreviewAfterResync = false;
     const current = draft();
     if (
@@ -249,28 +276,34 @@ export function createStepFxEditorController(
   };
 
   /** Debounces valid dirty drafts into the existing store-and-ack save pipeline. */
-  createEffect(() => {
-    const current = draft();
-    const shouldSave =
-      Boolean(current) &&
-      isDirty() &&
-      issues().length === 0 &&
-      !saving() &&
-      !conflict() &&
-      !deletedExternally() &&
-      !saveError() &&
-      connectionStatus() === EngineRuntimeStatus.Connected &&
-      resyncComplete();
-    if (autoSaveTimer) clearTimeout(autoSaveTimer);
-    autoSaveTimer = undefined;
-    if (!shouldSave || !current) return;
-    const expected = cloneStepFx(current);
-    autoSaveTimer = setTimeout(() => {
+  // The compute returns a fresh object on every input change, so any change restarts the delay.
+  createEffect(
+    () => {
+      const current = draft();
+      const shouldSave =
+        Boolean(current) &&
+        isDirty() &&
+        issues().length === 0 &&
+        !saving() &&
+        !conflict() &&
+        !deletedExternally() &&
+        !saveError() &&
+        connectionStatus() === EngineRuntimeStatus.Connected &&
+        resyncComplete();
+      return { toSave: shouldSave ? current : undefined };
+    },
+    ({ toSave }) => {
+      if (autoSaveTimer) clearTimeout(autoSaveTimer);
       autoSaveTimer = undefined;
-      const latest = draft();
-      if (latest && stepFxEquals(latest, expected)) void save();
-    }, AUTO_SAVE_DELAY_MS);
-  });
+      if (!toSave) return;
+      const expected = cloneStepFx(toSave);
+      autoSaveTimer = setTimeout(() => {
+        autoSaveTimer = undefined;
+        const latest = draft();
+        if (latest && stepFxEquals(latest, expected)) void save();
+      }, AUTO_SAVE_DELAY_MS);
+    },
+  );
 
   /** Starts or stops this panel's session without affecting stored playbacks. */
   const togglePreview = (): void => {

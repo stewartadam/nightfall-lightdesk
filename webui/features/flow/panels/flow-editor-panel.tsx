@@ -6,16 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  ErrorBoundary,
-} from "solid-js";
+import { createMemo, createSignal, ErrorBoundary } from "solid-js";
 import { ErrorFallback } from "../../../components/ui/error-fallback";
 import { applyFlowDelta } from "../../../lib/flow-service";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import {
   flowDefinitionsRevision,
@@ -100,31 +96,44 @@ export default function FlowEditorPanel(props: FlowEditorPanelProps) {
     return flow()?.nodes.find((node) => node.node_id === nodeId);
   });
 
-  createEffect(() => {
-    const nodeId = selectedNodeId();
-    if (nodeId === null) return;
-    const currentFlow = flow();
-    if (!currentFlow) return;
-    const stillExists = currentFlow.nodes.some(
-      (node) => node.node_id === nodeId,
-    );
-    if (!stillExists) setSelectedNodeId(null);
-  });
+  /** Clears the selection once its node is deleted from the flow. */
+  createEffect(
+    () => {
+      const nodeId = selectedNodeId();
+      const currentFlow = flow();
+      if (nodeId === null || !currentFlow) return false;
+      return !currentFlow.nodes.some((node) => node.node_id === nodeId);
+    },
+    (deleted) => {
+      if (deleted) setSelectedNodeId(null);
+    },
+  );
 
-  createEffect(() => {
-    const currentFlow = flow();
-    if (!currentFlow) return;
-    const nextOverrides = new Map(labelOverrides());
-    let changed = false;
-    for (const [nodeId, label] of nextOverrides) {
-      const node = currentFlow.nodes.find((entry) => entry.node_id === nodeId);
-      if (!node || node.label === label) {
-        nextOverrides.delete(nodeId);
-        changed = true;
+  /**
+   * Drops label overrides the flow has caught up with or whose node is gone. The compute
+   * returns the pruned overrides, or undefined when nothing needs pruning.
+   */
+  createEffect(
+    () => {
+      const currentFlow = flow();
+      if (!currentFlow) return undefined;
+      const nextOverrides = new Map(labelOverrides());
+      let changed = false;
+      for (const [nodeId, label] of nextOverrides) {
+        const node = currentFlow.nodes.find(
+          (entry) => entry.node_id === nodeId,
+        );
+        if (!node || node.label === label) {
+          nextOverrides.delete(nodeId);
+          changed = true;
+        }
       }
-    }
-    if (changed) setLabelOverrides(nextOverrides);
-  });
+      return changed ? nextOverrides : undefined;
+    },
+    (nextOverrides) => {
+      if (nextOverrides) setLabelOverrides(nextOverrides);
+    },
+  );
 
   const portValuesStore = useStore(flowPortValues);
   const triggerTicksStore = useStore(flowTriggerTicks);

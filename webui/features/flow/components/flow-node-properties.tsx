@@ -6,9 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { Input } from "../../../components/ui/form-controls";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import type { LayerState } from "../../../lib/ws/types";
 import * as types from "../../../types";
 import type * as flowTypes from "../../../types/index";
@@ -154,10 +155,13 @@ export function FlowNodeProperties(props: {
     return { status: "ready", layer, sourceNode };
   };
 
-  createEffect(() => {
-    const node = props.node();
-    setLabelDraft(node?.label ?? "");
-  });
+  /** Resets the label draft whenever the selected node or its label changes. */
+  createEffect(
+    () => props.node()?.label ?? "",
+    (label) => {
+      setLabelDraft(label);
+    },
+  );
 
   const commitLabel = () => {
     const node = props.node();

@@ -21,7 +21,6 @@
 import {
   type Accessor,
   createContext,
-  createEffect,
   createSignal,
   onCleanup,
   type ParentProps,
@@ -29,6 +28,7 @@ import {
 } from "solid-js";
 import { applyFlowDelta } from "../../../lib/flow-service";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { flows } from "../../../state/appStores";
 import type {
   FlowDelta,
@@ -138,8 +138,7 @@ export function createFlowContextValue(
   let lastSeenBackendVersion = flowVersion();
 
   // Watch for flow version changes (ACKs from backend)
-  createEffect(() => {
-    const newVersion = flowVersion();
+  createEffect(flowVersion, (newVersion) => {
     if (newVersion <= lastSeenBackendVersion) {
       return;
     }

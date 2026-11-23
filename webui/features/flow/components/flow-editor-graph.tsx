@@ -419,89 +419,110 @@ export default function FlowEditorGraphSolid(props: FlowEditorGraphProps) {
   );
 
   // Trigger auto-layout when pending and nodes are measured
-  createEffect(() => {
-    if (!pendingAutoLayout()) return;
-    if (nodes.length === 0) return;
-
-    // Check if nodes have measurements (React Flow measures nodes after render)
-    const allMeasured = nodes.every(
-      (node) => node.measured?.width && node.measured?.height,
-    );
-    if (!allMeasured) return;
-
-    // Trigger auto-layout after a short delay to ensure everything is ready
-    setTimeout(() => {
-      if (autoLayoutTriggerRef.current) {
-        autoLayoutTriggerRef.current();
-        setPendingAutoLayout(false);
-      }
-    }, 100);
-  });
+  // The compute returns a fresh object on every node or measurement change while a layout is
+  // pending, so a layout that found no trigger yet is retried on the next change.
+  createEffect(
+    () => {
+      if (!pendingAutoLayout() || nodes.length === 0) return undefined;
+      // Flow measures nodes after render.
+      const allMeasured = nodes.every(
+        (node) => node.measured?.width && node.measured?.height,
+      );
+      return allMeasured ? { nodeCount: nodes.length } : undefined;
+    },
+    (ready) => {
+      if (!ready) return;
+      // Trigger auto-layout after a short delay to ensure everything is ready
+      setTimeout(() => {
+        if (autoLayoutTriggerRef.current) {
+          autoLayoutTriggerRef.current();
+          setPendingAutoLayout(false);
+        }
+      }, 100);
+    },
+  );
 
   // Update selection when selectedNodeId prop changes
-  createEffect(() => {
-    selectedNodeIdRef = props.selectedNodeId ?? null;
-    interaction.syncSelectedNode(props.selectedNodeId ?? null);
-  });
+  createEffect(
+    () => props.selectedNodeId ?? null,
+    (selectedNodeId) => {
+      selectedNodeIdRef = selectedNodeId;
+      interaction.syncSelectedNode(selectedNodeId);
+    },
+  );
 
-  // Update trigger pulses
-  createEffect(() => {
-    const ticks = props.triggerTicks();
-    const now = Date.now();
+  /** Pulses nodes that triggered within the last 250 ms, then clears the pulse. */
+  createEffect(
+    () => ({
+      ticks: props.triggerTicks(),
+      nodeIds: nodes.map((node) => node.data.nodeId),
+    }),
+    ({ ticks, nodeIds }) => {
+      const now = Date.now();
 
-    batch(() => {
-      nodes.forEach((node, index) => {
-        const tick = ticks[node.data.nodeId];
-        const pulse = tick !== undefined && now - tick < 250;
-        if (node.data.pulse !== pulse) {
-          setNodes(index, "data", "pulse", pulse);
-        }
-      });
-    });
-
-    const timer = window.setTimeout(() => {
       batch(() => {
-        nodes.forEach((node, index) => {
-          if (node.data.pulse) {
-            setNodes(index, "data", "pulse", false);
+        nodeIds.forEach((nodeId, index) => {
+          const node = nodes[index];
+          const tick = ticks[nodeId];
+          const pulse = tick !== undefined && now - tick < 250;
+          if (node.data.pulse !== pulse) {
+            setNodes(index, "data", "pulse", pulse);
           }
         });
       });
-    }, 260);
 
-    onCleanup(() => window.clearTimeout(timer));
-  });
+      const timer = window.setTimeout(() => {
+        batch(() => {
+          nodes.forEach((node, index) => {
+            if (node.data.pulse) {
+              setNodes(index, "data", "pulse", false);
+            }
+          });
+        });
+      }, 260);
+
+      return () => window.clearTimeout(timer);
+    },
+  );
 
   let edgeLabelRequestId = 0;
 
   /** Updates edge labels with the latest port values. */
-  createEffect(() => {
-    const portValues = props.portValues();
-    const portTypes = outputPortTypes();
-    const requestId = ++edgeLabelRequestId;
+  createEffect(
+    () => ({
+      portValues: props.portValues(),
+      portTypes: outputPortTypes(),
+      portKeys: edges.map((edge) =>
+        edge.data?.edge
+          ? `${edge.data.edge.from.node_id}:${edge.data.edge.from.port_id}`
+          : undefined,
+      ),
+    }),
+    ({ portValues, portTypes, portKeys }) => {
+      const requestId = ++edgeLabelRequestId;
 
-    void Promise.all(
-      edges.map(async (edge) => {
-        if (!edge.data?.edge) return;
-        const portKey = `${edge.data.edge.from.node_id}:${edge.data.edge.from.port_id}`;
-        const portValue = portValues[portKey];
-        const portType = portTypes.get(portKey);
-        return portValue && portType !== "layer"
-          ? ((await formatFlowValueLabel(portValue)) ?? undefined)
-          : undefined;
-      }),
-    ).then((labels) => {
-      if (requestId !== edgeLabelRequestId) return;
-      batch(() => {
-        edges.forEach((edge, index) => {
-          const label = labels[index];
-          if (edge.data?.label !== label) {
-            setEdges(index, "data", "label", label);
-          }
+      void Promise.all(
+        portKeys.map(async (portKey) => {
+          if (!portKey) return;
+          const portValue = portValues[portKey];
+          const portType = portTypes.get(portKey);
+          return portValue && portType !== "layer"
+            ? ((await formatFlowValueLabel(portValue)) ?? undefined)
+            : undefined;
+        }),
+      ).then((labels) => {
+        if (requestId !== edgeLabelRequestId) return;
+        batch(() => {
+          edges.forEach((edge, index) => {
+            const label = labels[index];
+            if (edge.data?.label !== label) {
+              setEdges(index, "data", "label", label);
+            }
+          });
         });
       });
-    });
-  });
+    },
+  );
 
   // Register component for focus tracking
   onMount(() => {

@@ -6,9 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { Input } from "../../../components/ui/form-controls";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { formatStepFxPhase, parseStepFxPhase } from "../../../lib/wasm-bridge";
 import type * as types from "../../../types";
 
@@ -42,29 +43,33 @@ export function StepFxPhaseField(props: StepFxPhaseFieldProps) {
   let inputRef: HTMLInputElement | undefined;
 
   /** Synchronizes canonical text from external phase updates unless an invalid edit is retained. */
-  createEffect(() => {
-    const phase = props.phase;
-    const generation = ++formatGeneration;
-    if (isDirty()) return;
-    void formatStepFxPhase(phase)
-      .then((formatted) => {
-        if (generation !== formatGeneration || isDirty()) return;
-        setInputValue(formatted);
-      })
-      .catch((cause) => {
-        log.error("Failed to format Step FX phase", cause);
-      });
-  });
+  createEffect(
+    () => ({ phase: props.phase, dirty: isDirty() }),
+    ({ phase, dirty }) => {
+      const generation = ++formatGeneration;
+      if (dirty) return;
+      void formatStepFxPhase(phase)
+        .then((formatted) => {
+          if (generation !== formatGeneration || isDirty()) return;
+          setInputValue(formatted);
+        })
+        .catch((cause) => {
+          log.error("Failed to format Step FX phase", cause);
+        });
+    },
+  );
 
   /** Applies explicit editor focus requests after portaled menu content mounts. */
-  createEffect(() => {
-    const request = props.focusRequest;
-    if (!request) return;
-    queueMicrotask(() => {
-      inputRef?.focus();
-      inputRef?.select();
-    });
-  });
+  createEffect(
+    () => props.focusRequest,
+    (request) => {
+      if (!request) return;
+      queueMicrotask(() => {
+        inputRef?.focus();
+        inputRef?.select();
+      });
+    },
+  );
 
   /** Parses and publishes the authored expression while retaining invalid text for correction. */
   const apply = async (): Promise<void> => {

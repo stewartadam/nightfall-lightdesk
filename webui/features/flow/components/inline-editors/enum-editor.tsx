@@ -12,7 +12,8 @@ import { NativeSelect } from "../../../../components/ui/form-controls";
  * Renders a dropdown select for ports with enum options.
  */
 
-import { createEffect, createSignal, For } from "solid-js";
+import { createSignal, For } from "solid-js";
+import { createEffect } from "../../../../lib/solid-compat";
 import type { FlowPortDefinition } from "../../../../types/index";
 
 export interface EnumEditorProps {
@@ -28,9 +29,13 @@ export interface EnumEditorProps {
 export function EnumEditor(props: EnumEditorProps) {
   const [localValue, setLocalValue] = createSignal(props.value);
 
-  createEffect(() => {
-    setLocalValue(props.value);
-  });
+  /** Follows value changes made outside the editor. */
+  createEffect(
+    () => props.value,
+    (value) => {
+      setLocalValue(value);
+    },
+  );
 
   const handleChange = (value: number) => {
     setLocalValue(value);

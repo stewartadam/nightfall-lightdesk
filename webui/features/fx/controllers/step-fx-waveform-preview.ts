@@ -80,16 +80,19 @@ export function createStepFxWaveformPreview(
   };
 
   /** Runs interpolation only after this session has an authoritative backend anchor. */
-  createEffect(() => {
-    if (!props.previewActive || !props.previewStatus) {
-      if (previewFrame !== undefined) cancelAnimationFrame(previewFrame);
-      previewFrame = undefined;
-      return;
-    }
-    setPreviewEpochMs(Date.now());
-    if (previewFrame === undefined)
-      previewFrame = requestAnimationFrame(animatePreview);
-  });
+  createEffect(
+    () => (props.previewActive ? props.previewStatus : undefined),
+    (status) => {
+      if (!status) {
+        if (previewFrame !== undefined) cancelAnimationFrame(previewFrame);
+        previewFrame = undefined;
+        return;
+      }
+      setPreviewEpochMs(Date.now());
+      if (previewFrame === undefined)
+        previewFrame = requestAnimationFrame(animatePreview);
+    },
+  );
 
   /** Eases mode changes without making the continuously moving waveform trail its playhead. */
   createEffect(
@@ -382,9 +385,12 @@ export function createStepFxWaveformPreview(
   });
 
   /** Publishes the sampled authored step so sibling editor views stay synchronized. */
-  createEffect(() => {
-    props.onLiveStepChange?.(previewSample()?.segment.stepUid);
-  });
+  createEffect(
+    () => previewSample()?.segment.stepUid,
+    (stepUid) => {
+      props.onLiveStepChange?.(stepUid);
+    },
+  );
 
   /** Cancels animation frames and clears the published live step on unmount. */
   onCleanup(() => {

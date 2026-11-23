@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type Accessor, createEffect, createSignal } from "solid-js";
+import { type Accessor, createSignal } from "solid-js";
+import { createEffect } from "../../../lib/solid-compat";
 import type * as types from "../../../types";
 import { stepFxAttributeName } from "../model/step-fx-editor-model";
 import {
@@ -36,31 +37,43 @@ export function createStepFxEditorViewportController(
   const [viewportHydrated, setViewportHydrated] = createSignal(false);
 
   /** Restores the selected attribute after the effect draft becomes available. */
-  createEffect(() => {
-    const current = draft();
-    if (!current || viewportHydrated()) return;
-    const laneIndex = initialViewport.selectedAttribute
-      ? current.lanes.findIndex(
-          (lane) =>
-            stepFxAttributeName(lane.attribute) ===
-            initialViewport.selectedAttribute,
-        )
-      : 0;
-    selection.selectTrack(Math.max(0, laneIndex), initialViewport.trackKind);
-    setViewportHydrated(true);
-  });
+  createEffect(
+    () => {
+      const current = draft();
+      if (!current || viewportHydrated()) return undefined;
+      return initialViewport.selectedAttribute
+        ? current.lanes.findIndex(
+            (lane) =>
+              stepFxAttributeName(lane.attribute) ===
+              initialViewport.selectedAttribute,
+          )
+        : 0;
+    },
+    (laneIndex) => {
+      if (laneIndex === undefined) return;
+      selection.selectTrack(Math.max(0, laneIndex), initialViewport.trackKind);
+      setViewportHydrated(true);
+    },
+  );
 
   /** Persists editor-only controls independently for the active Step FX. */
-  createEffect(() => {
-    if (!viewportHydrated()) return;
-    const lane = selection.activeLane();
-    saveStepFxEditorViewportState(initialUid, {
-      selectedAttribute: lane ? stepFxAttributeName(lane.attribute) : undefined,
-      trackKind: selection.trackKind(),
-      centerSelectedFixture: phase.centerSelectedFixture(),
-      showAllPlayheads: phase.showAllPlayheads(),
-      previewIndex: phase.persistedPreviewIndex(),
-      previewActive: options.previewActive(),
-    });
-  });
+  createEffect(
+    () => {
+      if (!viewportHydrated()) return undefined;
+      const lane = selection.activeLane();
+      return {
+        selectedAttribute: lane
+          ? stepFxAttributeName(lane.attribute)
+          : undefined,
+        trackKind: selection.trackKind(),
+        centerSelectedFixture: phase.centerSelectedFixture(),
+        showAllPlayheads: phase.showAllPlayheads(),
+        previewIndex: phase.persistedPreviewIndex(),
+        previewActive: options.previewActive(),
+      };
+    },
+    (viewport) => {
+      if (viewport) saveStepFxEditorViewportState(initialUid, viewport);
+    },
+  );
 }

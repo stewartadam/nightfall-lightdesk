@@ -6,13 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import {
   Checkbox,
   Input,
   NativeSelect,
 } from "../../../components/ui/form-controls";
 import ColorPicker from "../../../components/widgets/color-picker";
+import { createEffect } from "../../../lib/solid-compat";
 import {
   formatSpatialSelection,
   parseSpatialSelection,
@@ -50,9 +51,12 @@ function AttributeColorPicker(props: {
   let lastSentValue = props.value;
 
   /** Keeps color change deduplication aligned with externally supplied values. */
-  createEffect(() => {
-    lastSentValue = props.value;
-  });
+  createEffect(
+    () => props.value,
+    (value) => {
+      lastSentValue = value;
+    },
+  );
 
   /** Converts picker hex output to an attribute label and publishes real changes. */
   const handleChange = (hex: string) => {
@@ -93,9 +97,12 @@ function WaveformEditorInline(props: {
   const [draft, setDraft] = createSignal(props.value);
 
   /** Refreshes the local waveform draft when the owning flow changes. */
-  createEffect(() => {
-    setDraft(props.value);
-  });
+  createEffect(
+    () => props.value,
+    (value) => {
+      setDraft(value);
+    },
+  );
 
   /** Publishes one merged waveform draft update. */
   const updateDraft = (next: flowTypes.FlowWaveform) => {
@@ -122,45 +129,66 @@ export function FlowPortDefaultEditor(props: FlowPortDefaultEditorProps) {
   let selectionFormatRequestId = 0;
 
   /** Synchronizes editor draft state from the current port definition. */
-  createEffect(() => {
-    const requestId = ++selectionFormatRequestId;
-    if (props.port.port_type === "number" || props.port.port_type === "int") {
-      setDraftNumber(resolveNumberValue(props.port));
-      return;
-    }
-    if (props.port.port_type === "bool") {
-      setDraftBool(resolveBoolValue(props.port));
-      return;
-    }
-    if (props.port.port_type === "string") {
-      setDraftText(resolveStringValue(props.port));
-      return;
-    }
-    if (props.port.port_type === "attribute") {
-      setDraftText(resolveAttributeValue(props.port));
-      return;
-    }
-    if (props.port.port_type === "selection") {
-      const selection = resolveSelectionValue(props.port);
-      if (!selection) {
-        setDraftText("");
-        return;
+  createEffect(
+    () => {
+      const port = props.port;
+      switch (port.port_type) {
+        case "number":
+        case "int":
+          return { kind: "number", value: resolveNumberValue(port) } as const;
+        case "bool":
+          return { kind: "bool", value: resolveBoolValue(port) } as const;
+        case "string":
+          return { kind: "text", value: resolveStringValue(port) } as const;
+        case "attribute":
+          return { kind: "text", value: resolveAttributeValue(port) } as const;
+        case "selection":
+          return {
+            kind: "selection",
+            value: resolveSelectionValue(port),
+          } as const;
+        case "color": {
+          const value = port.default_value;
+          const color = value?.type === "Color" ? value.data : null;
+          return { kind: "color", value: formatColorHex(color) } as const;
+        }
+        default:
+          return undefined;
       }
-      void formatSpatialSelection(selection)
-        .then((formatted) => {
-          if (requestId === selectionFormatRequestId) setDraftText(formatted);
-        })
-        .catch(() => {
-          if (requestId === selectionFormatRequestId) setDraftText("");
-        });
-      return;
-    }
-    if (props.port.port_type === "color") {
-      const value = props.port.default_value;
-      const color = value?.type === "Color" ? value.data : null;
-      setDraftColor(formatColorHex(color));
-    }
-  });
+    },
+    (draft) => {
+      const requestId = ++selectionFormatRequestId;
+      switch (draft?.kind) {
+        case "number":
+          setDraftNumber(draft.value);
+          return;
+        case "bool":
+          setDraftBool(draft.value);
+          return;
+        case "text":
+          setDraftText(draft.value);
+          return;
+        case "color":
+          setDraftColor(draft.value);
+          return;
+        case "selection": {
+          const selection = draft.value;
+          if (!selection) {
+            setDraftText("");
+            return;
+          }
+          void formatSpatialSelection(selection)
+            .then((formatted) => {
+              if (requestId === selectionFormatRequestId)
+                setDraftText(formatted);
+            })
+            .catch(() => {
+              if (requestId === selectionFormatRequestId) setDraftText("");
+            });
+        }
+      }
+    },
+  );
 
   /** Parses and publishes a spatial-selection draft when it is valid. */
   const commitSelection = async () => {

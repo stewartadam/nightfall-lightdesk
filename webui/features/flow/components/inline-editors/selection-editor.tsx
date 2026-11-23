@@ -13,7 +13,8 @@ import { Button } from "../../../../components/ui/visual-language/button";
  * Provides inline editing of selection expressions.
  */
 
-import { createEffect, createSignal, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
+import { createEffect } from "../../../../lib/solid-compat";
 import {
   formatSpatialSelection,
   parseSpatialSelection,
@@ -33,20 +34,25 @@ export function SelectionEditor(props: SelectionEditorProps) {
   const [displayText, setDisplayText] = createSignal("Selection");
   let inputRef: HTMLInputElement | undefined;
 
-  createEffect(() => {
-    if (!props.value) {
-      setDisplayText("Selection");
-      return;
-    }
-    formatSpatialSelection(props.value)
-      .then((formatted) => {
-        setDisplayText(formatted);
-      })
-      .catch(() => setDisplayText("Selection"));
-  });
+  /** Shows the selection in command syntax once it is formatted. */
+  createEffect(
+    () => props.value,
+    (value) => {
+      if (!value) {
+        setDisplayText("Selection");
+        return;
+      }
+      formatSpatialSelection(value)
+        .then((formatted) => {
+          setDisplayText(formatted);
+        })
+        .catch(() => setDisplayText("Selection"));
+    },
+  );
 
-  createEffect(() => {
-    if (isEditing() && inputRef) {
+  /** Focuses and selects the input when editing starts. */
+  createEffect(isEditing, (editing) => {
+    if (editing && inputRef) {
       inputRef.focus();
       inputRef.select();
     }
