@@ -13,19 +13,14 @@
  * including a 3D preview of the model.
  */
 
-import {
-  type Component,
-  createEffect,
-  createMemo,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { type Component, createMemo, Show } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { getBackendUrl } from "../../../lib/api";
 import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { objectProfile } from "../../../state/appStores";
 import type { AvailableObjectInfo } from "../../../types";
@@ -82,153 +77,169 @@ const ObjectLibraryProperties: Component<ObjectLibraryPropertiesProps> = (
     currentModel = undefined;
   };
 
-  // Request object profile whenever selection changes.
-  createEffect(() => {
-    const selected = props.selectedObject;
-    if (!selected) {
-      return;
-    }
-
-    commandClient.emit("ObjectLibraryCommand", {
-      type: "GetObjectProfile",
-      data: { name: selected.name },
-    });
-  });
-
-  // Initialize Three.js once the preview container is available.
-  createEffect(() => {
-    const container = containerRef;
-    if (!container || rendererRef) return;
-
-    sceneRef = new THREE.Scene();
-    sceneRef.background = new THREE.Color(0x1a1a1a);
-
-    cameraRef = new THREE.PerspectiveCamera(
-      50,
-      container.clientWidth / container.clientHeight,
-      0.1,
-      1000,
-    );
-    cameraRef.position.set(3, 2, 3);
-
-    rendererRef = new THREE.WebGLRenderer({ antialias: true });
-    rendererRef.setSize(container.clientWidth, container.clientHeight);
-    rendererRef.setPixelRatio(window.devicePixelRatio);
-    container.appendChild(rendererRef.domElement);
-
-    controlsRef = new OrbitControls(cameraRef, rendererRef.domElement);
-    controlsRef.enableDamping = true;
-    controlsRef.dampingFactor = 0.05;
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    sceneRef.add(ambientLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-    directionalLight.position.set(5, 5, 5);
-    sceneRef.add(directionalLight);
-
-    const gridHelper = new THREE.GridHelper(10, 10, 0x444444, 0x222222);
-    sceneRef.add(gridHelper);
-
-    const animate = () => {
-      frameId = requestAnimationFrame(animate);
-      controlsRef?.update();
-      if (rendererRef && sceneRef && cameraRef) {
-        rendererRef.render(sceneRef, cameraRef);
+  /** Requests the selected object's profile whenever the selection changes. */
+  createEffect(
+    () => props.selectedObject,
+    (selected) => {
+      if (!selected) {
+        return;
       }
-    };
-    animate();
 
-    const handleResize = () => {
-      if (!containerRef || !cameraRef || !rendererRef) return;
-      cameraRef.aspect = containerRef.clientWidth / containerRef.clientHeight;
-      cameraRef.updateProjectionMatrix();
-      rendererRef.setSize(containerRef.clientWidth, containerRef.clientHeight);
-    };
+      commandClient.emit("ObjectLibraryCommand", {
+        type: "GetObjectProfile",
+        data: { name: selected.name },
+      });
+    },
+  );
 
-    const resizeObserver = new ResizeObserver(handleResize);
-    resizeObserver.observe(container);
+  /** Initializes the Three.js preview once the container is available, and tears it down on unmount. */
+  createEffect(
+    () => containerRef,
+    (container) => {
+      if (!container || rendererRef) return;
 
-    onCleanup(() => {
-      if (frameId) cancelAnimationFrame(frameId);
-      resizeObserver.disconnect();
-      clearCurrentModel();
-      rendererRef?.dispose();
-      controlsRef?.dispose();
-      rendererRef = undefined;
-      controlsRef = undefined;
-      sceneRef = undefined;
-      cameraRef = undefined;
-    });
-  });
+      sceneRef = new THREE.Scene();
+      sceneRef.background = new THREE.Color(0x1a1a1a);
 
-  // Clear model when selection is cleared.
-  createEffect(() => {
-    if (!props.selectedObject) {
-      previewLoadToken += 1;
-      clearCurrentModel();
-    }
-  });
+      cameraRef = new THREE.PerspectiveCamera(
+        50,
+        container.clientWidth / container.clientHeight,
+        0.1,
+        1000,
+      );
+      cameraRef.position.set(3, 2, 3);
 
-  // Load model when matching profile arrives.
-  createEffect(() => {
-    const selected = props.selectedObject;
-    const profile = $objectProfile();
-    if (!selected || !profile || !sceneRef) return;
-    if (profile.info.name !== selected.name) return;
+      rendererRef = new THREE.WebGLRenderer({ antialias: true });
+      rendererRef.setSize(container.clientWidth, container.clientHeight);
+      rendererRef.setPixelRatio(window.devicePixelRatio);
+      container.appendChild(rendererRef.domElement);
 
-    const modelPath = profile.info.modelPath;
-    if (!modelPath) {
-      previewLoadToken += 1;
-      clearCurrentModel();
-      return;
-    }
+      controlsRef = new OrbitControls(cameraRef, rendererRef.domElement);
+      controlsRef.enableDamping = true;
+      controlsRef.dampingFactor = 0.05;
 
-    const loadToken = ++previewLoadToken;
-    const requestedObjectName = selected.name;
-    clearCurrentModel();
-    const modelUrl = `${getBackendUrl()}/api/object-model/${modelPath}`;
-    log.debug(`Loading object model from: ${modelUrl}`);
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+      sceneRef.add(ambientLight);
 
-    loader.load(
-      modelUrl,
-      (gltf) => {
-        if (
-          loadToken !== previewLoadToken ||
-          props.selectedObject?.name !== requestedObjectName ||
-          !sceneRef ||
-          !cameraRef ||
-          !controlsRef
-        ) {
-          disposeModelResources(gltf.scene);
-          return;
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+      directionalLight.position.set(5, 5, 5);
+      sceneRef.add(directionalLight);
+
+      const gridHelper = new THREE.GridHelper(10, 10, 0x444444, 0x222222);
+      sceneRef.add(gridHelper);
+
+      const animate = () => {
+        frameId = requestAnimationFrame(animate);
+        controlsRef?.update();
+        if (rendererRef && sceneRef && cameraRef) {
+          rendererRef.render(sceneRef, cameraRef);
         }
-        currentModel = gltf.scene;
+      };
+      animate();
 
-        const scale = profile.metadata.scale ?? selected.scale ?? 1;
-        currentModel.scale.set(scale, scale, scale);
+      const handleResize = () => {
+        if (!containerRef || !cameraRef || !rendererRef) return;
+        cameraRef.aspect = containerRef.clientWidth / containerRef.clientHeight;
+        cameraRef.updateProjectionMatrix();
+        rendererRef.setSize(
+          containerRef.clientWidth,
+          containerRef.clientHeight,
+        );
+      };
 
-        const box = new THREE.Box3().setFromObject(currentModel);
-        const center = box.getCenter(new THREE.Vector3());
-        currentModel.position.sub(center);
+      const resizeObserver = new ResizeObserver(handleResize);
+      resizeObserver.observe(container);
 
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        cameraRef.position.set(maxDim * 2, maxDim * 1.5, maxDim * 2);
-        cameraRef.lookAt(0, 0, 0);
-        controlsRef.target.set(0, 0, 0);
-        controlsRef.update();
+      return () => {
+        if (frameId) cancelAnimationFrame(frameId);
+        resizeObserver.disconnect();
+        clearCurrentModel();
+        rendererRef?.dispose();
+        controlsRef?.dispose();
+        rendererRef = undefined;
+        controlsRef = undefined;
+        sceneRef = undefined;
+        cameraRef = undefined;
+      };
+    },
+  );
 
-        sceneRef.add(currentModel);
-        log.debug("Object model loaded successfully");
-      },
-      undefined,
-      (error) => {
-        if (loadToken !== previewLoadToken) return;
-        log.error("Failed to load object model:", error);
-      },
-    );
-  });
+  /** Drops the previewed model and any in-flight load when the selection is cleared. */
+  createEffect(
+    () => !props.selectedObject,
+    (cleared) => {
+      if (!cleared) return;
+      previewLoadToken += 1;
+      clearCurrentModel();
+    },
+  );
+
+  /** Loads the selected object's model once its matching profile arrives. */
+  createEffect(
+    () => {
+      const selected = props.selectedObject;
+      const profile = $objectProfile();
+      if (!selected || !profile || !sceneRef) return undefined;
+      if (profile.info.name !== selected.name) return undefined;
+      return { selected, profile };
+    },
+    (match) => {
+      if (!match) return;
+      const { selected, profile } = match;
+
+      const modelPath = profile.info.modelPath;
+      if (!modelPath) {
+        previewLoadToken += 1;
+        clearCurrentModel();
+        return;
+      }
+
+      const loadToken = ++previewLoadToken;
+      const requestedObjectName = selected.name;
+      clearCurrentModel();
+      const modelUrl = `${getBackendUrl()}/api/object-model/${modelPath}`;
+      log.debug(`Loading object model from: ${modelUrl}`);
+
+      loader.load(
+        modelUrl,
+        (gltf) => {
+          if (
+            loadToken !== previewLoadToken ||
+            props.selectedObject?.name !== requestedObjectName ||
+            !sceneRef ||
+            !cameraRef ||
+            !controlsRef
+          ) {
+            disposeModelResources(gltf.scene);
+            return;
+          }
+          currentModel = gltf.scene;
+
+          const scale = profile.metadata.scale ?? selected.scale ?? 1;
+          currentModel.scale.set(scale, scale, scale);
+
+          const box = new THREE.Box3().setFromObject(currentModel);
+          const center = box.getCenter(new THREE.Vector3());
+          currentModel.position.sub(center);
+
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          cameraRef.position.set(maxDim * 2, maxDim * 1.5, maxDim * 2);
+          cameraRef.lookAt(0, 0, 0);
+          controlsRef.target.set(0, 0, 0);
+          controlsRef.update();
+
+          sceneRef.add(currentModel);
+          log.debug("Object model loaded successfully");
+        },
+        undefined,
+        (error) => {
+          if (loadToken !== previewLoadToken) return;
+          log.error("Failed to load object model:", error);
+        },
+      );
+    },
+  );
 
   return (
     <div class="h-full flex flex-col text-white">

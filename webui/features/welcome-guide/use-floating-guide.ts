@@ -14,14 +14,8 @@ import {
   type Side,
   shift,
 } from "@floating-ui/dom";
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  untrack,
-} from "solid-js";
+import { type Accessor, createMemo, createSignal, untrack } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import type { GuideFocusArea, GuidePlacement } from "./lessons";
 
 /** Open menus and dropdown lists the card must never cover, since the user is choosing from them. */
@@ -496,38 +490,38 @@ export function useFloatingGuide(
     })();
   };
   /** Resets manual placement when the lesson advances. */
-  createEffect(() => {
-    step();
+  createEffect(step, () => {
     manual = false;
     placedGeometry = "";
-    untrack(place);
+    place();
   });
   /** Tracks geometry changes without moving the card in response to ordinary pointer movement. */
-  createEffect(() => {
-    const card = element();
-    anchor();
-    if (!card) return;
-    const frame = requestAnimationFrame(place);
-    const observer = new ResizeObserver(place);
-    observer.observe(card);
-    let previousDialog = "";
-    /** Reacts to dialogs and menus opening or closing without following unrelated app updates. */
-    const pollDialog = window.setInterval(() => {
-      const rect = dialogBounds();
-      const key = rectsKey([...(rect ? [rect] : []), ...popoverBounds()]);
-      if (key !== previousDialog) {
-        previousDialog = key;
-        place();
-      }
-    }, 250);
-    window.addEventListener("resize", place);
-    onCleanup(() => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-      window.clearInterval(pollDialog);
-      window.removeEventListener("resize", place);
-    });
-  });
+  createEffect(
+    () => ({ card: element(), anchor: anchor() }),
+    ({ card }) => {
+      if (!card) return;
+      const frame = requestAnimationFrame(place);
+      const observer = new ResizeObserver(place);
+      observer.observe(card);
+      let previousDialog = "";
+      /** Reacts to dialogs and menus opening or closing without following unrelated app updates. */
+      const pollDialog = window.setInterval(() => {
+        const rect = dialogBounds();
+        const key = rectsKey([...(rect ? [rect] : []), ...popoverBounds()]);
+        if (key !== previousDialog) {
+          previousDialog = key;
+          place();
+        }
+      }, 250);
+      window.addEventListener("resize", place);
+      return () => {
+        cancelAnimationFrame(frame);
+        observer.disconnect();
+        window.clearInterval(pollDialog);
+        window.removeEventListener("resize", place);
+      };
+    },
+  );
   /** Retains deliberate placement until the next instructional action. */
   const move = (point: { x: number; y: number }) => {
     manual = true;

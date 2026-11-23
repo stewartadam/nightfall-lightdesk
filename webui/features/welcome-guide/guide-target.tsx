@@ -6,9 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, onCleanup, Show, untrack } from "solid-js";
+import { createSignal, Show, untrack } from "solid-js";
 import { Portal } from "solid-js/web";
 import { overlayHost } from "../../components/ui/modal/dialog-stack";
+import { createEffect } from "../../lib/solid-compat";
 
 interface GuideTargetProps {
   stepId: string;
@@ -97,35 +98,38 @@ export function GuideTarget(props: GuideTargetProps) {
   const [host, setHost] = createSignal<HTMLElement>(overlayHost());
 
   /** Re-resolves lazy panels and tracks scrolling, resizing, and dock rearrangement. */
-  createEffect(() => {
-    const selector = props.selector;
-    const stepId = props.stepId;
-    const focusTarget = props.focusTarget;
-    const reveal = props.highlight !== false;
-    void stepId;
-    setBounds(null);
-    props.onBounds?.(null);
-    if (!selector) return;
-    let previous = "";
-    let focused: HTMLElement | undefined;
-    let revealed = false;
-    let focusFrame: number | undefined;
-    /** Ignores hidden, clipped, disabled, or modal-obscured controls. */
-    const update = () => {
-      const modal = [
-        ...document.querySelectorAll<HTMLElement>(
-          '.nf-dialog-backdrop, [role="dialog"][aria-modal="true"]',
-        ),
-      ].find((element) => {
-        const rect = element.getBoundingClientRect();
-        return (
-          rect.width > 0 &&
-          rect.height > 0 &&
-          getComputedStyle(element).visibility !== "hidden"
-        );
-      });
-      const target = [...document.querySelectorAll<HTMLElement>(selector)].find(
-        (element) => {
+  createEffect(
+    () => ({
+      selector: props.selector,
+      stepId: props.stepId,
+      focusTarget: props.focusTarget,
+      reveal: props.highlight !== false,
+    }),
+    ({ selector, focusTarget, reveal }) => {
+      setBounds(null);
+      props.onBounds?.(null);
+      if (!selector) return;
+      let previous = "";
+      let focused: HTMLElement | undefined;
+      let revealed = false;
+      let focusFrame: number | undefined;
+      /** Ignores hidden, clipped, disabled, or modal-obscured controls. */
+      const update = () => {
+        const modal = [
+          ...document.querySelectorAll<HTMLElement>(
+            '.nf-dialog-backdrop, [role="dialog"][aria-modal="true"]',
+          ),
+        ].find((element) => {
+          const rect = element.getBoundingClientRect();
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            getComputedStyle(element).visibility !== "hidden"
+          );
+        });
+        const target = [
+          ...document.querySelectorAll<HTMLElement>(selector),
+        ].find((element) => {
           if (modal && !modal.contains(element)) return false;
           if (element.closest('[inert], [aria-hidden="true"], [disabled]'))
             return false;
@@ -155,81 +159,81 @@ export function GuideTarget(props: GuideTargetProps) {
             hit !== undefined &&
             (element.contains(hit) || hit.contains(element))
           );
-        },
-      );
-      // Scroll a rendered but clipped target into view once per step, so users need not hunt for it.
-      if (!target && reveal && !revealed) {
-        for (const element of document.querySelectorAll<HTMLElement>(
-          selector,
-        )) {
-          if (modal && !modal.contains(element)) continue;
-          if (element.closest('[inert], [aria-hidden="true"], [disabled]'))
-            continue;
-          const rect = element.getBoundingClientRect();
-          if (rect.width <= 0 || rect.height <= 0) continue;
-          if (revealInScroller(element)) {
-            revealed = true;
-            break;
+        });
+        // Scroll a rendered but clipped target into view once per step, so users need not hunt for it.
+        if (!target && reveal && !revealed) {
+          for (const element of document.querySelectorAll<HTMLElement>(
+            selector,
+          )) {
+            if (modal && !modal.contains(element)) continue;
+            if (element.closest('[inert], [aria-hidden="true"], [disabled]'))
+              continue;
+            const rect = element.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) continue;
+            if (revealInScroller(element)) {
+              revealed = true;
+              break;
+            }
           }
         }
-      }
-      const rect = target?.getBoundingClientRect() ?? null;
-      const nextHost = overlayHost(target);
-      if (nextHost !== untrack(host)) setHost(nextHost);
-      // A focused text field already shows its own focus ring, so the pulse would only add noise.
-      // Buttons keep the pulse, since programmatic focus doesn't always draw a ring on them.
-      setTargetFocused(
-        !!target &&
-          document.activeElement === target &&
-          target.matches('input, textarea, select, [contenteditable="true"]'),
-      );
-      // Focuses each new target once, so a step that moves through form fields follows along.
-      if (target && focusTarget && focused !== target) {
-        focused = target;
-        // Waits a second frame so a dialog's own initial focus lands first and the guide's wins.
-        focusFrame = requestAnimationFrame(() => {
+        const rect = target?.getBoundingClientRect() ?? null;
+        const nextHost = overlayHost(target);
+        if (nextHost !== untrack(host)) setHost(nextHost);
+        // A focused text field already shows its own focus ring, so the pulse would only add noise.
+        // Buttons keep the pulse, since programmatic focus doesn't always draw a ring on them.
+        setTargetFocused(
+          !!target &&
+            document.activeElement === target &&
+            target.matches('input, textarea, select, [contenteditable="true"]'),
+        );
+        // Focuses each new target once, so a step that moves through form fields follows along.
+        if (target && focusTarget && focused !== target) {
+          focused = target;
+          // Waits a second frame so a dialog's own initial focus lands first and the guide's wins.
           focusFrame = requestAnimationFrame(() => {
-            // A dialog opened meanwhile owns focus; pulling it outside would dismiss it.
-            const dialog = document.querySelector(
-              '[role="dialog"][aria-modal="true"]',
-            );
-            if (target.isConnected && (!dialog || dialog.contains(target)))
-              target.focus({ preventScroll: true });
+            focusFrame = requestAnimationFrame(() => {
+              // A dialog opened meanwhile owns focus; pulling it outside would dismiss it.
+              const dialog = document.querySelector(
+                '[role="dialog"][aria-modal="true"]',
+              );
+              if (target.isConnected && (!dialog || dialog.contains(target)))
+                target.focus({ preventScroll: true });
+            });
           });
+        }
+        const key = rect
+          ? `${rect.x},${rect.y},${rect.width},${rect.height}`
+          : "none";
+        if (key !== previous) {
+          previous = key;
+          setBounds(rect);
+          props.onBounds?.(rect);
+        }
+      };
+      update();
+      let scrollFrame: number | undefined;
+      /** Follows nested scrollers and focus moves on the next frame rather than waiting for geometry polling. */
+      const scheduleUpdate = () => {
+        if (scrollFrame !== undefined) return;
+        scrollFrame = requestAnimationFrame(() => {
+          scrollFrame = undefined;
+          update();
         });
-      }
-      const key = rect
-        ? `${rect.x},${rect.y},${rect.width},${rect.height}`
-        : "none";
-      if (key !== previous) {
-        previous = key;
-        setBounds(rect);
-        props.onBounds?.(rect);
-      }
-    };
-    update();
-    let scrollFrame: number | undefined;
-    /** Follows nested scrollers and focus moves on the next frame rather than waiting for geometry polling. */
-    const scheduleUpdate = () => {
-      if (scrollFrame !== undefined) return;
-      scrollFrame = requestAnimationFrame(() => {
-        scrollFrame = undefined;
-        update();
-      });
-    };
-    document.addEventListener("scroll", scheduleUpdate, true);
-    document.addEventListener("focusin", update);
-    document.addEventListener("focusout", scheduleUpdate);
-    const timer = window.setInterval(update, 250);
-    onCleanup(() => {
-      document.removeEventListener("scroll", scheduleUpdate, true);
-      document.removeEventListener("focusin", update);
-      document.removeEventListener("focusout", scheduleUpdate);
-      if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
-      window.clearInterval(timer);
-      if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
-    });
-  });
+      };
+      document.addEventListener("scroll", scheduleUpdate, true);
+      document.addEventListener("focusin", update);
+      document.addEventListener("focusout", scheduleUpdate);
+      const timer = window.setInterval(update, 250);
+      return () => {
+        document.removeEventListener("scroll", scheduleUpdate, true);
+        document.removeEventListener("focusin", update);
+        document.removeEventListener("focusout", scheduleUpdate);
+        if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
+        window.clearInterval(timer);
+        if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
+      };
+    },
+  );
 
   return (
     <Show when={host()} keyed>

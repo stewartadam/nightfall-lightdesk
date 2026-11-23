@@ -18,12 +18,7 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
  * - View detailed information in properties panel
  */
 
-import {
-  type Component,
-  createEffect,
-  createMemo,
-  createSignal,
-} from "solid-js";
+import { type Component, createMemo, createSignal } from "solid-js";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import DataGrid, {
   createKeyedDataGridCellProvider,
@@ -56,6 +51,7 @@ import {
 import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { objectLibrary } from "../../../state/appStores";
 import type { ObjectLibraryCommand } from "../../../types";
@@ -187,11 +183,8 @@ const ObjectLibraryPanel: Component<ObjectLibraryPanelProps> = (props) => {
     onFiltersChange: clearSelection,
   });
 
-  // Clear selection when object list changes (e.g., after delete)
-  createEffect(() => {
-    // Access the objects to track them
-    objects();
-    // Clear selection when object list changes
+  /** Clears the selection whenever the object list changes, such as after a delete. */
+  createEffect(objects, () => {
     clearSelection();
   });
 

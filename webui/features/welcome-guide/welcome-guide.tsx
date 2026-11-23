@@ -111,8 +111,8 @@ export function GuideInvitation() {
   let closeInvitation: (() => void) | undefined;
 
   /** Shows the invitation once per page load while it is unanswered, and withdraws it once answered. */
-  createEffect(() => {
-    if (dismissed()) {
+  createEffect(dismissed, (isDismissed) => {
+    if (isDismissed) {
       closeInvitation?.();
       closeInvitation = undefined;
       return;
@@ -249,10 +249,10 @@ export default function WelcomeGuide() {
     panels: [],
   });
   /** While the guide is open, tracks open panels and whether each is unobstructed, across layout restores. */
-  createEffect(() => {
-    if (!opened()) return;
-    onCleanup(trackGuidePanels(dockviewApi(), setWorkspace));
-  });
+  createEffect(
+    () => ({ open: opened(), api: dockviewApi() }),
+    ({ open, api }) => (open ? trackGuidePanels(api, setWorkspace) : undefined),
+  );
   /** Lists panels the user can currently see; anything else gets an Open or Show button. */
   const visiblePanels = createMemo(() =>
     workspace().panels.filter((panel) => panel.onScreen),
@@ -295,17 +295,21 @@ export default function WelcomeGuide() {
   const [visitedPanels, setVisitedPanels] = createSignal(new Set<string>());
   let visitedStep = "";
   /** Remembers prerequisite panels visited during this step, even when they share a tab group. */
-  createEffect(() => {
-    const key = `${lessonId()}:${step()?.id}`;
-    const keys = workspace()
-      .panels.filter((panel) => panel.visible)
-      .flatMap(panelKeys);
-    const reset = key !== visitedStep;
-    visitedStep = key;
-    setVisitedPanels(
-      (previous) => new Set([...(reset ? [] : previous), ...keys]),
-    );
-  });
+  createEffect(
+    () => ({
+      key: `${lessonId()}:${step()?.id}`,
+      keys: workspace()
+        .panels.filter((panel) => panel.visible)
+        .flatMap(panelKeys),
+    }),
+    ({ key, keys }) => {
+      const reset = key !== visitedStep;
+      visitedStep = key;
+      setVisitedPanels(
+        (previous) => new Set([...(reset ? [] : previous), ...keys]),
+      );
+    },
+  );
   /** Checks whether a prerequisite panel is visible and expanded. */
   const panelVisible = (name: PanelComponentName) =>
     visiblePanels().some((panel) => panel.component === name);
@@ -408,10 +412,17 @@ export default function WelcomeGuide() {
     setReachedPart(0);
   });
   /** Moves the current step's highlight on to the next part once its `until` holds. */
-  createEffect(() => {
-    const parts = step()?.parts;
-    if (parts?.length) setReachedPart(activePart(parts, untrack(reachedPart)));
-  });
+  createEffect(
+    () => {
+      const parts = step()?.parts;
+      return parts?.length
+        ? activePart(parts, untrack(reachedPart))
+        : undefined;
+    },
+    (part) => {
+      if (part !== undefined) setReachedPart(part);
+    },
+  );
   /**
    * Resolves a step's authored object identities to clip tiles, inspect buttons, sequence cards,
    * or Trigger cells, the reached part of a multi-part step, or else its plain target selector.
@@ -559,32 +570,45 @@ export default function WelcomeGuide() {
    * in place instead of sliding there. The placement must hold for two frames, since the card's
    * first placement can precede the resize from swapping the library for the lesson content.
    */
-  createEffect(() => {
-    if (!revealPending() || startingLesson()) return;
-    if (!opened() || !lesson()) {
-      setRevealPending(false);
-      return;
-    }
-    const placed = floating.placed();
-    const target = anchor();
-    floating.position();
-    if (
-      placed?.step !== `${lessonId()}:${index()}` ||
-      placed.anchor !== target ||
-      (!target && targetSelector())
-    )
-      return;
-    let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => setRevealPending(false));
-    });
-    onCleanup(() => cancelAnimationFrame(frame));
-  });
+  createEffect(
+    () => {
+      if (!revealPending() || startingLesson()) return undefined;
+      if (!opened() || !lesson()) return "abandon" as const;
+      const placed = floating.placed();
+      const target = anchor();
+      const position = floating.position();
+      if (
+        placed?.step !== `${lessonId()}:${index()}` ||
+        placed.anchor !== target ||
+        (!target && targetSelector())
+      )
+        return undefined;
+      return { position };
+    },
+    (state) => {
+      if (state === "abandon") {
+        setRevealPending(false);
+        return;
+      }
+      if (!state) return;
+      let frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => setRevealPending(false));
+      });
+      return () => cancelAnimationFrame(frame);
+    },
+  );
   /** Stops waiting for a first target that never appears, so the card cannot stay hidden. */
-  createEffect(() => {
-    if (!revealPending() || startingLesson()) return;
-    const timer = setTimeout(() => setRevealPending(false), REVEAL_TIMEOUT_MS);
-    onCleanup(() => clearTimeout(timer));
-  });
+  createEffect(
+    () => revealPending() && !startingLesson(),
+    (waiting) => {
+      if (!waiting) return;
+      const timer = setTimeout(
+        () => setRevealPending(false),
+        REVEAL_TIMEOUT_MS,
+      );
+      return () => clearTimeout(timer);
+    },
+  );
   /** Locates the drag source by sample clip identity in either card or list view. */
   const clipHighlightSelector = createMemo(() => {
     const id = step()?.highlightClipId;
@@ -770,16 +794,19 @@ export default function WelcomeGuide() {
    * Moves the floating card into the frontmost modal dialog while one is open, since a modal
    * dialog's top layer would otherwise cover it and make it inert.
    */
-  createEffect(() => {
-    if (!opened() || !floatingCard()) return;
-    /** Moves the card into the frontmost open dialog, or back to the page once none is open. */
-    const update = () => {
-      const next = overlayHost();
-      if (next !== untrack(cardHost)) setCardHost(next);
-    };
-    update();
-    onCleanup(watchOverlayHost(update));
-  });
+  createEffect(
+    () => opened() && floatingCard(),
+    (floatingOpen) => {
+      if (!floatingOpen) return;
+      /** Moves the card into the frontmost open dialog, or back to the page once none is open. */
+      const update = () => {
+        const next = overlayHost();
+        if (next !== cardHost()) setCardHost(next);
+      };
+      update();
+      return watchOverlayHost(update);
+    },
+  );
   /** The card itself, docked beside the app for the lesson library and floating during lessons. */
   const cardView = () => (
     <aside

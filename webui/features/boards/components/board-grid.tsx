@@ -8,7 +8,6 @@
 
 import { GearSixIcon } from "@squidlab/phosphor-solid/gear-six";
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -45,6 +44,7 @@ import {
 import { boardImageUrl } from "../services/board-images";
 import { ElementSettings } from "./board-properties";
 import "./board.css";
+import { createEffect } from "../../../lib/solid-compat";
 
 /** Margin around the grid inside its scrolling area in CSS pixels; matches board.css. */
 const GRID_MARGIN = 8;
@@ -330,20 +330,26 @@ export function BoardGrid(props: BoardGridProps) {
    * Stops showing a dropped placement once the engine's copy of the element reaches it, or
    * after a timeout when the engine refuses the move or never answers.
    */
-  createEffect(() => {
-    const pending = settling();
-    if (!pending) return;
-    const stored = controller.elementByUid(pending.uid)?.cell;
-    if (!stored || sameCell(stored, pending.cell)) {
-      setSettling(null);
-      return;
-    }
-    const timeout = window.setTimeout(
-      () => setSettling(null),
-      SETTLE_TIMEOUT_MS,
-    );
-    onCleanup(() => window.clearTimeout(timeout));
-  });
+  createEffect(
+    () => {
+      const pending = settling();
+      if (!pending) return undefined;
+      const stored = controller.elementByUid(pending.uid)?.cell;
+      return !stored || sameCell(stored, pending.cell) ? "settled" : pending;
+    },
+    (state) => {
+      if (state === "settled") {
+        setSettling(null);
+        return;
+      }
+      if (!state) return;
+      const timeout = window.setTimeout(
+        () => setSettling(null),
+        SETTLE_TIMEOUT_MS,
+      );
+      return () => window.clearTimeout(timeout);
+    },
+  );
   const [dropCell, setDropCell] = createSignal<{ x: number; y: number } | null>(
     null,
   );

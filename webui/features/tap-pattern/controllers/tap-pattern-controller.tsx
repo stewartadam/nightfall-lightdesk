@@ -6,13 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import { writeClipboardText } from "../../../lib/clipboard";
 import { sendCueUpdate, sendSequenceUpdate } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useShallowStore } from "../../../lib/use-shallow-store";
@@ -194,30 +195,30 @@ export function TapPatternController(props: TapPatternPanelProps) {
   };
 
   /** Opens generated sequences once the backend acknowledges every cue. */
-  createEffect(() => {
-    const pending = pendingGeneratedSequence();
-    if (!pending) {
-      return;
-    }
-
-    const storedSequence = $sequences()[pending.sequence.identifiers.uid];
-    if (!storedSequence) {
-      return;
-    }
-
-    const storedCues = $cues();
-    if (pending.cues.some((cue) => !storedCues[cue.identifiers.uid])) {
-      return;
-    }
-
-    const stepLabel = pending.cues.length === 1 ? "step" : "steps";
-    pushToast(
-      "success",
-      `Created sequence ${storedSequence.identifiers.id} with ${pending.cues.length} ${stepLabel}`,
-    );
-    setPendingGeneratedSequence(null);
-    setTimeout(() => openSequenceEditor(storedSequence), 0);
-  });
+  createEffect(
+    () => {
+      const pending = pendingGeneratedSequence();
+      if (!pending) return undefined;
+      const storedSequence = $sequences()[pending.sequence.identifiers.uid];
+      if (!storedSequence) return undefined;
+      const storedCues = $cues();
+      if (pending.cues.some((cue) => !storedCues[cue.identifiers.uid])) {
+        return undefined;
+      }
+      return { pending, storedSequence };
+    },
+    (acknowledged) => {
+      if (!acknowledged) return;
+      const { pending, storedSequence } = acknowledged;
+      const stepLabel = pending.cues.length === 1 ? "step" : "steps";
+      pushToast(
+        "success",
+        `Created sequence ${storedSequence.identifiers.id} with ${pending.cues.length} ${stepLabel}`,
+      );
+      setPendingGeneratedSequence(null);
+      setTimeout(() => openSequenceEditor(storedSequence), 0);
+    },
+  );
 
   /** Creates a wrapped empty cue sequence from the detected tap pattern. */
   const createSequenceFromPattern = () => {
@@ -381,9 +382,10 @@ export function TapPatternController(props: TapPatternPanelProps) {
   });
 
   /** Persists tap capture changes so refreshes keep the current timing state. */
-  createEffect(() => {
-    tapPatternState.set({ taps: taps(), detectionOptions: detectionOptions() });
-  });
+  createEffect(
+    () => ({ taps: taps(), detectionOptions: detectionOptions() }),
+    (state) => tapPatternState.set(state),
+  );
 
   return (
     <div

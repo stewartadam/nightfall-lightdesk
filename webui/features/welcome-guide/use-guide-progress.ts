@@ -6,16 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createSignal,
-  onCleanup,
-  untrack,
-} from "solid-js";
+import { type Accessor, createMemo, createSignal, onCleanup } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
 import { useCommandPalette } from "../../components/providers/command-registry";
 import { libraryDefinitionId } from "../../lib/fixture-service";
+import { createEffect } from "../../lib/solid-compat";
 import { useStore } from "../../lib/use-nanostore";
 import { useConditionalShallowStore } from "../../lib/use-shallow-store";
 import {
@@ -165,12 +160,27 @@ export function useGuideProgress(
 ): void {
   const { isSettingsOpen } = useAppShell();
 
-  /** Arms a new observation at entry, and cancels pending advancement on navigation or exit. */
-  createEffect(() => {
-    const target = observation();
+  /**
+   * Interactions observed through DOM listeners, each tagged with the observation it was
+   * recorded for, so entering a new step starts from a clean slate without resetting signals.
+   */
+  const [accentPickedFor, setAccentPickedFor] =
+    createSignal<GuideObservation>();
+  const [saveShowfilePressedFor, setSaveShowfilePressedFor] =
+    createSignal<GuideObservation>();
+  const [submittedCommand, setSubmittedCommand] = createSignal<{
+    target: GuideObservation;
+    command: string;
+  }>();
+  const [selectedTimelineActions, setSelectedTimelineActions] = createSignal<{
+    target: GuideObservation;
+    actions: GuideSnapshot["selectedTimelineActions"];
+  }>();
+
+  /** Attaches the DOM listeners the current observation needs, and removes them on navigation or exit. */
+  createEffect(observation, (target) => {
     if (!target) return;
-    const [accentPicked, setAccentPicked] = createSignal(false);
-    const [saveShowfilePressed, setSaveShowfilePressed] = createSignal(false);
+    const cleanups: (() => void)[] = [];
     /** Observes the enabled save menu action, including keyboard-generated clicks. */
     const pressSaveShowfile = (event: MouseEvent) => {
       if (
@@ -179,15 +189,14 @@ export function useGuideProgress(
           '[data-component="DropdownMenuItem"]:has([data-guide-target="save-showfile"]):not([disabled])',
         )
       )
-        setSaveShowfilePressed(true);
+        setSaveShowfilePressedFor(target);
     };
     if (target.type === "save-showfile") {
       document.addEventListener("click", pressSaveShowfile, true);
-      onCleanup(() =>
+      cleanups.push(() =>
         document.removeEventListener("click", pressSaveShowfile, true),
       );
     }
-    const [submittedCommand, setSubmittedCommand] = createSignal<string>();
     /** Captures command input submissions, including repeats of the previous history entry. */
     const submitCommand = (event: SubmitEvent) => {
       const input =
@@ -196,21 +205,19 @@ export function useGuideProgress(
               "#header-cmdline, #cmdline",
             )
           : null;
-      if (input) setSubmittedCommand(input.value);
+      if (input) setSubmittedCommand({ target, command: input.value });
     };
     if (target.type === "command-submitted") {
       document.addEventListener("submit", submitCommand, true);
-      onCleanup(() =>
+      cleanups.push(() =>
         document.removeEventListener("submit", submitCommand, true),
       );
     }
-    const [selectedTimelineActions, setSelectedTimelineActions] = createSignal<
-      GuideSnapshot["selectedTimelineActions"]
-    >([]);
     /** Mirrors selected timeline action chips, whose selection is local to each editor. */
     const readSelectedTimelineActions = () =>
-      setSelectedTimelineActions(
-        [
+      setSelectedTimelineActions({
+        target,
+        actions: [
           ...document.querySelectorAll<HTMLElement>(
             '[data-timeline-surface="true"] [data-timeline-action="true"][data-selected="true"]:not([data-drag-preview])',
           ),
@@ -221,7 +228,7 @@ export function useGuideProgress(
           trackId: element.dataset.trackId ?? "",
           actionId: element.dataset.actionId ?? "",
         })),
-      );
+      });
     if (target.type === "timeline-action-selected") {
       readSelectedTimelineActions();
       const observer = new MutationObserver(readSelectedTimelineActions);
@@ -230,7 +237,7 @@ export function useGuideProgress(
         attributes: true,
         attributeFilter: ["data-selected"],
       });
-      onCleanup(() => observer.disconnect());
+      cleanups.push(() => observer.disconnect());
     }
     /** Counts a deliberate swatch choice, including reselecting the current color. */
     const pickAccent = (event: MouseEvent) => {
@@ -239,43 +246,73 @@ export function useGuideProgress(
         event.target instanceof Element &&
         event.target.closest('[aria-label="Settings"] .nf-accent-picker button')
       )
-        setAccentPicked(true);
+        setAccentPickedFor(target);
     };
     if (target.type === "accent-settings-closed") {
       document.addEventListener("click", pickAccent, true);
-      onCleanup(() => document.removeEventListener("click", pickAccent, true));
+      cleanups.push(() =>
+        document.removeEventListener("click", pickAccent, true),
+      );
     }
-    /** Reads a pure completion token from the current acknowledged application snapshot. */
-    const token = () =>
-      guideCompletionToken(target, {
-        ...snapshot(),
-        accentPicked: accentPicked(),
-        saveShowfilePressed: saveShowfilePressed(),
-        submittedCommand: submittedCommand(),
-        selectedTimelineActions: selectedTimelineActions(),
-      });
-    let previous =
-      !untrack(revisited) &&
-      (target.type === "sample-panels" ||
-        target.type === "sequence-editor" ||
-        target.type === "panel-hidden" ||
-        target.type === "panel-closed" ||
-        target.type === "playback-idle" ||
-        target.type === "timeline-action-selected")
-        ? ""
-        : untrack(token);
-    let pending: ReturnType<typeof setTimeout> | undefined;
-    /**
-     * Advances once per step after a new matching state is published. While held, the step-entry
-     * state is kept, so an action completed before the instructions appeared advances once they do.
-     */
-    createEffect(() => {
-      const next = token();
-      if (held()) return;
+    return () => {
+      for (const cleanup of cleanups) cleanup();
+    };
+  });
+
+  /** Reads a pure completion token for the current observation from the acknowledged application snapshot. */
+  const token = createMemo(() => {
+    const target = observation();
+    if (!target) return undefined;
+    const command = submittedCommand();
+    const timelineActions = selectedTimelineActions();
+    return guideCompletionToken(target, {
+      ...snapshot(),
+      accentPicked: accentPickedFor() === target,
+      saveShowfilePressed: saveShowfilePressedFor() === target,
+      submittedCommand:
+        command?.target === target ? command.command : undefined,
+      selectedTimelineActions:
+        timelineActions?.target === target ? timelineActions.actions : [],
+    });
+  });
+
+  let armedFor: GuideObservation | undefined;
+  let previous: string | undefined;
+  let pending: ReturnType<typeof setTimeout> | undefined;
+  /** Cancels a scheduled advancement when the observation changes or the guide closes. */
+  const cancelPending = () => {
+    clearTimeout(pending);
+    pending = undefined;
+  };
+  onCleanup(cancelPending);
+
+  /**
+   * Advances once per step after a new matching state is published. A step the user did not
+   * revisit and whose condition is state based starts from an empty token, so a condition already
+   * met advances at once. While held, the step-entry state is kept, so an action completed before
+   * the instructions appeared advances once they do.
+   */
+  createEffect(
+    () => ({ target: observation(), next: token(), held: held() }),
+    ({ target, next, held }) => {
+      if (target !== armedFor) {
+        cancelPending();
+        armedFor = target;
+        previous =
+          !revisited() &&
+          (target?.type === "sample-panels" ||
+            target?.type === "sequence-editor" ||
+            target?.type === "panel-hidden" ||
+            target?.type === "panel-closed" ||
+            target?.type === "playback-idle" ||
+            target?.type === "timeline-action-selected")
+            ? ""
+            : next;
+      }
+      if (!target || held) return;
       if (next && next !== previous && pending === undefined)
         pending = setTimeout(advance, 0);
       previous = next;
-    });
-    onCleanup(() => clearTimeout(pending));
-  });
+    },
+  );
 }
