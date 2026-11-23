@@ -145,7 +145,7 @@ jobs:
               why='The clearance is off while Claude reviews this PR again on request.'
             elif [[ "$(jq -r .baseRefName <<< "$pr")" != develop ]]; then
               # Pushes to a PR higher in a stack, such as every restack, are not reviewed.
-              why='The PR changed after it was cleared, so the clearance is off. It is reviewed again once it targets develop, or on a `/review` comment.'
+              why="The PR changed after it was cleared, so the clearance is off. It is reviewed again once it targets develop, or on a \`/review\` comment."
             else
               why='The PR changed after it was cleared, so the clearance is off. A ready PR is reviewed again.'
             fi
