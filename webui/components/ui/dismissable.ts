@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, onCleanup } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import {
   type DismissableLayerEntry,
   isInsideLayerAbove,
@@ -50,36 +50,42 @@ export interface DismissableOptions {
  */
 export function createDismissable(options: DismissableOptions): void {
   /** Registers the layer and its outside-press listener for as long as it stays active. */
-  createEffect(() => {
-    if (!options.active()) return;
+  createEffect(
+    () =>
+      options.active()
+        ? { outsidePress: options.outsidePress !== false }
+        : null,
+    (active) => {
+      if (!active) return;
 
-    const entry: DismissableLayerEntry = {
-      contains: (target) =>
-        options.refs().some((element) => element?.contains(target) === true),
-      escapeAction: () =>
-        options.escape?.() === false
-          ? undefined
-          : () => options.onDismiss("escape"),
-    };
+      const entry: DismissableLayerEntry = {
+        contains: (target) =>
+          options.refs().some((element) => element?.contains(target) === true),
+        escapeAction: () =>
+          options.escape?.() === false
+            ? undefined
+            : () => options.onDismiss("escape"),
+      };
 
-    /** Dismisses on a press that lands outside the layer and everything stacked above it. */
-    const handlePointerDown = (event: PointerEvent): void => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (entry.contains(target) || isInsideLayerAbove(entry, target)) return;
-      options.onDismiss("outside");
-    };
+      /** Dismisses on a press that lands outside the layer and everything stacked above it. */
+      const handlePointerDown = (event: PointerEvent): void => {
+        const target = event.target;
+        if (!(target instanceof Node)) return;
+        if (entry.contains(target) || isInsideLayerAbove(entry, target)) return;
+        options.onDismiss("outside");
+      };
 
-    const unregister = registerDismissableLayer(entry);
-    const listensForOutsidePress = options.outsidePress !== false;
-    if (listensForOutsidePress) {
-      document.addEventListener("pointerdown", handlePointerDown, true);
-    }
-    onCleanup(() => {
-      unregister();
+      const unregister = registerDismissableLayer(entry);
+      const listensForOutsidePress = active.outsidePress;
       if (listensForOutsidePress) {
-        document.removeEventListener("pointerdown", handlePointerDown, true);
+        document.addEventListener("pointerdown", handlePointerDown, true);
       }
-    });
-  });
+      return () => {
+        unregister();
+        if (listensForOutsidePress) {
+          document.removeEventListener("pointerdown", handlePointerDown, true);
+        }
+      };
+    },
+  );
 }

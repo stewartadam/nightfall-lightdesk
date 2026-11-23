@@ -403,8 +403,8 @@ export default function Tooltip(props: TooltipProps) {
    * Hides an open tooltip when the window loses focus, e.g. switching to
    * another app, since the pointer can leave without a pointerleave event.
    */
-  createEffect(() => {
-    if (!visible()) return;
+  createEffect(visible, (isVisible) => {
+    if (!isVisible) return;
     const handleWindowBlur = () => {
       clearOpenTimer();
       clearCloseTimer();
@@ -412,57 +412,63 @@ export default function Tooltip(props: TooltipProps) {
       setVisible(false);
     };
     window.addEventListener("blur", handleWindowBlur);
-    onCleanup(() => window.removeEventListener("blur", handleWindowBlur));
+    return () => window.removeEventListener("blur", handleWindowBlur);
   });
 
   /** Keeps the tooltip mounted briefly after close so opacity can animate out. */
-  createEffect(() => {
-    if (wantsVisible()) {
-      const animationKey = props.animationKey?.();
-      if (animationKey !== undefined && animationKey !== lastAnimationKey) {
-        lastAnimationKey = animationKey;
-        setRenderedVisible(false);
-        resetTooltipPosition();
+  createEffect(
+    () =>
+      wantsVisible()
+        ? { wanted: true as const, animationKey: props.animationKey?.() }
+        : { wanted: false as const, mounted: mounted() },
+    (state) => {
+      if (state.wanted) {
+        const animationKey = state.animationKey;
+        if (animationKey !== undefined && animationKey !== lastAnimationKey) {
+          lastAnimationKey = animationKey;
+          setRenderedVisible(false);
+          resetTooltipPosition();
+        }
+        clearExitTimer();
+        setMounted(true);
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            setRenderedVisible(true);
+            updateTooltipPosition();
+          }),
+        );
+        return;
       }
-      clearExitTimer();
-      setMounted(true);
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          setRenderedVisible(true);
-          updateTooltipPosition();
-        }),
-      );
-      return;
-    }
 
-    lastAnimationKey = undefined;
-    setRenderedVisible(false);
-    if (!mounted()) return;
-    clearExitTimer();
-    exitTimeoutId = setTimeout(() => {
-      exitTimeoutId = null;
-      setMounted(false);
-    }, EXIT_ANIMATION_MS);
-  });
+      lastAnimationKey = undefined;
+      setRenderedVisible(false);
+      if (!state.mounted) return;
+      clearExitTimer();
+      exitTimeoutId = setTimeout(() => {
+        exitTimeoutId = null;
+        setMounted(false);
+      }, EXIT_ANIMATION_MS);
+    },
+  );
 
   /** Repositions visible tooltip content when the viewport or content changes. */
-  createEffect(() => {
-    if (!mounted() || !wantsVisible()) return;
+  createEffect(
+    () => (mounted() && wantsVisible() ? { content: props.content() } : null),
+    (shown) => {
+      if (!shown) return;
+      const handleViewportChange = () => updateTooltipPosition();
+      resetTooltipPosition();
+      requestAnimationFrame(updateTooltipPosition);
 
-    const handleViewportChange = () => updateTooltipPosition();
-    const content = props.content();
-    void content;
-    resetTooltipPosition();
-    requestAnimationFrame(updateTooltipPosition);
+      window.addEventListener("scroll", handleViewportChange, true);
+      window.addEventListener("resize", handleViewportChange);
 
-    window.addEventListener("scroll", handleViewportChange, true);
-    window.addEventListener("resize", handleViewportChange);
-
-    onCleanup(() => {
-      window.removeEventListener("scroll", handleViewportChange, true);
-      window.removeEventListener("resize", handleViewportChange);
-    });
-  });
+      return () => {
+        window.removeEventListener("scroll", handleViewportChange, true);
+        window.removeEventListener("resize", handleViewportChange);
+      };
+    },
+  );
 
   return (
     <span

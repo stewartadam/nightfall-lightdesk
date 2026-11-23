@@ -6,9 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, untrack } from "solid-js";
+import { createSignal } from "solid-js";
 import type { GridCell, Item } from "../../../lib/data-grid-types";
 import { GridCellKind } from "../../../lib/data-grid-types";
+import { createEffect } from "../../../lib/solid-compat";
 import {
   canEditDropdownCell,
   canEditTextCell,
@@ -206,9 +207,12 @@ export function createDataGridEditingController(
   };
 
   /** Discards an open editor if its owner changes the grid to read-only presentation. */
-  createEffect(() => {
-    if (options.props.readOnly && untrack(editingCell)) cancelEdit();
-  });
+  createEffect(
+    () => options.props.readOnly,
+    (readOnly) => {
+      if (readOnly && editingCell()) cancelEdit();
+    },
+  );
 
   return {
     beginEdit,

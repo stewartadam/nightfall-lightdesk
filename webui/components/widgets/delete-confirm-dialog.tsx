@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, type JSX, onCleanup } from "solid-js";
+import { createSignal, type JSX, onCleanup } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import {
   Dialog,
   DialogBody,
@@ -46,23 +47,25 @@ export default function DeleteConfirmModal(props: DeleteConfirmModalProps) {
   let confirmButtonRef: HTMLButtonElement | undefined;
   let cancelButtonRef: HTMLButtonElement | undefined;
 
-  createEffect(() => {
-    if (!props.isOpen) {
+  /** Restarts the fade-in on open and focuses the default button once it has entered. */
+  createEffect(
+    () => props.isOpen,
+    (isOpen) => {
       setIsEntered(false);
-      if (enterAnimationFrame !== null) {
-        cancelAnimationFrame(enterAnimationFrame);
-        enterAnimationFrame = null;
+      if (!isOpen) {
+        if (enterAnimationFrame !== null) {
+          cancelAnimationFrame(enterAnimationFrame);
+          enterAnimationFrame = null;
+        }
+        return;
       }
-      return;
-    }
-
-    setIsEntered(false);
-    enterAnimationFrame = requestAnimationFrame(() => {
-      setIsEntered(true);
-      (props.focusCancel ? cancelButtonRef : confirmButtonRef)?.focus();
-      enterAnimationFrame = null;
-    });
-  });
+      enterAnimationFrame = requestAnimationFrame(() => {
+        setIsEntered(true);
+        (props.focusCancel ? cancelButtonRef : confirmButtonRef)?.focus();
+        enterAnimationFrame = null;
+      });
+    },
+  );
 
   onCleanup(() => {
     if (enterAnimationFrame !== null) {

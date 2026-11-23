@@ -7,7 +7,7 @@
  */
 
 import { CaretRightIcon } from "@squidlab/phosphor-solid/caret-right";
-import { batch, For, type JSX, onCleanup, Show, untrack } from "solid-js";
+import { batch, For, type JSX, Show, untrack } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { createEffect } from "../../lib/solid-compat";
 import { playContentEntrance } from "./content-entrance";
@@ -135,15 +135,17 @@ export function SidebarTabs<T extends string>(props: SidebarTabsProps<T>) {
   );
 
   /** Shows the open page's title and back button in the dialog header while the page is showing. */
-  createEffect(() => {
-    if (!dialogPage || !showingPage()) return;
-    dialogPage.setPage({
-      title: selectedLabel(),
-      backLabel: backLabel(),
-      onBack: closePage,
-    });
-    onCleanup(() => dialogPage.setPage(undefined));
-  });
+  createEffect(
+    () =>
+      dialogPage && showingPage()
+        ? { title: selectedLabel(), backLabel: backLabel() }
+        : undefined,
+    (page) => {
+      if (!dialogPage || !page) return;
+      dialogPage.setPage({ ...page, onBack: closePage });
+      return () => dialogPage.setPage(undefined);
+    },
+  );
 
   // Created once so switching layouts moves the panel instead of rebuilding its contents.
   const content = untrack(() => props.children(panel));

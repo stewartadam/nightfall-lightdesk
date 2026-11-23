@@ -6,14 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createSignal,
-  createUniqueId,
-  onCleanup,
-  onMount,
-} from "solid-js";
+import { createSignal, createUniqueId, onCleanup, onMount } from "solid-js";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import {
   SegmentedControl,
   type SegmentedControlOption,
@@ -133,17 +128,21 @@ export default function ColorPicker(props: ColorPickerProps) {
 
   const redraw = () => (mode() === "square" ? drawSquare() : drawCircle());
 
-  createEffect(() => {
-    mode();
-    draft();
-    redraw();
-  });
+  /** Repaints the picker plane whenever its shape or the drafted color changes. */
+  createEffect(
+    () => [mode(), draft()] as const,
+    () => {
+      redraw();
+    },
+  );
 
-  /** Synchronizes the local interaction draft when the controlled value changes. */
-  createEffect(() => {
-    const value = props.value;
-    if (!hsvColorsEqual(value, draft())) setDraft(value);
-  });
+  /** Keeps the local interaction draft on the controlled value, reverting drafts the owner did not take. */
+  createEffect(
+    () => [props.value, draft()] as const,
+    ([value, current]) => {
+      if (!hsvColorsEqual(value, current)) setDraft(value);
+    },
+  );
 
   /* -------------------- pointer -------------------- */
   const getCanvasPoint = (e: PointerEvent) => {

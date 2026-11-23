@@ -7,15 +7,8 @@
  */
 
 import noUiSlider, { type API } from "nouislider";
-import {
-  createEffect,
-  createMemo,
-  For,
-  type JSX,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { createMemo, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import { withTransientOwner } from "./transient-owner";
 import "./range-slider.css";
 
@@ -138,20 +131,25 @@ export function VerticalRangeSlider(
     );
 
     /** Mirrors external values without echoing updates or disrupting an active drag. */
-    createEffect(() => {
-      const currentValue = props.value;
-      if (!sliderApi || isUserInteracting) return;
-      sliderApi.set([currentValue], false);
-    });
+    createEffect(
+      () => props.value,
+      (currentValue) => {
+        if (!sliderApi || isUserInteracting) return;
+        sliderApi.set([currentValue], false);
+      },
+    );
 
     /** Applies disabled state after the slider exists, including on initial mount, and exposes it on the handle. */
-    createEffect(() => {
-      if (props.disabled) sliderApi?.disable();
-      else sliderApi?.enable();
-      sliderRef
-        ?.querySelector(".noUi-handle")
-        ?.setAttribute("aria-disabled", String(!!props.disabled));
-    });
+    createEffect(
+      () => !!props.disabled,
+      (disabled) => {
+        if (disabled) sliderApi?.disable();
+        else sliderApi?.enable();
+        sliderRef
+          ?.querySelector(".noUi-handle")
+          ?.setAttribute("aria-disabled", String(disabled));
+      },
+    );
   });
 
   /** Releases the generated handles and pointer listeners. */

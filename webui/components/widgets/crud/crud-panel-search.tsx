@@ -8,8 +8,9 @@
 
 import { MagnifyingGlassIcon } from "@squidlab/phosphor-solid/magnifying-glass";
 import type { Accessor } from "solid-js";
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
+import { createEffect } from "../../../lib/solid-compat";
 import { SearchField } from "../../ui/search-field";
 import { ToolbarButton } from "../../ui/toolbar-button";
 
@@ -143,13 +144,13 @@ export function createCrudPanelSearchQueryChangeEffect(
   search: Pick<CrudPanelSearchController, "query">,
   onQueryChange: () => void,
 ): void {
-  createEffect((previousQuery: string | undefined) => {
-    const nextQuery = search.query();
-    if (previousQuery !== undefined && nextQuery !== previousQuery) {
+  createEffect(
+    search.query,
+    () => {
       onQueryChange();
-    }
-    return nextQuery;
-  });
+    },
+    { defer: true },
+  );
 }
 
 /** Renders the expandable toolbar search control shared by CRUD panels. */

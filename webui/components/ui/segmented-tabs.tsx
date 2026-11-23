@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createSignal, For, type JSX, onCleanup } from "solid-js";
+import { createSignal, For, type JSX } from "solid-js";
 import { createEffect } from "../../lib/solid-compat";
 import { type ContentEntrance, playContentEntrance } from "./content-entrance";
 import { ScrollArea } from "./scroll-area";
@@ -126,45 +126,49 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
    * hidden past the edge of a narrow strip or short list. Waits a frame so the strip has been
    * laid out.
    */
-  createEffect(() => {
-    const index = props.options.findIndex(
-      (option) => option.key === props.value,
-    );
-    const axis = orientation();
-    const frame = requestAnimationFrame(() => {
-      const tab = tabs[index];
-      if (tab) revealTab(viewport, tab, axis);
-    });
-    onCleanup(() => cancelAnimationFrame(frame));
-  });
+  createEffect(
+    () =>
+      [
+        props.options.findIndex((option) => option.key === props.value),
+        orientation(),
+      ] as const,
+    ([index, axis]) => {
+      const frame = requestAnimationFrame(() => {
+        const tab = tabs[index];
+        if (tab) revealTab(viewport, tab, axis);
+      });
+      return () => cancelAnimationFrame(frame);
+    },
+  );
 
   /** Tracks the selected button's layout so the highlight slides between unequal-size tabs. */
-  createEffect(() => {
-    const value = props.value;
-    const options = props.options;
-    /** Aligns the highlight in scroll-content coordinates, including after resizing or font loading. */
-    function measure() {
-      const selected = Array.from(
-        viewport.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-      )[options.findIndex((option) => option.key === value)];
-      setIndicator(
-        selected
-          ? {
-              transform: `translate(${selected.offsetLeft}px, ${selected.offsetTop}px)`,
-              width: `${selected.offsetWidth}px`,
-              height: `${selected.offsetHeight}px`,
-            }
-          : undefined,
-      );
-    }
-    measure();
-    const resize = new ResizeObserver(measure);
-    resize.observe(viewport);
-    for (const tab of viewport.querySelectorAll('[role="tab"]')) {
-      resize.observe(tab);
-    }
-    onCleanup(() => resize.disconnect());
-  });
+  createEffect(
+    () => ({ value: props.value, options: props.options }),
+    ({ value, options }) => {
+      /** Aligns the highlight in scroll-content coordinates, including after resizing or font loading. */
+      function measure() {
+        const selected = Array.from(
+          viewport.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+        )[options.findIndex((option) => option.key === value)];
+        setIndicator(
+          selected
+            ? {
+                transform: `translate(${selected.offsetLeft}px, ${selected.offsetTop}px)`,
+                width: `${selected.offsetWidth}px`,
+                height: `${selected.offsetHeight}px`,
+              }
+            : undefined,
+        );
+      }
+      measure();
+      const resize = new ResizeObserver(measure);
+      resize.observe(viewport);
+      for (const tab of viewport.querySelectorAll('[role="tab"]')) {
+        resize.observe(tab);
+      }
+      return () => resize.disconnect();
+    },
+  );
 
   /**
    * Activates adjacent or endpoint tabs and keeps keyboard focus on the selected option. The

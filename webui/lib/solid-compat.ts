@@ -99,6 +99,27 @@ export function createEffect<Next>(
   });
 }
 
+/**
+ * Runs `fn` now and again whenever anything it reads changes, like a Solid
+ * 1.x effect, and runs the cleanup it returns before each rerun and on
+ * disposal.
+ *
+ * This matches Solid 2.0's `createTrackedEffect`. Use it only where the
+ * reads can't be separated from the side effect, such as drawing through a
+ * callback whose reactive inputs are unknown; prefer the two-function
+ * `createEffect` everywhere else.
+ */
+export function createTrackedEffect(
+  // biome-ignore lint/suspicious/noConfusingVoidType: matches Solid 2.0's createTrackedEffect so void-returning draws can be passed.
+  fn: () => void | (() => void),
+): void {
+  /** Runs `fn` tracked and registers the cleanup it returns. */
+  createSolidEffect(() => {
+    const cleanup = fn();
+    if (typeof cleanup === "function") onCleanup(cleanup);
+  });
+}
+
 /** Options shared by the 1.x shim and Solid 2.0's `createProjection`. */
 export type ProjectionOptions = {
   /** Property that identifies array items, so reconciling keeps their identity. */

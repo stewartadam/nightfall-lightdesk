@@ -6,19 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createSignal,
-  onCleanup,
-  onMount,
-} from "solid-js";
+import { type Accessor, createSignal, onCleanup, onMount } from "solid-js";
 import type {
   CustomCell,
   CustomRenderer,
   GridCell,
 } from "../../../lib/data-grid-types";
 import { dataGridDarkTheme } from "../../../lib/datagrid";
+import { createTrackedEffect } from "../../../lib/solid-compat";
 import type { DataGridCellDecorationCallback } from "./model/types";
 
 /** CSS pixel size of a cell canvas. */
@@ -117,7 +112,7 @@ export function CustomCellCanvas(props: {
   };
 
   /** Redraws when the cell inputs or observed canvas size change. */
-  createEffect(draw);
+  createTrackedEffect(draw);
 
   return <canvas ref={canvasRef} class="h-full w-full" />;
 }
@@ -155,7 +150,7 @@ export function CellDecorationCanvas(props: {
   };
 
   /** Redraws when cell inputs, redraw keys, or the observed canvas size change. */
-  createEffect(draw);
+  createTrackedEffect(draw);
 
   return (
     <canvas
