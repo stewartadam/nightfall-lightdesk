@@ -136,7 +136,7 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
   });
 
   /** Updates rendering state whenever a visibility input changes. */
-  createEffect(syncVisualizerVisibility);
+  createEffect(shouldRender, () => syncVisualizerVisibility());
 
   // Page Visibility API - detect tab switches
   onMount(() => {
@@ -167,14 +167,18 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
   });
 
   /** Publishes diagnostics only for the active workspace's instance of this panel. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const api = visualizerHandle();
-    if (!api) return;
-    registerVisualizerDebugApi(panelId, api);
-    if (isDockviewVisible()) setActiveVisualizerDebugApiPanel(panelId);
-    onCleanup(() => unregisterVisualizerDebugApi(panelId));
-  });
+  createEffect(
+    () =>
+      workspaceActive()
+        ? { api: visualizerHandle(), visible: isDockviewVisible() }
+        : undefined,
+    (published) => {
+      if (!published?.api) return;
+      registerVisualizerDebugApi(panelId, published.api);
+      if (published.visible) setActiveVisualizerDebugApiPanel(panelId);
+      return () => unregisterVisualizerDebugApi(panelId);
+    },
+  );
 
   usePropertiesInspector(
     panelId,

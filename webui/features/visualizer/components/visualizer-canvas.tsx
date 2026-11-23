@@ -26,14 +26,12 @@ import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 
 import {
   type Component,
-  createEffect,
   createMemo,
   createSignal,
   For,
   onCleanup,
   onMount,
   Show,
-  untrack,
 } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
@@ -53,6 +51,7 @@ import {
   deleteSceneObject,
   updateSceneObjectPlacement,
 } from "../../../lib/scene-object-service";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useSharedStore } from "../../../lib/use-shared-store";
@@ -790,18 +789,24 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     componentId: COMPONENT_ID,
   });
 
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const moveActive = moveInteraction.isOperationActive();
-    const rotateActive = rotateInteraction.isOperationActive();
-    const measureActive = measureInteraction.isOperationActive();
-    const toolMode = getToolMode();
-    const nonCameraToolActive = toolMode !== "camera";
-    if (!moveActive && !rotateActive && !measureActive && !nonCameraToolActive)
-      return;
+  /**
+   * Claims Escape while a tool operation runs or a non-camera tool is selected. The value is
+   * whether an operation is running, undefined when Escape has nothing to do.
+   */
+  createEffect(
+    () => {
+      if (!workspaceActive()) return undefined;
+      const operationActive =
+        moveInteraction.isOperationActive() ||
+        rotateInteraction.isOperationActive() ||
+        measureInteraction.isOperationActive();
+      if (!operationActive && getToolMode() === "camera") return undefined;
+      return operationActive;
+    },
+    (operationActive) => {
+      if (operationActive === undefined) return;
 
-    const unregister = untrack(() =>
-      registerKeyboardShortcut({
+      return registerKeyboardShortcut({
         key: "Escape",
         handler: () => {
           cancelActiveToolOperation();
@@ -812,18 +817,13 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
             canvasRef?.focus({ preventScroll: true });
           }
         },
-        description:
-          moveActive || rotateActive || measureActive
-            ? "Cancel active move/rotate/measure operation or return to camera tool"
-            : "Return to camera tool",
+        description: operationActive
+          ? "Cancel active move/rotate/measure operation or return to camera tool"
+          : "Return to camera tool",
         componentId: COMPONENT_ID,
-      }),
-    );
-
-    onCleanup(() => {
-      untrack(() => unregister());
-    });
-  });
+      });
+    },
+  );
 
   const pointerModeHandlers = createPointerModeRouter({
     getMode: getToolMode,
@@ -1023,25 +1023,24 @@ export const VisualizerCanvas: Component<VisualizerCanvasProps> = (props) => {
     rotationMode: $rotationMode,
   });
 
-  createEffect(() => {
-    if (!isSelectionMode()) {
-      selectionInteraction.clearSelectionDrag();
-    }
+  /** Drops a selection drag when the selection tool is left. */
+  createEffect(isSelectionMode, (selecting) => {
+    if (!selecting) selectionInteraction.clearSelectionDrag();
   });
 
-  createEffect(() => {
-    if (isMoveMode()) return;
-    moveInteraction.cancelMoveOperation();
+  /** Cancels a move when the move tool is left. */
+  createEffect(isMoveMode, (moving) => {
+    if (!moving) moveInteraction.cancelMoveOperation();
   });
 
-  createEffect(() => {
-    if (isRotateMode()) return;
-    rotateInteraction.cancelRotateOperation();
+  /** Cancels a rotation when the rotate tool is left. */
+  createEffect(isRotateMode, (rotating) => {
+    if (!rotating) rotateInteraction.cancelRotateOperation();
   });
 
-  createEffect(() => {
-    if (isMeasureMode()) return;
-    measureInteraction.cancelMeasureOperation();
+  /** Cancels a measurement when the measure tool is left. */
+  createEffect(isMeasureMode, (measuring) => {
+    if (!measuring) measureInteraction.cancelMeasureOperation();
   });
 
   onCleanup(() => {

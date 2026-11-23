@@ -9,7 +9,7 @@
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { createMemo, createSignal, onCleanup } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import PanelToolbar, {
   ToolbarSeparator,
@@ -70,6 +70,7 @@ import {
   updateSceneObjectProperties,
   updateSceneObjectsFromLibrary,
 } from "../../../../lib/scene-object-service";
+import { createEffect } from "../../../../lib/solid-compat";
 import { useStore } from "../../../../lib/use-nanostore";
 import { useSharedStore } from "../../../../lib/use-shared-store";
 import {
@@ -608,67 +609,79 @@ export default function SceneObjectsPanel(props: SceneObjectsPanelProps) {
     clearEditSelection();
   });
 
-  createEffect(() => {
-    const nextSelection = gridSelectionFromSceneObjectUids(
-      selectedSceneObjectUids(),
-    );
-    if (
-      orderedUidListsEqual(
-        getSelectedRowIndices(selection()).map((index) => index.toString()),
-        getSelectedRowIndices(nextSelection).map((index) => index.toString()),
-      )
-    ) {
-      return;
-    }
-    setSelection(nextSelection);
-    syncEditSelectionFromGridSelection(nextSelection);
-  });
+  /** Keeps the grid's selected rows on the scene objects selected elsewhere. */
+  createEffect(
+    () => ({
+      current: selection(),
+      next: gridSelectionFromSceneObjectUids(selectedSceneObjectUids()),
+    }),
+    ({ current, next }) => {
+      if (
+        orderedUidListsEqual(
+          getSelectedRowIndices(current).map((index) => index.toString()),
+          getSelectedRowIndices(next).map((index) => index.toString()),
+        )
+      ) {
+        return;
+      }
+      setSelection(next);
+      syncEditSelectionFromGridSelection(next);
+    },
+  );
 
   /** Handles one-shot palette navigation to a scene object row. */
-  createEffect(() => {
-    const request = $sceneObjectNavigationRequest();
-    if (!request) return;
+  createEffect(
+    () => {
+      const request = $sceneObjectNavigationRequest();
+      return request
+        ? { request, rows: rows(), displayRows: displayRows() }
+        : undefined;
+    },
+    (navigation) => {
+      if (!navigation) return;
+      const { request } = navigation;
 
-    const targetExists = rows().some(
-      (sceneObject) => sceneObject.identifiers.uid === request.sceneObjectUid,
-    );
-    if (!targetExists) {
-      clearSceneObjectNavigationRequest(request.requestId);
-      return;
-    }
+      const targetExists = navigation.rows.some(
+        (sceneObject) => sceneObject.identifiers.uid === request.sceneObjectUid,
+      );
+      if (!targetExists) {
+        clearSceneObjectNavigationRequest(request.requestId);
+        return;
+      }
 
-    const rowIndex = displayRows().findIndex(
-      (sceneObject) => sceneObject.identifiers.uid === request.sceneObjectUid,
-    );
-    if (rowIndex < 0) {
-      search.clear();
-      setTableFilters(EMPTY_TABLE_FILTERS);
-      return;
-    }
+      const rowIndex = navigation.displayRows.findIndex(
+        (sceneObject) => sceneObject.identifiers.uid === request.sceneObjectUid,
+      );
+      if (rowIndex < 0) {
+        search.clear();
+        setTableFilters(EMPTY_TABLE_FILTERS);
+        return;
+      }
 
-    const nextSelection = {
-      ...emptyGridSelection(),
-      rows: CompactSelection.fromSingleSelection(rowIndex),
-      current: {
-        cell: [0, rowIndex] as Item,
-        range: {
-          x: 0,
-          y: rowIndex,
-          width: 1,
-          height: 1,
+      const nextSelection = {
+        ...emptyGridSelection(),
+        rows: CompactSelection.fromSingleSelection(rowIndex),
+        current: {
+          cell: [0, rowIndex] as Item,
+          range: {
+            x: 0,
+            y: rowIndex,
+            width: 1,
+            height: 1,
+          },
+          rangeStack: [],
         },
-        rangeStack: [],
-      },
-    };
-    setSelection(nextSelection);
-    setScrollRequest({
-      cell: [0, rowIndex],
-      requestId: request.requestId,
-    });
-    syncEditSelectionFromGridSelection(nextSelection);
-    syncSceneObjectSelectionFromGridSelection(nextSelection);
-    clearSceneObjectNavigationRequest(request.requestId);
-  });
+      };
+      setSelection(nextSelection);
+      setScrollRequest({
+        cell: [0, rowIndex],
+        requestId: request.requestId,
+      });
+      syncEditSelectionFromGridSelection(nextSelection);
+      syncSceneObjectSelectionFromGridSelection(nextSelection);
+      clearSceneObjectNavigationRequest(request.requestId);
+    },
+  );
 
   return (
     <div class="flex h-full min-h-0 flex-col">

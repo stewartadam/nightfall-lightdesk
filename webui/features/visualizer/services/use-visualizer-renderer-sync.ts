@@ -14,9 +14,9 @@
  * independently reactive.
  */
 
-import { createEffect, untrack } from "solid-js";
 import { getLogger } from "../../../lib/logger";
 import type { SelectionTarget } from "../../../lib/selection-targets";
+import { createEffect } from "../../../lib/solid-compat";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import type { RenderableFixture, RenderableSceneObject } from "../model/types";
 import type {
@@ -135,190 +135,174 @@ export function useVisualizerRendererSync(
   let previousRenderer: IVisualizerRenderer | null = null;
   let fixtureSyncRun = 0;
 
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const runId = ++fixtureSyncRun;
-    const startMs = performance.now();
-    const r = options.renderer();
-    if (!r) {
-      previousRenderer = null;
-      previousFixtureSnapshots = new Map<string, FixtureSyncSnapshot>();
-      log.trace(`fixture-sync run=${runId} renderer=null reset=true`);
-      return;
-    }
-
-    const fixtures = options.fixtures();
-    const nextSnapshots = new Map<string, FixtureSyncSnapshot>();
-    for (const fixture of fixtures) {
-      nextSnapshots.set(fixture.uid, toFixtureSyncSnapshot(fixture));
-    }
-
-    let needsFullSync = false;
-    let fullSyncReason = "";
-    if (r !== previousRenderer) {
-      needsFullSync = true;
-      fullSyncReason = "renderer_changed";
-    } else if (previousFixtureSnapshots.size !== nextSnapshots.size) {
-      needsFullSync = true;
-      fullSyncReason = `fixture_count_changed:${previousFixtureSnapshots.size}->${nextSnapshots.size}`;
-    } else {
-      for (const [uid, nextSnapshot] of nextSnapshots) {
-        const previousSnapshot = previousFixtureSnapshots.get(uid);
-        if (!previousSnapshot) {
-          needsFullSync = true;
-          fullSyncReason = `missing_previous_snapshot:${uid}`;
-          break;
-        }
-        if (requiresFullFixtureSync(previousSnapshot, nextSnapshot)) {
-          needsFullSync = true;
-          fullSyncReason = `fixture_definition_changed:${uid}`;
-          break;
-        }
-      }
-    }
-
-    if (needsFullSync) {
-      const setStartMs = performance.now();
-      // The snapshots above carry this effect's dependencies; serializing the
-      // full fixtures must not subscribe it to every nested store property.
-      untrack(() => r.setFixtures(fixtures));
-      const setMs = performance.now() - setStartMs;
-      const totalMs = performance.now() - startMs;
-      log.trace(
-        `fixture-sync run=${runId} mode=full fixtures=${fixtures.length} reason=${fullSyncReason} setFixturesMs=${setMs.toFixed(2)} totalMs=${totalMs.toFixed(2)}`,
-      );
-    } else {
-      const deltaStartMs = performance.now();
-      let positionUpdates = 0;
-      let rotationUpdates = 0;
+  /**
+   * Sends fixtures to the renderer: everything when the renderer or a fixture's definition
+   * changes, otherwise only moved or rotated fixtures. The snapshots carry the dependencies, so
+   * serializing the full fixtures never subscribes to every nested store property.
+   */
+  createEffect(
+    () => {
+      if (!workspaceActive()) return undefined;
+      const r = options.renderer();
+      if (!r) return null;
+      const fixtures = options.fixtures();
+      const nextSnapshots = new Map<string, FixtureSyncSnapshot>();
       for (const fixture of fixtures) {
-        const previousSnapshot = previousFixtureSnapshots.get(fixture.uid);
-        if (!previousSnapshot) {
-          continue;
-        }
+        nextSnapshots.set(fixture.uid, toFixtureSyncSnapshot(fixture));
+      }
+      return { r, fixtures, nextSnapshots };
+    },
+    (sync) => {
+      if (sync === undefined) return;
+      const runId = ++fixtureSyncRun;
+      const startMs = performance.now();
+      if (!sync) {
+        previousRenderer = null;
+        previousFixtureSnapshots = new Map<string, FixtureSyncSnapshot>();
+        log.trace(`fixture-sync run=${runId} renderer=null reset=true`);
+        return;
+      }
+      const { r, fixtures, nextSnapshots } = sync;
 
-        if (
-          previousSnapshot.position.x !== fixture.position.x ||
-          previousSnapshot.position.y !== fixture.position.y ||
-          previousSnapshot.position.z !== fixture.position.z
-        ) {
-          r.setFixturePosition(fixture.uid, fixture.position);
-          positionUpdates += 1;
-        }
-
-        if (
-          previousSnapshot.rotation.x !== fixture.rotation.x ||
-          previousSnapshot.rotation.y !== fixture.rotation.y ||
-          previousSnapshot.rotation.z !== fixture.rotation.z
-        ) {
-          r.setFixtureRotation(fixture.uid, fixture.rotation);
-          rotationUpdates += 1;
+      let needsFullSync = false;
+      let fullSyncReason = "";
+      if (r !== previousRenderer) {
+        needsFullSync = true;
+        fullSyncReason = "renderer_changed";
+      } else if (previousFixtureSnapshots.size !== nextSnapshots.size) {
+        needsFullSync = true;
+        fullSyncReason = `fixture_count_changed:${previousFixtureSnapshots.size}->${nextSnapshots.size}`;
+      } else {
+        for (const [uid, nextSnapshot] of nextSnapshots) {
+          const previousSnapshot = previousFixtureSnapshots.get(uid);
+          if (!previousSnapshot) {
+            needsFullSync = true;
+            fullSyncReason = `missing_previous_snapshot:${uid}`;
+            break;
+          }
+          if (requiresFullFixtureSync(previousSnapshot, nextSnapshot)) {
+            needsFullSync = true;
+            fullSyncReason = `fixture_definition_changed:${uid}`;
+            break;
+          }
         }
       }
 
-      const deltaMs = performance.now() - deltaStartMs;
-      const totalMs = performance.now() - startMs;
-      log.trace(
-        `fixture-sync run=${runId} mode=delta fixtures=${fixtures.length} positionUpdates=${positionUpdates} rotationUpdates=${rotationUpdates} deltaMs=${deltaMs.toFixed(2)} totalMs=${totalMs.toFixed(2)}`,
-      );
-    }
+      if (needsFullSync) {
+        const setStartMs = performance.now();
+        r.setFixtures(fixtures);
+        const setMs = performance.now() - setStartMs;
+        const totalMs = performance.now() - startMs;
+        log.trace(
+          `fixture-sync run=${runId} mode=full fixtures=${fixtures.length} reason=${fullSyncReason} setFixturesMs=${setMs.toFixed(2)} totalMs=${totalMs.toFixed(2)}`,
+        );
+      } else {
+        const deltaStartMs = performance.now();
+        let positionUpdates = 0;
+        let rotationUpdates = 0;
+        for (const fixture of fixtures) {
+          const previousSnapshot = previousFixtureSnapshots.get(fixture.uid);
+          if (!previousSnapshot) {
+            continue;
+          }
 
-    previousRenderer = r;
-    previousFixtureSnapshots = nextSnapshots;
-  });
+          if (
+            previousSnapshot.position.x !== fixture.position.x ||
+            previousSnapshot.position.y !== fixture.position.y ||
+            previousSnapshot.position.z !== fixture.position.z
+          ) {
+            r.setFixturePosition(fixture.uid, fixture.position);
+            positionUpdates += 1;
+          }
 
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setSceneObjects(options.sceneObjects());
-  });
+          if (
+            previousSnapshot.rotation.x !== fixture.rotation.x ||
+            previousSnapshot.rotation.y !== fixture.rotation.y ||
+            previousSnapshot.rotation.z !== fixture.rotation.z
+          ) {
+            r.setFixtureRotation(fixture.uid, fixture.rotation);
+            rotationUpdates += 1;
+          }
+        }
 
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setSelection([...options.selectedUids()]);
-  });
+        const deltaMs = performance.now() - deltaStartMs;
+        const totalMs = performance.now() - startMs;
+        log.trace(
+          `fixture-sync run=${runId} mode=delta fixtures=${fixtures.length} positionUpdates=${positionUpdates} rotationUpdates=${rotationUpdates} deltaMs=${deltaMs.toFixed(2)} totalMs=${totalMs.toFixed(2)}`,
+        );
+      }
 
-  /** Mirrors patch/scene panel edit targets into the yellow outline pass. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setEditSelection([...options.editSelectionUids()]);
-  });
+      previousRenderer = r;
+      previousFixtureSnapshots = nextSnapshots;
+    },
+  );
 
-  /** Mirrors fixtures with programmer values into the red outline pass. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setProgrammerValues([...options.programmerValueUids()]);
-  });
+  /**
+   * Applies `read`'s value to the renderer after it changes, after renderer initialization and
+   * after workspace reactivation. Nothing is sent while the workspace is hidden or no renderer
+   * exists.
+   */
+  const syncToRenderer = <Value>(
+    read: () => Value,
+    apply: (renderer: IVisualizerRenderer, value: Value) => void,
+  ) => {
+    createEffect(
+      () => {
+        if (!workspaceActive()) return undefined;
+        const renderer = options.renderer();
+        return renderer ? { renderer, value: read() } : undefined;
+      },
+      (sync) => {
+        if (sync) apply(sync.renderer, sync.value);
+      },
+    );
+  };
 
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setActiveSelectionTargets([...options.activeSelectionTargets()]);
-  });
-
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setHighlightSelection(options.highlightSelectionEnabled());
-  });
-
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setEmitterDebugEnabled(options.showEmitters());
-  });
-
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setGridEnabled(options.showGrid());
-  });
-
-  /** Applies scene object visibility after renderer initialization or workspace reactivation. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setSceneObjectsVisible(options.showSceneObjects());
-  });
-
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setOrbitTargetIndicatorEnabled(options.showOrbitTargetIndicator());
-  });
-
-  /** Applies darkness live after renderer initialization or workspace reactivation. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    options.renderer()?.setDarkness(options.darkness());
-  });
-
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setSnapPointsEnabled(options.showLabels());
-  });
-
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    const fixtures = options.fixtures();
-    const sceneObjects = options.sceneObjects();
-    r?.setFixtureLabels(buildVisualizerOverlayLabels(fixtures, sceneObjects));
-  });
-
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setInteractionMode(options.toolMode());
-  });
-
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const r = options.renderer();
-    r?.setCameraRotationMode(options.rotationMode());
-  });
+  syncToRenderer(options.sceneObjects, (r, sceneObjects) =>
+    r.setSceneObjects(sceneObjects),
+  );
+  syncToRenderer(
+    () => [...options.selectedUids()],
+    (r, uids) => r.setSelection(uids),
+  );
+  // Patch/scene panel edit targets drive the yellow outline pass.
+  syncToRenderer(
+    () => [...options.editSelectionUids()],
+    (r, uids) => r.setEditSelection(uids),
+  );
+  // Fixtures with programmer values drive the red outline pass.
+  syncToRenderer(
+    () => [...options.programmerValueUids()],
+    (r, uids) => r.setProgrammerValues(uids),
+  );
+  syncToRenderer(
+    () => [...options.activeSelectionTargets()],
+    (r, targets) => r.setActiveSelectionTargets(targets),
+  );
+  syncToRenderer(options.highlightSelectionEnabled, (r, enabled) =>
+    r.setHighlightSelection(enabled),
+  );
+  syncToRenderer(options.showEmitters, (r, enabled) =>
+    r.setEmitterDebugEnabled(enabled),
+  );
+  syncToRenderer(options.showGrid, (r, enabled) => r.setGridEnabled(enabled));
+  syncToRenderer(options.showSceneObjects, (r, visible) =>
+    r.setSceneObjectsVisible(visible),
+  );
+  syncToRenderer(options.showOrbitTargetIndicator, (r, enabled) =>
+    r.setOrbitTargetIndicatorEnabled(enabled),
+  );
+  syncToRenderer(options.darkness, (r, darkness) => r.setDarkness(darkness));
+  syncToRenderer(options.showLabels, (r, enabled) =>
+    r.setSnapPointsEnabled(enabled),
+  );
+  syncToRenderer(
+    () =>
+      buildVisualizerOverlayLabels(options.fixtures(), options.sceneObjects()),
+    (r, labels) => r.setFixtureLabels(labels),
+  );
+  syncToRenderer(options.toolMode, (r, mode) => r.setInteractionMode(mode));
+  syncToRenderer(options.rotationMode, (r, mode) =>
+    r.setCameraRotationMode(mode),
+  );
 }
