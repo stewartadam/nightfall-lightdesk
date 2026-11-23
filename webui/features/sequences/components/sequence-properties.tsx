@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import {
   Checkbox,
   Input,
@@ -18,6 +18,7 @@ import {
   msToDuration,
   transitionModeToSeconds,
 } from "../../../lib/duration";
+import { createEffect } from "../../../lib/solid-compat";
 import type * as types from "../../../types";
 import { Timebase } from "../../../types";
 import {
@@ -82,22 +83,28 @@ export default function SequenceProperties() {
   const [selectedCueDraftLabel, setSelectedCueDraftLabel] = createSignal("");
 
   /** Keeps the sequence label draft aligned with the loaded sequence outside active typing. */
-  createEffect(() => {
-    const sequence = ctx.sequence();
-    if (document.activeElement === sequenceLabelInputRef) {
-      return;
-    }
-    setSequenceDraftLabel(sequence?.identifiers.label ?? "");
-  });
+  createEffect(
+    () => ({
+      sequence: ctx.sequence(),
+      label: ctx.sequence()?.identifiers.label ?? "",
+    }),
+    ({ label }) => {
+      if (document.activeElement === sequenceLabelInputRef) return;
+      setSequenceDraftLabel(label);
+    },
+  );
 
   /** Keeps the selected cue label draft aligned outside active typing. */
-  createEffect(() => {
-    const cue = ctx.selectedCue();
-    if (document.activeElement === selectedCueLabelInputRef) {
-      return;
-    }
-    setSelectedCueDraftLabel(cue?.identifiers.label ?? "");
-  });
+  createEffect(
+    () => ({
+      cue: ctx.selectedCue(),
+      label: ctx.selectedCue()?.identifiers.label ?? "",
+    }),
+    ({ label }) => {
+      if (document.activeElement === selectedCueLabelInputRef) return;
+      setSelectedCueDraftLabel(label);
+    },
+  );
 
   const updateSequenceDefaultTiming = (field: TimingField, value: string) => {
     const sequence = ctx.sequence();

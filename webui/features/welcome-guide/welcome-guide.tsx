@@ -6,13 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createDraggable } from "@neodrag/solid";
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
-  on,
   onCleanup,
   Show,
   untrack,
@@ -26,6 +23,7 @@ import {
 } from "../../components/ui/modal/dialog-stack";
 import { Button } from "../../components/ui/visual-language/button";
 import { hasDiskStorage } from "../../lib/disk-storage";
+import { draggable } from "../../lib/draggable";
 import { getLogger } from "../../lib/logger";
 import {
   type PanelComponentName,
@@ -36,6 +34,7 @@ import {
   openOrFocusPanelDefinition,
   type PanelOpenTarget,
 } from "../../lib/panel-open-command";
+import { createEffect } from "../../lib/solid-compat";
 import { testHooksEnabled } from "../../lib/test-mode";
 import { useStore } from "../../lib/use-nanostore";
 import { pushToast, runtimeCapabilities } from "../../state/appStores";
@@ -112,8 +111,8 @@ export function GuideInvitation() {
   let closeInvitation: (() => void) | undefined;
 
   /** Shows the invitation once per page load while it is unanswered, and withdraws it once answered. */
-  createEffect(() => {
-    if (dismissed()) {
+  createEffect(dismissed, (isDismissed) => {
+    if (isDismissed) {
       closeInvitation?.();
       closeInvitation = undefined;
       return;
@@ -240,22 +239,20 @@ export default function WelcomeGuide() {
   };
   /** Leaves the Lesson layout and removes it whenever a lesson ends, whether finished, exited or replaced by the menu. */
   createEffect(
-    on(
-      lessonId,
-      (id, previous) => {
-        if (previous && !id) void returnToLayout().then(removeLessonLayout);
-      },
-      { defer: true },
-    ),
+    lessonId,
+    (id, previous) => {
+      if (previous && !id) void returnToLayout().then(removeLessonLayout);
+    },
+    { defer: true },
   );
   const [workspace, setWorkspace] = createSignal<GuidePanelSnapshot>({
     panels: [],
   });
   /** While the guide is open, tracks open panels and whether each is unobstructed, across layout restores. */
-  createEffect(() => {
-    if (!opened()) return;
-    onCleanup(trackGuidePanels(dockviewApi(), setWorkspace));
-  });
+  createEffect(
+    () => ({ open: opened(), api: dockviewApi() }),
+    ({ open, api }) => (open ? trackGuidePanels(api, setWorkspace) : undefined),
+  );
   /** Lists panels the user can currently see; anything else gets an Open or Show button. */
   const visiblePanels = createMemo(() =>
     workspace().panels.filter((panel) => panel.onScreen),
@@ -298,17 +295,21 @@ export default function WelcomeGuide() {
   const [visitedPanels, setVisitedPanels] = createSignal(new Set<string>());
   let visitedStep = "";
   /** Remembers prerequisite panels visited during this step, even when they share a tab group. */
-  createEffect(() => {
-    const key = `${lessonId()}:${step()?.id}`;
-    const keys = workspace()
-      .panels.filter((panel) => panel.visible)
-      .flatMap(panelKeys);
-    const reset = key !== visitedStep;
-    visitedStep = key;
-    setVisitedPanels(
-      (previous) => new Set([...(reset ? [] : previous), ...keys]),
-    );
-  });
+  createEffect(
+    () => ({
+      key: `${lessonId()}:${step()?.id}`,
+      keys: workspace()
+        .panels.filter((panel) => panel.visible)
+        .flatMap(panelKeys),
+    }),
+    ({ key, keys }) => {
+      const reset = key !== visitedStep;
+      visitedStep = key;
+      setVisitedPanels(
+        (previous) => new Set([...(reset ? [] : previous), ...keys]),
+      );
+    },
+  );
   /** Checks whether a prerequisite panel is visible and expanded. */
   const panelVisible = (name: PanelComponentName) =>
     visiblePanels().some((panel) => panel.component === name);
@@ -407,12 +408,23 @@ export default function WelcomeGuide() {
   /** Furthest part of the current step the user has reached; finished parts stay finished. */
   const [reachedPart, setReachedPart] = createSignal(0);
   /** Starts every step, including one revisited with Back, at its first part. */
-  createEffect(on(step, () => setReachedPart(0)));
-  /** Moves the current step's highlight on to the next part once its `until` holds. */
-  createEffect(() => {
-    const parts = step()?.parts;
-    if (parts?.length) setReachedPart(activePart(parts, untrack(reachedPart)));
+  createEffect(step, () => {
+    setReachedPart(0);
   });
+  /** Moves the current step's highlight on to the next part once its `until` holds. */
+  createEffect(
+    () => {
+      const parts = step()?.parts;
+      return {
+        part: parts?.length
+          ? activePart(parts, untrack(reachedPart))
+          : undefined,
+      };
+    },
+    ({ part }) => {
+      if (part !== undefined) setReachedPart(part);
+    },
+  );
   /**
    * Resolves a step's authored object identities to clip tiles, inspect buttons, sequence cards,
    * or Trigger cells, the reached part of a multi-part step, or else its plain target selector.
@@ -498,35 +510,33 @@ export default function WelcomeGuide() {
    * Waits a frame and skips cells already rendered, so a reveal the wizard just made, which also
    * selects the new fixtures, isn't replaced.
    */
-  createEffect(
-    on(shownPatchFixture, (key) => {
-      const target = step()?.targetPatchFixture;
-      const selector = actionSelector();
-      if (!key || !target || !selector) return;
-      /** Reports a matching cell shown inside its Patch panel, not hidden or scrolled out. */
-      const cellShown = () =>
-        [...document.querySelectorAll<HTMLElement>(selector)].some((cell) => {
-          const panel = cell.closest('[data-panel-kind="patch"]');
-          if (!panel || !cell.checkVisibility()) return false;
-          const box = cell.getBoundingClientRect();
-          const bounds = panel.getBoundingClientRect();
-          return (
-            box.top >= bounds.top &&
-            box.bottom <= bounds.bottom &&
-            box.left >= bounds.left &&
-            box.right <= bounds.right
-          );
-        });
-      const frame = requestAnimationFrame(() => {
-        if (!cellShown())
-          revealPatchFixtures([target.id], {
-            select: false,
-            column: target.column,
-          });
+  createEffect(shownPatchFixture, (key) => {
+    const target = step()?.targetPatchFixture;
+    const selector = actionSelector();
+    if (!key || !target || !selector) return;
+    /** Reports a matching cell shown inside its Patch panel, not hidden or scrolled out. */
+    const cellShown = () =>
+      [...document.querySelectorAll<HTMLElement>(selector)].some((cell) => {
+        const panel = cell.closest('[data-panel-kind="patch"]');
+        if (!panel || !cell.checkVisibility()) return false;
+        const box = cell.getBoundingClientRect();
+        const bounds = panel.getBoundingClientRect();
+        return (
+          box.top >= bounds.top &&
+          box.bottom <= bounds.bottom &&
+          box.left >= bounds.left &&
+          box.right <= bounds.right
+        );
       });
-      onCleanup(() => cancelAnimationFrame(frame));
-    }),
-  );
+    const frame = requestAnimationFrame(() => {
+      if (!cellShown())
+        revealPatchFixtures([target.id], {
+          select: false,
+          column: target.column,
+        });
+    });
+    return () => cancelAnimationFrame(frame);
+  });
   /**
    * Names the fixtures the current step selects in Patch while its Fixtures view shows, so they
    * are selected again whenever that view comes back into sight.
@@ -539,14 +549,12 @@ export default function WelcomeGuide() {
       : undefined,
   );
   /** Selects and scrolls to the step's fixtures in Patch once the Fixtures view has mounted. */
-  createEffect(
-    on(shownPatchSelection, (key) => {
-      const ids = step()?.selectPatchFixtures;
-      if (!key || !ids) return;
-      const frame = requestAnimationFrame(() => revealPatchFixtures(ids));
-      onCleanup(() => cancelAnimationFrame(frame));
-    }),
-  );
+  createEffect(shownPatchSelection, (key) => {
+    const ids = step()?.selectPatchFixtures;
+    if (!key || !ids) return;
+    const frame = requestAnimationFrame(() => revealPatchFixtures(ids));
+    return () => cancelAnimationFrame(frame);
+  });
   /** Aims the card at the step's action, or at what reveals a missing panel while prerequisites are unmet. */
   const targetSelector = createMemo(() =>
     blocked() ? prerequisiteSelector() : actionSelector(),
@@ -564,34 +572,45 @@ export default function WelcomeGuide() {
    * in place instead of sliding there. The placement must hold for two frames, since the card's
    * first placement can precede the resize from swapping the library for the lesson content.
    */
-  createEffect(() => {
-    if (!revealPending() || startingLesson()) return;
-    if (!opened() || !lesson()) {
-      setRevealPending(false);
-      return;
-    }
-    const placed = floating.placed();
-    const target = anchor();
-    floating.position();
-    if (
-      placed?.step !== `${lessonId()}:${index()}` ||
-      placed.anchor !== target ||
-      (!target && targetSelector())
-    )
-      return;
-    let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => setRevealPending(false));
-    });
-    onCleanup(() => cancelAnimationFrame(frame));
-  });
+  createEffect(
+    () => {
+      if (!revealPending() || startingLesson()) return undefined;
+      if (!opened() || !lesson()) return "abandon" as const;
+      const placed = floating.placed();
+      const target = anchor();
+      const position = floating.position();
+      if (
+        placed?.step !== `${lessonId()}:${index()}` ||
+        placed.anchor !== target ||
+        (!target && targetSelector())
+      )
+        return undefined;
+      return { position };
+    },
+    (state) => {
+      if (state === "abandon") {
+        setRevealPending(false);
+        return;
+      }
+      if (!state) return;
+      let frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => setRevealPending(false));
+      });
+      return () => cancelAnimationFrame(frame);
+    },
+  );
   /** Stops waiting for a first target that never appears, so the card cannot stay hidden. */
-  createEffect(() => {
-    if (!revealPending() || startingLesson()) return;
-    const timer = setTimeout(() => setRevealPending(false), REVEAL_TIMEOUT_MS);
-    onCleanup(() => clearTimeout(timer));
-  });
-  const { draggable } = createDraggable();
-  void draggable;
+  createEffect(
+    () => revealPending() && !startingLesson(),
+    (waiting) => {
+      if (!waiting) return;
+      const timer = setTimeout(
+        () => setRevealPending(false),
+        REVEAL_TIMEOUT_MS,
+      );
+      return () => clearTimeout(timer);
+    },
+  );
   /** Locates the drag source by sample clip identity in either card or list view. */
   const clipHighlightSelector = createMemo(() => {
     const id = step()?.highlightClipId;
@@ -777,32 +796,37 @@ export default function WelcomeGuide() {
    * Moves the floating card into the frontmost modal dialog while one is open, since a modal
    * dialog's top layer would otherwise cover it and make it inert.
    */
-  createEffect(() => {
-    if (!opened() || !floatingCard()) return;
-    /** Moves the card into the frontmost open dialog, or back to the page once none is open. */
-    const update = () => {
-      const next = overlayHost();
-      if (next !== untrack(cardHost)) setCardHost(next);
-    };
-    update();
-    onCleanup(watchOverlayHost(update));
-  });
+  createEffect(
+    () => opened() && floatingCard(),
+    (floatingOpen) => {
+      if (!floatingOpen) return;
+      /** Moves the card into the frontmost open dialog, or back to the page once none is open. */
+      const update = () => {
+        const next = overlayHost();
+        if (next !== cardHost()) setCardHost(next);
+      };
+      update();
+      return watchOverlayHost(update);
+    },
+  );
   /** The card itself, docked beside the app for the lesson library and floating during lessons. */
   const cardView = () => (
     <aside
-      ref={setCard}
+      ref={(node) => {
+        setCard(node);
+        draggable(() => ({
+          disabled: !lesson(),
+          handle: ".nf-guide-move",
+          position: lesson() ? floating.position() : { x: 0, y: 0 },
+          bounds: { left: 12, right: 12, top: 12, bottom: 12 },
+          onDrag: ({ offsetX, offsetY }) =>
+            floating.move({ x: offsetX, y: offsetY }),
+        }))(node);
+      }}
       class="nf-welcome-guide"
       classList={{
         "nf-guide-floating": Boolean(lesson()) || revealPending(),
         "nf-guide-revealing": revealPending(),
-      }}
-      use:draggable={{
-        disabled: !lesson(),
-        handle: ".nf-guide-move",
-        position: lesson() ? floating.position() : { x: 0, y: 0 },
-        bounds: { left: 12, right: 12, top: 12, bottom: 12 },
-        onDrag: ({ offsetX, offsetY }) =>
-          floating.move({ x: offsetX, y: offsetY }),
       }}
       aria-label="Welcome guide"
       data-testid="welcome-guide"

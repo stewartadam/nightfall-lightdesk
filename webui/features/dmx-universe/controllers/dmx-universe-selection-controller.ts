@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import {
   CONSOLE_TRANSPORT,
   dmxUniverseKeyId,
@@ -15,6 +15,7 @@ import {
 } from "../../../lib/dmx-universe-data";
 import { watchDmxUniverse } from "../../../lib/dmx-universe-watch";
 import { commandClient } from "../../../lib/engine-commands";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
@@ -123,19 +124,26 @@ export function createDmxUniverseSelectionController() {
   };
 
   /** Keeps mode-specific transport selection valid as data changes. */
-  createEffect(() => {
-    const transports = availableTransports();
-    if (ioMode() === DmxIoMode.Output) {
-      if (!transports.includes(selectedOutputTransport()))
-        setSelectedOutputTransport(transports[0] ?? "");
-      return;
-    }
-    if (transports.length === 0) {
-      setSelectedInputTransport("");
-    } else if (!transports.includes(selectedInputTransport())) {
-      setSelectedInputTransport(transports[0]);
-    }
-  });
+  createEffect(
+    () => ({
+      transports: availableTransports(),
+      mode: ioMode(),
+      output: selectedOutputTransport(),
+      input: selectedInputTransport(),
+    }),
+    ({ transports, mode, output, input }) => {
+      if (mode === DmxIoMode.Output) {
+        if (!transports.includes(output))
+          setSelectedOutputTransport(transports[0] ?? "");
+        return;
+      }
+      if (transports.length === 0) {
+        setSelectedInputTransport("");
+      } else if (!transports.includes(input)) {
+        setSelectedInputTransport(transports[0]);
+      }
+    },
+  );
 
   /** Filters universes to the active I/O mode and numbering space. */
   const filteredUniverses = createMemo(() => {
@@ -199,11 +207,10 @@ export function createDmxUniverseSelectionController() {
   );
 
   /** Watches the selected universe's channel values while the panel is active. */
-  createEffect(() => {
-    const key = currentKey();
-    if (!active() || !key) return;
-    onCleanup(watchDmxUniverse(key));
-  });
+  createEffect(
+    () => (active() ? currentKey() : undefined),
+    (key) => (key ? watchDmxUniverse(key) : undefined),
+  );
 
   /** Returns the selected universe with its channel values, once the backend sent them. */
   const currentUniverse = createMemo(() => {
@@ -212,15 +219,17 @@ export function createDmxUniverseSelectionController() {
   });
 
   /** Selects the first universe whenever filtering invalidates the current tab. */
-  createEffect(() => {
-    const ids = universeIds();
-    if (ids.length === 0) {
-      if (selectedUniverse() !== null) setSelectedUniverse(null);
-      return;
-    }
-    const current = selectedUniverse();
-    if (current === null || !ids.includes(current)) setSelectedUniverse(ids[0]);
-  });
+  createEffect(
+    () => ({ ids: universeIds(), current: selectedUniverse() }),
+    ({ ids, current }) => {
+      if (ids.length === 0) {
+        if (current !== null) setSelectedUniverse(null);
+        return;
+      }
+      if (current === null || !ids.includes(current))
+        setSelectedUniverse(ids[0]);
+    },
+  );
 
   return {
     settings,

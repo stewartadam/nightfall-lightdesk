@@ -6,14 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Component,
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Show,
-} from "solid-js";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
@@ -23,6 +16,7 @@ import {
   sendFixturePlacementUpdates,
 } from "../../../lib/fixture-service";
 import { normalizeFixtureUid } from "../../../lib/route-utils";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
@@ -43,9 +37,13 @@ interface NumericCommitInputProps {
 const NumericCommitInput: Component<NumericCommitInputProps> = (props) => {
   const [draft, setDraft] = createSignal(String(props.value));
 
-  createEffect(() => {
-    setDraft(String(props.value));
-  });
+  /** Resets the draft whenever the committed value changes. */
+  createEffect(
+    () => String(props.value),
+    (value) => {
+      setDraft(value);
+    },
+  );
 
   const commit = () => {
     const parsed = Number(draft());

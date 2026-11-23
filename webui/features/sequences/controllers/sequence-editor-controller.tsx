@@ -8,9 +8,7 @@
 
 import type { DockviewPanelApi } from "dockview";
 import {
-  createEffect,
   createMemo,
-  createResource,
   createSignal,
   Match,
   onCleanup,
@@ -19,6 +17,7 @@ import {
 } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { EmptyState } from "../../../components/ui/empty-state";
+import { createAsyncValue } from "../../../lib/async-value";
 import type {
   GridColumn,
   GridSelection,
@@ -30,6 +29,7 @@ import {
   useKeyboardShortcut,
 } from "../../../lib/keyboardShortcuts";
 import { buildSequencePreviewCue } from "../../../lib/sequence-preview-cue";
+import { createEffect } from "../../../lib/solid-compat";
 import { timeDisplayUnitFromPreference } from "../../../lib/time-display-units";
 import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
@@ -175,8 +175,8 @@ export function SequenceEditorController(props: {
   };
 
   /** Keeps the retained panel title aligned with its sequence label. */
-  createEffect(() => {
-    props.panelApi?.setTitle(ctx.label());
+  createEffect(ctx.label, (label) => {
+    props.panelApi?.setTitle(label);
   });
 
   usePropertiesInspector(
@@ -196,7 +196,7 @@ export function SequenceEditorController(props: {
   );
 
   /** Stores async conflict IDs keyed by cue UID for visible sequence rows. */
-  const [cuePartConflictIdsByCueUid] = createResource(
+  const cuePartConflictIdsByCueUid = createAsyncValue(
     cuePartConflictInput,
     async (cueRows) => {
       const entries: Array<[string, Set<number>]> = [];
@@ -217,7 +217,7 @@ export function SequenceEditorController(props: {
   }));
 
   /** Stores Rust-computed sequence start offsets and duration values for cue rows. */
-  const [durationSummary] = createResource(
+  const durationSummary = createAsyncValue(
     sequenceDurationSummaryInput,
     ({ cueRows, sequence, cueDurationProfiles }) =>
       sequenceDurationSummary(cueRows, sequence, cueDurationProfiles),
@@ -234,8 +234,8 @@ export function SequenceEditorController(props: {
     const sequence = ctx.sequence();
     const defaultTiming = sequence?.default_timing;
     const expanded = expandedCueUids();
-    const conflictIdsByCueUid = cuePartConflictIdsByCueUid();
-    const currentDurationSummary = durationSummary();
+    const conflictIdsByCueUid = cuePartConflictIdsByCueUid.value();
+    const currentDurationSummary = durationSummary.value();
     const lookaheadStatesByRowKey = sequenceLookaheadRowsByKey(
       sequence
         ? $sequenceLookaheadStates()[sequence.identifiers.uid]
@@ -303,20 +303,24 @@ export function SequenceEditorController(props: {
     return rowsWithDurations;
   });
 
-  createEffect(() => {
-    const cueRows = ctx.cueRows();
-    setExpandedCueUids((previous) => {
-      const validCueUids = new Set(
-        cueRows
+  /** Collapses cues that no longer have parts to expand. */
+  createEffect(
+    () =>
+      new Set(
+        ctx
+          .cueRows()
           .filter((row) => (row.cue?.parts?.length ?? 0) > 0)
           .map((row) => row.cueUid),
-      );
-      const next = new Set(
-        [...previous].filter((cueUid) => validCueUids.has(cueUid)),
-      );
-      return next.size === previous.size ? previous : next;
-    });
-  });
+      ),
+    (validCueUids) => {
+      setExpandedCueUids((previous) => {
+        const next = new Set(
+          [...previous].filter((cueUid) => validCueUids.has(cueUid)),
+        );
+        return next.size === previous.size ? previous : next;
+      });
+    },
+  );
 
   const columns = createMemo((): GridColumn[] => [
     { title: "Cue", id: "cue_id", width: 70 },
@@ -353,7 +357,7 @@ export function SequenceEditorController(props: {
     context: ctx,
     rows,
     columns,
-    cuePartConflictIdsByCueUid,
+    cuePartConflictIdsByCueUid: cuePartConflictIdsByCueUid.value,
   });
 
   const handlePriorityKeyDown = (event: KeyboardEvent) => {
@@ -391,19 +395,23 @@ export function SequenceEditorController(props: {
     }
   };
 
-  createEffect(() => {
-    if (!rootRef) return;
-    const unregister = registerComponentFocus(props.panelId, rootRef);
-    rootRef.addEventListener("keydown", handlePriorityKeyDown, {
-      capture: true,
-    });
-    onCleanup(() => unregister());
-    onCleanup(() => {
-      rootRef.removeEventListener("keydown", handlePriorityKeyDown, {
+  /** Tracks editor focus and claims priority keys once the root element exists. */
+  createEffect(
+    () => rootRef,
+    (root) => {
+      if (!root) return;
+      const unregister = registerComponentFocus(props.panelId, root);
+      root.addEventListener("keydown", handlePriorityKeyDown, {
         capture: true,
       });
-    });
-  });
+      return () => {
+        unregister();
+        root.removeEventListener("keydown", handlePriorityKeyDown, {
+          capture: true,
+        });
+      };
+    },
+  );
 
   useKeyboardShortcut({
     key: "Alt+ArrowUp",

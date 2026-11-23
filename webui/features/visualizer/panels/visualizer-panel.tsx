@@ -18,9 +18,7 @@
 
 import {
   type Component,
-  createEffect,
   createSignal,
-  on,
   onCleanup,
   onMount,
   Show,
@@ -28,7 +26,7 @@ import {
 import { consumeVisualizerQualityUrlOverride } from "../../../lib/feature-flags";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
-import { useStore } from "../../../lib/use-nanostore";
+import { createEffect } from "../../../lib/solid-compat";
 import { usePanelVisibility } from "../../../lib/use-panel-visibility";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { usePropertiesInspector } from "../../property-inspector";
@@ -39,6 +37,7 @@ import {
 
 const log = getLogger(import.meta.url);
 
+import { useStore } from "../../../lib/use-nanostore";
 import { VisualizerCanvas } from "../components/visualizer-canvas";
 import {
   VisualizerErrorBoundary,
@@ -86,23 +85,21 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
 
   /** Captures the outgoing renderer's camera pose, then remounts the canvas at the new quality. */
   createEffect(
-    on(
-      quality,
-      (next) => {
-        if (next === mountedQuality()) return;
-        const outgoing = visualizerApi;
-        void (async () => {
-          cameraHandoff.offer(
-            await captureCameraForRemount(outgoing, "quality change"),
-          );
-          // A newer quality change supersedes this one and performs its own remount.
-          if (quality() !== next) return;
-          recovery.resetRestarts();
-          setMountedQuality(next);
-        })();
-      },
-      { defer: true },
-    ),
+    quality,
+    (next) => {
+      if (next === mountedQuality()) return;
+      const outgoing = visualizerApi;
+      void (async () => {
+        cameraHandoff.offer(
+          await captureCameraForRemount(outgoing, "quality change"),
+        );
+        // A newer quality change supersedes this one and performs its own remount.
+        if (quality() !== next) return;
+        recovery.resetRestarts();
+        setMountedQuality(next);
+      })();
+    },
+    { defer: true },
   );
   let containerRef: HTMLDivElement | undefined;
   const panelId = props.initialPanelId ?? props.id;
@@ -139,7 +136,7 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
   });
 
   /** Updates rendering state whenever a visibility input changes. */
-  createEffect(syncVisualizerVisibility);
+  createEffect(shouldRender, () => syncVisualizerVisibility());
 
   // Page Visibility API - detect tab switches
   onMount(() => {
@@ -170,14 +167,18 @@ const VisualizerPanel: Component<VisualizerPanelProps> = (props) => {
   });
 
   /** Publishes diagnostics only for the active workspace's instance of this panel. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const api = visualizerHandle();
-    if (!api) return;
-    registerVisualizerDebugApi(panelId, api);
-    if (isDockviewVisible()) setActiveVisualizerDebugApiPanel(panelId);
-    onCleanup(() => unregisterVisualizerDebugApi(panelId));
-  });
+  createEffect(
+    () =>
+      workspaceActive()
+        ? { api: visualizerHandle(), visible: isDockviewVisible() }
+        : undefined,
+    (published) => {
+      if (!published?.api) return;
+      registerVisualizerDebugApi(panelId, published.api);
+      if (published.visible) setActiveVisualizerDebugApiPanel(panelId);
+      return () => unregisterVisualizerDebugApi(panelId);
+    },
+  );
 
   usePropertiesInspector(
     panelId,

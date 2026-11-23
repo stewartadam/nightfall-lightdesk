@@ -7,14 +7,7 @@
  */
 
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  type JSX,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import {
   type ContextMenuEntry,
   openContextMenu,
@@ -49,6 +42,7 @@ import {
   type RouteConflictColumn,
   type UniverseKey,
 } from "../../../lib/route-overlap";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { dmxUniverseList, fixtures, routes } from "../../../state/appStores";
@@ -491,20 +485,24 @@ export default function PatchUniversesTab(props: PatchUniversesTabProps) {
     });
   };
 
-  createEffect(() => {
-    props.onColumnVisibilityControlChange?.(
-      <>
-        <DataGridFilterMenu
-          columns={filterColumns()}
-          filters={tableFilters()}
-          visibleRows={displayRows().length}
-          totalRows={rows().length}
-          onFiltersChange={setTableFilters}
-        />
-        <ColumnVisibilityMenu scope={props.panelId} columns={columns()} />
-      </>,
-    );
-  });
+  /** Filter and column menus this tab lends to the panel toolbar. */
+  const columnVisibilityControl = (
+    <>
+      <DataGridFilterMenu
+        columns={filterColumns()}
+        filters={tableFilters()}
+        visibleRows={displayRows().length}
+        totalRows={rows().length}
+        onFiltersChange={setTableFilters}
+      />
+      <ColumnVisibilityMenu scope={props.panelId} columns={columns()} />
+    </>
+  );
+  /** Hands the toolbar menus to whichever panel callback is current. */
+  createEffect(
+    () => props.onColumnVisibilityControlChange,
+    (publish) => publish?.(columnVisibilityControl),
+  );
 
   onCleanup(() => {
     clearConflictTooltip();

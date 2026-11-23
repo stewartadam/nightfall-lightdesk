@@ -9,15 +9,14 @@
 import {
   type Accessor,
   createContext,
-  createEffect,
   createRenderEffect,
   createSignal,
   type JSX,
-  onCleanup,
   Show,
   useContext,
 } from "solid-js";
 import { Portal } from "solid-js/web";
+import { createEffect } from "../../../lib/solid-compat";
 import { notifyOverlayHostChanged, registerDialog } from "./dialog-stack";
 import { focusDialogOnOpen } from "./focus-scope";
 import { createModalScrollLock } from "./scroll-lock";
@@ -108,66 +107,66 @@ export default function Modal(props: ModalProps) {
    * as it is visible. Focus starts inside the dialog and returns to the opener
    * when the dialog closes, unless something else took it meanwhile.
    */
-  createEffect(() => {
-    if (!visible()) return;
-    const dialog = dialogElement();
-    if (!dialog) return;
-    const returnTo = opener;
-    let disposed = false;
-    let microtaskRetries = 3;
-    /**
-     * Shows the dialog modally once it is in the document. A portal attaches
-     * its content right after this effect, so the first retries run as
-     * microtasks, ahead of any frame callback in which dialog content focuses
-     * a control (a closed dialog cannot take focus); later retries wait a frame.
-     */
-    const show = () => {
-      if (disposed || dialog.open) return;
-      if (!dialog.isConnected) {
-        if (microtaskRetries-- > 0) queueMicrotask(show);
-        else requestAnimationFrame(show);
-        return;
-      }
-      const focusedBeforeShow = document.activeElement;
-      shownDialog = dialog;
-      dialog.showModal();
-      notifyOverlayHostChanged();
-      focusDialogOnOpen(
-        dialog,
-        focusedBeforeShow instanceof HTMLElement &&
-          dialog.contains(focusedBeforeShow)
-          ? focusedBeforeShow
-          : undefined,
-      );
-    };
-    show();
-
-    onCleanup(() => {
-      disposed = true;
-      if (shownDialog === dialog) shownDialog = undefined;
-      if (dialog.open) dialog.close();
-      notifyOverlayHostChanged();
-      queueMicrotask(() => {
-        const active = document.activeElement;
-        const focusLeftWithDialog =
-          active === null ||
-          active === document.body ||
-          dialog.contains(active);
-        if (focusLeftWithDialog && returnTo?.isConnected) {
-          returnTo.focus({ preventScroll: true });
+  createEffect(
+    () => (visible() ? dialogElement() : undefined),
+    (dialog) => {
+      if (!dialog) return;
+      const returnTo = opener;
+      let disposed = false;
+      let microtaskRetries = 3;
+      /**
+       * Shows the dialog modally once it is in the document. A portal attaches
+       * its content right after this effect, so the first retries run as
+       * microtasks, ahead of any frame callback in which dialog content focuses
+       * a control (a closed dialog cannot take focus); later retries wait a frame.
+       */
+      const show = () => {
+        if (disposed || dialog.open) return;
+        if (!dialog.isConnected) {
+          if (microtaskRetries-- > 0) queueMicrotask(show);
+          else requestAnimationFrame(show);
+          return;
         }
-      });
-    });
-    onCleanup(
-      registerDialog({
+        const focusedBeforeShow = document.activeElement;
+        shownDialog = dialog;
+        dialog.showModal();
+        notifyOverlayHostChanged();
+        focusDialogOnOpen(
+          dialog,
+          focusedBeforeShow instanceof HTMLElement &&
+            dialog.contains(focusedBeforeShow)
+            ? focusedBeforeShow
+            : undefined,
+        );
+      };
+      show();
+
+      const unregister = registerDialog({
         element: dialogElement,
         escapeAction: () =>
           props.closeOnEscape === false ? undefined : props.onEscape,
         enterAction: () => props.onEnter,
         blocksBackgroundKeys: () => props.blockBackgroundKeys === true,
-      }),
-    );
-  });
+      });
+      return () => {
+        unregister();
+        disposed = true;
+        if (shownDialog === dialog) shownDialog = undefined;
+        if (dialog.open) dialog.close();
+        notifyOverlayHostChanged();
+        queueMicrotask(() => {
+          const active = document.activeElement;
+          const focusLeftWithDialog =
+            active === null ||
+            active === document.body ||
+            dialog.contains(active);
+          if (focusLeftWithDialog && returnTo?.isConnected) {
+            returnTo.focus({ preventScroll: true });
+          }
+        });
+      };
+    },
+  );
 
   const content = (
     <Show when={visible()}>

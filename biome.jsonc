@@ -47,7 +47,24 @@
         "noExplicitAny": "off"
       },
       "style": {
-        "noNonNullAssertion": "off"
+        "noNonNullAssertion": "off",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              // Solid 2.0 removes these; webui/lib/solid-compat.ts has the 2.0 form.
+              "solid-js": {
+                "importNames": [
+                  "on",
+                  "createComputed",
+                  "createResource",
+                  "createEffect"
+                ],
+                "message": "Solid 2.0 removes or reshapes this API. Use the two-function createEffect, createTrackedEffect or createProjection from webui/lib/solid-compat, or createAsyncValue from webui/lib/async-value."
+              }
+            }
+          }
+        }
       },
       "correctness": {
         "useJsxKeyInIterable": "off",
@@ -61,6 +78,17 @@
     }
   },
   "overrides": [
+    {
+      // The compat module implements the Solid 2.0 shapes with the 1.x APIs they replace.
+      "includes": ["webui/lib/solid-compat.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": "off"
+          }
+        }
+      }
+    },
     {
       // Specs read the text a user sees through Playwright, where innerText respects
       // layout and visibility; textContent would change what they assert.

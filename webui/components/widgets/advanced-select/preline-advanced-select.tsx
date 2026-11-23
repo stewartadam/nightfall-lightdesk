@@ -7,7 +7,6 @@
  */
 
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -20,6 +19,7 @@ import { createDismissable } from "../../ui/dismissable";
 import { overlayHost } from "../../ui/modal/dialog-stack";
 import { ScrollIndicators } from "../../ui/scroll-area";
 import "../../ui/menu/menu.css";
+import { createEffect } from "../../../lib/solid-compat";
 
 export interface PrelineAdvancedSelectOption {
   value: string;
@@ -420,8 +420,7 @@ export function PrelineAdvancedSelect(props: {
   });
 
   /** Re-synchronizes the Preline instance whenever selected values change. */
-  createEffect(() => {
-    selectedValuesKey();
+  createEffect(selectedValuesKey, () => {
     requestAnimationFrame(syncAdvancedSelectValue);
   });
 

@@ -7,7 +7,7 @@
  */
 
 import { ColumnsPlusRightIcon } from "@squidlab/phosphor-solid/columns-plus-right";
-import { type Accessor, createEffect, createSignal, For, Show } from "solid-js";
+import { type Accessor, createSignal, For, Show } from "solid-js";
 import {
   getColumnVisibilityMenuCategories,
   resetColumnVisibility,
@@ -16,6 +16,7 @@ import {
   type VisibilityCheckState,
   type VisibilityGridColumn,
 } from "../../../../lib/datagrid-column-visibility";
+import { createEffect } from "../../../../lib/solid-compat";
 import { DropdownMenu, DropdownMenuSeparator } from "../../../ui/dropdown-menu";
 import { ScrollArea } from "../../../ui/scroll-area";
 import { TOOLBAR_BUTTON_CLASS } from "../../../ui/toolbar-button";
@@ -72,11 +73,13 @@ function ColumnCheckbox(props: ColumnCheckboxProps) {
 function TriStateCheckbox(props: TriStateCheckboxProps) {
   let inputRef: HTMLInputElement | undefined;
 
-  createEffect(() => {
-    if (inputRef) {
-      inputRef.indeterminate = props.state === "dash";
-    }
-  });
+  /** Mirrors the dash state onto the checkbox's indeterminate flag, which has no attribute. */
+  createEffect(
+    () => props.state === "dash",
+    (indeterminate) => {
+      if (inputRef) inputRef.indeterminate = indeterminate;
+    },
+  );
 
   return (
     <label

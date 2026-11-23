@@ -6,10 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { Input, Textarea } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
@@ -76,38 +77,46 @@ export function SpatialSelectionField(props: SpatialSelectionFieldProps) {
   };
 
   /** Synchronizes display text when selection data or reference aliases change. */
-  createEffect(() => {
-    const revision = props.revision;
-    const selection = props.selection;
-    const fixtures = $fixtures();
-    const groups = $groups();
-    const generation = ++formatGeneration;
-    if (!selection) {
-      setDisplayText("Selection");
-      if (shouldSynchronizeInput()) setInputValue("");
-      return;
-    }
-    void formatSpatialSelection(
-      spatialSelectionForEditing(selection, fixtures, groups),
-    )
-      .then((formatted) => {
-        if (generation !== formatGeneration || revision !== props.revision)
-          return;
-        setDisplayText(formatted);
-        if (shouldSynchronizeInput()) setInputValue(formatted);
-      })
-      .catch((error) => {
-        log.error("Failed to format spatial selection", error);
-        if (generation !== formatGeneration || revision !== props.revision)
-          return;
+  createEffect(
+    () =>
+      props.selection
+        ? {
+            revision: props.revision,
+            selection: props.selection,
+            fixtures: $fixtures(),
+            groups: $groups(),
+          }
+        : { selection: undefined, synchronize: shouldSynchronizeInput() },
+    (state) => {
+      const generation = ++formatGeneration;
+      if (!state.selection) {
         setDisplayText("Selection");
-        if (shouldSynchronizeInput()) setInputValue("");
-      });
-  });
+        if (state.synchronize) setInputValue("");
+        return;
+      }
+      const { revision, selection, fixtures, groups } = state;
+      void formatSpatialSelection(
+        spatialSelectionForEditing(selection, fixtures, groups),
+      )
+        .then((formatted) => {
+          if (generation !== formatGeneration || revision !== props.revision)
+            return;
+          setDisplayText(formatted);
+          if (shouldSynchronizeInput()) setInputValue(formatted);
+        })
+        .catch((error) => {
+          log.error("Failed to format spatial selection", error);
+          if (generation !== formatGeneration || revision !== props.revision)
+            return;
+          setDisplayText("Selection");
+          if (shouldSynchronizeInput()) setInputValue("");
+        });
+    },
+  );
 
   /** Focuses and selects compact input text after entering edit mode. */
-  createEffect(() => {
-    if (!isEditing() || !inputRef) return;
+  createEffect(isEditing, (editing) => {
+    if (!editing || !inputRef) return;
     inputRef.focus();
     inputRef.select();
   });

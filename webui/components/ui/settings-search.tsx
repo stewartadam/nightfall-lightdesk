@@ -9,7 +9,6 @@
 import {
   type Accessor,
   createContext,
-  createEffect,
   createMemo,
   createSignal,
   type JSX,
@@ -17,6 +16,7 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import { searchTerms, unmatchedSearchTerms } from "./search-match";
 
 /**
@@ -142,7 +142,12 @@ export function SettingsSearchRoot(props: {
     register,
   };
   /** Reports whether any top-level entry is still shown for the current query. */
-  createEffect(() => props.onResults?.(children().some((child) => child())));
+  createEffect(
+    () => children().some((child) => child()),
+    (hasResults) => {
+      props.onResults?.(hasResults);
+    },
+  );
   return (
     <SettingsSearchContext.Provider value={scope}>
       {props.children}

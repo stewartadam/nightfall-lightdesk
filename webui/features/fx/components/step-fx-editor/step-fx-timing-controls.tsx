@@ -7,7 +7,7 @@
  */
 
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
-import { createEffect, createSignal, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import {
   DropdownMenu,
   DropdownMenuSeparator,
@@ -18,6 +18,7 @@ import {
   type SegmentedControlOption,
 } from "../../../../components/ui/segmented-control";
 import { TimebaseControl } from "../../../../components/widgets/timebase-control";
+import { createEffect } from "../../../../lib/solid-compat";
 import type * as types from "../../../../types";
 import { Timebase } from "../../../../types";
 import {
@@ -59,10 +60,12 @@ export function StepFxTimingControls(props: {
   );
 
   /** Retains externally authored fixed values without clearing them in Auto mode. */
-  createEffect(() => {
-    const scale = props.stepFx.cycle_scale;
-    if (scale.type === "Fixed") setFixedScaleValue(scale.data);
-  });
+  createEffect(
+    () => props.stepFx.cycle_scale,
+    (scale) => {
+      if (scale.type === "Fixed") setFixedScaleValue(scale.data);
+    },
+  );
 
   return (
     <DropdownMenu

@@ -8,7 +8,6 @@
 
 import {
   createMemo,
-  createResource,
   createSignal,
   For,
   onCleanup,
@@ -25,6 +24,7 @@ import {
 import { Checkbox, NativeSelect } from "../../../components/ui/form-controls";
 import { ProgressBar } from "../../../components/ui/progress-bar";
 import { Button } from "../../../components/ui/visual-language/button";
+import { createAsyncValue } from "../../../lib/async-value";
 import { hasDiskStorage } from "../../../lib/disk-storage";
 import {
   computeFixtureChannelCount,
@@ -133,16 +133,13 @@ export function RevisionUpdateDialog(props: RevisionUpdateDialogProps) {
   );
 
   /** The update's modes and notes, read once it is in the library and fixtures move. */
-  const [details] = createResource(
+  const details = createAsyncValue(
     () => (moving() > 0 ? target() : undefined),
     (entry) => fetchRevisionDetails(entry.make, entry.model, entry.asset_etag),
   );
 
-  /**
-   * The update's details once they arrive, or nothing while loading or after a failure,
-   * since reading a failed resource throws instead of returning nothing.
-   */
-  const loaded = () => (details.state === "ready" ? details() : undefined);
+  /** The update's details once they arrive, or nothing while loading or after a failure. */
+  const loaded = () => (details.ready() ? details.value() : undefined);
 
   /** The update's modes, empty until its details arrive. */
   const modes = createMemo((): LibraryRevisionMode[] => loaded()?.modes ?? []);
@@ -366,9 +363,9 @@ export function RevisionUpdateDialog(props: RevisionUpdateDialogProps) {
             </For>
           </section>
         </Show>
-        <Show when={details.error}>
+        <Show when={details.error()}>
           <Alert variant="caution" density="compact" class="break-words">
-            {String(details.error)}
+            {String(details.error())}
           </Alert>
         </Show>
         <Show when={failure()}>

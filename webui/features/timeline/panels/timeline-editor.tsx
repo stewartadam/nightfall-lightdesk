@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect } from "solid-js";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { timelineDefinitionsLoaded, timelines } from "../../../state/appStores";
@@ -25,25 +25,30 @@ export default function TimelineEditor(props: TimelineProps) {
   let closedMissingTimelinePanel = false;
 
   /** Refreshes the tab title when the timeline name or display ID changes. */
-  createEffect(() => {
-    const timeline = $timelines()[props.initialTimelineUid];
-    if (!timeline) return;
-    const label = timeline.identifiers.label.trim();
-    props.panelApi?.setTitle(
-      label
+  createEffect(
+    () => {
+      const timeline = $timelines()[props.initialTimelineUid];
+      if (!timeline) return undefined;
+      const label = timeline.identifiers.label.trim();
+      return label
         ? `Timeline ${timeline.identifiers.id}: ${label}`
-        : `Timeline ${timeline.identifiers.id}`,
-    );
-  });
+        : `Timeline ${timeline.identifiers.id}`;
+    },
+    (title) => {
+      if (title) props.panelApi?.setTitle(title);
+    },
+  );
 
   /** Closes timeline editor panels once their backing timeline is deleted. */
-  createEffect(() => {
-    if (!$timelineDefinitionsLoaded()) return;
-    if ($timelines()[props.initialTimelineUid]) return;
-    if (closedMissingTimelinePanel) return;
-    closedMissingTimelinePanel = true;
-    props.panelApi?.close();
-  });
+  createEffect(
+    () =>
+      $timelineDefinitionsLoaded() && !$timelines()[props.initialTimelineUid],
+    (missing) => {
+      if (!missing || closedMissingTimelinePanel) return;
+      closedMissingTimelinePanel = true;
+      props.panelApi?.close();
+    },
+  );
 
   return (
     <div class="flex h-full min-h-0 w-full bg-[#1a1a1a] text-white">

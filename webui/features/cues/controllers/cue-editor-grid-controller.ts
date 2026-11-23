@@ -6,15 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createResource,
-  createSignal,
-  onCleanup,
-} from "solid-js";
+import { type Accessor, createMemo, createSignal } from "solid-js";
 import { createKeyedDataGridCellProvider } from "../../../components/widgets/data-grid";
+import { createAsyncValue } from "../../../lib/async-value";
 import { sortedAttributes } from "../../../lib/attribute-ordering";
 import { isColorPathDrivenAttribute } from "../../../lib/color-path-driven-attributes";
 import { TIMING_COLUMNS } from "../../../lib/cue-timing-values";
@@ -37,6 +31,7 @@ import {
   type RichTimeDisplayUnit,
 } from "../../../lib/datagrid-rich-cells";
 import { msToDuration } from "../../../lib/duration";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { normalizeAttributeName } from "../../../lib/utils";
@@ -110,23 +105,25 @@ export function createCueEditorGridController(
   const [previewClockMs, setPreviewClockMs] = createSignal(performance.now());
 
   /** Advances the cue timing clock while preview or live playback can show progress. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    if (!ctx.previewActive() && Object.keys($activeInstances()).length === 0) {
-      return;
-    }
+  createEffect(
+    () =>
+      workspaceActive() &&
+      (ctx.previewActive() || Object.keys($activeInstances()).length > 0),
+    (showsProgress) => {
+      if (!showsProgress) return;
 
-    setPreviewClockMs(performance.now());
-
-    let frameId = 0;
-    /** Queues the next animation-frame clock update for timing-cell progress fills. */
-    const tick = () => {
       setPreviewClockMs(performance.now());
+
+      let frameId = 0;
+      /** Queues the next animation-frame clock update for timing-cell progress fills. */
+      const tick = () => {
+        setPreviewClockMs(performance.now());
+        frameId = requestAnimationFrame(tick);
+      };
       frameId = requestAnimationFrame(tick);
-    };
-    frameId = requestAnimationFrame(tick);
-    onCleanup(() => cancelAnimationFrame(frameId));
-  });
+      return () => cancelAnimationFrame(frameId);
+    },
+  );
 
   const emptyProcessedCueData: ProcessedCueData = { groups: [], flatRows: [] };
 
@@ -163,7 +160,7 @@ export function createCueEditorGridController(
   });
 
   /** Derives visible cue grid rows from Rust-projected spatial timing indexes. */
-  const [processedData] = createResource(
+  const processedData = createAsyncValue(
     processedDataInput,
     async (input) => {
       if (!input.cue || input.fixtures.length === 0) {
@@ -198,7 +195,7 @@ export function createCueEditorGridController(
   );
 
   /** Returns the current flattened grid row list. */
-  const flatRows = () => processedData().flatRows;
+  const flatRows = () => processedData.value().flatRows;
 
   /** Returns whether the editor should show its toolbar despite an empty grid. */
   const canShowEmptyCueToolbar = () =>

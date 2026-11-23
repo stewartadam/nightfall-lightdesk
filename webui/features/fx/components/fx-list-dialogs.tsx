@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import { Alert } from "../../../components/ui/alert";
 import {
@@ -22,6 +22,7 @@ import {
 } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
+import { createEffect } from "../../../lib/solid-compat";
 import { pushToast } from "../../../state/appStores";
 import type * as types from "../../../types";
 import { SpatialSelectionField } from "../../selection";
@@ -64,29 +65,38 @@ export function ModuleFxDialog(props: ModuleFxDialogProps) {
   const [initializedOpenDialog, setInitializedOpenDialog] = createSignal(false);
 
   /** Initializes dialog defaults on open and fills late-arriving catalogs without overwriting edits. */
-  createEffect(() => {
-    if (!props.isOpen) {
-      setInitializedOpenDialog(false);
-      return;
-    }
-
-    const firstModule = props.modules[0]?.name ?? "";
-    if (!initializedOpenDialog()) {
-      setInitializedOpenDialog(true);
-      setSelectedModule(firstModule);
-      setIdText(String(props.nextId));
-      setLabel(defaultModuleLabel(firstModule));
-      setConfigText("");
-      return;
-    }
-
-    if (!selectedModule() && firstModule) {
-      setSelectedModule(firstModule);
-      if (!label()) {
-        setLabel(defaultModuleLabel(firstModule));
+  createEffect(
+    () =>
+      props.isOpen
+        ? {
+            firstModule: props.modules[0]?.name ?? "",
+            selected: selectedModule(),
+          }
+        : undefined,
+    (open) => {
+      if (!open) {
+        setInitializedOpenDialog(false);
+        return;
       }
-    }
-  });
+
+      const { firstModule } = open;
+      if (!initializedOpenDialog()) {
+        setInitializedOpenDialog(true);
+        setSelectedModule(firstModule);
+        setIdText(String(props.nextId));
+        setLabel(defaultModuleLabel(firstModule));
+        setConfigText("");
+        return;
+      }
+
+      if (!open.selected && firstModule) {
+        setSelectedModule(firstModule);
+        if (!label()) {
+          setLabel(defaultModuleLabel(firstModule));
+        }
+      }
+    },
+  );
 
   /** Handles module selection changes and updates the default label when untouched. */
   const selectModule = (moduleName: string) => {
@@ -205,9 +215,12 @@ export function FxPropertiesPanel(props: FxPropertiesPanelProps) {
   const [configText, setConfigText] = createSignal("");
 
   /** Keeps the configuration textarea aligned with the selected module FX. */
-  createEffect(() => {
-    setConfigText(formatConfigText(props.moduleFx?.config ?? {}));
-  });
+  createEffect(
+    () => ({ text: formatConfigText(props.moduleFx?.config ?? {}) }),
+    ({ text }) => {
+      setConfigText(text);
+    },
+  );
 
   /** Parses and stores edited configuration for the selected module FX. */
   const commitConfig = () => {

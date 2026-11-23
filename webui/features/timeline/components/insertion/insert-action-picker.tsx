@@ -6,14 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import {
   createDismissable,
   type DismissReason,
@@ -32,6 +25,7 @@ import {
   type PaletteNavigationKey,
   visiblePaletteRowCount,
 } from "../../../../lib/palette-navigation";
+import { createEffect } from "../../../../lib/solid-compat";
 import { useStore } from "../../../../lib/use-nanostore";
 import { useWorkspaceActivity } from "../../../../lib/workspace-activity";
 import { actionCatalog } from "../../../../state/appStores";
@@ -441,8 +435,8 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
   });
 
   /** Captures picker input and restores focus only while its workspace is active. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
+  createEffect(workspaceActive, (active) => {
+    if (!active) return;
     /** Handles picker navigation and submission before panel shortcuts. */
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isPaletteNavigationKey(event.key)) {
@@ -470,56 +464,65 @@ export const InsertActionPicker = (props: InsertActionPickerProps) => {
       inputRef?.select();
     });
 
-    onCleanup(() => {
+    return () => {
       cancelAnimationFrame(focusFrame);
       window.removeEventListener("keydown", handleKeyDown, {
         capture: true,
       });
-    });
+    };
   });
 
-  createEffect(() => {
-    if (step() === "command" || step() === "speed" || step() === "registered")
-      return;
-    const list = step() === "action" ? filteredActions() : filteredTargets();
-    if (list.length === 0) {
-      setSelectedIndex(0);
-      return;
-    }
+  /** Counts the rows of the list the current step shows, or 0 for steps without a list. */
+  const listLength = () =>
+    step() === "action"
+      ? filteredActions().length
+      : step() === "target"
+        ? filteredTargets().length
+        : 0;
 
-    if (selectedIndex() >= list.length) {
-      setSelectedIndex(0);
-      return;
-    }
-
-    if (step() === "action" && !filteredActions()[selectedIndex()]?.available) {
-      const firstAvailableIndex = filteredActions().findIndex(
-        (entry) => entry.available,
-      );
-      if (firstAvailableIndex >= 0) {
-        setSelectedIndex(firstAvailableIndex);
+  /** Keeps the highlight on an existing row, and on an available action in the action list. */
+  createEffect(
+    () => {
+      const current = step();
+      if (current !== "action" && current !== "target") return undefined;
+      return { current, length: listLength(), index: selectedIndex() };
+    },
+    (list) => {
+      if (!list) return;
+      if (list.length === 0 || list.index >= list.length) {
+        setSelectedIndex(0);
+        return;
       }
-    }
-  });
+
+      if (
+        list.current === "action" &&
+        !filteredActions()[list.index]?.available
+      ) {
+        const firstAvailableIndex = filteredActions().findIndex(
+          (entry) => entry.available,
+        );
+        if (firstAvailableIndex >= 0) {
+          setSelectedIndex(firstAvailableIndex);
+        }
+      }
+    },
+  );
 
   /** Keeps keyboard navigation from moving the highlighted option outside the picker viewport. */
-  createEffect(() => {
-    const listLength =
-      step() === "action"
-        ? filteredActions().length
-        : step() === "target"
-          ? filteredTargets().length
-          : 0;
-    if (listLength === 0 || selectedIndex() < 0) return;
+  createEffect(
+    () => ({ length: listLength(), index: selectedIndex() }),
+    ({ length, index }) => {
+      if (length === 0 || index < 0) return;
 
-    requestAnimationFrame(() => {
-      optionsListRef
-        ?.querySelector<HTMLElement>(
-          '[data-insert-action-option-selected="true"]',
-        )
-        ?.scrollIntoView({ block: "nearest" });
-    });
-  });
+      requestAnimationFrame(() => {
+        optionsListRef
+          ?.querySelector<HTMLElement>(
+            '[data-insert-action-option-selected="true"]',
+          )
+          ?.scrollIntoView({ block: "nearest" });
+      });
+    },
+  );
 
   return (
     <SearchPickerSurface

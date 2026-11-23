@@ -7,12 +7,13 @@
  */
 
 import type { DockviewApi } from "dockview";
-import { type Accessor, createEffect, onCleanup } from "solid-js";
+import { type Accessor, onCleanup } from "solid-js";
 import { getLogger } from "../../../../lib/logger";
 import {
   getPanelLivenessEntries,
   type PanelLivenessEntry,
 } from "../../../../lib/panel-liveness";
+import { createEffect } from "../../../../lib/solid-compat";
 
 const log = getLogger(import.meta.url);
 
@@ -82,18 +83,21 @@ export function createDeadPanelController(options: DeadPanelControllerOptions) {
   };
 
   /** Watches mounted panel liveness predicates and delegates stale closes. */
-  createEffect(() => {
-    if (!options.api()) return;
-
-    for (const entry of getPanelLivenessEntries()) {
-      if (
-        entry.workspaceActive === options.workspaceActive &&
-        shouldCloseDeadPanel(entry)
-      ) {
-        scheduleDeadPanelClose(entry.panelId);
-      }
-    }
-  });
+  createEffect(
+    () => {
+      if (!options.api()) return [];
+      return getPanelLivenessEntries()
+        .filter(
+          (entry) =>
+            entry.workspaceActive === options.workspaceActive &&
+            shouldCloseDeadPanel(entry),
+        )
+        .map((entry) => entry.panelId);
+    },
+    (deadPanelIds) => {
+      for (const panelId of deadPanelIds) scheduleDeadPanelClose(panelId);
+    },
+  );
 
   /** Cancels shell-owned panel liveness work when the workspace unmounts. */
   onCleanup(() => {

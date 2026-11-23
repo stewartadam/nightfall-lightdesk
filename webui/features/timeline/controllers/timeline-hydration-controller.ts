@@ -6,9 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, untrack } from "solid-js";
+import { createMemo, untrack } from "solid-js";
 import { resyncComplete } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { resolveTimelineAudioUrl } from "../../../lib/timeline-audio";
 import { useStore } from "../../../lib/use-nanostore";
 import {
@@ -187,9 +188,8 @@ export function createTimelineHydrationController(
   });
 
   /** Keeps playhead and pause state aligned with the active timecode. */
-  createEffect(() => {
-    const currentTimecodes = $timecodes();
-    const timeline = untrack($timelines)?.[options.timelineUid];
+  createEffect($timecodes, (currentTimecodes) => {
+    const timeline = $timelines()?.[options.timelineUid];
     if (!timeline) {
       playback.stopLocalPlaybackState();
       return;
@@ -208,62 +208,68 @@ export function createTimelineHydrationController(
   });
 
   /** Stops local playback when the backend broadcasts a newer stop event. */
-  createEffect(() => {
-    const stopEvent = $timelineStopEvent();
-    if (!stopEvent || stopEvent.revision <= handledTimelineStopRevision) return;
-    handledTimelineStopRevision = stopEvent.revision;
-    const timeline = $timelines()?.[options.timelineUid];
-    if (timeline?.identifiers.id === stopEvent.timelineId) {
-      playback.stopLocalPlaybackState();
-    }
-  });
+  createEffect(
+    () => {
+      const stopEvent = $timelineStopEvent();
+      return stopEvent ? { ...stopEvent } : undefined;
+    },
+    (stopEvent) => {
+      if (!stopEvent || stopEvent.revision <= handledTimelineStopRevision)
+        return;
+      handledTimelineStopRevision = stopEvent.revision;
+      const timeline = $timelines()?.[options.timelineUid];
+      if (timeline?.identifiers.id === stopEvent.timelineId) {
+        playback.stopLocalPlaybackState();
+      }
+    },
+  );
 
   /**
    * Mirrors the timeline into the local editing signals whenever the engine's copy or this
    * panel's unconfirmed edits change, so an edit stays shown until the engine confirms it.
    */
-  createEffect(() => {
-    syncFromTimeline(options.edits.timeline(), "timeline update");
+  createEffect(options.edits.timeline, (timeline) => {
+    syncFromTimeline(timeline, "timeline update");
   });
 
   /** Mirrors the markers whenever they are replaced. */
-  createEffect(() => {
-    const next = markers();
-    if (untrack(options.edits.timeline)) options.state.setMarkers(next ?? []);
+  createEffect(markers, (next) => {
+    if (options.edits.timeline()) options.state.setMarkers(next ?? []);
   });
 
   /** Mirrors the regions whenever they are replaced. */
-  createEffect(() => {
-    const next = regions();
-    if (untrack(options.edits.timeline)) options.state.setRegions(next ?? []);
+  createEffect(regions, (next) => {
+    if (options.edits.timeline()) options.state.setRegions(next ?? []);
   });
 
   /** Mirrors the loop range whenever it is replaced. */
-  createEffect(() => {
-    const next = loopRange();
-    if (untrack(options.edits.timeline)) options.state.setLoopRange(next);
+  createEffect(loopRange, (next) => {
+    if (options.edits.timeline()) options.state.setLoopRange(next);
   });
 
   /** Mirrors backend recording state into the selected timeline controls. */
-  createEffect(() => {
-    const timeline = $timelines()?.[options.timelineUid];
-    if (!timeline) {
-      options.state.setRecordingEnabledSignal(false);
-      options.state.setRecordTargetTrackIdSignal(undefined);
-      return;
-    }
-    const recordingState =
-      $timelineRecordingStates()[String(timeline.identifiers.id)];
-    options.state.setRecordingEnabledSignal(recordingState?.enabled ?? false);
-    options.state.setRecordTargetTrackIdSignal(recordingState?.target_track_id);
-  });
+  createEffect(
+    () => {
+      const timeline = $timelines()?.[options.timelineUid];
+      if (!timeline) return undefined;
+      const recordingState =
+        $timelineRecordingStates()[String(timeline.identifiers.id)];
+      return {
+        enabled: recordingState?.enabled ?? false,
+        targetTrackId: recordingState?.target_track_id,
+      };
+    },
+    (recording) => {
+      options.state.setRecordingEnabledSignal(recording?.enabled ?? false);
+      options.state.setRecordTargetTrackIdSignal(recording?.targetTrackId);
+    },
+  );
 
   /** Reloads local state after a websocket resynchronization completes. */
-  createEffect(() => {
-    if (resyncComplete()) {
-      syncFromTimeline(untrack(options.edits.timeline), "resync complete");
-      syncAnnotations();
-    }
+  createEffect(resyncComplete, (complete) => {
+    if (!complete) return;
+    syncFromTimeline(options.edits.timeline(), "resync complete");
+    syncAnnotations();
   });
 
   return { playback, displayTracks };

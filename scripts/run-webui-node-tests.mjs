@@ -79,6 +79,8 @@ try {
     process.execPath,
     [
       "--no-warnings",
+      // Solid's default Node build never runs effects; the browser build makes them testable.
+      "--conditions=browser",
       "--loader",
       extensionLoaderUrl,
       "--test",

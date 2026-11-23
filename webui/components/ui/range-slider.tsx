@@ -7,15 +7,8 @@
  */
 
 import noUiSlider, { type API, PipsMode } from "nouislider";
-import {
-  createEffect,
-  For,
-  type JSX,
-  on,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import { withTransientOwner } from "./transient-owner";
 import "./range-slider.css";
 
@@ -206,8 +199,7 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
     );
     committed = settledValues();
     /** Mirrors controlled values, leaving an active drag in place so delayed echoes cannot pull the handle back. */
-    createEffect(() => {
-      const next = values();
+    createEffect(values, (next) => {
       if (dragging) return;
       const current = settledValues();
       syncing = true;
@@ -219,42 +211,52 @@ export function RangeSlider(props: RangeSliderProps): JSX.Element {
     });
     /** Rebuilds the scale when bounds or step change, such as when a mode switch widens the range. */
     createEffect(
-      on(
-        [min, max, step],
-        ([nextMin, nextMax, nextStep]) => {
-          syncing = true;
-          sliderApi?.updateOptions(
-            { range: { min: nextMin, max: nextMax }, step: nextStep },
-            false,
-          );
-          sliderApi?.set(values(), false);
-          syncing = false;
-        },
-        { defer: true },
-      ),
+      () => [min(), max(), step()] as const,
+      ([nextMin, nextMax, nextStep]) => {
+        syncing = true;
+        sliderApi?.updateOptions(
+          { range: { min: nextMin, max: nextMax }, step: nextStep },
+          false,
+        );
+        sliderApi?.set(values(), false);
+        syncing = false;
+      },
+      { defer: true },
     );
     /** Keeps handle names current when a mounted slider's labels change, such as after its row moves. */
-    createEffect(() => {
-      containerRef
-        .querySelectorAll<HTMLElement>(".noUi-handle")
-        .forEach((handle, index) => {
-          handle.setAttribute("aria-label", label(index));
-          if (props.describedBy)
-            handle.setAttribute("aria-describedby", props.describedBy);
+    createEffect(
+      () => {
+        const handles = Array.from(
+          containerRef.querySelectorAll<HTMLElement>(".noUi-handle"),
+        );
+        return {
+          handles,
+          labels: handles.map((_, index) => label(index)),
+          describedBy: props.describedBy,
+        };
+      },
+      ({ handles, labels, describedBy }) => {
+        handles.forEach((handle, index) => {
+          handle.setAttribute("aria-label", labels[index]);
+          if (describedBy) handle.setAttribute("aria-describedby", describedBy);
           else handle.removeAttribute("aria-describedby");
         });
-    });
+      },
+    );
     /** Applies disabled state after the library instance exists and exposes it on each handle. */
-    createEffect(() => {
-      if (props.disabled) sliderApi?.disable();
-      else sliderApi?.enable();
-      containerRef.classList.toggle("is-disabled", !!props.disabled);
-      containerRef
-        .querySelectorAll<HTMLElement>(".noUi-handle")
-        .forEach((handle) => {
-          handle.setAttribute("aria-disabled", String(!!props.disabled));
-        });
-    });
+    createEffect(
+      () => !!props.disabled,
+      (disabled) => {
+        if (disabled) sliderApi?.disable();
+        else sliderApi?.enable();
+        containerRef.classList.toggle("is-disabled", disabled);
+        containerRef
+          .querySelectorAll<HTMLElement>(".noUi-handle")
+          .forEach((handle) => {
+            handle.setAttribute("aria-disabled", String(disabled));
+          });
+      },
+    );
   });
 
   /** Releases the library's pointer listeners and generated handle DOM. */

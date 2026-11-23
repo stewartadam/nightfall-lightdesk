@@ -6,13 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-} from "solid-js";
+import { createMemo, createSignal, For } from "solid-js";
 import { NativeSelect } from "../components/ui/form-controls";
 import { Table, TableScroll } from "../components/ui/table";
 import { ToggleSwitch } from "../components/ui/toggle-switch";
@@ -28,6 +22,7 @@ import {
   type GridColumn,
   type GridSelection,
 } from "../lib/data-grid-types";
+import { createEffect } from "../lib/solid-compat";
 import { formatSMPTETime } from "../lib/time-format";
 import { TimecodeRate } from "../types";
 
@@ -189,21 +184,24 @@ export function ReadOnlyTableDemo(props: {
     return current ? sources()[current.cell[1]]?.name : undefined;
   });
   /** Advances only running sample clocks while the monitoring tab is visible. */
-  createEffect(() => {
-    if (!props.active || !live()) return;
-    const timer = window.setInterval(
-      () =>
-        setSources((rows) =>
-          rows.map((row) =>
-            row.state === "Running"
-              ? { ...row, positionMs: row.positionMs + 1000 }
-              : row,
+  createEffect(
+    () => props.active && live(),
+    (ticking) => {
+      if (!ticking) return;
+      const timer = window.setInterval(
+        () =>
+          setSources((rows) =>
+            rows.map((row) =>
+              row.state === "Running"
+                ? { ...row, positionMs: row.positionMs + 1000 }
+                : row,
+            ),
           ),
-        ),
-      1000,
-    );
-    onCleanup(() => window.clearInterval(timer));
-  });
+        1000,
+      );
+      return () => window.clearInterval(timer);
+    },
+  );
   /** Exposes stable source IDs independently of sorting and live clock updates. */
   const provider = createMemo(() =>
     createKeyedDataGridCellProvider({

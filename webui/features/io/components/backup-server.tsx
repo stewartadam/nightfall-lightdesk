@@ -7,7 +7,6 @@
  */
 
 import {
-  createEffect,
   createSignal,
   type JSX,
   Match,
@@ -31,6 +30,7 @@ import { commandClient } from "../../../lib/engine-commands";
 import { backendAppState } from "../../../lib/engine-runtime";
 import { documentationPageUrl } from "../../../lib/feedback";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { $backupState } from "../../../state/settings";
 import {
@@ -689,21 +689,25 @@ export function BackupPairStartupDialog(props: {
    * Notices a failover show load that fails: the backend starts loading, then returns to having
    * no show open.
    */
-  createEffect(() => {
-    if (!openingFailoverShow()) return;
-    const appState = backendAppState();
-    if (appState === AppState.ShowLoading) sawShowLoading = true;
-    else if (sawShowLoading && appState === AppState.Initialized) {
-      giveUpOpeningFailoverShow();
-    }
-  });
+  createEffect(
+    () => (openingFailoverShow() ? backendAppState() : undefined),
+    (appState) => {
+      if (appState === undefined) return;
+      if (appState === AppState.ShowLoading) sawShowLoading = true;
+      else if (sawShowLoading && appState === AppState.Initialized) {
+        giveUpOpeningFailoverShow();
+      }
+    },
+  );
   /** Ends the wait once the dialog closes, as when the show opened. */
-  createEffect(() => {
-    if (!props.open) {
+  createEffect(
+    () => props.open,
+    (open) => {
+      if (open) return;
       clearTimeout(openTimer);
       setOpeningFailoverShow(false);
-    }
-  });
+    },
+  );
   /** Continues as primary from Enter, but only in the primary's view. */
   const submitDefault = () => {
     if (!state().primary_address && state().backup && !openingFailoverShow()) {

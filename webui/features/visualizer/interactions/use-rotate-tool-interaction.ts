@@ -13,7 +13,8 @@
  * `VisualizerRotateController`, then commits final fixture rotations on drag end.
  */
 
-import { createEffect, createSignal, onCleanup } from "solid-js";
+import { createSignal } from "solid-js";
+import { createEffect } from "../../../lib/solid-compat";
 import {
   type RotateDragPreview,
   type RotateGizmoOverlay,
@@ -488,39 +489,42 @@ export function useRotateToolInteraction(
     return hadOperation || preview !== null;
   };
 
-  createEffect(() => {
-    const pointerState = rotateToolPointerState();
-    const preview = rotateController.getCurrentPreview();
-    if (pointerState.dragPointerId !== null || pointerState.clickLockActive) {
-      return;
-    }
-    if (!preview) return;
-
-    const fixtures = controllerFixtures();
-    const synced = rotateController.syncFromFixtures(fixtures);
-    if (!synced) {
-      return;
-    }
-    const canvas = options.canvasRef();
-    refreshRotateOverlayState(
-      canvas?.clientWidth || 1,
-      canvas?.clientHeight || 1,
-    );
-  });
-
-  createEffect(() => {
-    if (!rotateToolPointerState().clickLockActive) return;
-    const canvas = options.canvasRef();
-    if (!canvas) return;
-
-    const interval = setInterval(() => {
-      refreshRotateOverlaysFromCamera(
-        canvas.clientWidth || 1,
-        canvas.clientHeight || 1,
+  /** Follows fixture changes from elsewhere in an idle rotate preview. */
+  createEffect(
+    () => {
+      const pointerState = rotateToolPointerState();
+      if (pointerState.dragPointerId !== null || pointerState.clickLockActive)
+        return undefined;
+      if (!rotateController.getCurrentPreview()) return undefined;
+      return controllerFixtures();
+    },
+    (fixtures) => {
+      if (!fixtures || !rotateController.syncFromFixtures(fixtures)) return;
+      const canvas = options.canvasRef();
+      refreshRotateOverlayState(
+        canvas?.clientWidth || 1,
+        canvas?.clientHeight || 1,
       );
-    }, 50);
-    onCleanup(() => clearInterval(interval));
-  });
+    },
+  );
+
+  /** Keeps rotate overlays aligned with the camera while a click lock holds the operation. */
+  createEffect(
+    () =>
+      rotateToolPointerState().clickLockActive
+        ? options.canvasRef()
+        : undefined,
+    (canvas) => {
+      if (!canvas) return;
+      const interval = setInterval(() => {
+        refreshRotateOverlaysFromCamera(
+          canvas.clientWidth || 1,
+          canvas.clientHeight || 1,
+        );
+      }, 50);
+      return () => clearInterval(interval);
+    },
+  );
 
   const tryCapturePointer = (pointerId: number): boolean => {
     const canvas = options.canvasRef();

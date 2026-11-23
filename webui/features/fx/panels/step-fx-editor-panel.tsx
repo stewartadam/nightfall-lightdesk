@@ -8,7 +8,6 @@
 
 import type { DockviewPanelApi } from "dockview-core";
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -22,6 +21,7 @@ import { registerComponentFocus } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { usePanelTabStatus } from "../../../lib/panel-tab-status";
+import { createEffect } from "../../../lib/solid-compat";
 import type * as types from "../../../types";
 import { usePropertiesInspector } from "../../property-inspector";
 import { StepFxAttributeSidebar } from "../components/step-fx-editor/step-fx-attribute-sidebar";
@@ -113,8 +113,8 @@ export default function StepFxEditorPanel(props: StepFxEditorPanelProps) {
   });
 
   /** Keeps the retained panel title aligned with its Step FX draft label. */
-  createEffect(() => {
-    props.panelApi?.setTitle(panelTitle());
+  createEffect(panelTitle, (title) => {
+    props.panelApi?.setTitle(title);
   });
 
   usePropertiesInspector(

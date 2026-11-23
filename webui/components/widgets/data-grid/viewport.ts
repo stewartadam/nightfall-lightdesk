@@ -7,8 +7,9 @@
  */
 
 import { createVirtualizer } from "@tanstack/solid-virtual";
-import { createEffect, createMemo } from "solid-js";
+import { createMemo } from "solid-js";
 import type { Item } from "../../../lib/data-grid-types";
+import { createEffect } from "../../../lib/solid-compat";
 import { clampIndex } from "./event-adapter";
 import type {
   DataGridTableColumn,
@@ -181,21 +182,24 @@ export function createDataGridViewportController(
   };
 
   /** Re-measures virtual columns whenever resolved widths change. */
-  createEffect(() => {
-    const widths = options
-      .centerColumns()
-      .map((column) => column.getSize())
-      .join(",");
-    void widths;
-    columnVirtualizer.measure();
-  });
+  createEffect(
+    () =>
+      options
+        .centerColumns()
+        .map((column) => column.getSize())
+        .join(","),
+    () => {
+      columnVirtualizer.measure();
+    },
+  );
 
   /** Re-measures virtual rows whenever the row count changes. */
-  createEffect(() => {
-    const rowCount = options.rows().length;
-    void rowCount;
-    rowVirtualizer.measure();
-  });
+  createEffect(
+    () => options.rows().length,
+    () => {
+      rowVirtualizer.measure();
+    },
+  );
 
   return {
     columnVirtualizer,

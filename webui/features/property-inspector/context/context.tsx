@@ -7,7 +7,6 @@
  */
 
 import {
-  createEffect,
   createMemo,
   createSignal,
   onCleanup,
@@ -16,6 +15,7 @@ import {
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import { getLogger } from "../../../lib/logger";
 import { RENDER_PROPERTIES_CAPABILITY } from "../../../lib/panel-capabilities";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { dockApi } from "../../../state/appStores";
 import {
@@ -110,10 +110,8 @@ export const PropertiesContextProvider: ParentComponent = (props) => {
   >();
 
   /** Syncs the properties panel with Dockview active panel changes. */
-  createEffect(() => {
-    const api = $api();
+  createEffect($api, (api) => {
     if (!api) return;
-
     const dispose = api.onDidActivePanelChange((event) => {
       const panelId = event.panel?.id;
       if (!panelId || panelId === "panel-PropertiesInspector") {
@@ -126,7 +124,7 @@ export const PropertiesContextProvider: ParentComponent = (props) => {
         setActiveProviderId(undefined);
       }
     });
-    onCleanup(() => dispose.dispose());
+    return () => dispose.dispose();
   });
 
   /**
@@ -134,24 +132,30 @@ export const PropertiesContextProvider: ParentComponent = (props) => {
    * after they became active. While the inspector itself is focused, the panel
    * it inspects is the last other panel that was active.
    */
-  createEffect(() => {
-    const api = $api();
-    const providers = providerRegistrations();
-    if (!api) return;
-
-    const currentPanelId = api.activePanel?.id;
-    const inspectedPanelId =
-      currentPanelId === "panel-PropertiesInspector"
-        ? lastInspectedPanelId()
-        : currentPanelId;
-    if (
-      inspectedPanelId &&
-      providers.has(inspectedPanelId) &&
-      activeProviderId() !== inspectedPanelId
-    ) {
-      setActiveProviderId(inspectedPanelId);
-    }
-  });
+  createEffect(
+    () => {
+      const api = $api();
+      if (!api) return undefined;
+      const currentPanelId = api.activePanel?.id;
+      return {
+        providers: providerRegistrations(),
+        inspectedPanelId:
+          currentPanelId === "panel-PropertiesInspector"
+            ? lastInspectedPanelId()
+            : currentPanelId,
+        activeId: activeProviderId(),
+      };
+    },
+    (state) => {
+      if (
+        state?.inspectedPanelId &&
+        state.providers.has(state.inspectedPanelId) &&
+        state.activeId !== state.inspectedPanelId
+      ) {
+        setActiveProviderId(state.inspectedPanelId);
+      }
+    },
+  );
 
   onCleanup(() => {
     for (const unregister of registeredProviderDisposers.values()) {

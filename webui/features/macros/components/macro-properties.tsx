@@ -9,18 +9,12 @@
 import { debounce } from "@solid-primitives/scheduled";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
-import {
-  createEffect,
-  createMemo,
-  createResource,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, Textarea } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
+import { createAsyncValue } from "../../../lib/async-value";
+import { createEffect } from "../../../lib/solid-compat";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { macroRuns, macros } from "../../../state/appStores";
 import type { Macro } from "../../../types";
@@ -84,27 +78,29 @@ function createMacroEdits(macro: () => Macro | undefined) {
   };
 
   /** Drops edits once the engine reports them, and every edit when another macro shows. */
-  createEffect(() => {
-    const edits = pending();
-    if (!edits) return;
-    const current = macro();
-    if (current?.identifiers.uid !== edits.uid) {
-      setPending(undefined);
-      return;
-    }
-    const waiting = Object.fromEntries(
-      Object.entries(edits.patch).filter(
-        ([field, value]) =>
-          readMacroTextField(current, field as MacroTextField) !== value,
-      ),
-    ) as MacroTextPatch;
-    if (Object.keys(waiting).length === Object.keys(edits.patch).length) return;
-    setPending(
-      Object.keys(waiting).length > 0
-        ? { uid: edits.uid, patch: waiting }
-        : undefined,
-    );
-  });
+  createEffect(
+    () => ({ edits: pending(), current: macro() }),
+    ({ edits, current }) => {
+      if (!edits) return;
+      if (current?.identifiers.uid !== edits.uid) {
+        setPending(undefined);
+        return;
+      }
+      const waiting = Object.fromEntries(
+        Object.entries(edits.patch).filter(
+          ([field, value]) =>
+            readMacroTextField(current, field as MacroTextField) !== value,
+        ),
+      ) as MacroTextPatch;
+      if (Object.keys(waiting).length === Object.keys(edits.patch).length)
+        return;
+      setPending(
+        Object.keys(waiting).length > 0
+          ? { uid: edits.uid, patch: waiting }
+          : undefined,
+      );
+    },
+  );
 
   return {
     /** Returns a field's value, counting edits the engine hasn't reported back yet. */
@@ -137,19 +133,26 @@ function createMacroTextDraft(
   const [value, setValue] = createSignal("");
 
   /** Follows the macro's value unless the operator is typing in this field. */
-  createEffect(() => {
-    const current = macro();
-    if (!current) {
-      previousUid = undefined;
-      setValue("");
-      return;
-    }
-    const shown = edits.valueOf(current, field);
-    const switched = previousUid !== current.identifiers.uid;
-    previousUid = current.identifiers.uid;
-    if (document.activeElement === element && !switched) return;
-    setValue(shown);
-  });
+  createEffect(
+    () => {
+      const current = macro();
+      return current
+        ? { current, shown: edits.valueOf(current, field) }
+        : undefined;
+    },
+    (state) => {
+      if (!state) {
+        previousUid = undefined;
+        setValue("");
+        return;
+      }
+      const { current, shown } = state;
+      const switched = previousUid !== current.identifiers.uid;
+      previousUid = current.identifiers.uid;
+      if (document.activeElement === element && !switched) return;
+      setValue(shown);
+    },
+  );
 
   return {
     value,
@@ -189,8 +192,10 @@ function CommandBodyField(props: CommandBodyFieldProps) {
   const scheduleCheck = debounce(setCheckedBody, BODY_CHECK_DELAY_MS);
   onCleanup(() => scheduleCheck.clear());
   /** Re-checks the body once typing pauses, so the grammar isn't run on every keystroke. */
-  createEffect(() => scheduleCheck(props.draft.value()));
-  const [problems] = createResource(checkedBody, findMacroBodyProblems, {
+  createEffect(props.draft.value, (body) => {
+    scheduleCheck(body);
+  });
+  const problems = createAsyncValue(checkedBody, findMacroBodyProblems, {
     initialValue: [],
   });
   return (
@@ -201,7 +206,7 @@ function CommandBodyField(props: CommandBodyFieldProps) {
           density="compact"
           ref={props.draft.ref}
           aria-label={props.ariaLabel}
-          aria-invalid={problems.latest.length > 0}
+          aria-invalid={problems.value().length > 0}
           class="mt-1 min-h-24 w-full font-mono text-xs"
           spellcheck={false}
           autocapitalize="off"
@@ -224,12 +229,12 @@ function CommandBodyField(props: CommandBodyFieldProps) {
         />
       </label>
       <p class="text-xs text-neutral-500">{props.hint}</p>
-      <Show when={problems.latest.length > 0}>
+      <Show when={problems.value().length > 0}>
         <ul
           class="space-y-0.5 text-xs text-amber-300"
           data-macro-body-problems={props.ariaLabel}
         >
-          <For each={problems.latest}>
+          <For each={problems.value()}>
             {(problem) => (
               <li>
                 Line {problem.line} ({problem.statement}): {problem.message}

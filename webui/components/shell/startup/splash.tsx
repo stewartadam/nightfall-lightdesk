@@ -6,13 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { createSignal, onCleanup, Show } from "solid-js";
 import {
   APP_BUILD_ID,
   APP_BUILD_NAME,
   APP_NAME,
   APP_VERSION,
 } from "../../../lib/app-metadata";
+import { createEffect } from "../../../lib/solid-compat";
 import {
   type FaderBeatState,
   INITIAL_FADER_BEAT_STATE,
@@ -105,13 +106,13 @@ function createSplashBeatState() {
   const reduceMotion = useStore(reducedMotion);
 
   /** Starts and stops decorative fader motion as the preference changes. */
-  createEffect(() => {
-    if (reduceMotion()) return;
+  createEffect(reduceMotion, (reduce) => {
+    if (reduce) return;
     const beatIntervalId = window.setInterval(
       () => setBeatState(nextFaderBeatState),
       FADER_BEAT_INTERVAL_MS,
     );
-    onCleanup(() => window.clearInterval(beatIntervalId));
+    return () => window.clearInterval(beatIntervalId);
   });
   return beatState;
 }
@@ -191,36 +192,40 @@ export function StartupSplashTransition(props: {
     : undefined;
   let transitionTimeoutId: number | undefined;
 
-  createEffect(() => {
-    window.clearTimeout(transitionTimeoutId);
-    if (props.visible) {
-      if (!rendered() || visibleStartedAtMs === undefined) {
-        visibleStartedAtMs = performance.now();
-      }
-      setDisplayPhase(props.phase);
-      setRendered(true);
-      setExiting(false);
-      return;
-    }
-    if (!rendered()) return;
-    const elapsedVisibleMs =
-      visibleStartedAtMs === undefined
-        ? STARTUP_SPLASH_MIN_VISIBLE_MS
-        : performance.now() - visibleStartedAtMs;
-    const fadeDelayMs = Math.max(
-      0,
-      STARTUP_SPLASH_MIN_VISIBLE_MS - elapsedVisibleMs,
-    );
-    transitionTimeoutId = window.setTimeout(() => {
-      setExiting(true);
-      transitionTimeoutId = window.setTimeout(() => {
-        setRendered(false);
+  /** Shows the splash with its latest phase, or fades it out once it has stayed long enough. */
+  createEffect(
+    () => (props.visible ? { phase: props.phase } : undefined),
+    (shown) => {
+      window.clearTimeout(transitionTimeoutId);
+      if (shown) {
+        if (!rendered() || visibleStartedAtMs === undefined) {
+          visibleStartedAtMs = performance.now();
+        }
+        setDisplayPhase(shown.phase);
+        setRendered(true);
         setExiting(false);
-        visibleStartedAtMs = undefined;
-        transitionTimeoutId = undefined;
-      }, STARTUP_SPLASH_FADE_OUT_MS);
-    }, fadeDelayMs);
-  });
+        return;
+      }
+      if (!rendered()) return;
+      const elapsedVisibleMs =
+        visibleStartedAtMs === undefined
+          ? STARTUP_SPLASH_MIN_VISIBLE_MS
+          : performance.now() - visibleStartedAtMs;
+      const fadeDelayMs = Math.max(
+        0,
+        STARTUP_SPLASH_MIN_VISIBLE_MS - elapsedVisibleMs,
+      );
+      transitionTimeoutId = window.setTimeout(() => {
+        setExiting(true);
+        transitionTimeoutId = window.setTimeout(() => {
+          setRendered(false);
+          setExiting(false);
+          visibleStartedAtMs = undefined;
+          transitionTimeoutId = undefined;
+        }, STARTUP_SPLASH_FADE_OUT_MS);
+      }, fadeDelayMs);
+    },
+  );
 
   onCleanup(() => window.clearTimeout(transitionTimeoutId));
   return (

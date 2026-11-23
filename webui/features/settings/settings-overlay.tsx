@@ -16,7 +16,6 @@ import { PencilSimpleIcon } from "@squidlab/phosphor-solid/pencil-simple";
 import { ShieldCheckIcon } from "@squidlab/phosphor-solid/shield-check";
 import { UserCircleIcon } from "@squidlab/phosphor-solid/user-circle";
 import {
-  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
@@ -47,6 +46,7 @@ import { durationToMs, msToDuration } from "../../lib/duration";
 import { commandClient } from "../../lib/engine-commands";
 import { getLogger } from "../../lib/logger";
 import { setStoreAction } from "../../lib/nanostore-action";
+import { createEffect } from "../../lib/solid-compat";
 import { useStore } from "../../lib/use-nanostore";
 import {
   routeValidationSettings,
@@ -260,31 +260,33 @@ export function SettingsOverlay() {
    * Switches to the tab another surface asked for, ending any search, and focuses the requested
    * setting's control once the tab has rendered. Then forgets the request.
    */
-  createEffect(() => {
-    const target = requested();
-    if (!target || !isSettingsOpen()) return;
-    setQuery("");
-    setActiveTab(target.tab);
-    setPageOpen(compact());
-    $requestedSettings.set(null);
-    const { setting } = target;
-    if (!setting) return;
-    // Waits past the dialog's own opening focus, which lands on the search field.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        const control = document
-          .getElementById(`${tabId}-content`)
-          ?.querySelector<HTMLElement>(
-            `[data-setting="${CSS.escape(setting)}"] :is(input, select, textarea, button)`,
-          );
-        control?.scrollIntoView({ block: "nearest" });
-        control?.focus();
-      }),
-    );
-  });
+  createEffect(
+    () => (isSettingsOpen() ? requested() : undefined),
+    (target) => {
+      if (!target) return;
+      setQuery("");
+      setActiveTab(target.tab);
+      setPageOpen(compact());
+      $requestedSettings.set(null);
+      const { setting } = target;
+      if (!setting) return;
+      // Waits past the dialog's own opening focus, which lands on the search field.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const control = document
+            .getElementById(`${tabId}-content`)
+            ?.querySelector<HTMLElement>(
+              `[data-setting="${CSS.escape(setting)}"] :is(input, select, textarea, button)`,
+            );
+          control?.scrollIntoView({ block: "nearest" });
+          control?.focus();
+        }),
+      );
+    },
+  );
   /** Starts each visit to settings without the previous visit's search or open page. */
-  createEffect(() => {
-    if (isSettingsOpen()) return;
+  createEffect(isSettingsOpen, (open) => {
+    if (open) return;
     setQuery("");
     setPageOpen(false);
   });
@@ -336,13 +338,13 @@ export function SettingsOverlay() {
   onCleanup($ioSettings.listen(showSacnPriority));
 
   /** Refresh cached model information on entry and stop polling when settings closes. */
-  createEffect(() => {
-    if (isSettingsOpen() && capabilities()?.runtime_mode !== "EmbeddedDemo") {
-      void modelDownload.refresh();
-    } else {
-      modelDownload.close();
-    }
-  });
+  createEffect(
+    () => isSettingsOpen() && capabilities()?.runtime_mode !== "EmbeddedDemo",
+    (polling) => {
+      if (polling) void modelDownload.refresh();
+      else modelDownload.close();
+    },
+  );
 
   const setProgrammerAutoSelect = (value: boolean) => {
     commandClient.emit("ProgrammingSettingsCommand", {

@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import {
   $desktopUpdate,
   downloadDesktopUpdate,
@@ -15,6 +15,7 @@ import {
   startDesktopUpdates,
 } from "../../lib/desktop-updates";
 import { getLogger } from "../../lib/logger";
+import { createEffect } from "../../lib/solid-compat";
 import { useStore } from "../../lib/use-nanostore";
 import { pushToast } from "../../state/notifications";
 import {
@@ -85,11 +86,20 @@ export function UpdateNotice() {
   let closeOffer: (() => void) | undefined;
 
   /**
+   * Inputs the offer and ready notices react to: the update state, the stored snoozes, and the
+   * end of a running snooze. A fresh object on every change reconsiders both notices.
+   */
+  const noticeInputs = () => ({
+    current: update() ? { ...update() } : update(),
+    snoozes: snoozes(),
+    snoozeEnded: snoozeEnded(),
+  });
+
+  /**
    * Offers a newer version found while automatic downloads are off, or that this build cannot
    * install itself, and withdraws the offer once a download starts.
    */
-  createEffect(() => {
-    const current = update();
+  createEffect(noticeInputs, ({ current }) => {
     const version = current?.version;
     // With automatic downloads on, a found version starts downloading at once, so it is only
     // offered here after its automatic download failed.
@@ -156,8 +166,7 @@ export function UpdateNotice() {
    * it, or when nothing is waiting any more. A routine check keeps it, because the downloaded
    * update stays installable while the check runs. A different version replaces the notice.
    */
-  createEffect(() => {
-    const current = update();
+  createEffect(noticeInputs, ({ current }) => {
     if (current?.phase !== "ready" || !current.version) {
       if (current?.phase !== "checking") withdrawNotice();
       return;
@@ -206,21 +215,23 @@ export function UpdateNotice() {
   let welcomed: string | null = null;
 
   /** Says, once on the first launch after an update, which version is now running, until closed. */
-  createEffect(() => {
-    const updatedTo = update()?.updatedTo;
-    if (!updatedTo || welcomed === updatedTo) return;
-    welcomed = updatedTo;
-    pushToast(
-      "success",
-      `You're now running Nightfall ${updatedTo}.`,
-      // Startup often has the operator looking elsewhere, so the notice stays until closed.
-      0,
-      [],
-      {
-        title: "Nightfall updated",
-      },
-    );
-  });
+  createEffect(
+    () => update()?.updatedTo,
+    (updatedTo) => {
+      if (!updatedTo || welcomed === updatedTo) return;
+      welcomed = updatedTo;
+      pushToast(
+        "success",
+        `You're now running Nightfall ${updatedTo}.`,
+        // Startup often has the operator looking elsewhere, so the notice stays until closed.
+        0,
+        [],
+        {
+          title: "Nightfall updated",
+        },
+      );
+    },
+  );
 
   return null;
 }

@@ -6,13 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createSignal,
-  type Setter,
-} from "solid-js";
+import { type Accessor, createSignal, type Setter } from "solid-js";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
+import { createEffect } from "../../../lib/solid-compat";
 import { DmxIoMode } from "../../../types";
 import type { FixtureJumpTarget } from "../model/dmx-universe-model";
 import {
@@ -182,8 +178,8 @@ export function createDmxFixtureJumpController(
   });
 
   /** Focuses and selects fixture-jump text whenever jump mode opens. */
-  createEffect(() => {
-    if (!active()) return;
+  createEffect(active, (isActive) => {
+    if (!isActive) return;
     inputElement?.focus();
     inputElement?.select();
   });

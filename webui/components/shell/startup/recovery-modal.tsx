@@ -7,8 +7,9 @@
  */
 
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
-import { createEffect, onCleanup, Show } from "solid-js";
+import { Show } from "solid-js";
 import type { StartupDraftRecovery } from "../../../lib/showfile-startup";
+import { createEffect } from "../../../lib/solid-compat";
 import { Alert } from "../../ui/alert";
 import { Dialog, DialogBody, DialogFooter } from "../../ui/dialog";
 import { Button } from "../../ui/visual-language/button";
@@ -43,22 +44,25 @@ export function ShowfileDraftRecoveryModal(
   };
 
   /** Focuses the default action when the recovery prompt becomes visible. */
-  createEffect(() => {
-    if (!props.draft || props.disabled) return;
-    focusFrameId = requestAnimationFrame(() => {
-      (props.draft?.hasDraft
-        ? loadDraftButtonRef
-        : keepSavedButtonRef
-      )?.focus();
-      focusFrameId = undefined;
-    });
-    onCleanup(() => {
-      if (focusFrameId !== undefined) {
-        cancelAnimationFrame(focusFrameId);
+  createEffect(
+    () => (props.disabled ? undefined : props.draft),
+    (draft) => {
+      if (!draft) return;
+      focusFrameId = requestAnimationFrame(() => {
+        (props.draft?.hasDraft
+          ? loadDraftButtonRef
+          : keepSavedButtonRef
+        )?.focus();
         focusFrameId = undefined;
-      }
-    });
-  });
+      });
+      return () => {
+        if (focusFrameId !== undefined) {
+          cancelAnimationFrame(focusFrameId);
+          focusFrameId = undefined;
+        }
+      };
+    },
+  );
 
   return (
     <Dialog

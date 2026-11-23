@@ -10,12 +10,10 @@ import { ArrowClockwiseIcon } from "@squidlab/phosphor-solid/arrow-clockwise";
 import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import {
   children,
-  createEffect,
   createMemo,
   createSignal,
   For,
   type JSX,
-  on,
   onCleanup,
   Show,
 } from "solid-js";
@@ -37,6 +35,7 @@ import {
   type GridSelection,
 } from "../../lib/data-grid-types";
 import { getLogger } from "../../lib/logger";
+import { createEffect } from "../../lib/solid-compat";
 import { useStore } from "../../lib/use-nanostore";
 import { fixtureLibrary } from "../../state/appStores";
 import { activeShellDialog } from "../../state/shell-dialog";
@@ -179,11 +178,9 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
    * Reads the account on mount and again whenever a shell dialog such as Settings closes,
    * so signing in from the button below takes effect without reopening the browser.
    */
-  createEffect(
-    on($shellDialog, (dialog) => {
-      if (dialog === null) void loadAccount();
-    }),
-  );
+  createEffect($shellDialog, (dialog) => {
+    if (dialog === null) void loadAccount();
+  });
 
   /** Moves to the signed-out prompt, or shows `failure` above the results. */
   const handleFailure = (failure: unknown, action: string) => {
@@ -216,11 +213,12 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
 
   /** Searches again shortly after the query changes, once the account is signed in. */
   createEffect(
-    on([() => props.query.trim(), () => account().kind], ([query, kind]) => {
+    () => [props.query.trim(), account().kind] as const,
+    ([query, kind]) => {
       if (kind !== "signed-in") return;
       const timer = setTimeout(() => runSearch(query), SEARCH_DELAY_MS);
-      onCleanup(() => clearTimeout(timer));
-    }),
+      return () => clearTimeout(timer);
+    },
   );
 
   /** Fetches the GDTF Share list again, then repeats the current search on it. */
@@ -300,7 +298,9 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
   });
 
   /** Clears an earlier install note when another result is chosen. */
-  createEffect(on(selectedRid, () => setInstallNote(undefined)));
+  createEffect(selectedRid, () => {
+    setInstallNote(undefined);
+  });
 
   /**
    * Installs the selected result, showing the download's progress, then hands the library

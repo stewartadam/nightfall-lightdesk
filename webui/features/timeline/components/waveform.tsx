@@ -6,15 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createRenderEffect,
-  createSignal,
-  onCleanup,
-  onMount,
-} from "solid-js";
+import { createRenderEffect, createSignal, onCleanup, onMount } from "solid-js";
 import WaveSurfer from "wavesurfer.js";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { msToPixels } from "../../../lib/utils";
 import { useTimelineContext } from "../context/timeline-context";
 import { seekPositionFromTimelineX } from "../model/grid-utils";
@@ -82,38 +77,40 @@ const Waveform = (props: WaveformProps) => {
   });
 
   /** Loads the current audio and invalidates callbacks when its source changes or the panel closes. */
-  createEffect(() => {
-    if (waveSurferObj() === undefined || !props.audioUrl) return;
-    const waveSurfer = waveSurferObj()!;
-    let active = true;
-    setDecodedDurationMs(0);
-    setLoadState("loading");
+  createEffect(
+    () => ({ waveSurfer: waveSurferObj(), audioUrl: props.audioUrl }),
+    ({ waveSurfer, audioUrl }) => {
+      if (!waveSurfer || !audioUrl) return;
+      let active = true;
+      setDecodedDurationMs(0);
+      setLoadState("loading");
 
-    const stopDecode = waveSurfer.once("decode", (duration: number) => {
-      if (!active) return;
-      // Update initial width after audio is loaded to match the audio duration
-      waveSurfer.zoom(props.zoom);
-      const durationMs = duration * 1000;
-      setDecodedDurationMs(durationMs);
-      setLoadState("decoded");
-      const newWidthPx = msToPixels(durationMs, props.zoom);
-      waveformRef.style.width = `${newWidthPx}px`;
-      waveSurfer.setOptions({ width: newWidthPx });
+      const stopDecode = waveSurfer.once("decode", (duration: number) => {
+        if (!active) return;
+        // Update initial width after audio is loaded to match the audio duration
+        waveSurfer.zoom(props.zoom);
+        const durationMs = duration * 1000;
+        setDecodedDurationMs(durationMs);
+        setLoadState("decoded");
+        const newWidthPx = msToPixels(durationMs, props.zoom);
+        waveformRef.style.width = `${newWidthPx}px`;
+        waveSurfer.setOptions({ width: newWidthPx });
 
-      if (props.onAudioLoaded) {
-        props.onAudioLoaded(durationMs);
-      }
-    });
-    onCleanup(() => {
-      active = false;
-      stopDecode();
-    });
-    void waveSurfer.load(props.audioUrl).catch((error: unknown) => {
-      if (!active) return;
-      setLoadState("error");
-      log.error("Error loading timeline waveform:", error);
-    });
-  });
+        if (props.onAudioLoaded) {
+          props.onAudioLoaded(durationMs);
+        }
+      });
+      void waveSurfer.load(audioUrl).catch((error: unknown) => {
+        if (!active) return;
+        setLoadState("error");
+        log.error("Error loading timeline waveform:", error);
+      });
+      return () => {
+        active = false;
+        stopDecode();
+      };
+    },
+  );
 
   // Effect to handle zoom changes after our <Wavesurfer> component is mounted
   createRenderEffect(() => {

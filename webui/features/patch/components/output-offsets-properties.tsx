@@ -8,18 +8,12 @@
 
 import { debounce } from "@solid-primitives/scheduled";
 import { ArrowCounterClockwiseIcon } from "@squidlab/phosphor-solid/arrow-counter-clockwise";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  Index,
-  on,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, Index, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { NumericStepper } from "../../../components/ui/numeric-stepper";
 import { Button } from "../../../components/ui/visual-language/button";
 import { commandClient } from "../../../lib/engine-commands";
+import { createEffect } from "../../../lib/solid-compat";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { fixtures } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -67,12 +61,10 @@ function OutputOffsetField(props: OutputOffsetFieldProps) {
 
   /** Shows the engine's value when it changes, unless the operator is mid-edit. */
   createEffect(
-    on(
-      () => props.row.percent,
-      (percent) => {
-        if (!pending) setDraft(String(percent));
-      },
-    ),
+    () => props.row.percent,
+    (percent) => {
+      if (!pending) setDraft(String(percent));
+    },
   );
 
   /** Sends the drafted offset if it is a valid number within range. */

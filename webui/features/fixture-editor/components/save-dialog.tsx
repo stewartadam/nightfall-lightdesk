@@ -7,7 +7,7 @@
  */
 
 import { WarningIcon } from "@squidlab/phosphor-solid/warning";
-import { createEffect, createSignal, on, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import {
   Dialog,
   DialogBody,
@@ -16,6 +16,7 @@ import {
 } from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
+import { createEffect } from "../../../lib/solid-compat";
 import type * as types from "../../../types";
 import { hasErrors } from "../model/draft-editing";
 import {
@@ -46,16 +47,14 @@ export default function SaveDialog(props: SaveDialogProps) {
 
   /** Starts each opening from the draft's own file name, with no note and no pending question. */
   createEffect(
-    on(
-      () => props.isOpen,
-      (isOpen) => {
-        if (!isOpen) return;
-        setFileName(props.draft.file_name ?? "");
-        setNote("");
-        setConflict(null);
-        setError(null);
-      },
-    ),
+    () => props.isOpen,
+    (isOpen) => {
+      if (!isOpen) return;
+      setFileName(props.draft.file_name ?? "");
+      setNote("");
+      setConflict(null);
+      setError(null);
+    },
   );
 
   /** Saves, turning a refusal to replace a file into a question for the user. */

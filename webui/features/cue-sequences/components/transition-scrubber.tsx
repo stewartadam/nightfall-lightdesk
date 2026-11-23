@@ -11,19 +11,14 @@ import { CaretLeftIcon } from "@squidlab/phosphor-solid/caret-left";
 import { CaretRightIcon } from "@squidlab/phosphor-solid/caret-right";
 import { PauseIcon } from "@squidlab/phosphor-solid/pause";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
-import {
-  createEffect,
-  createMemo,
-  createResource,
-  createSignal,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
+import { createAsyncValue } from "../../../lib/async-value";
 import { seekPreviewInstance } from "../../../lib/cue-service";
 import { calculateCueTransitionDurations } from "../../../lib/cue-timing-values";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import type * as types from "../../../types";
 import { playbackTransitionClock } from "../model/playback-transition-progress";
 
@@ -39,7 +34,7 @@ export function TransitionScrubber(props: {
 }) {
   const [now, setNow] = createSignal(Date.now());
   const [pendingPosition, setPendingPosition] = createSignal<number>();
-  const [durations] = createResource(
+  const durations = createAsyncValue(
     () => props.cue,
     calculateCueTransitionDurations,
   );
@@ -49,7 +44,7 @@ export function TransitionScrubber(props: {
   let sending = false;
 
   /** Resolves the complete transition span, including per-fixture and part timing. */
-  const duration = createMemo(() => durations()?.totalDuration ?? 0);
+  const duration = createMemo(() => durations.value()?.totalDuration ?? 0);
   /** Follows authoritative preview time unless a newer drag position is pending. */
   const position = createMemo(() =>
     Math.min(
@@ -64,11 +59,14 @@ export function TransitionScrubber(props: {
   const atEnd = createMemo(() => duration() > 0 && position() >= duration());
 
   /** Updates interpolated progress while the preview is running. */
-  createEffect(() => {
-    if (!props.playback || props.playback.is_paused) return;
-    const timer = setInterval(() => setNow(Date.now()), 30);
-    onCleanup(() => clearInterval(timer));
-  });
+  createEffect(
+    () => props.playback !== undefined && !props.playback.is_paused,
+    (running) => {
+      if (!running) return;
+      const timer = setInterval(() => setNow(Date.now()), 30);
+      return () => clearInterval(timer);
+    },
+  );
 
   /** Serializes drag requests and keeps only the newest queued position. */
   const flush = async () => {

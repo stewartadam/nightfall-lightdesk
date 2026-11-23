@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { BoardWorkspace } from "../../../../features/boards";
 import {
   createSerializedLayout,
@@ -24,6 +24,7 @@ import {
 import { getLogger } from "../../../../lib/logger";
 import { setStoreAction } from "../../../../lib/nanostore-action";
 import { currentShowfileRevision } from "../../../../lib/showfile-loading";
+import { createEffect } from "../../../../lib/solid-compat";
 import { useStore } from "../../../../lib/use-nanostore";
 import { WorkspaceActivityContext } from "../../../../lib/workspace-activity";
 import { appLifecycle } from "../../../../state/app-lifecycle";
@@ -48,7 +49,6 @@ import {
 import DockWorkspace, { type DockWorkspaceHandle } from "./dockview-app";
 import { DockviewCommands } from "./dockview-commands";
 import { DockviewEventListener } from "./dockview-event-listener";
-
 import { createLayoutEntrance } from "./layout-entrance";
 
 const log = getLogger(import.meta.url);
@@ -339,51 +339,55 @@ export default function DockWorkspaces(props: DockWorkspacesProps) {
   const showfileRevision = useStore(currentShowfileRevision);
   let initializedRevision = -1;
   /** Establishes one named active layout after the showfile arrangement has finished restoring. */
-  createEffect(() => {
-    const revision = restoredRevision();
-    if (
-      props.compact ||
-      lifecycle().phase !== "interactive" ||
-      editingLayouts() ||
-      !restoredSettings() ||
-      revision !== showfileRevision() ||
-      initializedRevision === revision
-    )
-      return;
-    const api = shell.dockviewApi();
-    if (!api) return;
-    initializedRevision = revision;
-    const keptDeviceArrangement =
-      dockviewLayoutKeptDeviceArrangement.get() ||
-      settledShowfileRevision === revision;
-    const defaultLayoutId =
-      $settings.get().panelLayouts.default_layout_id ?? null;
-    const preferred = keptDeviceArrangement
-      ? (getActiveStoredLayoutId() ?? defaultLayoutId)
-      : defaultLayoutId;
-    // Without layouts of its own, the showfile starts from the built-in
-    // arrangement, which then becomes its first named layout.
-    if (!getShowfilePanelLayouts().length && current.handle?.api === api)
-      buildAwaitedArrangement(current.handle);
-    /** Records the outcome, falling back to the built-in arrangement when no layout opened. */
-    const settle = (initialized: boolean) => {
-      if (initialized) {
-        settledShowfileRevision = revision;
-        if (awaitingArrangementRevision === revision)
-          awaitingArrangementRevision = -1;
-        return;
-      }
-      if (initializedRevision === revision) initializedRevision = -1;
-      if (current.handle?.api === api) buildAwaitedArrangement(current.handle);
-    };
-    initializeNamedLayout(api, preferred, keptDeviceArrangement).then(
-      settle,
-      (error: unknown) => {
-        log.error("Could not open the showfile's layout", error);
-        settle(false);
-      },
-    );
-  });
+  createEffect(
+    () => {
+      const revision = restoredRevision();
+      const ready =
+        !props.compact &&
+        lifecycle().phase === "interactive" &&
+        !editingLayouts() &&
+        Boolean(restoredSettings()) &&
+        revision === showfileRevision();
+      return ready ? { revision, api: shell.dockviewApi() } : undefined;
+    },
+    (target) => {
+      if (!target || initializedRevision === target.revision) return;
+      const { revision, api } = target;
+      if (!api) return;
+      initializedRevision = revision;
+      const keptDeviceArrangement =
+        dockviewLayoutKeptDeviceArrangement.get() ||
+        settledShowfileRevision === revision;
+      const defaultLayoutId =
+        $settings.get().panelLayouts.default_layout_id ?? null;
+      const preferred = keptDeviceArrangement
+        ? (getActiveStoredLayoutId() ?? defaultLayoutId)
+        : defaultLayoutId;
+      // Without layouts of its own, the showfile starts from the built-in
+      // arrangement, which then becomes its first named layout.
+      if (!getShowfilePanelLayouts().length && current.handle?.api === api)
+        buildAwaitedArrangement(current.handle);
+      /** Records the outcome, falling back to the built-in arrangement when no layout opened. */
+      const settle = (initialized: boolean) => {
+        if (initialized) {
+          settledShowfileRevision = revision;
+          if (awaitingArrangementRevision === revision)
+            awaitingArrangementRevision = -1;
+          return;
+        }
+        if (initializedRevision === revision) initializedRevision = -1;
+        if (current.handle?.api === api)
+          buildAwaitedArrangement(current.handle);
+      };
+      initializeNamedLayout(api, preferred, keptDeviceArrangement).then(
+        settle,
+        (error: unknown) => {
+          log.error("Could not open the showfile's layout", error);
+          settle(false);
+        },
+      );
+    },
+  );
 
   // Lets code outside the Dockview tree, such as the welcome guide, reset the active workspace.
   shell.registerLayoutResetHandler(() => {

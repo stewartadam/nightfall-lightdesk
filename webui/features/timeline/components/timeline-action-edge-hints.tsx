@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
+import { createSignal, For, onCleanup, onMount } from "solid-js";
+import { createEffect } from "../../../lib/solid-compat";
 import { useTimelineContext } from "../context/timeline-context";
 import type { TimelineActionKind } from "../model/timeline-action-kind";
 import { getMarkerStyle } from "./action";
@@ -202,12 +203,10 @@ export function TimelineActionEdgeHints(props: TimelineActionEdgeHintsProps) {
   });
 
   /** Rechecks hints when timeline data or horizontal scale changes. */
-  createEffect(() => {
-    ctx.displayTracks();
-    ctx.zoom();
-    ctx.end();
-    scheduleUpdateHints();
-  });
+  createEffect(
+    () => [ctx.displayTracks(), ctx.zoom(), ctx.end()],
+    () => scheduleUpdateHints(),
+  );
 
   onCleanup(() => {
     if (animationFrame !== undefined) {

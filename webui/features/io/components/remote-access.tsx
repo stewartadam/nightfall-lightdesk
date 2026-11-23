@@ -10,7 +10,6 @@ import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import { QrCodeIcon } from "@squidlab/phosphor-solid/qr-code";
 import {
   createMemo,
-  createResource,
   createSignal,
   For,
   type JSX,
@@ -22,6 +21,7 @@ import { Alert } from "../../../components/ui/alert";
 import Tooltip from "../../../components/ui/tooltip";
 import { Button } from "../../../components/ui/visual-language/button";
 import { getShareablePort } from "../../../lib/api";
+import { createAsyncValue } from "../../../lib/async-value";
 import { writeClipboardText } from "../../../lib/clipboard";
 import { getLogger } from "../../../lib/logger";
 import {
@@ -88,7 +88,7 @@ export function RemoteAccess() {
    * flight, so the PIN reloads whenever the listening addresses change and a
    * failed load keeps the last known PIN.
    */
-  const [pin, { mutate }] = createResource(
+  const pin = createAsyncValue(
     // Prefixed so an empty address list still counts as a source and loads.
     () => `listening:${state().listening_addresses.join(",")}`,
     async () => {
@@ -118,7 +118,7 @@ export function RemoteAccess() {
     setError(null);
     try {
       lastPin = await regeneratePairingPin();
-      mutate(lastPin);
+      pin.set(lastPin);
     } catch (failure) {
       log.warn("Failed to regenerate the pairing PIN", failure);
       setError("Could not create a new PIN.");
@@ -140,7 +140,7 @@ export function RemoteAccess() {
   };
 
   return (
-    <Show when={pin()}>
+    <Show when={pin.value()}>
       {(current) => (
         <div class="mt-2 space-y-2 text-xs text-gray-400">
           <Show when={links().length > 0}>

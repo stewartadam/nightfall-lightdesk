@@ -6,14 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  type JSX,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import Tooltip from "../../../components/ui/tooltip";
 import DataGrid, {
   createKeyedDataGridCellProvider,
@@ -42,6 +35,7 @@ import {
 import { filterColumnsFromMetadata } from "../../../lib/datagrid-filtering";
 import { sendRemoveDmxRoutes } from "../../../lib/fixture-service";
 import { computeRouteOverlapAnalysis } from "../../../lib/route-overlap";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { dmxUniverseList, fixtures, routes } from "../../../state/appStores";
@@ -143,13 +137,20 @@ export default function DmxRoutesTab(props: DmxRoutesTabProps) {
     clearSelection();
   };
 
-  createEffect(() => {
-    props.onSelectionCountChange?.(selectedRows().length);
-  });
+  /** Reports the selected route count to the panel. */
+  createEffect(
+    () => ({
+      count: selectedRows().length,
+      onCount: props.onSelectionCountChange,
+    }),
+    ({ count, onCount }) => onCount?.(count),
+  );
 
-  createEffect(() => {
-    props.onDeleteActionChange?.(deleteSelectedRoutes);
-  });
+  /** Hands the delete action to whichever panel callback is current. */
+  createEffect(
+    () => props.onDeleteActionChange,
+    (publish) => publish?.(deleteSelectedRoutes),
+  );
 
   const routeConflictColumns = createMemo(() => {
     const activeUniverses = $dmxUniverseList().map(
@@ -212,37 +213,44 @@ export default function DmxRoutesTab(props: DmxRoutesTabProps) {
     }, 500);
   };
 
-  createEffect(() => {
-    const navigateRequest = props.navigateToRoute;
-    if (!navigateRequest) {
-      return;
-    }
+  /** Selects and reveals the route a navigation request names once its row is displayed. */
+  createEffect(
+    () => {
+      const navigateRequest = props.navigateToRoute;
+      return navigateRequest
+        ? { navigateRequest: { ...navigateRequest }, rows: displayRows() }
+        : undefined;
+    },
+    (navigation) => {
+      if (!navigation) return;
+      const { navigateRequest } = navigation;
 
-    const rowIndex = displayRows().findIndex(
-      (row) => row.id === navigateRequest.routeId,
-    );
-    if (rowIndex < 0) {
-      props.onNavigateHandled?.(navigateRequest.requestId);
-      return;
-    }
+      const rowIndex = navigation.rows.findIndex(
+        (row) => row.id === navigateRequest.routeId,
+      );
+      if (rowIndex < 0) {
+        props.onNavigateHandled?.(navigateRequest.requestId);
+        return;
+      }
 
-    setSelection({
-      columns: CompactSelection.empty(),
-      rows: CompactSelection.fromSingleSelection(rowIndex),
-      current: {
-        cell: [0, rowIndex],
-        range: {
-          x: 0,
-          y: rowIndex,
-          width: 1,
-          height: 1,
+      setSelection({
+        columns: CompactSelection.empty(),
+        rows: CompactSelection.fromSingleSelection(rowIndex),
+        current: {
+          cell: [0, rowIndex],
+          range: {
+            x: 0,
+            y: rowIndex,
+            width: 1,
+            height: 1,
+          },
+          rangeStack: [],
         },
-        rangeStack: [],
-      },
-    });
+      });
 
-    props.onNavigateHandled?.(navigateRequest.requestId);
-  });
+      props.onNavigateHandled?.(navigateRequest.requestId);
+    },
+  );
 
   onCleanup(() => {
     clearConflictTooltip();
@@ -251,20 +259,24 @@ export default function DmxRoutesTab(props: DmxRoutesTabProps) {
     props.onColumnVisibilityControlChange?.(null);
   });
 
-  createEffect(() => {
-    props.onColumnVisibilityControlChange?.(
-      <>
-        <DataGridFilterMenu
-          columns={filterColumns()}
-          filters={tableFilters()}
-          visibleRows={displayRows().length}
-          totalRows={rows().length}
-          onFiltersChange={setTableFilters}
-        />
-        <ColumnVisibilityMenu scope={props.panelId} columns={columns()} />
-      </>,
-    );
-  });
+  /** Filter and column menus this tab lends to the panel toolbar. */
+  const columnVisibilityControl = (
+    <>
+      <DataGridFilterMenu
+        columns={filterColumns()}
+        filters={tableFilters()}
+        visibleRows={displayRows().length}
+        totalRows={rows().length}
+        onFiltersChange={setTableFilters}
+      />
+      <ColumnVisibilityMenu scope={props.panelId} columns={columns()} />
+    </>
+  );
+  /** Hands the toolbar menus to whichever panel callback is current. */
+  createEffect(
+    () => props.onColumnVisibilityControlChange,
+    (publish) => publish?.(columnVisibilityControl),
+  );
 
   /** Rebuilds route cells, including conflict styling, whenever rows or their conflicts change. */
   const cellProvider = createMemo(() => {

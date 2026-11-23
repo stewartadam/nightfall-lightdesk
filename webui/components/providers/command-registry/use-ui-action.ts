@@ -6,9 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, onCleanup, untrack } from "solid-js";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { getCommandShortcutKeys, type UiAction } from "./command-types";
 import { useCommandPalette } from "./context";
@@ -23,35 +23,31 @@ export function useUiAction(command: UiAction) {
   log.trace("mounting");
   const { registerAction } = useCommandPalette();
 
-  // Keep palette registration scoped to this component's reactive lifetime.
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    const unregister = untrack(() => registerAction(command));
-
-    const shortcutKeys = getCommandShortcutKeys(command);
-
-    // Register keyboard shortcuts if provided
-    for (const shortcut of shortcutKeys) {
-      log.debug("Registering keyboard shortcut for command:", command.name);
-      useKeyboardShortcut(
-        {
-          key: shortcut,
-          handler: (e?: KeyboardEvent) => {
-            if (e) e.preventDefault();
-            command.execute({ source: "shortcut", event: e });
-          },
-          description: command.description || `Execute ${command.name}`,
-        },
-        { global: true, ...command.shortcutOptions },
-      );
-    }
-
-    // Clean up when the component unmounts
-    onCleanup(() => {
+  /** Lists the command in the palette only while this component's workspace is active. */
+  createEffect(workspaceActive, (active) => {
+    if (!active) return;
+    const unregister = registerAction(command);
+    return () => {
       log.trace("unmounting");
       unregister();
-    });
+    };
   });
+
+  // Shortcuts gate themselves on workspace activity.
+  for (const shortcut of getCommandShortcutKeys(command)) {
+    log.debug("Registering keyboard shortcut for command:", command.name);
+    useKeyboardShortcut(
+      {
+        key: shortcut,
+        handler: (e?: KeyboardEvent) => {
+          if (e) e.preventDefault();
+          command.execute({ source: "shortcut", event: e });
+        },
+        description: command.description || `Execute ${command.name}`,
+      },
+      { global: true, ...command.shortcutOptions },
+    );
+  }
 
   return {
     execute: command.execute,

@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
+import { createEffect } from "../../../lib/solid-compat";
 import { EmptyState } from "../../ui/empty-state";
 import { Input } from "../../ui/form-controls";
 
@@ -27,19 +28,25 @@ export default function CrudLabelProperties<T>(
   const [draftLabel, setDraftLabel] = createSignal("");
 
   /** Synchronizes local draft text from the selected entry unless the user is typing. */
-  createEffect(() => {
-    const entry = props.entry;
-    if (!entry) {
-      previousEntryId = undefined;
-      setDraftLabel("");
-      return;
-    }
-    const entryId = props.getId(entry);
-    const selectionChanged = previousEntryId !== entryId;
-    previousEntryId = entryId;
-    if (document.activeElement === inputRef && !selectionChanged) return;
-    setDraftLabel(props.getLabel(entry));
-  });
+  createEffect(
+    () => {
+      const entry = props.entry;
+      return entry
+        ? { id: props.getId(entry), label: props.getLabel(entry) }
+        : undefined;
+    },
+    (entry) => {
+      if (!entry) {
+        previousEntryId = undefined;
+        setDraftLabel("");
+        return;
+      }
+      const selectionChanged = previousEntryId !== entry.id;
+      previousEntryId = entry.id;
+      if (document.activeElement === inputRef && !selectionChanged) return;
+      setDraftLabel(entry.label);
+    },
+  );
 
   /** Commits a changed draft label to the owning CRUD panel. */
   const commitLabel = () => {

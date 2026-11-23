@@ -10,14 +10,11 @@ import { ArchiveIcon } from "@squidlab/phosphor-solid/archive";
 import { XIcon } from "@squidlab/phosphor-solid/x";
 import {
   type Component,
-  createEffect,
   createMemo,
   createRenderEffect,
   createSignal,
   For,
-  onCleanup,
   Show,
-  untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
@@ -53,6 +50,7 @@ import {
   showfileObjectResultLabel,
   showfileObjectTypeDefinition,
 } from "../../../lib/showfile-object-search";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useConditionalShallowStore } from "../../../lib/use-shallow-store";
 import {
@@ -161,17 +159,18 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
   let backdropRef: HTMLDivElement | undefined;
 
   /** Joins the dialog stack while visible so dialogs underneath never take its Enter or Escape. */
-  createEffect(() => {
-    if (!props.isOpen) return;
-    onCleanup(
-      registerDialog({
-        element: () => backdropRef,
-        escapeAction: () => undefined,
-        enterAction: () => undefined,
-        blocksBackgroundKeys: () => false,
-      }),
-    );
-  });
+  createEffect(
+    () => props.isOpen,
+    (open) =>
+      open
+        ? registerDialog({
+            element: () => backdropRef,
+            escapeAction: () => undefined,
+            enterAction: () => undefined,
+            blocksBackgroundKeys: () => false,
+          })
+        : undefined,
+  );
 
   /**
    * Builds the object search index from the palette's store snapshots, kept
@@ -237,29 +236,31 @@ export const ShowfileObjectPaletteUI: Component<ShowfileObjectPaletteProps> = (
   });
 
   /** Keeps the highlighted row inside the current filtered result bounds. */
-  createEffect(() => {
-    const count = filteredEntries().length;
-    if (count === 0) {
-      setSelectedIndex(0);
-      return;
-    }
-    const currentIndex = untrack(selectedIndex);
-    if (currentIndex >= count) {
-      setSelectedIndex(count - 1);
-    }
-  });
+  createEffect(
+    () => filteredEntries().length,
+    (count) => {
+      if (count === 0) {
+        setSelectedIndex(0);
+        return;
+      }
+      if (selectedIndex() >= count) {
+        setSelectedIndex(count - 1);
+      }
+    },
+  );
 
   /** Keeps keyboard-selected results visible inside the palette scroll area. */
-  createEffect(() => {
-    const index = selectedIndex();
-    filteredEntries();
-    const scrollContainer = scrollContainerRef;
-    if (!scrollContainer) return;
-    const selectedElement = scrollContainer.querySelector<HTMLElement>(
-      `[data-showfile-object-index="${index}"]`,
-    );
-    selectedElement?.scrollIntoView({ block: "nearest" });
-  });
+  createEffect(
+    () => ({ index: selectedIndex(), entries: filteredEntries() }),
+    ({ index }) => {
+      const scrollContainer = scrollContainerRef;
+      if (!scrollContainer) return;
+      const selectedElement = scrollContainer.querySelector<HTMLElement>(
+        `[data-showfile-object-index="${index}"]`,
+      );
+      selectedElement?.scrollIntoView({ block: "nearest" });
+    },
+  );
 
   /** Returns the action label shown on the currently selected result row. */
   const selectedActionLabel = () =>

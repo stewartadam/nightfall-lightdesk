@@ -6,8 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, type JSX, splitProps, untrack } from "solid-js";
+import { type JSX, splitProps, untrack } from "solid-js";
 import { formatNumberDraft, readNumberField } from "../../lib/number-draft";
+import { createEffect } from "../../lib/solid-compat";
 import { Input } from "../ui/form-controls";
 
 type NumberFieldProps = Omit<
@@ -32,12 +33,14 @@ export function NumberField(props: NumberFieldProps) {
   let input: HTMLInputElement | undefined;
 
   /** Shows a value set from outside (a default, Next available, a reset) in the field. */
-  createEffect(() => {
-    const value = local.value;
-    if (input && !Object.is(readNumberField(input), value)) {
-      input.value = formatNumberDraft(value);
-    }
-  });
+  createEffect(
+    () => local.value,
+    (value) => {
+      if (input && !Object.is(readNumberField(input), value)) {
+        input.value = formatNumberDraft(value);
+      }
+    },
+  );
 
   return (
     <Input

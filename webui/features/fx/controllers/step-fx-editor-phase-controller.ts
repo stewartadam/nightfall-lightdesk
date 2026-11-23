@@ -6,12 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createSignal,
-} from "solid-js";
+import { type Accessor, createMemo, createSignal } from "solid-js";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import { resolveSpatialSelection } from "../../../lib/wasm-bridge";
@@ -153,15 +149,17 @@ export function createStepFxEditorPhaseController(
   });
 
   /** Keeps the waveform preview index valid as the resolved selection changes. */
-  createEffect(() => {
-    const count = phaseMarkers().length;
-    const clamped = Math.max(0, Math.min(count - 1, previewIndex()));
-    if (clamped !== previewIndex()) setPreviewIndex(clamped);
-  });
+  createEffect(
+    () => ({ count: phaseMarkers().length, index: previewIndex() }),
+    ({ count, index }) => {
+      const clamped = Math.max(0, Math.min(count - 1, index));
+      if (clamped !== index) setPreviewIndex(clamped);
+    },
+  );
 
   /** Resolves the draft selection into representative phase markers. */
-  createEffect(() => {
-    const { selection, fixtures, groups, token } = selectionProjectionInput();
+  createEffect(selectionProjectionInput, (input) => {
+    const { selection, fixtures, groups, token } = input;
     setTargetFixtureRefs([]);
     if (!selection) return;
     void projectStepFxSelection(selection, fixtures, groups).then((result) => {

@@ -6,19 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Input, NativeSelect } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { commandClient } from "../../../lib/engine-commands";
 import { setStoreAction } from "../../../lib/nanostore-action";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
@@ -147,27 +141,39 @@ export default function SelectionVisualizerPanel() {
     );
 
   /** Keep the selected step and z layer inside the resolved selection bounds. */
-  createEffect(() => {
-    const resolved = $resolvedSelection();
-    const nextStep = clampSelectionStep(activeStep(), resolved);
-    if (nextStep !== activeStep()) setActiveStep(nextStep);
+  createEffect(
+    () => {
+      const resolved = $resolvedSelection();
+      const step = activeStep();
+      return {
+        step,
+        nextStep: clampSelectionStep(step, resolved),
+        layers: listSelectionZLayers(resolved),
+        z: activeZ(),
+      };
+    },
+    ({ step, nextStep, layers, z }) => {
+      if (nextStep !== step) setActiveStep(nextStep);
 
-    const layers = listSelectionZLayers(resolved);
-    if (layers.length === 0) {
-      if (activeZ() !== 0) setActiveZ(0);
-      return;
-    }
-    if (!layers.includes(activeZ())) setActiveZ(layers[0]);
-  });
+      if (layers.length === 0) {
+        if (z !== 0) setActiveZ(0);
+        return;
+      }
+      if (!layers.includes(z)) setActiveZ(layers[0]);
+    },
+  );
 
   /** Publish the active step targets so the visualizer can highlight them. */
-  createEffect(() => {
-    setStoreAction(
-      activeSelectionSpanTargets,
-      "Update Selection Span Targets",
-      selectionTargetsForStep($resolvedSelection(), activeStep()),
-    );
-  });
+  createEffect(
+    () => selectionTargetsForStep($resolvedSelection(), activeStep()),
+    (targets) => {
+      setStoreAction(
+        activeSelectionSpanTargets,
+        "Update Selection Span Targets",
+        targets,
+      );
+    },
+  );
 
   onCleanup(() =>
     setStoreAction(

@@ -6,13 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  untrack,
-} from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import { RangeSlider } from "../components/ui/range-slider";
 import { Button } from "../components/ui/visual-language/button";
 import DataGrid, {
@@ -25,6 +19,7 @@ import {
 } from "../lib/data-grid-types";
 import { makeTimeCell, richTimeCellRenderer } from "../lib/datagrid-rich-cells";
 import { secondsToDuration } from "../lib/duration";
+import { createEffect } from "../lib/solid-compat";
 
 const previewDuration = 8;
 const samples = [
@@ -51,28 +46,31 @@ export function ProgressTableDemo(props: {
   const [running, setRunning] = createSignal(false);
 
   /** Cancels playback when hidden or unmounted and stops at the end of the sample. */
-  createEffect(() => {
-    if (!props.active) {
-      setRunning(false);
-      return;
-    }
-    if (!running()) return;
-    const startTime = performance.now();
-    const startValue = untrack(elapsed);
-    let frame: number;
-    /** Advances elapsed time from the animation clock without accumulating frame drift. */
-    const tick = (now: number) => {
-      const next = Math.min(
-        previewDuration,
-        startValue + (now - startTime) / 1000,
-      );
-      setElapsed(next);
-      if (next >= previewDuration) setRunning(false);
-      else frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    onCleanup(() => cancelAnimationFrame(frame));
-  });
+  createEffect(
+    () => ({ active: props.active, isRunning: running() }),
+    ({ active, isRunning }) => {
+      if (!active) {
+        setRunning(false);
+        return;
+      }
+      if (!isRunning) return;
+      const startTime = performance.now();
+      const startValue = elapsed();
+      let frame: number;
+      /** Advances elapsed time from the animation clock without accumulating frame drift. */
+      const tick = (now: number) => {
+        const next = Math.min(
+          previewDuration,
+          startValue + (now - startTime) / 1000,
+        );
+        setElapsed(next);
+        if (next >= previewDuration) setRunning(false);
+        else frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(frame);
+    },
+  );
 
   /** Produces the same rich time cells and blue background fill used by cue timing columns. */
   const provider = createMemo(() => {

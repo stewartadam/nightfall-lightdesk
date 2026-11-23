@@ -6,13 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, mergeProps } from "solid-js";
+import { createSignal, mergeProps } from "solid-js";
 import {
   Input,
   InputGroup,
   InputSuffix,
 } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
+import { createEffect } from "../../../lib/solid-compat";
 import { useTimelineContext } from "../context/timeline-context";
 
 export type ZoomControlsProps = {
@@ -57,9 +58,12 @@ export const ZoomControls = (props: ZoomControlsProps) => {
   );
 
   /** Synchronizes the editable percentage with external zoom changes. */
-  createEffect(() => {
-    setInputZoom(Math.round(context.zoom()).toString());
-  });
+  createEffect(
+    () => Math.round(context.zoom()).toString(),
+    (zoom) => {
+      setInputZoom(zoom);
+    },
+  );
 
   /** Applies the next larger zoom level. */
   const handleZoomIn = () => {

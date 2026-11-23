@@ -13,7 +13,6 @@ import {
   type SortingState,
 } from "@tanstack/solid-table";
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -67,6 +66,7 @@ import { dataGridTableFeatures } from "./model/table-features";
 import type { DataGridProps, HeaderCellView, TableRow } from "./model/types";
 import { createDataGridPointerEventController } from "./pointer-event-controller";
 import "./table-appearance.css";
+import { createEffect } from "../../../lib/solid-compat";
 import { createDataGridSelectionController } from "./selection-controller";
 import {
   createDataGridViewportController,
@@ -766,39 +766,45 @@ export default function TanStackDataGrid(props: DataGridProps) {
 
   let previousColumnSizing: Record<string, number> = {};
   /** Bridges TanStack-owned sizing changes back to the optional grid callback. */
-  createEffect(() => {
-    const nextColumnSizing = table.atoms.columnSizing?.get() ?? {};
-    const changedColumnIds = new Set([
-      ...Object.keys(previousColumnSizing),
-      ...Object.keys(nextColumnSizing),
-    ]);
-    for (const id of changedColumnIds) {
-      if (previousColumnSizing[id] === nextColumnSizing[id]) continue;
-      const tableColumn = leafColumns().find((column) => column.id === id);
-      const sourceColumn = sourceGridColumn(tableColumn);
-      if (!tableColumn || !sourceColumn) continue;
-      const width = tableColumn.getSize();
-      props.onColumnResize?.({ ...sourceColumn, width }, width);
-    }
-    previousColumnSizing = { ...nextColumnSizing };
-  });
+  createEffect(
+    () => ({
+      sizing: table.atoms.columnSizing?.get() ?? {},
+      columns: leafColumns(),
+    }),
+    ({ sizing: nextColumnSizing, columns }) => {
+      const changedColumnIds = new Set([
+        ...Object.keys(previousColumnSizing),
+        ...Object.keys(nextColumnSizing),
+      ]);
+      for (const id of changedColumnIds) {
+        if (previousColumnSizing[id] === nextColumnSizing[id]) continue;
+        const tableColumn = columns.find((column) => column.id === id);
+        const sourceColumn = sourceGridColumn(tableColumn);
+        if (!tableColumn || !sourceColumn) continue;
+        const width = tableColumn.getSize();
+        props.onColumnResize?.({ ...sourceColumn, width }, width);
+      }
+      previousColumnSizing = { ...nextColumnSizing };
+    },
+  );
 
   if (instrumentationEnabled) {
     /** Tracks row count changes that can alter virtualization and remount pressure. */
-    createEffect(() => {
-      const nextRows = props.rows;
-      recordDataGridGauge("rows", nextRows);
-      recordIdentityChange(
-        "row-count-changes",
-        instrumentation.previousRows !== undefined &&
-          instrumentation.previousRows !== nextRows,
-      );
-      instrumentation.previousRows = nextRows;
-    });
+    createEffect(
+      () => props.rows,
+      (nextRows) => {
+        recordDataGridGauge("rows", nextRows);
+        recordIdentityChange(
+          "row-count-changes",
+          instrumentation.previousRows !== undefined &&
+            instrumentation.previousRows !== nextRows,
+        );
+        instrumentation.previousRows = nextRows;
+      },
+    );
 
     /** Tracks column reference and signature changes that can remount visible cells. */
-    createEffect(() => {
-      const nextColumns = leafColumns();
+    createEffect(leafColumns, (nextColumns) => {
       const nextSignature = dataGridColumnSignature(nextColumns);
       recordDataGridGauge("columns", nextColumns.length);
       recordIdentityChange(
@@ -816,54 +822,63 @@ export default function TanStackDataGrid(props: DataGridProps) {
     });
 
     /** Tracks cell-provider identity changes separately from raw invalidation churn. */
-    createEffect(() => {
-      if (!computedStyleVisible()) return;
-      const nextCellProvider = effectiveCellProvider();
-      recordIdentityChange(
-        "cell-provider-changes",
-        instrumentation.previousCellProvider !== undefined &&
-          instrumentation.previousCellProvider !== nextCellProvider,
-      );
-      instrumentation.previousCellProvider = nextCellProvider;
-    });
+    createEffect(
+      () =>
+        computedStyleVisible() ? { provider: effectiveCellProvider() } : null,
+      (visible) => {
+        if (!visible) return;
+        const nextCellProvider = visible.provider;
+        recordIdentityChange(
+          "cell-provider-changes",
+          instrumentation.previousCellProvider !== undefined &&
+            instrumentation.previousCellProvider !== nextCellProvider,
+        );
+        instrumentation.previousCellProvider = nextCellProvider;
+      },
+    );
 
     /** Tracks owner-provided probe identities to attribute invalidation sources. */
-    createEffect(() => {
-      const probes = props.performanceProbes;
-      if (!probes) return;
+    createEffect(
+      () => {
+        const probes = props.performanceProbes;
+        return probes ? Object.entries(probes) : undefined;
+      },
+      (entries) => {
+        if (!entries) return;
 
-      const nextProbeNames = new Set(Object.keys(probes));
-      for (const [name, value] of Object.entries(probes)) {
-        const previousValue = instrumentation.previousProbeValues.get(name);
-        if (
-          instrumentation.previousProbeValues.has(name) &&
-          !Object.is(previousValue, value)
-        ) {
-          recordDataGridCount(`probe.${metricFragment(name)}.changes`, 1);
+        const nextProbeNames = new Set(entries.map(([name]) => name));
+        for (const [name, value] of entries) {
+          const previousValue = instrumentation.previousProbeValues.get(name);
+          if (
+            instrumentation.previousProbeValues.has(name) &&
+            !Object.is(previousValue, value)
+          ) {
+            recordDataGridCount(`probe.${metricFragment(name)}.changes`, 1);
+          }
+          instrumentation.previousProbeValues.set(name, value);
         }
-        instrumentation.previousProbeValues.set(name, value);
-      }
 
-      for (const name of instrumentation.previousProbeValues.keys()) {
-        if (!nextProbeNames.has(name)) {
-          instrumentation.previousProbeValues.delete(name);
+        for (const name of instrumentation.previousProbeValues.keys()) {
+          if (!nextProbeNames.has(name)) {
+            instrumentation.previousProbeValues.delete(name);
+          }
         }
-      }
-    });
+      },
+    );
 
     /** Measures the latency from grid invalidation to the next browser frame. */
-    createEffect(() => {
-      void props.rows;
-      void leafColumns().length;
-
-      const startedAtMs = performance.now();
-      requestAnimationFrame(() => {
-        recordDataGridTiming(
-          "update-to-frame",
-          performance.now() - startedAtMs,
-        );
-      });
-    });
+    createEffect(
+      () => [props.rows, leafColumns().length] as const,
+      () => {
+        const startedAtMs = performance.now();
+        requestAnimationFrame(() => {
+          recordDataGridTiming(
+            "update-to-frame",
+            performance.now() - startedAtMs,
+          );
+        });
+      },
+    );
   }
 
   /** Selects the leaf columns covered by a header model entry. */
@@ -994,8 +1009,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
 
   let previousRowKeys = orderedRowKeys();
   /** Follows stable row identities through sorting and live source updates. */
-  createEffect(() => {
-    const next = orderedRowKeys();
+  createEffect(orderedRowKeys, (next) => {
     if (
       next.length === previousRowKeys.length &&
       next.every((key, index) => key === previousRowKeys[index])
@@ -1003,60 +1017,62 @@ export default function TanStackDataGrid(props: DataGridProps) {
       return;
     const mapping = createDataGridRowMapping(previousRowKeys, next);
     previousRowKeys = next;
-    untrack(() => {
-      selectionController.dispose();
-      if (editingCell()) cancelEdit();
-      const state = mapping.state(selectionState());
-      selectionController.setSelectionState(state);
-      publishSelection(selectionFromState(state));
-    });
+    selectionController.dispose();
+    if (editingCell()) cancelEdit();
+    const state = mapping.state(selectionState());
+    selectionController.setSelectionState(state);
+    publishSelection(selectionFromState(state));
   });
 
   /** Mirrors explicitly changed source selection into the current display order. */
-  createEffect(() => {
-    const selection = props.gridSelection;
-    dispatchSelection({
-      type: "syncExternalSelection",
-      selection: selection
-        ? untrack(() => sourceToView().selection(selection))
-        : undefined,
-    });
-  });
+  createEffect(
+    () => props.gridSelection,
+    (selection) => {
+      dispatchSelection({
+        type: "syncExternalSelection",
+        selection: selection ? sourceToView().selection(selection) : undefined,
+      });
+    },
+  );
 
   /**
    * Drops any held cell or row selection when the grid switches to text or no
    * selection, and reports the empty selection so owners stop showing it.
    */
-  createEffect(() => {
-    if (selectionModeUsesGridSelection(props.selectionMode)) return;
-    untrack(() => {
+  createEffect(
+    () => props.selectionMode,
+    (selectionMode) => {
+      if (selectionModeUsesGridSelection(selectionMode)) return;
       selectionController.dispose();
       if (selectionState() === initialDataGridSelectionState) return;
       selectionController.setSelectionState(initialDataGridSelectionState);
       publishSelection(selectionFromState(initialDataGridSelectionState));
-    });
-  });
+    },
+  );
 
   /** Starts inline editing when an owner component requests a specific cell. */
-  createEffect(() => {
-    const request = props.editRequest;
-    if (!request || handledEditRequestId === request.requestId) return;
-    handledEditRequestId = request.requestId;
-    beginEdit(request.cell[0], request.cell[1]);
-  });
+  createEffect(
+    () => props.editRequest,
+    (request) => {
+      if (!request || handledEditRequestId === request.requestId) return;
+      handledEditRequestId = request.requestId;
+      beginEdit(request.cell[0], request.cell[1]);
+    },
+  );
 
   /** Scrolls a target cell into view when an owner component requests it. */
-  createEffect(() => {
-    const request = props.scrollRequest;
-    if (!request || handledScrollRequestId === request.requestId) return;
-    handledScrollRequestId = request.requestId;
-    const cell = sourceToView().cell(request.cell);
-    if (cell) scrollCellIntoView(cell);
-  });
+  createEffect(
+    () => props.scrollRequest,
+    (request) => {
+      if (!request || handledScrollRequestId === request.requestId) return;
+      handledScrollRequestId = request.requestId;
+      const cell = sourceToView().cell(request.cell);
+      if (cell) scrollCellIntoView(cell);
+    },
+  );
 
   /** Focuses the inline editor input when editing starts or moves cells. */
-  createEffect(() => {
-    const editing = editingCell();
+  createEffect(editingCell, (editing) => {
     if (!editing) {
       focusedEditKey = undefined;
       return;
@@ -1085,8 +1101,8 @@ export default function TanStackDataGrid(props: DataGridProps) {
   });
 
   /** Focuses the fixture ID seek input when type-seek mode opens. */
-  createEffect(() => {
-    if (!typeSeekActive()) return;
+  createEffect(typeSeekActive, (active) => {
+    if (!active) return;
     typeSeekInputRef?.focus();
     typeSeekInputRef?.select();
   });

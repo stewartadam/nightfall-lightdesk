@@ -10,7 +10,7 @@ import { CopySimpleIcon } from "@squidlab/phosphor-solid/copy-simple";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import { createEffect, createMemo, createSignal } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import CrudLabelProperties from "../../../components/widgets/crud/crud-label-properties";
@@ -39,6 +39,7 @@ import {
   createDefaultSequence,
   nextAvailableIdentifierId,
 } from "../../../lib/sequence-factory";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
@@ -459,36 +460,47 @@ export function createSequenceListController(
   };
 
   /** Handles pending sequence navigation requests after row data changes. */
-  createEffect(() => {
-    const request = $sequenceNavigationRequest();
-    if (!request) {
-      return;
-    }
+  createEffect(
+    () => {
+      const request = $sequenceNavigationRequest();
+      return request
+        ? {
+            request: { ...request },
+            allRows: allDisplayRows(),
+            visibleRows: displayRows(),
+            filtering: search.isFiltering(),
+          }
+        : undefined;
+    },
+    (navigation) => {
+      if (!navigation) return;
+      const { request } = navigation;
 
-    const targetUid = normalizeSequenceUid(request.sequenceUid);
-    const targetSequence = allDisplayRows().find(
-      (sequence) =>
-        normalizeSequenceUid(sequence.identifiers.uid) === targetUid,
-    );
-    if (!targetSequence) {
+      const targetUid = normalizeSequenceUid(request.sequenceUid);
+      const targetSequence = navigation.allRows.find(
+        (sequence) =>
+          normalizeSequenceUid(sequence.identifiers.uid) === targetUid,
+      );
+      if (!targetSequence) {
+        clearSequenceNavigationRequest(request.requestId);
+        return;
+      }
+
+      const targetIsVisible = navigation.visibleRows.some(
+        (sequence) =>
+          normalizeSequenceUid(sequence.identifiers.uid) === targetUid,
+      );
+      if (!targetIsVisible && navigation.filtering) {
+        clearSequenceNavigationRequest(request.requestId);
+        search.clear();
+        setTimeout(() => selectAndFocusSequence(targetUid), 0);
+        return;
+      }
+
+      selectAndFocusSequence(targetUid);
       clearSequenceNavigationRequest(request.requestId);
-      return;
-    }
-
-    const targetIsVisible = displayRows().some(
-      (sequence) =>
-        normalizeSequenceUid(sequence.identifiers.uid) === targetUid,
-    );
-    if (!targetIsVisible && search.isFiltering()) {
-      clearSequenceNavigationRequest(request.requestId);
-      search.clear();
-      setTimeout(() => selectAndFocusSequence(targetUid), 0);
-      return;
-    }
-
-    selectAndFocusSequence(targetUid);
-    clearSequenceNavigationRequest(request.requestId);
-  });
+    },
+  );
 
   useKeyboardShortcut({
     key: "n",

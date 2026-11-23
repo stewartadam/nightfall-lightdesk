@@ -6,10 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createDraggable } from "@neodrag/solid";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { InlineRenameField } from "../../../components/ui/inline-rename-field";
+import { draggable } from "../../../lib/draggable";
 import {
   durationToMs,
   msToDuration,
@@ -344,9 +344,6 @@ export const TimelineOperatorLane = () => {
   const [draggingMarkerUid, setDraggingMarkerUid] = createSignal<
     string | undefined
   >(undefined);
-
-  const { draggable } = createDraggable();
-  void draggable;
 
   const quantizePosition = (positionMs: number) =>
     quantizeSeekPositionMs(positionMs, {
@@ -727,7 +724,7 @@ export const TimelineOperatorLane = () => {
               data-marker-id={marker.uid}
               role="button"
               tabIndex={0}
-              use:draggable={{
+              ref={draggable(() => ({
                 axis: "x",
                 grid: [1, 0],
                 bounds: { left: 0 },
@@ -745,7 +742,7 @@ export const TimelineOperatorLane = () => {
                     time: msToDuration(nextPosition),
                   });
                 },
-              }}
+              }))}
               class="absolute top-0 h-9 w-px cursor-grab"
               style={{
                 left: `${leftPx()}px`,

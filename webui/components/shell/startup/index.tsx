@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal } from "solid-js";
+import { createSignal } from "solid-js";
 import { BackupPairStartupDialog } from "../../../features/io";
 import { OpenShowfileModal } from "../../../features/showfile";
 import { markResyncPending } from "../../../lib/engine-runtime";
@@ -19,6 +19,7 @@ import {
   newShowfileAndAwait,
   type OpenShowfileSelection,
 } from "../../../lib/showfile-actions";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import {
   appLifecycle,
@@ -216,23 +217,22 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
   };
 
   /** Auto-opens the saved showfile requested by legacy e2e startup flows. */
-  createEffect(() => {
-    const phase = lifecycle().phase;
-    if (
-      e2eAutoOpenStarted ||
-      (phase !== "startup-showfile-prompt" && phase !== "interactive")
-    ) {
-      return;
-    }
-
-    const showfileName = e2eAutoOpenStartupShowfileName();
-    if (!showfileName) return;
-    e2eAutoOpenStarted = true;
-    void openStartupShowfileSelection({
-      type: "showfile",
-      name: showfileName,
-    }).finally(clearE2eAutoOpenStartupShowfileRequest);
-  });
+  createEffect(
+    () => {
+      const phase = lifecycle().phase;
+      if (phase !== "startup-showfile-prompt" && phase !== "interactive")
+        return undefined;
+      return e2eAutoOpenStartupShowfileName();
+    },
+    (showfileName) => {
+      if (e2eAutoOpenStarted || !showfileName) return;
+      e2eAutoOpenStarted = true;
+      void openStartupShowfileSelection({
+        type: "showfile",
+        name: showfileName,
+      }).finally(clearE2eAutoOpenStartupShowfileRequest);
+    },
+  );
 
   /**
    * Closes the picker after following a primary. Startup moves to the backup pair dialog once the
@@ -243,11 +243,12 @@ export function StartupOverlaps(props: StartupOverlapsProps) {
   };
 
   /** Closes a picker opened from the draft prompt once startup moves to the backup pair dialog. */
-  createEffect(() => {
-    if (lifecycle().phase === "startup-backup-prompt") {
-      setStartupShowfilePickerOpen(false);
-    }
-  });
+  createEffect(
+    () => lifecycle().phase === "startup-backup-prompt",
+    (backupPrompt) => {
+      if (backupPrompt) setStartupShowfilePickerOpen(false);
+    },
+  );
 
   return (
     <>

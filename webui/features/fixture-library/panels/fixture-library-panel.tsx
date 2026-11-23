@@ -19,13 +19,7 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
  * - View detailed information in properties panel
  */
 
-import {
-  type Component,
-  createEffect,
-  createMemo,
-  createSignal,
-  Show,
-} from "solid-js";
+import { type Component, createMemo, createSignal, Show } from "solid-js";
 import { usePanelCapability } from "../../../components/providers/panel-capabilities/context-core";
 import {
   ToggleToolbarButton,
@@ -70,6 +64,7 @@ import {
 import { getLogger } from "../../../lib/logger";
 import { REVEAL_LIBRARY_FIXTURE_CAPABILITY } from "../../../lib/panel-capabilities";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import {
   fixtureLibrary,
@@ -535,11 +530,8 @@ const FixtureLibraryPanel: Component<FixtureLibraryPanelProps> = (props) => {
     onFiltersChange: clearSelection,
   });
 
-  // Clear selection when fixture list changes (e.g., after delete)
-  createEffect(() => {
-    // Access the fixtures to track them
-    fixtures();
-    // Clear selection when fixture list changes
+  /** Clears the selection whenever the fixture list changes, such as after a delete. */
+  createEffect(fixtures, () => {
     clearSelection();
   });
 

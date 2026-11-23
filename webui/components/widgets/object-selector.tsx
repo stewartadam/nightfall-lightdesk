@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import { ScrollArea } from "../ui/scroll-area";
 
 export interface ObjectSelectorProps<T> {
@@ -59,30 +60,31 @@ export default function ObjectSelector<T>(props: ObjectSelectorProps<T>) {
   });
 
   /** Keeps the highlighted row within the filtered list and aligned with selection. */
-  createEffect(() => {
-    const current = filteredItems();
-    if (current.length === 0) {
-      setHighlightedIndex(0);
-      return;
-    }
+  createEffect(
+    () => ({ current: filteredItems(), selectedKey: props.selectedKey }),
+    ({ current, selectedKey }) => {
+      if (current.length === 0) {
+        setHighlightedIndex(0);
+        return;
+      }
 
-    const selectedKey = props.selectedKey;
-    if (!selectedKey) {
-      if (highlightedIndex() >= current.length) {
+      if (!selectedKey) {
+        if (highlightedIndex() >= current.length) {
+          setHighlightedIndex(0);
+        }
+        return;
+      }
+
+      const selectedIdx = current.findIndex(
+        (item) => props.getKey(item) === selectedKey,
+      );
+      if (selectedIdx >= 0) {
+        setHighlightedIndex(selectedIdx);
+      } else if (highlightedIndex() >= current.length) {
         setHighlightedIndex(0);
       }
-      return;
-    }
-
-    const selectedIdx = current.findIndex(
-      (item) => props.getKey(item) === selectedKey,
-    );
-    if (selectedIdx >= 0) {
-      setHighlightedIndex(selectedIdx);
-    } else if (highlightedIndex() >= current.length) {
-      setHighlightedIndex(0);
-    }
-  });
+    },
+  );
 
   /** Moves the keyboard highlight or selects the highlighted result. */
   const handleKeyDown = (event: KeyboardEvent) => {

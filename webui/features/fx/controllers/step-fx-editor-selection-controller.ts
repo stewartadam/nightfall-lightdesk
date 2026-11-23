@@ -6,15 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  batch,
-  createComputed,
-  createEffect,
-  createMemo,
-  createSignal,
-} from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
+import { type Accessor, batch, createMemo, createSignal } from "solid-js";
+import { createEffect, createProjection } from "../../../lib/solid-compat";
 import type * as types from "../../../types";
 import {
   type StepFxTrackKind,
@@ -93,35 +86,38 @@ export function createStepFxEditorSelectionController(
     return lane ? stepFxTrack(lane, trackKind()) : undefined;
   });
 
-  const [stepRows, setStepRows] = createStore<types.FxStep[]>([]);
   /**
    * Mirrors the active track's steps into a uid-keyed store. Every edit clones
    * the draft, so rendering the cloned objects directly would remount each
    * sheet row and drop keyboard focus from its controls after every change.
    */
-  createComputed(() =>
-    setStepRows(
-      // Cloned so reconcile never mutates step objects owned by earlier drafts.
-      reconcile(structuredClone(activeTrack()?.steps ?? []), { key: "uid" }),
-    ),
+  const stepRows = createProjection<types.FxStep[]>(
+    // Cloned so reconcile never mutates step objects owned by earlier drafts.
+    () => structuredClone(activeTrack()?.steps ?? []),
+    [],
+    { key: "uid" },
   );
 
   /** Keeps step selection valid when lanes, tracks, or rows change. */
-  createEffect(() => {
-    const track = activeTrack();
-    const selectedIdentities = new Set(
-      Array.from(selectedStepUids(), stepFxStepSelectionIdentity),
-    );
-    const retained = new Set(
-      track?.steps
-        .filter((step) =>
-          selectedIdentities.has(stepFxStepSelectionIdentity(step.uid)),
-        )
-        .map((step) => step.uid) ?? [],
-    );
-    if (!stringSetsEqual(retained, selectedStepUids()))
-      setSelectedStepUids(retained);
-  });
+  createEffect(
+    () => {
+      const selected = selectedStepUids();
+      const selectedIdentities = new Set(
+        Array.from(selected, stepFxStepSelectionIdentity),
+      );
+      const retained = new Set(
+        activeTrack()
+          ?.steps.filter((step) =>
+            selectedIdentities.has(stepFxStepSelectionIdentity(step.uid)),
+          )
+          .map((step) => step.uid) ?? [],
+      );
+      return { selected, retained };
+    },
+    ({ selected, retained }) => {
+      if (!stringSetsEqual(retained, selected)) setSelectedStepUids(retained);
+    },
+  );
 
   /** Returns the row selection affected by a cell edit. */
   const editSelectionFor = (uid: string): Set<string> => {

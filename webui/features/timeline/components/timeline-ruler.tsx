@@ -6,13 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { commandClient } from "../../../lib/engine-commands";
 import {
   setStoreAction,
   setStoreKeyAction,
 } from "../../../lib/nanostore-action";
-// TimelineRuler component
 import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
@@ -57,20 +56,6 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
   const rulerEndMs = () => Math.max(ctx.end(), 60_000);
   const $timelineBeatgridPreview = useStore(timelineBeatgridPreview);
   const $timelines = useShallowStore(timelines);
-  const [majorTicks, setMajorTicks] = createSignal<
-    { time: number; label: string }[]
-  >([]);
-  const [minorTicks, setMinorTicks] = createSignal<number[]>([]);
-  const [barMarkers, setBarMarkers] = createSignal<
-    { time: number; barNumber: number }[]
-  >([]);
-  const [previewMajorTicks, setPreviewMajorTicks] = createSignal<
-    { time: number; label: string }[]
-  >([]);
-  const [previewMinorTicks, setPreviewMinorTicks] = createSignal<number[]>([]);
-  const [previewBarMarkers, setPreviewBarMarkers] = createSignal<
-    { time: number; barNumber: number }[]
-  >([]);
   const [isShiftDragging, setIsShiftDragging] = createSignal(false);
   let activePointerId: number | undefined;
   let pointerIntent: PointerIntent = "none";
@@ -239,39 +224,8 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
     };
   };
 
-  createEffect(() => {
-    if (ctx.useBeatgrid() || isPreviewingShift()) {
-      generateBpmTicks();
-    } else {
-      generateTimeTicks();
-    }
-  });
-
-  createEffect(() => {
-    const preview = shiftPreview();
-    const start = 0;
-    const end = rulerEndMs();
-
-    if (!preview || preview.markers.length === 0) {
-      setPreviewMajorTicks([]);
-      setPreviewMinorTicks([]);
-      setPreviewBarMarkers([]);
-      return;
-    }
-
-    const ticks = buildDetectedBeatgridTicks(
-      preview.markers,
-      start,
-      end,
-      ctx.bpm(),
-      preview.beatsPerBar,
-    );
-    setPreviewMajorTicks(ticks.major);
-    setPreviewMinorTicks(ticks.minor);
-    setPreviewBarMarkers(ticks.bars);
-  });
-
-  const generateTimeTicks = () => {
+  /** Builds clock ticks every major and minor interval across the ruler. */
+  const generateTimeTicks = (): TickSet => {
     const major: { time: number; label: string }[] = [];
     const minor: number[] = [];
 
@@ -301,43 +255,32 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
       }
     }
 
-    setMajorTicks(major);
-    setMinorTicks(minor);
-    setBarMarkers([]);
+    return { major, minor, bars: [] };
   };
 
   /** Generate BPM ticks. */
-  const generateBpmTicks = () => {
+  const generateBpmTicks = (): TickSet => {
     const start = 0;
     const end = rulerEndMs();
     const beatgrid = ctx.beatgrid();
 
     if (beatgrid?.markers && beatgrid.markers.length > 1) {
-      const ticks = buildDetectedBeatgridTicks(
+      return buildDetectedBeatgridTicks(
         beatgrid.markers,
         start,
         end,
         ctx.bpm(),
         ctx.beatsPerBar(),
       );
-      setMajorTicks(ticks.major);
-      setMinorTicks(ticks.minor);
-      setBarMarkers(ticks.bars);
-      return;
     }
 
-    const bpm = ctx.bpm();
-    const anchorMarker = beatgrid?.markers?.[0];
-    const ticks = buildAnchoredBpmTicks(
+    return buildAnchoredBpmTicks(
       start,
       end,
-      bpm,
+      ctx.bpm(),
       ctx.beatsPerBar(),
-      anchorMarker,
+      beatgrid?.markers?.[0],
     );
-    setMajorTicks(ticks.major);
-    setMinorTicks(ticks.minor);
-    setBarMarkers(ticks.bars);
   };
 
   const formatTime = (ms: number) => {
@@ -345,6 +288,27 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
     const minutes = Math.floor(seconds / 60);
     return `${minutes}:${(seconds % 60).toString().padStart(2, "0")}`;
   };
+
+  /** Ticks for the ruler: beats while the beat grid is on or being shifted, clock time otherwise. */
+  const ticks = createMemo(() =>
+    ctx.useBeatgrid() || isPreviewingShift()
+      ? generateBpmTicks()
+      : generateTimeTicks(),
+  );
+  /** Ticks of the beat grid a shift drag would produce, drawn over the current ruler. */
+  const previewTicks = createMemo((): TickSet => {
+    const preview = shiftPreview();
+    if (!preview || preview.markers.length === 0) {
+      return { major: [], minor: [], bars: [] };
+    }
+    return buildDetectedBeatgridTicks(
+      preview.markers,
+      0,
+      rulerEndMs(),
+      ctx.bpm(),
+      preview.beatsPerBar,
+    );
+  });
 
   const seekAtClientX = (target: HTMLDivElement, clientX: number) => {
     const rect = target.getBoundingClientRect();
@@ -544,7 +508,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
       style={{ width: `${msToPixels(ctx.end(), ctx.zoom())}px` }}
     >
       {/* Existing major ticks */}
-      <For each={majorTicks()}>
+      <For each={ticks().major}>
         {(tick) => (
           <div
             class={`absolute h-full border-l flex items-end pb-1 ${isPreviewingShift() ? "border-gray-600/40" : "border-gray-600"}`}
@@ -562,7 +526,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
       </For>
 
       {/* Existing minor ticks */}
-      <For each={minorTicks()}>
+      <For each={ticks().minor}>
         {(tick) => (
           <div
             class={`absolute h-1/2 bottom-0 border-l ${isPreviewingShift() ? "border-gray-700/40" : "border-gray-700"}`}
@@ -573,7 +537,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
 
       {/* Existing bar markers */}
       <Show when={ctx.useBeatgrid() || isPreviewingShift()}>
-        <For each={barMarkers()}>
+        <For each={ticks().bars}>
           {(bar) => (
             <div
               class="absolute top-0 flex items-start justify-center h-full"
@@ -596,7 +560,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
 
       {/* Shift preview (yellow) while dragging */}
       <Show when={isPreviewingShift()}>
-        <For each={previewMajorTicks()}>
+        <For each={previewTicks().major}>
           {(tick) => (
             <div
               class="absolute h-full border-l border-amber-400/90 flex items-end pb-1"
@@ -607,7 +571,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
           )}
         </For>
 
-        <For each={previewMinorTicks()}>
+        <For each={previewTicks().minor}>
           {(tick) => (
             <div
               class="absolute h-1/2 bottom-0 border-l border-amber-500/70"
@@ -618,7 +582,7 @@ export const TimelineRuler = (props: TimelineRulerProps) => {
           )}
         </For>
 
-        <For each={previewBarMarkers()}>
+        <For each={previewTicks().bars}>
           {(bar) => (
             <div
               class="absolute top-0 flex items-start justify-center h-full"

@@ -8,15 +8,13 @@
 
 import {
   type Component,
-  createEffect,
   createSignal,
   type JSX,
-  onCleanup,
   Show,
   splitProps,
-  untrack,
 } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
+import { createEffect } from "../../../lib/solid-compat";
 import { createDismissable, type DismissReason } from "../dismissable";
 import { overlayHost } from "../modal/dialog-stack";
 import { ScrollIndicators } from "../scroll-area";
@@ -181,20 +179,23 @@ export function Popover(props: PopoverProps): JSX.Element {
    * Installs repositioning listeners for as long as the popover is open, then
    * places and focuses it once it has laid out.
    */
-  createEffect(() => {
-    if (!local.open) return;
-    untrack(updatePosition);
-    queueMicrotask(() => {
+  createEffect(
+    () => local.open,
+    (open) => {
+      if (!open) return;
       updatePosition();
-      focusInitialControl();
-    });
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    onCleanup(() => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    });
-  });
+      queueMicrotask(() => {
+        updatePosition();
+        focusInitialControl();
+      });
+      window.addEventListener("resize", updatePosition);
+      window.addEventListener("scroll", updatePosition, true);
+      return () => {
+        window.removeEventListener("resize", updatePosition);
+        window.removeEventListener("scroll", updatePosition, true);
+      };
+    },
+  );
 
   return (
     <Show when={local.open}>

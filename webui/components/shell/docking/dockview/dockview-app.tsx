@@ -13,13 +13,13 @@ import {
 } from "dockview";
 import type { ParentComponent } from "solid-js";
 import {
-  createEffect,
   createMemo,
   createSignal,
   ErrorBoundary,
   For,
   onCleanup,
   onMount,
+  untrack,
 } from "solid-js";
 import { Portal } from "solid-js/web";
 import {
@@ -61,6 +61,7 @@ import {
 } from "./solid-panel-renderer";
 import "./dockview-app.css";
 import "dockview/dist/styles/dockview.css";
+import { createEffect } from "../../../../lib/solid-compat";
 
 const log = getLogger(import.meta.url);
 
@@ -201,8 +202,7 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
         ];
 
     /** Moves workspace tab strips while preserving structural edge tabs and panel state. */
-    const applyTabPosition = () => {
-      const position = tabPosition();
+    const applyTabPosition = (position = untrack(tabPosition)) => {
       dockApi.updateOptions({ defaultHeaderPosition: position });
       for (const group of dockApi.groups) {
         if (group.api.location.type !== "edge") {
@@ -211,9 +211,10 @@ export default function DockWorkspace(props: DockWorkspaceProps) {
       }
     };
     /** Applies appearance changes to existing groups without reconstructing their panels. */
-    createEffect(applyTabPosition);
-    const disposeTabPositionAfterRestore =
-      dockApi.onDidLayoutFromJSON(applyTabPosition);
+    createEffect(tabPosition, (position) => applyTabPosition(position));
+    const disposeTabPositionAfterRestore = dockApi.onDidLayoutFromJSON(() =>
+      applyTabPosition(),
+    );
 
     const sessionLayout =
       props.initialLayout ?? (props.restoreSession ? loadLayout() : null);

@@ -7,7 +7,7 @@
  */
 
 import { PencilRulerIcon } from "@squidlab/phosphor-solid/pencil-ruler";
-import { createEffect, createMemo, createSignal, on, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { Button } from "../../../components/ui/visual-language/button";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
@@ -16,6 +16,7 @@ import {
   EngineRuntimeStatus,
 } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { fixtureDrafts } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -71,22 +72,25 @@ export default function FixtureEditorWindow() {
   const listError = useStore(draftListError);
 
   /** Shows above the page why the open drafts could not be listed when the connection opened. */
-  createEffect(
-    on(listError, (message) => {
-      if (message) setError(message);
-    }),
-  );
+  createEffect(listError, (message) => {
+    if (message) setError(message);
+  });
 
   /** Withdraws the discard confirmation once its draft is closed elsewhere. */
-  createEffect(() => {
-    if (discardId() !== null && connected() && !pendingDiscard())
-      setDiscardId(null);
-  });
+  createEffect(
+    () => discardId() !== null && connected() && !pendingDiscard(),
+    (withdrawn) => {
+      if (withdrawn) setDiscardId(null);
+    },
+  );
 
   /** Returns to the start page when the open draft is discarded, here or in another window. */
-  createEffect(() => {
-    if (openId() !== null && connected() && !openView()) setOpenId(null);
-  });
+  createEffect(
+    () => openId() !== null && connected() && !openView(),
+    (discarded) => {
+      if (discarded) setOpenId(null);
+    },
+  );
 
   /** Runs one editor command, showing its failure above the page. */
   const run = async (work: () => Promise<void>) => {
@@ -103,16 +107,14 @@ export default function FixtureEditorWindow() {
   };
 
   /** Loads the attribute catalog for the channel pickers once the connection opens. */
-  createEffect(
-    on(connected, (isConnected) => {
-      if (!isConnected || attributeOptions().length > 0) return;
-      listAttributes()
-        .then(setAttributeOptions)
-        .catch((cause: unknown) => {
-          log.warn("Could not load the attribute catalog", { error: cause });
-        });
-    }),
-  );
+  createEffect(connected, (isConnected) => {
+    if (!isConnected || attributeOptions().length > 0) return;
+    listAttributes()
+      .then(setAttributeOptions)
+      .catch((cause: unknown) => {
+        log.warn("Could not load the attribute catalog", { error: cause });
+      });
+  });
 
   /** Sends this window's draft commands in order, against the right versions. */
   const queue = createDraftQueue({

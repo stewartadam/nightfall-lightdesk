@@ -7,14 +7,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import {
-  createEffect,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-  untrack,
-} from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { Collapsible } from "../../components/ui/collapsible";
 import {
   Dialog,
@@ -36,6 +29,7 @@ import {
 import { exportDiagnostics } from "../../lib/diagnostics-export";
 import { PRIVACY_CONTACT_EMAIL } from "../../lib/privacy";
 import { showfileExportOptions } from "../../lib/showfile-export-options";
+import { createEffect } from "../../lib/solid-compat";
 import { collectSystemInfo } from "../../lib/system-info";
 import { isTauriRuntime } from "../../lib/tauri";
 import { useStore } from "../../lib/use-nanostore";
@@ -153,8 +147,8 @@ export function DiagnosticsDialog() {
   };
 
   /** Starts each dialog with recent warnings/errors and no showfile, releasing previews on close. */
-  createEffect(() => {
-    if (!isOpen()) {
+  createEffect(isOpen, (open) => {
+    if (!open) {
       collectionId++;
       setPreview([]);
       setPage(undefined);
@@ -162,8 +156,8 @@ export function DiagnosticsDialog() {
     }
     setLogMode("recent");
     setShowfileMode("none");
-    setSystemInfo(untrack(() => formatSystemInfo(collectSystemInfo())));
-    void untrack(() => readLogs());
+    setSystemInfo(formatSystemInfo(collectSystemInfo()));
+    void readLogs();
   });
 
   /** Copies only compact platform and connection details, independently of the archive selections. */
@@ -201,15 +195,18 @@ export function DiagnosticsDialog() {
   };
 
   /** Gives the primary action initial focus once its preview is ready, without stealing later focus. */
-  createEffect(() => {
-    if (!isOpen() || collecting() || focusedDefault) return;
-    const frame = requestAnimationFrame(() => {
-      focusedDefault = true;
-      if (!dialogElement?.contains(document.activeElement))
-        downloadButton?.focus();
-    });
-    onCleanup(() => cancelAnimationFrame(frame));
-  });
+  createEffect(
+    () => isOpen() && !collecting(),
+    (ready) => {
+      if (!ready || focusedDefault) return;
+      const frame = requestAnimationFrame(() => {
+        focusedDefault = true;
+        if (!dialogElement?.contains(document.activeElement))
+          downloadButton?.focus();
+      });
+      return () => cancelAnimationFrame(frame);
+    },
+  );
 
   return (
     <Dialog

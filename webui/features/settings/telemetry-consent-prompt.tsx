@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect } from "solid-js";
 import { useAppShell } from "../../components/providers/app-shell";
+import { createEffect } from "../../lib/solid-compat";
 import { useStore } from "../../lib/use-nanostore";
 import { pushToast } from "../../state/notifications";
 import { $telemetryState } from "../../state/settings";
@@ -29,38 +29,43 @@ export function TelemetryConsentPrompt() {
    * Shows the notice the first time the host reports an unanswered choice, and withdraws it
    * once a choice is recorded, whether from the notice, Settings, or another device.
    */
-  createEffect(() => {
-    const current = state();
-    if (current.consent.decided) {
-      closeNotice?.();
-      closeNotice = undefined;
-      return;
-    }
-    if (prompted || !current.available) return;
-    prompted = true;
-    closeNotice = pushToast(
-      "info",
-      "Nightfall can send anonymous usage and error reports to help fix problems and decide what to build next.",
-      0,
-      [
-        {
-          label: "OK",
-          onClick: () => {
-            if ($telemetryState.get().consent.decided) return;
-            setTelemetryConsent({ share_usage: true, share_errors: true });
+  createEffect(
+    () => ({
+      decided: state().consent.decided,
+      available: state().available,
+    }),
+    (current) => {
+      if (current.decided) {
+        closeNotice?.();
+        closeNotice = undefined;
+        return;
+      }
+      if (prompted || !current.available) return;
+      prompted = true;
+      closeNotice = pushToast(
+        "info",
+        "Nightfall can send anonymous usage and error reports to help fix problems and decide what to build next.",
+        0,
+        [
+          {
+            label: "OK",
+            onClick: () => {
+              if ($telemetryState.get().consent.decided) return;
+              setTelemetryConsent({ share_usage: true, share_errors: true });
+            },
           },
-        },
-        {
-          label: "Customize",
-          dismissOnClick: false,
-          onClick: () => {
-            openSettings({ tab: "privacy" });
+          {
+            label: "Customize",
+            dismissOnClick: false,
+            onClick: () => {
+              openSettings({ tab: "privacy" });
+            },
           },
-        },
-      ],
-      { title: "Help improve Nightfall", closable: false },
-    );
-  });
+        ],
+        { title: "Help improve Nightfall", closable: false },
+      );
+    },
+  );
 
   return null;
 }

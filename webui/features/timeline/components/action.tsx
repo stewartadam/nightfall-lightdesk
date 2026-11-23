@@ -6,20 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createDraggable } from "@neodrag/solid";
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import { focusTrackedComponent } from "../../../lib/componentFocusContext";
+import { draggable } from "../../../lib/draggable";
 import { getLogger } from "../../../lib/logger";
 import { REVEAL_OBJECT_CAPABILITY } from "../../../lib/panel-capabilities";
 import {
@@ -164,9 +157,7 @@ export const Action = (props: ActionProps & { trackId: string }) => {
   const ctx = useTimelineContext();
   const $dockApi = useStore(dockApi);
   const { invokePanelCapability } = usePanelCapabilityRegistry();
-  const [left, setLeft] = createSignal(0);
   const [isDragging, setIsDragging] = createSignal(false);
-  const [isSelected, setIsSelected] = createSignal(false);
 
   let elementRef: HTMLDivElement | undefined;
   let pendingDragSession: DragSession | undefined;
@@ -216,25 +207,21 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     return lane ? { trackId, lane } : undefined;
   };
 
-  createEffect(() => {
-    const offsetPx =
-      props.leftOverridePx ?? props.position * (ctx.zoom() / 1000);
-    setLeft(offsetPx);
-  });
+  /** Places the action at its timeline position, or at a drag preview's override. */
+  const left = createMemo(
+    () => props.leftOverridePx ?? props.position * (ctx.zoom() / 1000),
+  );
 
-  createEffect(() => {
-    const selectedActions = ctx.actions.selectedActions();
-    setIsSelected(
-      selectedActions.some(
+  /** Whether this action is part of the timeline's current selection. */
+  const isSelected = createMemo(() =>
+    ctx.actions
+      .selectedActions()
+      .some(
         (selection) =>
           selection.trackId === props.trackId &&
           selection.actionId === props.id,
       ),
-    );
-  });
-
-  const { draggable } = createDraggable();
-  void draggable;
+  );
 
   /** Returns the flag start position for the current drag pointer. */
   const dragPositionFromPointer = (
@@ -573,7 +560,6 @@ export const Action = (props: ActionProps & { trackId: string }) => {
     <>
       {/** biome-ignore lint/a11y/useKeyWithClickEvents: TODO: keyboard movement not supported yet */}
       <div
-        ref={elementRef}
         data-component="Action"
         data-timeline-action="true"
         data-track-id={props.trackId}
@@ -582,57 +568,60 @@ export const Action = (props: ActionProps & { trackId: string }) => {
         data-drag-preview={props.isDragPreview ? "true" : undefined}
         data-selected={isSelected() ? "true" : "false"}
         tabIndex={-1}
-        use:draggable={{
-          disabled: props.isDragPreview === true,
-          axis: "both",
-          grid: [1, 1],
-          bounds: { left: 0 },
-          transform: () => "translate3d(0px, 0px, 0px)",
-          onDragStart: () => {
-            if (props.isDragPreview) return;
-            dragSession = pendingDragSession ?? createDragSession();
-            pendingDragSession = undefined;
-            lastDragPreview = undefined;
-            setIsDragging(true);
-            startEscapeDragListener();
-          },
-          onDrag: ({ event }) => {
-            if (!dragSession || dragSession.canceled) return;
-            const preview = dragPreviewFromPointer(event);
-            if (preview) {
-              lastDragPreview = preview;
-              props.onDragPreview?.(preview);
-            }
-          },
-          onDragEnd: (data) => {
-            const session = dragSession;
-            const preview =
-              session && !session.canceled
-                ? (dragPreviewFromPointer(data.event) ?? lastDragPreview)
-                : undefined;
-            setIsDragging(false);
-            finishDragInteraction(data.event);
-            props.onDragPreviewClear?.();
-            removeEscapeDragListener?.();
-            pendingDragSession = undefined;
-            dragSession = undefined;
-            lastDragPreview = undefined;
+        ref={(node) => {
+          elementRef = node;
+          draggable(() => ({
+            disabled: props.isDragPreview === true,
+            axis: "both",
+            grid: [1, 1],
+            bounds: { left: 0 },
+            transform: () => "translate3d(0px, 0px, 0px)",
+            onDragStart: () => {
+              if (props.isDragPreview) return;
+              dragSession = pendingDragSession ?? createDragSession();
+              pendingDragSession = undefined;
+              lastDragPreview = undefined;
+              setIsDragging(true);
+              startEscapeDragListener();
+            },
+            onDrag: ({ event }) => {
+              if (!dragSession || dragSession.canceled) return;
+              const preview = dragPreviewFromPointer(event);
+              if (preview) {
+                lastDragPreview = preview;
+                props.onDragPreview?.(preview);
+              }
+            },
+            onDragEnd: (data) => {
+              const session = dragSession;
+              const preview =
+                session && !session.canceled
+                  ? (dragPreviewFromPointer(data.event) ?? lastDragPreview)
+                  : undefined;
+              setIsDragging(false);
+              finishDragInteraction(data.event);
+              props.onDragPreviewClear?.();
+              removeEscapeDragListener?.();
+              pendingDragSession = undefined;
+              dragSession = undefined;
+              lastDragPreview = undefined;
 
-            if (!session || session.canceled) {
-              return;
-            }
+              if (!session || session.canceled) {
+                return;
+              }
 
-            if (!preview) return;
+              if (!preview) return;
 
-            ctx.actions.repositionActions(
-              preview.actions.map((action) => ({
-                trackId: action.sourceTrackId,
-                actionId: action.actionId,
-                newPosition: action.positionMs,
-                newTrackId: action.trackId,
-              })),
-            );
-          },
+              ctx.actions.repositionActions(
+                preview.actions.map((action) => ({
+                  trackId: action.sourceTrackId,
+                  actionId: action.actionId,
+                  newPosition: action.positionMs,
+                  newTrackId: action.trackId,
+                })),
+              );
+            },
+          }))(node);
         }}
         class={`absolute top-0 bottom-0 select-none outline-none focus:outline-none focus-visible:outline-none ${
           props.isDragPreview

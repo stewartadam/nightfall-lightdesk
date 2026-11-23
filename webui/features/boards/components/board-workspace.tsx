@@ -6,8 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, onCleanup } from "solid-js";
+import { onCleanup } from "solid-js";
 import { registerComponentFocus } from "../../../lib/componentFocusContext";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { boards } from "../../../state/appStores";
 import { activeBoardWorkspace } from "../../../state/layout-switcher";
@@ -34,9 +35,12 @@ export function BoardWorkspace(props: { boardUid: string }) {
   });
 
   /** Closes the workspace when its board disappears, such as on a showfile change. */
-  createEffect(() => {
-    if (!$boards()[props.boardUid]) closeBoardWorkspace();
-  });
+  createEffect(
+    () => $boards()[props.boardUid] === undefined,
+    (missing) => {
+      if (missing) closeBoardWorkspace();
+    },
+  );
 
   return (
     <div

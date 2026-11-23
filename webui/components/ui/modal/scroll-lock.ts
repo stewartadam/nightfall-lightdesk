@@ -6,15 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, onCleanup } from "solid-js";
+import { createEffect } from "../../../lib/solid-compat";
 
 let activeLockCount = 0;
 let previousBodyOverflow = "";
 
 /** Locks document body scrolling while modal or overlay UI is visible. */
 export function createModalScrollLock(isOpen: () => boolean): void {
-  createEffect(() => {
-    if (!isOpen()) return;
+  createEffect(isOpen, (open) => {
+    if (!open) return;
     if (typeof document === "undefined") return;
 
     if (activeLockCount === 0) {
@@ -23,12 +23,12 @@ export function createModalScrollLock(isOpen: () => boolean): void {
     }
     activeLockCount += 1;
 
-    onCleanup(() => {
+    return () => {
       activeLockCount = Math.max(0, activeLockCount - 1);
       if (activeLockCount === 0) {
         document.body.style.overflow = previousBodyOverflow;
         previousBodyOverflow = "";
       }
-    });
+    };
   });
 }

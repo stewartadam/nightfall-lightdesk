@@ -6,14 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createSignal,
-  For,
-  type JSX,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import {
   Checkbox,
   Input,
@@ -21,6 +14,7 @@ import {
 } from "../../../components/ui/form-controls";
 import { Button } from "../../../components/ui/visual-language/button";
 import { hasDiskStorage } from "../../../lib/disk-storage";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { pushToast, runtimeCapabilities } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -67,11 +61,13 @@ function CommitField(props: CommitFieldProps) {
   let lastCommitted: string | undefined;
 
   /** Follows the stored value unless the operator is typing in the field. */
-  createEffect(() => {
-    const value = props.value;
-    lastCommitted = undefined;
-    if (document.activeElement !== inputRef) setDraft(value);
-  });
+  createEffect(
+    () => props.value,
+    (value) => {
+      lastCommitted = undefined;
+      if (document.activeElement !== inputRef) setDraft(value);
+    },
+  );
 
   /** Sends the draft when it differs from the stored value and was not just sent. */
   const commit = () => {

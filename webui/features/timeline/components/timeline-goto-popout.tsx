@@ -6,14 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { createDismissable } from "../../../components/ui/dismissable";
 import { overlayHost } from "../../../components/ui/modal/dialog-stack";
@@ -29,6 +22,7 @@ import {
   nextPaletteIndex,
   visiblePaletteRowCount,
 } from "../../../lib/palette-navigation";
+import { createEffect } from "../../../lib/solid-compat";
 import { durationToMs } from "../../../lib/utils";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import type * as types from "../../../types";
@@ -144,37 +138,40 @@ export const TimelineGotoPopout = () => {
   };
 
   /** Focuses the search field when its open popout becomes visible. */
-  createEffect(() => {
-    if (!workspaceActive() || !isOpen()) return;
-    const timeout = window.setTimeout(() => {
-      inputRef?.focus();
-      inputRef?.select();
-    }, 0);
-    onCleanup(() => window.clearTimeout(timeout));
-  });
+  createEffect(
+    () => workspaceActive() && isOpen(),
+    (visible) => {
+      if (!visible) return;
+      const timeout = window.setTimeout(() => {
+        inputRef?.focus();
+        inputRef?.select();
+      }, 0);
+      return () => window.clearTimeout(timeout);
+    },
+  );
 
   /** Keeps the highlighted row valid as the filtered jump list changes. */
-  const clampSelectedIndex = () => {
-    const lastIndex = jumpOptions().length - 1;
-    if (lastIndex < 0) {
-      setSelectedIndex(0);
-      return;
-    }
-    setSelectedIndex(Math.min(selectedIndex(), lastIndex));
-  };
-
-  createEffect(clampSelectedIndex);
+  createEffect(
+    () => ({
+      index: selectedIndex(),
+      lastIndex: jumpOptions().length - 1,
+    }),
+    ({ index, lastIndex }) => {
+      setSelectedIndex(lastIndex < 0 ? 0 : Math.min(index, lastIndex));
+    },
+  );
 
   /** Keeps keyboard navigation from moving the highlighted jump target outside the viewport. */
-  createEffect(() => {
-    selectedIndex();
-    jumpOptions();
-    requestAnimationFrame(() => {
-      optionsListRef
-        ?.querySelector<HTMLElement>('[data-timeline-jump-selected="true"]')
-        ?.scrollIntoView({ block: "nearest" });
-    });
-  });
+  createEffect(
+    () => [selectedIndex(), jumpOptions()],
+    () => {
+      requestAnimationFrame(() => {
+        optionsListRef
+          ?.querySelector<HTMLElement>('[data-timeline-jump-selected="true"]')
+          ?.scrollIntoView({ block: "nearest" });
+      });
+    },
+  );
 
   /** Fully captures popout keyboard events before other shortcut handlers see them. */
   const capturePopoverKey = (event: KeyboardEvent) => {
@@ -234,14 +231,14 @@ export const TimelineGotoPopout = () => {
   });
 
   /** Only the active workspace can capture jump shortcuts. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
+  createEffect(workspaceActive, (active) => {
+    if (!active) return;
     window.addEventListener("keydown", handleWindowKeyDown, { capture: true });
-    onCleanup(() => {
+    return () => {
       window.removeEventListener("keydown", handleWindowKeyDown, {
         capture: true,
       });
-    });
+    };
   });
 
   /** Returns the primary row text shown for a jump option. */

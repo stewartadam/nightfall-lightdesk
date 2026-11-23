@@ -21,7 +21,6 @@ import { TerminalWindowIcon } from "@squidlab/phosphor-solid/terminal-window";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import type { JSX } from "solid-js";
 import {
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -49,6 +48,7 @@ import { getLogger } from "./lib/logger";
 import { pushToast } from "./state/appStores";
 
 import "./index.css";
+import { createEffect } from "./lib/solid-compat";
 
 type ServiceName =
   | "backend"
@@ -728,31 +728,33 @@ function WorktreeDashboardApp() {
     });
   }
 
-  createEffect(() => {
-    const openMenuKey = openActionMenu();
-    const anchor = openActionMenuAnchor();
-    if (!openMenuKey || !anchor) return;
+  /** Positions the open action menu beside its anchor and follows scrolling and resizing. */
+  createEffect(
+    () => ({ openMenuKey: openActionMenu(), anchor: openActionMenuAnchor() }),
+    ({ openMenuKey, anchor }) => {
+      if (!openMenuKey || !anchor) return;
 
-    setActionMenuStyle({
-      position: "fixed",
-      left: "-9999px",
-      top: "-9999px",
-      "z-index": ACTION_MENU_Z_INDEX,
-    });
-    requestAnimationFrame(() => positionOpenActionMenu());
+      setActionMenuStyle({
+        position: "fixed",
+        left: "-9999px",
+        top: "-9999px",
+        "z-index": ACTION_MENU_Z_INDEX,
+      });
+      requestAnimationFrame(() => positionOpenActionMenu());
 
-    const handleViewportChange = () => positionOpenActionMenu();
-    window.addEventListener("scroll", handleViewportChange, true);
-    window.addEventListener("resize", handleViewportChange);
+      const handleViewportChange = () => positionOpenActionMenu();
+      window.addEventListener("scroll", handleViewportChange, true);
+      window.addEventListener("resize", handleViewportChange);
 
-    onCleanup(() => {
-      window.removeEventListener("scroll", handleViewportChange, true);
-      window.removeEventListener("resize", handleViewportChange);
-    });
-  });
+      return () => {
+        window.removeEventListener("scroll", handleViewportChange, true);
+        window.removeEventListener("resize", handleViewportChange);
+      };
+    },
+  );
 
-  createEffect(() => {
-    worktrees();
+  /** Re-initializes Preline widgets after the worktree list re-renders. */
+  createEffect(worktrees, () => {
     queueMicrotask(() => {
       window.HSStaticMethods?.autoInit();
     });

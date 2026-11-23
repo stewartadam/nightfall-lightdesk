@@ -6,13 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  onMount,
-} from "solid-js";
+import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import {
   CompactSelection,
   type CustomRenderer,
@@ -43,6 +37,7 @@ import {
   isRichActionButtonCell,
   normalizeGridClickPosition,
 } from "../../../lib/datagrid-rich-cells";
+import { createEffect } from "../../../lib/solid-compat";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellKey,
@@ -423,12 +418,14 @@ export default function CrudListDataGrid<T>(props: CrudListDataGridProps<T>) {
   };
 
   /** Handles one-shot owner requests to select and reveal a specific row. */
-  createEffect(() => {
-    const request = props.selectionRequest;
-    if (!request || handledSelectionRequestId === request.requestId) return;
-    handledSelectionRequestId = request.requestId;
-    applySelectionRequest();
-  });
+  createEffect(
+    () => props.selectionRequest,
+    (request) => {
+      if (!request || handledSelectionRequestId === request.requestId) return;
+      handledSelectionRequestId = request.requestId;
+      applySelectionRequest();
+    },
+  );
 
   const getSelectedIndicesFromGridSelection = (selection: GridSelection) => {
     const next = new Set<number>();

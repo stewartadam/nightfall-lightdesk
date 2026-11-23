@@ -19,13 +19,12 @@
 import {
   type Accessor,
   createContext,
-  createEffect,
   type JSX,
   onCleanup,
-  untrack,
   useContext,
 } from "solid-js";
 import type { RenderPropertiesMetadata } from "../../../lib/panel-capabilities";
+import { createEffect } from "../../../lib/solid-compat";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { revealPropertiesPanel } from "./reveal-properties-panel";
 
@@ -66,23 +65,31 @@ export const usePropertiesInspector = (
 
   const workspaceActive = useWorkspaceActivity();
   /** Exposes properties only for panels in the active workspace. */
-  createEffect(() => {
-    if (!workspaceActive()) return;
-    let unregister: (() => void) | undefined;
-    /** Updates metadata without clearing selection when the inspector itself has focus. */
-    createEffect(() => {
-      const currentLabel = typeof label === "function" ? label() : label;
-      unregister = untrack(() =>
-        context.registerProvider({
-          id,
-          label: currentLabel,
-          priority,
-          component,
-        }),
-      );
-    });
-    onCleanup(() => unregister?.());
-  });
+  let unregister: (() => void) | undefined;
+  /**
+   * Registers while the workspace is active and unregisters when it goes inactive. A label change
+   * re-registers in place, updating metadata without clearing selection when the inspector has focus.
+   */
+  createEffect(
+    () =>
+      workspaceActive()
+        ? { label: typeof label === "function" ? label() : label }
+        : undefined,
+    (state) => {
+      if (!state) {
+        unregister?.();
+        unregister = undefined;
+        return;
+      }
+      unregister = context.registerProvider({
+        id,
+        label: state.label,
+        priority,
+        component,
+      });
+    },
+  );
+  onCleanup(() => unregister?.());
 
   return {
     activate: () => context.activateProvider(id),

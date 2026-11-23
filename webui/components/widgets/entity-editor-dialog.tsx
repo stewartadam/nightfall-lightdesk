@@ -7,14 +7,9 @@
  */
 
 import { WarningIcon } from "@squidlab/phosphor-solid/warning";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import { isWholeNumberInRange } from "../../lib/number-draft";
+import { createEffect } from "../../lib/solid-compat";
 import {
   Dialog,
   DialogBody,
@@ -67,39 +62,45 @@ export default function EntityEditorModal(props: EntityEditorModalProps) {
   /** Keeps unrelated clip updates from resetting authorization for the same owner. */
   const conflictKey = createMemo(() => conflict()?.key);
   /** Requires a fresh Alt press whenever the dialog or conflicting owner changes. */
-  createEffect(() => {
-    const key = conflictKey();
-    setArmedKey(undefined);
-    if (!props.isOpen || !key) return;
-    /** Arms only this owner, without accepting repeated keydown events. */
-    const press = (event: KeyboardEvent) => {
-      if (event.key === "Alt" && !event.repeat) setArmedKey(key);
-    };
-    /** Disarms on modifier release or loss of window focus. */
-    const release = () => setArmedKey(undefined);
-    /** Clears authorization when Alt is released. */
-    const keyup = (event: KeyboardEvent) => {
-      if (event.key === "Alt" || !event.altKey) release();
-    };
-    window.addEventListener("keydown", press, true);
-    window.addEventListener("keyup", keyup, true);
-    window.addEventListener("blur", release);
-    onCleanup(() => {
-      window.removeEventListener("keydown", press, true);
-      window.removeEventListener("keyup", keyup, true);
-      window.removeEventListener("blur", release);
-    });
-  });
+  createEffect(
+    () => (props.isOpen ? conflictKey() : undefined),
+    (key) => {
+      setArmedKey(undefined);
+      if (!key) return;
+      /** Arms only this owner, without accepting repeated keydown events. */
+      const press = (event: KeyboardEvent) => {
+        if (event.key === "Alt" && !event.repeat) setArmedKey(key);
+      };
+      /** Disarms on modifier release or loss of window focus. */
+      const release = () => setArmedKey(undefined);
+      /** Clears authorization when Alt is released. */
+      const keyup = (event: KeyboardEvent) => {
+        if (event.key === "Alt" || !event.altKey) release();
+      };
+      window.addEventListener("keydown", press, true);
+      window.addEventListener("keyup", keyup, true);
+      window.addEventListener("blur", release);
+      return () => {
+        window.removeEventListener("keydown", press, true);
+        window.removeEventListener("keyup", keyup, true);
+        window.removeEventListener("blur", release);
+      };
+    },
+  );
 
   /** Refreshes dialog field values and focuses the operator-facing label field on open. */
-  createEffect(() => {
-    if (!props.isOpen) {
-      return;
-    }
-    setIdDraft(props.initialId);
-    setLabelValue(props.initialLabel);
-    requestAnimationFrame(() => labelInputRef?.focus());
-  });
+  createEffect(
+    () =>
+      props.isOpen
+        ? { id: props.initialId, label: props.initialLabel }
+        : undefined,
+    (initial) => {
+      if (!initial) return;
+      setIdDraft(initial.id);
+      setLabelValue(initial.label);
+      requestAnimationFrame(() => labelInputRef?.focus());
+    },
+  );
 
   /**
    * Submits the typed ID and label, falling back to an item label when the label is blank. Does

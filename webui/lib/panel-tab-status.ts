@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type Accessor, createEffect, onCleanup } from "solid-js";
+import { type Accessor, onCleanup } from "solid-js";
+import { createEffect } from "./solid-compat";
 import { useWorkspaceActivity } from "./workspace-activity";
 
 /** Transient activity that can replace a panel's registered tab icon. */
@@ -95,8 +96,11 @@ export function usePanelTabStatus(
   const registration = registerPanelTabStatus(panelId);
 
   /** Mirrors panel-owned reactive state into the imperative Dockview tab shell. */
-  createEffect(() =>
-    registration.setStatus(workspaceActive() ? status() : undefined),
+  createEffect(
+    () => (workspaceActive() ? status() : undefined),
+    (current) => {
+      registration.setStatus(current);
+    },
   );
   onCleanup(registration.dispose);
 }

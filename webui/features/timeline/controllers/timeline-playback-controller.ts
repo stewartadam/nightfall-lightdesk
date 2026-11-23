@@ -6,14 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createSignal,
-  onCleanup,
-  untrack,
-} from "solid-js";
+import { type Accessor, createSignal, onCleanup, untrack } from "solid-js";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { durationToMs } from "../../../lib/utils";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import * as types from "../../../types";
@@ -184,34 +179,37 @@ export const createTimelinePlaybackController = (
   };
 
   /** Interpolates the playhead between authoritative timecode snapshots. */
-  createEffect(() => {
-    const currentPosition = untrack(position);
-    clearPlaybackFrame();
+  createEffect(
+    () => workspaceActive() && timecodePlaybackActive(),
+    (advancing) => {
+      const currentPosition = position();
+      clearPlaybackFrame();
 
-    if (!workspaceActive() || !timecodePlaybackActive()) {
-      log.debug(`playback paused at ${currentPosition}ms`);
-      return;
-    }
+      if (!advancing) {
+        log.debug(`playback paused at ${currentPosition}ms`);
+        return;
+      }
 
-    log.debug(`playback resumed from ${currentPosition}ms`);
-    /** Projects the latest authoritative position onto this browser presentation frame. */
-    const animate = () => {
-      const frameTimeMs = monotonicNow();
-      const elapsedMs = frameTimeMs - lastFrameTimeMs;
-      lastFrameTimeMs = frameTimeMs;
-      const projectedPositionMs = untrack(position) + elapsedMs;
-      const targetPositionMs = anchorPositionMs + frameTimeMs - anchorTimeMs;
-      const maxCorrectionMs = elapsedMs * MAX_CLOCK_CORRECTION_RATE;
-      const correctionMs = Math.max(
-        -maxCorrectionMs,
-        Math.min(maxCorrectionMs, targetPositionMs - projectedPositionMs),
-      );
-      const nextPosition = projectedPositionMs + correctionMs;
-      if (nextPosition < untrack(end)) setPosition(nextPosition);
+      log.debug(`playback resumed from ${currentPosition}ms`);
+      /** Projects the latest authoritative position onto this browser presentation frame. */
+      const animate = () => {
+        const frameTimeMs = monotonicNow();
+        const elapsedMs = frameTimeMs - lastFrameTimeMs;
+        lastFrameTimeMs = frameTimeMs;
+        const projectedPositionMs = untrack(position) + elapsedMs;
+        const targetPositionMs = anchorPositionMs + frameTimeMs - anchorTimeMs;
+        const maxCorrectionMs = elapsedMs * MAX_CLOCK_CORRECTION_RATE;
+        const correctionMs = Math.max(
+          -maxCorrectionMs,
+          Math.min(maxCorrectionMs, targetPositionMs - projectedPositionMs),
+        );
+        const nextPosition = projectedPositionMs + correctionMs;
+        if (nextPosition < untrack(end)) setPosition(nextPosition);
+        playbackFrame = window.requestAnimationFrame(animate);
+      };
       playbackFrame = window.requestAnimationFrame(animate);
-    };
-    playbackFrame = window.requestAnimationFrame(animate);
-  });
+    },
+  );
 
   onCleanup(clearPlaybackFrame);
 

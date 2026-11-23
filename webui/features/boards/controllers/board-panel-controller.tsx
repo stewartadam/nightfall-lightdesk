@@ -7,16 +7,11 @@
  */
 
 import type { DockviewPanelApi } from "dockview";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  untrack,
-} from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
 import { useKeyboardShortcut } from "../../../lib/keyboardShortcuts";
 import { OPEN_PANEL_SETTINGS_CAPABILITY } from "../../../lib/panel-capabilities";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import {
@@ -138,24 +133,27 @@ export function createBoardPanelController(
   const [awaitingNewBoard, setAwaitingNewBoard] = createSignal(openedNewBoard);
 
   /** Stops waiting once the new board arrives. */
-  createEffect(() => {
-    if (board()) setAwaitingNewBoard(false);
-  });
+  createEffect(
+    () => board() !== undefined,
+    (arrived) => {
+      if (arrived) setAwaitingNewBoard(false);
+    },
+  );
 
   const { registerPanelCapability } = usePanelCapabilityRegistry();
   const workspaceActive = useWorkspaceActivity();
   /** Offers the board settings as Settings… in the tab menu while a board is shown. */
-  createEffect(() => {
-    if (!workspaceActive() || !board()) return;
-    const unregister = untrack(() =>
-      registerPanelCapability(
-        options.panelId,
-        OPEN_PANEL_SETTINGS_CAPABILITY,
-        () => setBoardSettingsOpen(true),
-      ),
-    );
-    onCleanup(unregister);
-  });
+  createEffect(
+    () => workspaceActive() && board() !== undefined,
+    (offered) =>
+      offered
+        ? registerPanelCapability(
+            options.panelId,
+            OPEN_PANEL_SETTINGS_CAPABILITY,
+            () => setBoardSettingsOpen(true),
+          )
+        : undefined,
+  );
 
   /** Returns an element of the shown board by UID, if it still exists. */
   const elementByUid = (uid: string) =>
@@ -205,18 +203,26 @@ export function createBoardPanelController(
   let savedBoardUid = options.initialBoardUid;
 
   /** Persists the shown board in the saved layout and names the tab after it. */
-  createEffect(() => {
-    const current = board();
-    options.panelApi?.setTitle(current ? boardDisplayName(current) : "Board");
-    if (current && current.identifiers.uid !== savedBoardUid) {
-      savedBoardUid = current.identifiers.uid;
-      options.panelApi?.updateParameters({ boardId: savedBoardUid });
-    }
-  });
+  createEffect(
+    () => {
+      const current = board();
+      return {
+        title: current ? boardDisplayName(current) : "Board",
+        uid: current?.identifiers.uid,
+      };
+    },
+    ({ title, uid }) => {
+      options.panelApi?.setTitle(title);
+      if (uid && uid !== savedBoardUid) {
+        savedBoardUid = uid;
+        options.panelApi?.updateParameters({ boardId: savedBoardUid });
+      }
+    },
+  );
 
   /** Drops the element selection, pop-outs and paste spot when edit mode ends. */
-  createEffect(() => {
-    if (editing()) return;
+  createEffect(editing, (isEditing) => {
+    if (isEditing) return;
     setSelectedElementUid(null);
     setSettingsElementUid(null);
     setPasteAnchor(undefined);

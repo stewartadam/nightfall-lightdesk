@@ -6,16 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  onCleanup,
-  untrack,
-} from "solid-js";
+import { type Accessor, createMemo, createSignal, untrack } from "solid-js";
 import { getLogger } from "../../lib/logger";
+import { createEffect } from "../../lib/solid-compat";
 import { useStore } from "../../lib/use-nanostore";
 import { fixtureLibrary } from "../../state/appStores";
 import { activeShellDialog } from "../../state/shell-dialog";
@@ -115,46 +108,44 @@ export function createGdtfShareUpdates(
 
   /** Checks the library once enabled, again after its files or the open dialog change, cancelling a check still in flight. */
   createEffect(
-    on(
-      [enabled, checkedKey, () => $shellDialog() === null],
-      ([active, , noDialog]) => {
-        if (!active) {
-          setStatus(UNKNOWN_STATUS);
-          return;
-        }
-        if (!noDialog) return;
-        const fixtures = untrack(checked);
-        if (fixtures.length === 0) {
-          setStatus(UNKNOWN_STATUS);
-          return;
-        }
-        const abort = new AbortController();
-        const timer = setTimeout(async () => {
-          try {
-            const found = await requestUpdates(fixtures, abort.signal);
-            setStatus({
-              updates: new Map(
-                found.updates.map((update) => [update.asset_etag, update]),
-              ),
-              listed: new Map(
-                found.listed.map((listing) => [
-                  listing.asset_etag,
-                  listing.fixture,
-                ]),
-              ),
-            });
-          } catch (failure) {
-            if (!abort.signal.aborted) {
-              log.warn("Could not check GDTF Share for updates", failure);
-            }
+    () => [enabled(), checkedKey(), $shellDialog() === null] as const,
+    ([active, , noDialog]) => {
+      if (!active) {
+        setStatus(UNKNOWN_STATUS);
+        return;
+      }
+      if (!noDialog) return;
+      const fixtures = untrack(checked);
+      if (fixtures.length === 0) {
+        setStatus(UNKNOWN_STATUS);
+        return;
+      }
+      const abort = new AbortController();
+      const timer = setTimeout(async () => {
+        try {
+          const found = await requestUpdates(fixtures, abort.signal);
+          setStatus({
+            updates: new Map(
+              found.updates.map((update) => [update.asset_etag, update]),
+            ),
+            listed: new Map(
+              found.listed.map((listing) => [
+                listing.asset_etag,
+                listing.fixture,
+              ]),
+            ),
+          });
+        } catch (failure) {
+          if (!abort.signal.aborted) {
+            log.warn("Could not check GDTF Share for updates", failure);
           }
-        }, CHECK_DELAY_MS);
-        onCleanup(() => {
-          clearTimeout(timer);
-          abort.abort();
-        });
-      },
-    ),
+        }
+      }, CHECK_DELAY_MS);
+      return () => {
+        clearTimeout(timer);
+        abort.abort();
+      };
+    },
   );
 
   return status;

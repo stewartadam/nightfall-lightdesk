@@ -7,13 +7,7 @@
  */
 
 import { FilePlusIcon } from "@squidlab/phosphor-solid/file-plus";
-import {
-  createEffect,
-  createSignal,
-  createUniqueId,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createSignal, createUniqueId, onCleanup, Show } from "solid-js";
 import {
   Dialog,
   DialogBody,
@@ -28,6 +22,7 @@ import {
   newShowfileNamePrompt,
   submitNewShowfileNamePrompt,
 } from "../../../lib/new-showfile-name-prompt";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 
 /** Collects a new show name and optional sample data before creation. */
@@ -42,10 +37,10 @@ export default function NewShowfileNameModal() {
   let enterAnimationFrame: number | null = null;
 
   /** Resets and focuses the name field when a new prompt opens. */
-  createEffect(() => {
+  createEffect(prompt, (current) => {
     setError("");
     setChecking(false);
-    if (!prompt()) {
+    if (!current) {
       setName("");
       setIncludeSampleData(false);
       if (enterAnimationFrame !== null) {

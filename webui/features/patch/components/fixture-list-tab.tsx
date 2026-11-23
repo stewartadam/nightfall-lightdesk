@@ -7,14 +7,7 @@
  */
 
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  type JSX,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
@@ -59,6 +52,7 @@ import {
 } from "../../../lib/fixture-service";
 import { getLogger } from "../../../lib/logger";
 import { setStoreAction } from "../../../lib/nanostore-action";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useSharedStore } from "../../../lib/use-shared-store";
 import {
@@ -824,18 +818,29 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
     clearSelection();
   };
 
-  createEffect(() => {
-    const rowData = displayRows();
-    const selectedFixtureIds = selectedRows()
-      .map((rowIndex) => rowData[rowIndex]?.id)
-      .filter((id): id is number => id !== undefined);
-    props.onSelectionCountChange?.(selectedFixtureIds.length);
-    props.onSelectedFixtureIdsChange?.(selectedFixtureIds);
-  });
+  /** Reports the selected fixtures to the panel whenever the selection or its rows change. */
+  createEffect(
+    () => {
+      const rowData = displayRows();
+      return {
+        ids: selectedRows()
+          .map((rowIndex) => rowData[rowIndex]?.id)
+          .filter((id): id is number => id !== undefined),
+        onCount: props.onSelectionCountChange,
+        onIds: props.onSelectedFixtureIdsChange,
+      };
+    },
+    ({ ids, onCount, onIds }) => {
+      onCount?.(ids.length);
+      onIds?.(ids);
+    },
+  );
 
-  createEffect(() => {
-    props.onDeleteActionChange?.(deleteSelectedFixtures);
-  });
+  /** Hands the delete action to whichever panel callback is current. */
+  createEffect(
+    () => props.onDeleteActionChange,
+    (publish) => publish?.(deleteSelectedFixtures),
+  );
 
   const revealRequest = useStore(patchFixtureRevealRequest);
   const [scrollRequest, setScrollRequest] =
@@ -856,57 +861,74 @@ export default function PatchFixtureListTab(props: PatchFixtureListTabProps) {
    * Scrolls to the fixtures Patch was asked to reveal, selecting them when requested, once all of
    * them have arrived. Rows hidden by a filter are skipped, and expired requests are dropped.
    */
-  createEffect(() => {
-    const request = revealRequest();
-    if (!request || request.requestId === handledRevealId) return;
-    if (
-      performance.now() - request.requestedAt >
-      PATCH_FIXTURE_REVEAL_WINDOW_MS
-    ) {
+  createEffect(
+    () => {
+      const request = revealRequest();
+      return request
+        ? {
+            request: { ...request },
+            rows: rows(),
+            displayRows: displayRows(),
+            displayColumns: displayColumns(),
+          }
+        : undefined;
+    },
+    (reveal) => {
+      if (!reveal || reveal.request.requestId === handledRevealId) return;
+      const { request } = reveal;
+      if (
+        performance.now() - request.requestedAt >
+        PATCH_FIXTURE_REVEAL_WINDOW_MS
+      ) {
+        handledRevealId = request.requestId;
+        return;
+      }
+      const known = new Set(reveal.rows.map((row) => row.id));
+      if (!request.fixtureIds.every((id) => known.has(id))) return;
       handledRevealId = request.requestId;
-      return;
-    }
-    const known = new Set(rows().map((row) => row.id));
-    if (!request.fixtureIds.every((id) => known.has(id))) return;
-    handledRevealId = request.requestId;
-    const rowData = displayRows();
-    const indices = request.fixtureIds
-      .map((id) => rowData.findIndex((row) => row.id === id))
-      .filter((index) => index >= 0)
-      .sort((a, b) => a - b);
-    if (indices.length === 0) return;
-    if (request.select)
-      handleGridSelectionChange({
-        ...emptyGridSelection(),
-        rows: CompactSelection.fromArray(indices),
+      const rowData = reveal.displayRows;
+      const indices = request.fixtureIds
+        .map((id) => rowData.findIndex((row) => row.id === id))
+        .filter((index) => index >= 0)
+        .sort((a, b) => a - b);
+      if (indices.length === 0) return;
+      if (request.select)
+        handleGridSelectionChange({
+          ...emptyGridSelection(),
+          rows: CompactSelection.fromArray(indices),
+        });
+      const column = Math.max(
+        0,
+        reveal.displayColumns.findIndex((entry) => entry.id === request.column),
+      );
+      // The grid lays out newly arrived rows on the next frame; scrolling sooner clamps short of them.
+      // Scrolling to the last fixture and then the first shows the whole range when it fits, and
+      // otherwise keeps the first fixture in view.
+      requestAnimationFrame(() => {
+        scrollToRow(column, indices[indices.length - 1]);
+        requestAnimationFrame(() => scrollToRow(column, indices[0]));
       });
-    const column = Math.max(
-      0,
-      displayColumns().findIndex((entry) => entry.id === request.column),
-    );
-    // The grid lays out newly arrived rows on the next frame; scrolling sooner clamps short of them.
-    // Scrolling to the last fixture and then the first shows the whole range when it fits, and
-    // otherwise keeps the first fixture in view.
-    requestAnimationFrame(() => {
-      scrollToRow(column, indices[indices.length - 1]);
-      requestAnimationFrame(() => scrollToRow(column, indices[0]));
-    });
-  });
+    },
+  );
 
-  createEffect(() => {
-    props.onColumnVisibilityControlChange?.(
-      <>
-        <DataGridFilterMenu
-          columns={filterColumns()}
-          filters={tableFilters()}
-          visibleRows={displayRows().length}
-          totalRows={rows().length}
-          onFiltersChange={setTableFilters}
-        />
-        <ColumnVisibilityMenu scope={props.panelId} columns={columns()} />
-      </>,
-    );
-  });
+  /** Filter and column menus this tab lends to the panel toolbar. */
+  const columnVisibilityControl = (
+    <>
+      <DataGridFilterMenu
+        columns={filterColumns()}
+        filters={tableFilters()}
+        visibleRows={displayRows().length}
+        totalRows={rows().length}
+        onFiltersChange={setTableFilters}
+      />
+      <ColumnVisibilityMenu scope={props.panelId} columns={columns()} />
+    </>
+  );
+  /** Hands the toolbar menus to whichever panel callback is current. */
+  createEffect(
+    () => props.onColumnVisibilityControlChange,
+    (publish) => publish?.(columnVisibilityControl),
+  );
 
   onCleanup(() => {
     clearEditSelection();

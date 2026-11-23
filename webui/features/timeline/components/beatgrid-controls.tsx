@@ -7,7 +7,7 @@
  */
 
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
-import { createEffect, createSignal, mergeProps } from "solid-js";
+import { createSignal, mergeProps } from "solid-js";
 import {
   DropdownMenu,
   DropdownMenuSeparator,
@@ -18,6 +18,7 @@ import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import { Button } from "../../../components/ui/visual-language/button";
 import { commandClient } from "../../../lib/engine-commands";
 import { setStoreAction } from "../../../lib/nanostore-action";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import {
@@ -104,70 +105,99 @@ export const BeatgridControls = (props: BeatgridControlsProps) => {
     );
   };
 
-  createEffect(() => {
-    setTempBpm(context.bpm().toString());
-  });
+  /** Resets the tempo draft whenever the timeline's tempo changes. */
+  createEffect(
+    () => context.bpm().toString(),
+    (bpm) => {
+      setTempBpm(bpm);
+    },
+  );
 
-  createEffect(() => {
-    setTempBeatsPerBar(context.beatsPerBar().toString());
-  });
+  /** Resets the meter draft whenever the timeline's meter changes. */
+  createEffect(
+    () => context.beatsPerBar().toString(),
+    (beatsPerBar) => {
+      setTempBeatsPerBar(beatsPerBar);
+    },
+  );
 
-  createEffect(() => {
-    if (!awaitingManualDetectionStart()) return;
-    const status = detectionStatus();
-    if (status.phase !== "detecting" || !status.requestId) return;
+  /** Remembers which detection request a manual Detect press started. */
+  createEffect(
+    () =>
+      awaitingManualDetectionStart() ? { ...detectionStatus() } : undefined,
+    (status) => {
+      if (status?.phase !== "detecting" || !status.requestId) return;
 
-    setPendingManualDetectionRequestId(status.requestId);
-    setAwaitingManualDetectionStart(false);
-  });
-
-  createEffect(() => {
-    const proposal = beatgridProposal();
-    const status = detectionStatus();
-    const timelineValue = timeline();
-    if (!proposal || status.phase !== "ready") return;
-    if (!timelineValue) return;
-
-    const pendingRequestId = pendingManualDetectionRequestId();
-    if (!pendingRequestId) return;
-    if (status.requestId && status.requestId !== proposal.request_id) return;
-    if (proposal.request_id !== pendingRequestId) return;
-    if (lastAppliedDetectionRequestId() === proposal.request_id) return;
-
-    const command: types.TimelineCommand = {
-      type: "ApplyBeatgridProposal",
-      data: {
-        timeline_id: timelineValue.identifiers.id,
-        request_id: proposal.request_id,
-        beats_per_bar: context.beatsPerBar(),
-        downbeat_offset: 0,
-      },
-    };
-    commandClient.emit("TimelineCommand", command);
-
-    setLastAppliedDetectionRequestId(proposal.request_id);
-    setPendingManualDetectionRequestId(undefined);
-    clearLocalProposalState();
-  });
-
-  createEffect(() => {
-    const status = detectionStatus();
-    const pendingRequestId = pendingManualDetectionRequestId();
-    if (status.phase !== "failed") return;
-
-    if (!pendingRequestId && awaitingManualDetectionStart()) {
+      setPendingManualDetectionRequestId(status.requestId);
       setAwaitingManualDetectionStart(false);
-      return;
-    }
+    },
+  );
 
-    if (
-      pendingRequestId &&
-      (!status.requestId || status.requestId === pendingRequestId)
-    ) {
+  /** Applies the proposal of a manually started detection once it is ready. */
+  createEffect(
+    () => ({
+      proposal: beatgridProposal() ? { ...beatgridProposal() } : undefined,
+      status: { ...detectionStatus() },
+      timelineValue: timeline(),
+      pendingRequestId: pendingManualDetectionRequestId(),
+      lastAppliedRequestId: lastAppliedDetectionRequestId(),
+    }),
+    ({
+      proposal,
+      status,
+      timelineValue,
+      pendingRequestId,
+      lastAppliedRequestId,
+    }) => {
+      if (!proposal || status.phase !== "ready") return;
+      if (!timelineValue) return;
+
+      if (!pendingRequestId) return;
+      if (status.requestId && status.requestId !== proposal.request_id) return;
+      if (proposal.request_id !== pendingRequestId) return;
+      if (lastAppliedRequestId === proposal.request_id) return;
+
+      const command: types.TimelineCommand = {
+        type: "ApplyBeatgridProposal",
+        data: {
+          timeline_id: timelineValue.identifiers.id,
+          request_id: proposal.request_id,
+          beats_per_bar: context.beatsPerBar(),
+          downbeat_offset: 0,
+        },
+      };
+      commandClient.emit("TimelineCommand", command);
+
+      setLastAppliedDetectionRequestId(proposal.request_id);
       setPendingManualDetectionRequestId(undefined);
-      setAwaitingManualDetectionStart(false);
-    }
-  });
+      clearLocalProposalState();
+    },
+  );
+
+  /** Ends a manual detection that failed, whether or not it had started. */
+  createEffect(
+    () => ({
+      status: { ...detectionStatus() },
+      pendingRequestId: pendingManualDetectionRequestId(),
+      awaiting: awaitingManualDetectionStart(),
+    }),
+    ({ status, pendingRequestId, awaiting }) => {
+      if (status.phase !== "failed") return;
+
+      if (!pendingRequestId && awaiting) {
+        setAwaitingManualDetectionStart(false);
+        return;
+      }
+
+      if (
+        pendingRequestId &&
+        (!status.requestId || status.requestId === pendingRequestId)
+      ) {
+        setPendingManualDetectionRequestId(undefined);
+        setAwaitingManualDetectionStart(false);
+      }
+    },
+  );
 
   /** Updates the tempo draft and publishes valid bounded values. */
   const handleBpmChange = (value: string) => {

@@ -9,7 +9,7 @@
 import { CopySimpleIcon } from "@squidlab/phosphor-solid/copy-simple";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import { EmptyState } from "../../../components/ui/empty-state";
@@ -29,6 +29,7 @@ import {
   storeColorPath,
 } from "../../../lib/color-path-service";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { colorPaths } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -102,30 +103,38 @@ export default function ColorPathPanel(props: BasePanelComponentProps) {
   });
 
   /** Keeps selection anchored to an available path as snapshots arrive. */
-  createEffect(() => {
-    const paths = pathList();
-    if (paths.length === 0) {
-      setSelectedUid(null);
-      setDraft(null);
-      return;
-    }
-    const uid = selectedUid();
-    const selectedDraftUid = draft()?.identifiers.uid;
-    if (
-      !uid ||
-      (!paths.some((path) => path.identifiers.uid === uid) &&
-        selectedDraftUid !== uid)
-    ) {
-      setSelectedUid(paths[0].identifiers.uid);
-    }
-  });
+  createEffect(
+    () => ({
+      paths: pathList(),
+      uid: selectedUid(),
+      selectedDraftUid: draft()?.identifiers.uid,
+    }),
+    ({ paths, uid, selectedDraftUid }) => {
+      if (paths.length === 0) {
+        setSelectedUid(null);
+        setDraft(null);
+        return;
+      }
+      if (
+        !uid ||
+        (!paths.some((path) => path.identifiers.uid === uid) &&
+          selectedDraftUid !== uid)
+      ) {
+        setSelectedUid(paths[0].identifiers.uid);
+      }
+    },
+  );
 
   /** Refreshes the edit draft when the selected persisted path changes. */
-  createEffect(() => {
-    const path = selectedPath();
-    if (!path) return;
-    setDraft(cloneColorPath(path));
-  });
+  createEffect(
+    () => {
+      const path = selectedPath();
+      return path ? cloneColorPath(path) : undefined;
+    },
+    (copy) => {
+      if (copy) setDraft(copy);
+    },
+  );
 
   /** Selects and reveals a color path requested by the showfile object palette. */
   useRevealObjectCapability(

@@ -23,7 +23,6 @@
 import {
   type Accessor,
   createContext,
-  createEffect,
   createMemo,
   createSignal,
   onCleanup,
@@ -41,6 +40,7 @@ import {
 } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
 import { normalizeFixtureUid } from "../../../lib/route-utils";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import {
   activeInstances,
@@ -230,24 +230,30 @@ export function createCueEditorContextValue(
   );
 
   /** Clears local preview UI state when the server-side preview instance stops. */
-  createEffect(() => {
-    const playback = activePreviewPlayback();
-    const pending = previewPending();
-    if (playback) {
-      setPreviewPlaybackSeen(true);
-      if (pending) {
-        setPreviewPending(false);
+  createEffect(
+    () => ({
+      playback: activePreviewPlayback(),
+      pending: previewPending(),
+      sessionActive: previewActiveSignal(),
+      playbackSeen: previewPlaybackSeen(),
+    }),
+    ({ playback, pending, sessionActive, playbackSeen }) => {
+      if (playback) {
+        setPreviewPlaybackSeen(true);
+        if (pending) {
+          setPreviewPending(false);
+        }
+        return;
       }
-      return;
-    }
-    if (!previewActiveSignal()) return;
-    if (pending && !previewPlaybackSeen()) return;
-    setPreviewPending(false);
-    setPreviewPlaybackSeen(false);
-    setPreviewActiveSignal(false);
-    setActivePreviewInstanceId(undefined);
-    setPreviewStartedAtMs(undefined);
-  });
+      if (!sessionActive) return;
+      if (pending && !playbackSeen) return;
+      setPreviewPending(false);
+      setPreviewPlaybackSeen(false);
+      setPreviewActiveSignal(false);
+      setActivePreviewInstanceId(undefined);
+      setPreviewStartedAtMs(undefined);
+    },
+  );
 
   /** Tracks whether cue data is still loading, loaded, or absent from the store. */
   const loadingState = createMemo((): CueLoadingState => {

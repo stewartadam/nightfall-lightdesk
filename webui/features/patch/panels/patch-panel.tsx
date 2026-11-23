@@ -10,7 +10,6 @@ import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import {
-  createEffect,
   createSignal,
   createUniqueId,
   type JSX,
@@ -26,6 +25,7 @@ import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import { bestEffortPersistentAtom } from "../../../lib/best-effort-persistent-atom";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import {
   clearDmxRouteNavigationRequest,
@@ -182,12 +182,18 @@ export default function PatchPanel(props: PatchPanelProps) {
     clearDmxRouteNavigationRequest(requestId);
   };
 
-  createEffect(() => {
-    if ($dmxRouteNavigationRequest()) {
+  /** Shows the routes tab, ungrouped, when another surface asks to reveal a route. */
+  createEffect(
+    () => {
+      const request = $dmxRouteNavigationRequest();
+      return request ? { ...request } : undefined;
+    },
+    (request) => {
+      if (!request) return;
       setRoutesGroupBy("none");
       setActiveTab("routes");
-    }
-  });
+    },
+  );
 
   const isStrictOverlapValidation = () =>
     $routeValidationSettings().mode === "Strict";

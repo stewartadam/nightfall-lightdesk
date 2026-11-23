@@ -6,15 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  onCleanup,
-} from "solid-js";
+import { type Accessor, createMemo, createSignal, onCleanup } from "solid-js";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { activeShellDialog } from "../../../state/shell-dialog";
 import type * as types from "../../../types";
@@ -91,36 +85,34 @@ export function createGdtfShareLookup(
    * without one could not answer from.
    */
   createEffect(
-    on(
-      [namesKey, () => shellDialog() === "settings"],
-      ([key, settingsOpen]) => {
-        if (settingsOpen) return;
-        const lookups = JSON.parse(key) as ReturnType<typeof missingTypeNames>;
-        if (lookups.length === 0) {
-          setMatches(new Map());
-          return;
-        }
-        const request = new AbortController();
-        onCleanup(() => request.abort());
-        matchGdtfShare(
-          lookups.map((lookup) => lookup.name),
-          request.signal,
-        )
-          .then((found) => {
-            const next = new Map<string, types.GdtfShareFixture>();
-            lookups.forEach((lookup, index) => {
-              const fixture = found[index];
-              if (fixture) next.set(lookup.spec, fixture);
-            });
-            setMatches(next);
-          })
-          .catch((failure) => {
-            if (request.signal.aborted) return;
-            log.debug("GDTF Share lookup failed", failure);
-            setMatches(new Map());
+    () => [namesKey(), shellDialog() === "settings"] as const,
+    ([key, settingsOpen]) => {
+      if (settingsOpen) return;
+      const lookups = JSON.parse(key) as ReturnType<typeof missingTypeNames>;
+      if (lookups.length === 0) {
+        setMatches(new Map());
+        return;
+      }
+      const request = new AbortController();
+      matchGdtfShare(
+        lookups.map((lookup) => lookup.name),
+        request.signal,
+      )
+        .then((found) => {
+          const next = new Map<string, types.GdtfShareFixture>();
+          lookups.forEach((lookup, index) => {
+            const fixture = found[index];
+            if (fixture) next.set(lookup.spec, fixture);
           });
-      },
-    ),
+          setMatches(next);
+        })
+        .catch((failure) => {
+          if (request.signal.aborted) return;
+          log.debug("GDTF Share lookup failed", failure);
+          setMatches(new Map());
+        });
+      return () => request.abort();
+    },
   );
 
   /**

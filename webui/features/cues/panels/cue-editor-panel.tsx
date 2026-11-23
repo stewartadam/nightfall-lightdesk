@@ -6,9 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, onMount } from "solid-js";
+import { onMount } from "solid-js";
 import { getLogger } from "../../../lib/logger";
 import { usePanelLiveness } from "../../../lib/panel-liveness";
+import { createEffect } from "../../../lib/solid-compat";
 import {
   CueEditorContextProvider,
   createCueEditorContextValue,
@@ -42,8 +43,7 @@ export default function CueEditorPanel(props: CueEditorPanelProps) {
   });
 
   /** Keeps the Dockview tab title aligned with loaded cue and sequence data. */
-  createEffect(() => {
-    const currentLabel = contextValue.label();
+  createEffect(contextValue.label, (currentLabel) => {
     if (currentLabel === "Cue Loading..." || currentLabel === "Cue Not Found") {
       return;
     }

@@ -6,14 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  createEffect,
-  createSignal,
-  For,
-  type JSX,
-  on,
-  onCleanup,
-} from "solid-js";
+import { createSignal, For, type JSX } from "solid-js";
+import { createEffect } from "../../lib/solid-compat";
 import { type ContentEntrance, playContentEntrance } from "./content-entrance";
 import { ScrollArea } from "./scroll-area";
 import { Button } from "./visual-language/button";
@@ -95,37 +89,35 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
    * the options), and that must not replay the entrance.
    */
   createEffect(
-    on(
-      () => props.value,
-      (value, previous) => {
-        if (value === previous) return;
-        const nextIndex = props.options.findIndex(
-          (option) => option.key === value,
-        );
-        const previousIndex = props.options.findIndex(
-          (option) => option.key === previous,
-        );
-        if (nextIndex < 0 || previousIndex < 0) return;
-        const contentId = props.options[nextIndex].contentId ?? props.contentId;
-        let cancelEntrance: (() => void) | undefined;
-        const frame = requestAnimationFrame(() => {
-          const document = viewport.ownerDocument;
-          if (document.documentElement.dataset.reducedMotion === "true") return;
-          const panel = document.getElementById(contentId);
-          if (!panel) return;
-          const { backward, forward, distance } =
-            CONTENT_ENTRANCES[orientation()];
-          cancelEntrance = playContentEntrance(panel, {
-            direction: nextIndex > previousIndex ? forward : backward,
-            distance,
-          });
+    () => props.value,
+    (value, previous) => {
+      if (value === previous) return;
+      const nextIndex = props.options.findIndex(
+        (option) => option.key === value,
+      );
+      const previousIndex = props.options.findIndex(
+        (option) => option.key === previous,
+      );
+      if (nextIndex < 0 || previousIndex < 0) return;
+      const contentId = props.options[nextIndex].contentId ?? props.contentId;
+      let cancelEntrance: (() => void) | undefined;
+      const frame = requestAnimationFrame(() => {
+        const document = viewport.ownerDocument;
+        if (document.documentElement.dataset.reducedMotion === "true") return;
+        const panel = document.getElementById(contentId);
+        if (!panel) return;
+        const { backward, forward, distance } =
+          CONTENT_ENTRANCES[orientation()];
+        cancelEntrance = playContentEntrance(panel, {
+          direction: nextIndex > previousIndex ? forward : backward,
+          distance,
         });
-        onCleanup(() => {
-          cancelAnimationFrame(frame);
-          cancelEntrance?.();
-        });
-      },
-    ),
+      });
+      return () => {
+        cancelAnimationFrame(frame);
+        cancelEntrance?.();
+      };
+    },
   );
 
   /**
@@ -134,45 +126,49 @@ export function SegmentedTabs<T extends string>(props: SegmentedTabsProps<T>) {
    * hidden past the edge of a narrow strip or short list. Waits a frame so the strip has been
    * laid out.
    */
-  createEffect(() => {
-    const index = props.options.findIndex(
-      (option) => option.key === props.value,
-    );
-    const axis = orientation();
-    const frame = requestAnimationFrame(() => {
-      const tab = tabs[index];
-      if (tab) revealTab(viewport, tab, axis);
-    });
-    onCleanup(() => cancelAnimationFrame(frame));
-  });
+  createEffect(
+    () =>
+      [
+        props.options.findIndex((option) => option.key === props.value),
+        orientation(),
+      ] as const,
+    ([index, axis]) => {
+      const frame = requestAnimationFrame(() => {
+        const tab = tabs[index];
+        if (tab) revealTab(viewport, tab, axis);
+      });
+      return () => cancelAnimationFrame(frame);
+    },
+  );
 
   /** Tracks the selected button's layout so the highlight slides between unequal-size tabs. */
-  createEffect(() => {
-    const value = props.value;
-    const options = props.options;
-    /** Aligns the highlight in scroll-content coordinates, including after resizing or font loading. */
-    function measure() {
-      const selected = Array.from(
-        viewport.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-      )[options.findIndex((option) => option.key === value)];
-      setIndicator(
-        selected
-          ? {
-              transform: `translate(${selected.offsetLeft}px, ${selected.offsetTop}px)`,
-              width: `${selected.offsetWidth}px`,
-              height: `${selected.offsetHeight}px`,
-            }
-          : undefined,
-      );
-    }
-    measure();
-    const resize = new ResizeObserver(measure);
-    resize.observe(viewport);
-    for (const tab of viewport.querySelectorAll('[role="tab"]')) {
-      resize.observe(tab);
-    }
-    onCleanup(() => resize.disconnect());
-  });
+  createEffect(
+    () => ({ value: props.value, options: props.options }),
+    ({ value, options }) => {
+      /** Aligns the highlight in scroll-content coordinates, including after resizing or font loading. */
+      function measure() {
+        const selected = Array.from(
+          viewport.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+        )[options.findIndex((option) => option.key === value)];
+        setIndicator(
+          selected
+            ? {
+                transform: `translate(${selected.offsetLeft}px, ${selected.offsetTop}px)`,
+                width: `${selected.offsetWidth}px`,
+                height: `${selected.offsetHeight}px`,
+              }
+            : undefined,
+        );
+      }
+      measure();
+      const resize = new ResizeObserver(measure);
+      resize.observe(viewport);
+      for (const tab of viewport.querySelectorAll('[role="tab"]')) {
+        resize.observe(tab);
+      }
+      return () => resize.disconnect();
+    },
+  );
 
   /**
    * Activates adjacent or endpoint tabs and keeps keyboard focus on the selected option. The

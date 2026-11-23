@@ -10,18 +10,13 @@ import { ArrowUUpLeftIcon } from "@squidlab/phosphor-solid/arrow-u-up-left";
 import { ArrowUUpRightIcon } from "@squidlab/phosphor-solid/arrow-u-up-right";
 import { CaretDownIcon } from "@squidlab/phosphor-solid/caret-down";
 import { CaretUpIcon } from "@squidlab/phosphor-solid/caret-up";
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-} from "solid-js";
+import { createMemo, createSignal, For, onCleanup } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { commandFailure, commandSucceeded } from "../../../lib/command-result";
 import { commandClient } from "../../../lib/engine-commands";
 import { connectionStatus } from "../../../lib/engine-runtime";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { undoState } from "../../../state/appStores";
 import { DropdownMenu } from "../../ui/dropdown-menu";
@@ -133,11 +128,12 @@ export default function UndoControls(props: { placement: "above" | "below" }) {
   );
 
   /** Close the undo timeline when connection or history state makes it irrelevant. */
-  createEffect(() => {
-    if (connectionStatus() !== "connected" || !hasUndoTimelineEntries()) {
-      setShowUndoTimeline(false);
-    }
-  });
+  createEffect(
+    () => connectionStatus() !== "connected" || !hasUndoTimelineEntries(),
+    (irrelevant) => {
+      if (irrelevant) setShowUndoTimeline(false);
+    },
+  );
 
   return (
     <div class="flex items-center gap-1" data-guide-target="undo-redo">

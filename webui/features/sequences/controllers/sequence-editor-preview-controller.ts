@@ -6,11 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { createMemo, createSignal, onCleanup } from "solid-js";
 import { previewSequence, stopPreviewInstance } from "../../../lib/cue-service";
 import { getLogger } from "../../../lib/logger";
 import { normalizeFixtureUid } from "../../../lib/route-utils";
 import { buildSequencePreviewPayload } from "../../../lib/sequence-preview-cue";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { activeInstances } from "../../../state/appStores";
 import type * as types from "../../../types";
@@ -81,27 +82,34 @@ export function createSequenceEditorPreviewController(
   });
 
   /** Reconciles local preview state with backend playback lifecycle updates. */
-  createEffect(() => {
-    const playback = activePreviewPlayback();
-    const pending = previewPending();
-    if (playback) {
-      const activeCueUid = activeCueUidFromPreviewInstance(playback);
-      if (
-        pending &&
-        activeCueUid !== normalizePreviewCueUid(activePreviewCueUid())
-      ) {
+  createEffect(
+    () => ({
+      playback: activePreviewPlayback(),
+      pending: previewPending(),
+      requestedCueUid: activePreviewCueUid(),
+      sessionActive: previewSessionActive(),
+      playbackSeen: previewPlaybackSeen(),
+    }),
+    ({ playback, pending, requestedCueUid, sessionActive, playbackSeen }) => {
+      if (playback) {
+        const activeCueUid = activeCueUidFromPreviewInstance(playback);
+        if (
+          pending &&
+          activeCueUid !== normalizePreviewCueUid(requestedCueUid)
+        ) {
+          return;
+        }
+        setPreviewPlaybackSeen(true);
+        if (pending) setPreviewPending(false);
+        if (activeCueUid) setActivePreviewCueUid(activeCueUid);
         return;
       }
-      setPreviewPlaybackSeen(true);
-      if (pending) setPreviewPending(false);
-      if (activeCueUid) setActivePreviewCueUid(activeCueUid);
-      return;
-    }
-    if (!previewSessionActive()) return;
-    if (pending && !previewPlaybackSeen()) return;
-    setPreviewEnabledSignal(false);
-    clearPreviewState();
-  });
+      if (!sessionActive) return;
+      if (pending && !playbackSeen) return;
+      setPreviewEnabledSignal(false);
+      clearPreviewState();
+    },
+  );
 
   /** Builds the configured backend preview payload for one cue. */
   const toPreviewPayload = (
@@ -262,27 +270,35 @@ export function createSequenceEditorPreviewController(
   };
 
   /** Republishes preview when cue or preview preferences change. */
-  createEffect(() => {
-    const enabled = previewEnabled();
-    const cue =
-      activePreviewCue() ??
-      previewRows().find((row) => row.cueUid === source.selectedCueUid())
-        ?.cue ??
-      previewRows()[0]?.cue;
-    previewApplyTransitions();
-    previewTrackValues();
-    if (!enabled || !cue) {
-      if (
-        previewSessionActive() ||
-        previewPending() ||
-        activePreviewCueUid() !== undefined
-      ) {
-        stopPreviewSession();
+  createEffect(
+    () => {
+      const cue =
+        activePreviewCue() ??
+        previewRows().find((row) => row.cueUid === source.selectedCueUid())
+          ?.cue ??
+        previewRows()[0]?.cue;
+      if (previewEnabled() && cue) {
+        return {
+          cue,
+          applyTransitions: previewApplyTransitions(),
+          trackValues: previewTrackValues(),
+          sequence: source.sequence(),
+          cueMap: source.cueMap(),
+        };
       }
-      return;
-    }
-    publishPreviewCue(cue);
-  });
+      return {
+        cue: undefined,
+        sessionOpen:
+          previewSessionActive() ||
+          previewPending() ||
+          activePreviewCueUid() !== undefined,
+      };
+    },
+    (preview) => {
+      if (preview.cue) publishPreviewCue(preview.cue);
+      else if (preview.sessionOpen) stopPreviewSession();
+    },
+  );
 
   onCleanup(stopPreviewSession);
 

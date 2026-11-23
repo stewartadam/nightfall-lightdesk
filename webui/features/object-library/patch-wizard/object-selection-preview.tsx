@@ -6,18 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import {
-  type Component,
-  createEffect,
-  createSignal,
-  onCleanup,
-  Show,
-} from "solid-js";
+import { type Component, createSignal, Show } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { getBackendUrl } from "../../../lib/api";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { disposeObjectResources } from "../../../lib/three-dispose";
 import { type AvailableObjectInfo, SceneObjectType } from "../../../types";
 
@@ -182,142 +177,105 @@ const ObjectSelectionPreview: Component<ObjectSelectionPreviewProps> = (
     currentObject = undefined;
   };
 
-  createEffect(() => {
-    const container = containerRef;
-    if (!container || rendererRef) return;
+  /** Initializes the Three.js preview once the container is available, and tears it down on unmount. */
+  createEffect(
+    () => containerRef,
+    (container) => {
+      if (!container || rendererRef) return;
 
-    sceneRef = new THREE.Scene();
-    sceneRef.background = new THREE.Color(0x141414);
+      sceneRef = new THREE.Scene();
+      sceneRef.background = new THREE.Color(0x141414);
 
-    cameraRef = new THREE.PerspectiveCamera(
-      50,
-      container.clientWidth / container.clientHeight,
-      0.1,
-      1000,
-    );
-    cameraRef.position.set(3, 2, 3);
+      cameraRef = new THREE.PerspectiveCamera(
+        50,
+        container.clientWidth / container.clientHeight,
+        0.1,
+        1000,
+      );
+      cameraRef.position.set(3, 2, 3);
 
-    rendererRef = new THREE.WebGLRenderer({ antialias: true });
-    rendererRef.setSize(container.clientWidth, container.clientHeight);
-    rendererRef.setPixelRatio(window.devicePixelRatio);
-    container.appendChild(rendererRef.domElement);
+      rendererRef = new THREE.WebGLRenderer({ antialias: true });
+      rendererRef.setSize(container.clientWidth, container.clientHeight);
+      rendererRef.setPixelRatio(window.devicePixelRatio);
+      container.appendChild(rendererRef.domElement);
 
-    controlsRef = new OrbitControls(cameraRef, rendererRef.domElement);
-    controlsRef.enableDamping = true;
-    controlsRef.dampingFactor = 0.06;
+      controlsRef = new OrbitControls(cameraRef, rendererRef.domElement);
+      controlsRef.enableDamping = true;
+      controlsRef.dampingFactor = 0.06;
 
-    sceneRef.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-    directionalLight.position.set(5, 5, 4);
-    sceneRef.add(directionalLight);
-    sceneRef.add(new THREE.GridHelper(10, 10, 0x3a3a3a, 0x1f1f1f));
+      sceneRef.add(new THREE.AmbientLight(0xffffff, 0.5));
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+      directionalLight.position.set(5, 5, 4);
+      sceneRef.add(directionalLight);
+      sceneRef.add(new THREE.GridHelper(10, 10, 0x3a3a3a, 0x1f1f1f));
 
-    const animate = () => {
-      frameId = requestAnimationFrame(animate);
-      controlsRef?.update();
-      if (rendererRef && sceneRef && cameraRef) {
-        rendererRef.render(sceneRef, cameraRef);
-      }
-    };
-    animate();
+      const animate = () => {
+        frameId = requestAnimationFrame(animate);
+        controlsRef?.update();
+        if (rendererRef && sceneRef && cameraRef) {
+          rendererRef.render(sceneRef, cameraRef);
+        }
+      };
+      animate();
 
-    const handleResize = () => {
-      if (!containerRef || !cameraRef || !rendererRef) return;
-      cameraRef.aspect = containerRef.clientWidth / containerRef.clientHeight;
-      cameraRef.updateProjectionMatrix();
-      rendererRef.setSize(containerRef.clientWidth, containerRef.clientHeight);
-    };
+      const handleResize = () => {
+        if (!containerRef || !cameraRef || !rendererRef) return;
+        cameraRef.aspect = containerRef.clientWidth / containerRef.clientHeight;
+        cameraRef.updateProjectionMatrix();
+        rendererRef.setSize(
+          containerRef.clientWidth,
+          containerRef.clientHeight,
+        );
+      };
 
-    const resizeObserver = new ResizeObserver(handleResize);
-    resizeObserver.observe(container);
-    setSceneReady(true);
+      const resizeObserver = new ResizeObserver(handleResize);
+      resizeObserver.observe(container);
+      setSceneReady(true);
 
-    onCleanup(() => {
-      if (frameId) cancelAnimationFrame(frameId);
-      resizeObserver.disconnect();
-      previewLoadToken += 1;
+      return () => {
+        if (frameId) cancelAnimationFrame(frameId);
+        resizeObserver.disconnect();
+        previewLoadToken += 1;
+        clearCurrentObject();
+        rendererRef?.dispose();
+        controlsRef?.dispose();
+        setSceneReady(false);
+        rendererRef = undefined;
+        controlsRef = undefined;
+        sceneRef = undefined;
+        cameraRef = undefined;
+      };
+    },
+  );
+
+  /** Shows the selected object's model, a built-in shape, or a placeholder once the scene is ready. */
+  createEffect(
+    () => (sceneReady() ? { selected: props.selectedObject } : undefined),
+    (state) => {
+      if (!state || !sceneRef || !cameraRef || !controlsRef) return;
+      const { selected } = state;
+      const loadToken = ++previewLoadToken;
       clearCurrentObject();
-      rendererRef?.dispose();
-      controlsRef?.dispose();
-      setSceneReady(false);
-      rendererRef = undefined;
-      controlsRef = undefined;
-      sceneRef = undefined;
-      cameraRef = undefined;
-    });
-  });
 
-  createEffect(() => {
-    if (!sceneReady() || !sceneRef || !cameraRef || !controlsRef) return;
-    const selected = props.selectedObject;
-    const loadToken = ++previewLoadToken;
-    clearCurrentObject();
+      if (!selected) {
+        setStatus({ message: "Select an object to preview.", tone: "info" });
+        return;
+      }
 
-    if (!selected) {
-      setStatus({ message: "Select an object to preview.", tone: "info" });
-      return;
-    }
+      if (selected.source.type === "default") {
+        const previewObject = createDefaultPreview(
+          selected.source.objectType,
+          selected.scale,
+        );
+        currentObject = previewObject;
+        sceneRef.add(previewObject);
+        fitCameraToObject(previewObject, cameraRef, controlsRef);
+        setStatus({ message: "Showing built-in shape preview.", tone: "info" });
+        return;
+      }
 
-    if (selected.source.type === "default") {
-      const previewObject = createDefaultPreview(
-        selected.source.objectType,
-        selected.scale,
-      );
-      currentObject = previewObject;
-      sceneRef.add(previewObject);
-      fitCameraToObject(previewObject, cameraRef, controlsRef);
-      setStatus({ message: "Showing built-in shape preview.", tone: "info" });
-      return;
-    }
-
-    const modelPath = selected.source.object.modelPath;
-    if (!modelPath) {
-      const previewObject = createDefaultPreview(
-        SceneObjectType.Custom,
-        selected.scale,
-      );
-      currentObject = previewObject;
-      sceneRef.add(previewObject);
-      fitCameraToObject(previewObject, cameraRef, controlsRef);
-      setStatus({
-        message: "No model path found; showing placeholder.",
-        tone: "warn",
-      });
-      return;
-    }
-
-    setStatus({ message: "Loading model preview…", tone: "info" });
-    const modelUrl = `${getBackendUrl()}/api/object-model/${modelPath}`;
-    loader.load(
-      modelUrl,
-      (gltf) => {
-        if (
-          loadToken !== previewLoadToken ||
-          !sceneRef ||
-          !cameraRef ||
-          !controlsRef
-        ) {
-          disposeObjectResources(gltf.scene);
-          return;
-        }
-
-        currentObject = gltf.scene;
-        currentObject.scale.set(selected.scale, selected.scale, selected.scale);
-        sceneRef.add(currentObject);
-        fitCameraToObject(currentObject, cameraRef, controlsRef);
-        setStatus(null);
-      },
-      undefined,
-      (error) => {
-        if (
-          loadToken !== previewLoadToken ||
-          !sceneRef ||
-          !cameraRef ||
-          !controlsRef
-        ) {
-          return;
-        }
-        log.warn("Failed to load object preview model", error);
+      const modelPath = selected.source.object.modelPath;
+      if (!modelPath) {
         const previewObject = createDefaultPreview(
           SceneObjectType.Custom,
           selected.scale,
@@ -326,12 +284,63 @@ const ObjectSelectionPreview: Component<ObjectSelectionPreviewProps> = (
         sceneRef.add(previewObject);
         fitCameraToObject(previewObject, cameraRef, controlsRef);
         setStatus({
-          message: "Failed to load model preview; showing placeholder.",
+          message: "No model path found; showing placeholder.",
           tone: "warn",
         });
-      },
-    );
-  });
+        return;
+      }
+
+      setStatus({ message: "Loading model preview…", tone: "info" });
+      const modelUrl = `${getBackendUrl()}/api/object-model/${modelPath}`;
+      loader.load(
+        modelUrl,
+        (gltf) => {
+          if (
+            loadToken !== previewLoadToken ||
+            !sceneRef ||
+            !cameraRef ||
+            !controlsRef
+          ) {
+            disposeObjectResources(gltf.scene);
+            return;
+          }
+
+          currentObject = gltf.scene;
+          currentObject.scale.set(
+            selected.scale,
+            selected.scale,
+            selected.scale,
+          );
+          sceneRef.add(currentObject);
+          fitCameraToObject(currentObject, cameraRef, controlsRef);
+          setStatus(null);
+        },
+        undefined,
+        (error) => {
+          if (
+            loadToken !== previewLoadToken ||
+            !sceneRef ||
+            !cameraRef ||
+            !controlsRef
+          ) {
+            return;
+          }
+          log.warn("Failed to load object preview model", error);
+          const previewObject = createDefaultPreview(
+            SceneObjectType.Custom,
+            selected.scale,
+          );
+          currentObject = previewObject;
+          sceneRef.add(previewObject);
+          fitCameraToObject(previewObject, cameraRef, controlsRef);
+          setStatus({
+            message: "Failed to load model preview; showing placeholder.",
+            tone: "warn",
+          });
+        },
+      );
+    },
+  );
 
   return (
     <div class="rounded border border-neutral-700 bg-neutral-900 overflow-hidden">

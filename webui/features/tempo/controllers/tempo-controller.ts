@@ -7,16 +7,10 @@
  */
 
 import { debounce } from "@solid-primitives/scheduled";
-import {
-  type Accessor,
-  createEffect,
-  createSignal,
-  on,
-  onCleanup,
-  untrack,
-} from "solid-js";
+import { type Accessor, createSignal, untrack } from "solid-js";
 import { commandClient } from "../../../lib/engine-commands";
 import { getLogger } from "../../../lib/logger";
+import { createEffect } from "../../../lib/solid-compat";
 import { useStore } from "../../../lib/use-nanostore";
 import { showTempo } from "../../../state/appStores";
 import type { TempoCommand, TempoSnapshot } from "../../../types";
@@ -53,8 +47,7 @@ export function createBeatInBar(): Accessor<number> {
   const [beat, setBeat] = createSignal(0);
 
   /** Re-derives the current beat each animation frame while tempo data exists. */
-  createEffect(() => {
-    const state = tempo();
+  createEffect(tempo, (state) => {
     if (!state) return;
     let frame = 0;
     const tick = () => {
@@ -67,7 +60,7 @@ export function createBeatInBar(): Accessor<number> {
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
-    onCleanup(() => cancelAnimationFrame(frame));
+    return () => cancelAnimationFrame(frame);
   });
 
   return beat;
@@ -121,7 +114,7 @@ export function createTempoField(options: TempoFieldOptions): TempoField {
   };
 
   /** Shows the engine's value whenever it changes. */
-  createEffect(on(engineValue, follow));
+  createEffect(engineValue, follow);
 
   /** Applies the drafted value now, keeping it held if the engine would reject it. */
   const commit = () => {
