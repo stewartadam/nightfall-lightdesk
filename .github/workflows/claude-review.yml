@@ -218,15 +218,27 @@ jobs:
           gh api --paginate "repos/$GH_REPO/pulls/$PR_NUMBER/files" \
             --jq '.[] | {filename, previous_filename, status, additions, deletions} | tojson' \
             > "$dir/files.jsonl"
-          # The API refuses diffs far beyond the policy's size limit; Claude skips any PR whose diff
-          # it cannot fetch.
-          if gh api "repos/$GH_REPO/pulls/$PR_NUMBER" -H 'Accept: application/vnd.github.diff' \
-            > "$dir/pr.diff"; then
-            echo 'diff=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'The diff is too large for the GitHub API.' > "$dir/pr.diff"
-            echo 'diff=false' >> "$GITHUB_OUTPUT"
-          fi
+          # The API refuses diffs far beyond the policy's size limit with HTTP 406, and Claude skips
+          # such a PR. Server errors are retried, and any other failure fails the run rather than
+          # passing for a diff that is too large.
+          for delay in 5 15 30 0; do
+            if gh api "repos/$GH_REPO/pulls/$PR_NUMBER" -H 'Accept: application/vnd.github.diff' \
+              > "$dir/pr.diff" 2> "$RUNNER_TEMP/diff-error"; then
+              echo 'diff=true' >> "$GITHUB_OUTPUT"
+              break
+            fi
+            cat "$RUNNER_TEMP/diff-error" >&2
+            if grep -q 'HTTP 406' "$RUNNER_TEMP/diff-error"; then
+              echo 'The diff is too large for the GitHub API.' > "$dir/pr.diff"
+              echo 'diff=false' >> "$GITHUB_OUTPUT"
+              break
+            fi
+            if ! grep -qE 'HTTP 5[0-9]{2}' "$RUNNER_TEMP/diff-error" || [[ "$delay" == 0 ]]; then
+              echo "::error::Could not fetch the diff of #$PR_NUMBER."
+              exit 1
+            fi
+            sleep "$delay"
+          done
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: claude-review-${{ github.event.pull_request.head.sha || needs.command.outputs.sha }}
@@ -386,7 +398,7 @@ jobs:
             ! jq -e '.verdict | IN("auto-merge", "needs-human")' <<< "$VERDICT" > /dev/null; then
             if [[ "$REVIEW_RESULT" == skipped ]]; then
               summary="Claude did not review this PR."
-              why="The GitHub API did not return its diff; see the [workflow run]($RUN_URL)."
+              why="The GitHub API refused its diff as too large; see the [workflow run]($RUN_URL)."
             else
               summary="The Claude review did not finish."
               why="See the [workflow run]($RUN_URL) for the error."
