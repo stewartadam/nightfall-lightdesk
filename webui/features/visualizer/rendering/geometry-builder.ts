@@ -288,6 +288,7 @@ export function buildGeometryTree(
         gdtfRevision: geometry.gdtfRevision,
         mesh: emitterMesh,
         controlledElement: node.controlledElement,
+        dimmedBy: node.dimmedBy,
         nodeGroup: obj,
       });
     }

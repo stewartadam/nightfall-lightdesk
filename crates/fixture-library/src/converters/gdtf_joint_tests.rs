@@ -367,3 +367,54 @@ fn position_braces_are_rotated_axes() {
     // A beam shines along its -Z, which now points along -Y.
     assert_eq!([-e[8], -e[9], -e[10]], [0.0, -1.0, 0.0]);
 }
+
+/// Returns `dimmed_by` of the named beam node.
+fn dimmed_by<'a>(geometry: &'a FixtureGeometry, beam: &str) -> &'a [String] {
+    &geometry
+        .nodes
+        .iter()
+        .find(|node| node.name == beam)
+        .expect("beam node")
+        .dimmed_by
+}
+
+/// Verifies a master dimmer on a parent geometry dims each lamp below it, as on a blinder
+/// whose lamps have dimmers of their own, unless the master already reaches them through
+/// a relation.
+#[test]
+fn beams_are_dimmed_by_ancestor_dimmers() {
+    let blinder = |related: bool| {
+        let mut mode = ModeSpec::new("Mode", "Master")
+            .channel(ChannelSpec::new("Master", "Dimmer", &[1]))
+            .channel(ChannelSpec::new("Lens 1", "Dimmer", &[2]))
+            .channel(ChannelSpec::new("Lens 2", "Dimmer", &[3]));
+        if related {
+            mode = mode.relation("Master_Dimmer", "Lens 1_Dimmer.Dimmer.Dimmer", "Multiply");
+        }
+        GdtfBuilder::new("Test", "Blinder")
+            .geometry(
+                GeometrySpec::generic("Master")
+                    .child(GeometrySpec::beam("Lens 1"))
+                    .child(GeometrySpec::beam("Lens 2")),
+            )
+            .mode(mode)
+    };
+
+    let (_, geometry) = convert(&blinder(false));
+    assert_eq!(dimmed_by(&geometry, "Lens 1"), ["Master"]);
+    assert_eq!(dimmed_by(&geometry, "Lens 2"), ["Master"]);
+
+    let (_, geometry) = convert(&blinder(true));
+    assert!(dimmed_by(&geometry, "Lens 1").is_empty());
+    assert!(dimmed_by(&geometry, "Lens 2").is_empty());
+}
+
+/// Verifies a beam whose light comes from its parent's dimmer is not dimmed twice by it.
+#[test]
+fn beams_are_not_dimmed_by_their_own_element() {
+    let builder = GdtfBuilder::new("Test", "Par")
+        .geometry(GeometrySpec::generic("Body").child(GeometrySpec::beam("Lens")))
+        .mode(ModeSpec::new("Mode", "Body").channel(ChannelSpec::new("Body", "Dimmer", &[1])));
+    let (_, geometry) = convert(&builder);
+    assert!(dimmed_by(&geometry, "Lens").is_empty());
+}

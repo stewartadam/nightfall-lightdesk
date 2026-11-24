@@ -182,6 +182,11 @@ pub struct GeometryNode {
     /// so a local control overrides its ancestor's only for its own descendants.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub optical_parameters: Vec<ElementParameterRef>,
+    /// Labels of the elements whose dimmers sit on this beam's ancestors, such as a
+    /// blinder's master dimmer above each lamp. The beam's light is scaled by each of
+    /// them on top of its own element's level, as the real fixture does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dimmed_by: Vec<String>,
 }
 
 /// Format of a mesh resource file.

@@ -77,6 +77,11 @@ export interface EmitterData {
   mesh: Mesh;
   /** Element name this emitter belongs to (for DMX mapping) */
   controlledElement: string;
+  /**
+   * Elements whose dimmers sit above this aperture in the fixture, such as a
+   * blinder's master dimmer above each lamp; each scales its light.
+   */
+  dimmedBy?: readonly string[];
   /** Reference to the node's Group for computing world position (debug) */
   nodeGroup?: Object3D;
 }

@@ -578,6 +578,53 @@ fn optical_parameters(
     inherited
 }
 
+/// Returns, for every instance, the elements whose dimmers sit on its ancestors.
+///
+/// A real fixture multiplies a dimmer on a parent geometry into every beam below it, so
+/// a master dimmer at zero keeps a blinder dark even while each lamp's own dimmer is at
+/// full. Only real dimmers that master no relation count: relations already apply their
+/// masters, and virtual dimmers are applied to the outputs before they reach the fixture.
+/// An instance's own dimmers are left out, since its element applies them itself.
+fn ancestor_dimmers(
+    resolved: &ResolvedMode<'_>,
+    placements: &[Placement],
+    elements: &[FixtureElement],
+) -> Vec<Vec<String>> {
+    let relation_masters: Vec<&ElementParameterRef> = elements
+        .iter()
+        .flat_map(|element| &element.parameters)
+        .flat_map(|parameter| &parameter.functions)
+        .flat_map(|function| &function.relations)
+        .map(|relation| &relation.master)
+        .collect();
+    let mut local: Vec<Option<String>> = vec![None; resolved.instances.len()];
+    for (channel, placement) in resolved.channels.iter().zip(placements) {
+        let Some((element, parameter)) = *placement else {
+            continue;
+        };
+        let metadata = &elements[element].parameters[parameter];
+        let masters_relation = relation_masters.iter().any(|master| {
+            master.element as usize == element && master.attribute == metadata.attribute
+        });
+        if metadata.attribute == Attribute::Intensity && !metadata.is_virtual() && !masters_relation
+        {
+            local[channel.instance] = Some(elements[element].label.clone());
+        }
+    }
+
+    let mut inherited: Vec<Vec<String>> = Vec::with_capacity(local.len());
+    for instance in &resolved.instances {
+        // Instances are in depth-first order, so parents are resolved first.
+        let dimmers = instance.parent.map_or_else(Vec::new, |parent| {
+            let mut dimmers = inherited[parent].clone();
+            dimmers.extend(local[parent].clone());
+            dimmers
+        });
+        inherited.push(dimmers);
+    }
+    inherited
+}
+
 /// Builds the visualization geometry tree from resolved instances.
 ///
 /// `placements` records which resolved channels produced parameters; only
@@ -597,6 +644,7 @@ fn build_geometry_tree(
         .collect();
     let owners = emitter_owners(resolved, placements);
     let mut optical = optical_parameters(resolved, placements, elements);
+    let mut dimmers = ancestor_dimmers(resolved, placements, elements);
     let mut axes = joint_axes(resolved, placements);
     let mut mesh_resources = HashMap::new();
 
@@ -649,6 +697,18 @@ fn build_geometry_tree(
                 },
                 optical_parameters: match geometry_type {
                     GeometryType::Beam => std::mem::take(&mut optical[index]),
+                    _ => Vec::new(),
+                },
+                dimmed_by: match geometry_type {
+                    GeometryType::Beam => {
+                        let mut labels: Vec<String> = Vec::new();
+                        for label in std::mem::take(&mut dimmers[index]) {
+                            if Some(&label) != owners[index].as_ref() && !labels.contains(&label) {
+                                labels.push(label);
+                            }
+                        }
+                        labels
+                    }
                     _ => Vec::new(),
                 },
             }

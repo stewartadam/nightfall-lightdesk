@@ -21,6 +21,7 @@ import {
   SelectionHighlighter,
 } from "../model/selection-utils";
 import type { RenderableFixture, RenderableSceneObject } from "../model/types";
+import { applyAncestorDimmers } from "./ancestor-dimming";
 import { BeamManager, BeamUpdater } from "./effects";
 import { FixtureColorState, type StrobeState } from "./fixture-color-state";
 import { FixtureManager } from "./fixture-manager";
@@ -39,6 +40,7 @@ import type {
 import { SceneObjectManager } from "./scene-object-manager";
 import {
   applyStrobeShutterIntensity,
+  elementDeclaresIntensityControl,
   fixtureIntensityValueFromOutputs,
 } from "./visualizer-dmx";
 
@@ -633,6 +635,17 @@ export class SceneManager {
             frost: dmx.frost,
           });
         }
+
+        applyAncestorDimmers(
+          instance.emitters.values(),
+          elementColors,
+          (label) =>
+            rawElementDmx.some(
+              ({ element }) =>
+                element.label === label &&
+                elementDeclaresIntensityControl(element),
+            ),
+        );
 
         // Only update emitters that exist
         const emitterColors = new Map<string, EmitterColor>();
