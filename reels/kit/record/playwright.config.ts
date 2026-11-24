@@ -33,6 +33,16 @@ export default defineConfig({
     ...base.use,
     viewport: VIEWPORT,
     deviceScaleFactor: CAPTURE_SCALE,
+    launchOptions: {
+      ...base.use?.launchOptions,
+      // Chrome's screencast sends frames at the viewport's CSS size whatever
+      // deviceScaleFactor says, so takes were really 720x1280 upscaled.
+      // Forcing the browser's own scale makes it send device pixels.
+      args: [
+        ...(base.use?.launchOptions?.args ?? []),
+        `--force-device-scale-factor=${CAPTURE_SCALE}`,
+      ],
+    },
     video: "off",
     trace: "off",
     screenshot: "off",
