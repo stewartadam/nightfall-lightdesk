@@ -8,7 +8,7 @@
 
 import type { ComponentProps } from "solid-js";
 import Tooltip from "../../../components/ui/tooltip";
-import DataGrid from "../../../components/widgets/data-grid";
+import DataGrid from "../../../components/widgets/nightfall-data-grid";
 import { ATTRIBUTE_VALUE_NESTED_COLUMN_GROUPS } from "../../../lib/datagrid";
 import { richTimeCellRenderer } from "../../../lib/datagrid-rich-cells";
 import { parseTimingFanInput } from "../../../lib/timing-fan";
@@ -46,7 +46,7 @@ export function CueEditorGrid(props: CueEditorGridProps) {
         customRenderers={[richTimeCellRenderer]}
         onCellEdited={props.onCellEdited}
         onCellsEdited={props.onCellsEdited}
-        shouldCommitUnparsedTimeInput={(value) =>
+        shouldCommitUnparsedInput={(value) =>
           parseTimingFanInput(value) !== null
         }
         inlineEditTooltip={props.inlineEditTooltip}

@@ -11,7 +11,7 @@ import { Badge } from "../../../components/ui/badge";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridRichCellExtension,
-} from "../../../components/widgets/data-grid";
+} from "../../../components/widgets/nightfall-data-grid";
 import {
   type GridCell,
   GridCellKind,
@@ -171,7 +171,7 @@ export function ReferencesTable(props: { references: ReferenceEntry[] }) {
         richCellExtensions={[referenceDetailExtension]}
         rowHeight={REFERENCE_ROW_HEIGHT}
         sortableColumns={referenceColumns.map((column) => column.id!)}
-        emptyState="No references"
+        empty="No references"
       />
     </div>
   );
@@ -199,7 +199,7 @@ export function ReferenceHealthTable(props: { issues: ReferenceIssue[] }) {
       richCellExtensions={[referenceDetailExtension]}
       rowHeight={REFERENCE_ROW_HEIGHT}
       sortableColumns={healthColumns.map((column) => column.id!)}
-      emptyState="No missing references"
+      empty="No missing references"
     />
   );
 }

@@ -17,7 +17,7 @@ import PanelToolbar, {
 } from "../../../components/ui/panel-toolbar";
 import { SegmentedControl } from "../../../components/ui/segmented-control";
 import { ToggleToolbarButton } from "../../../components/ui/toolbar-button";
-import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
+import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
 import type { GridColumn } from "../../../lib/data-grid-types";
 import type { DisplayMode } from "../model/cue-editor-model";
 

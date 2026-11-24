@@ -28,7 +28,7 @@ import {
   ToolbarButton,
 } from "../components/ui/toolbar-button";
 import { Button } from "../components/ui/visual-language/button";
-import DataGridToolbar from "../components/widgets/data-grid/extensions/data-grid-toolbar";
+import DataGridToolbar from "../components/widgets/data-grid-extensions/data-grid-toolbar";
 import "./toolbar-demo.css";
 
 const toolModes = [

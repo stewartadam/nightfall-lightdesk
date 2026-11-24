@@ -14,8 +14,8 @@ import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
-import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
+import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
+import DataGridFilterMenu from "../../../components/widgets/data-grid-extensions/data-grid-filter-menu";
 import { Mappable } from "../../io";
 import { programmerClearControl } from "../model/control-actions";
 

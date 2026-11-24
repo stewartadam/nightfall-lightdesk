@@ -13,11 +13,11 @@ import type {
   GridColumn,
 } from "../../../../lib/data-grid-types";
 import { GridCellKind } from "../../../../lib/data-grid-types";
-import { dataGridDarkTheme } from "../../../../lib/datagrid";
 import {
   dropdownDisplayValue,
   isDropdownCell,
 } from "../../../../lib/tanstack-dropdown-cell";
+import { dataGridDarkTheme } from "../theme";
 import {
   type KeyedDataGridCellProvider,
   keyedDataGridCellContent,

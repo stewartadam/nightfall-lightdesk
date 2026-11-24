@@ -11,9 +11,8 @@ import type { GridCell, Item } from "../../../lib/data-grid-types";
 import { GridCellKind } from "../../../lib/data-grid-types";
 import { createEffect } from "../../../lib/solid-compat";
 import {
+  canEditCellAsText,
   canEditDropdownCell,
-  canEditTextCell,
-  canEditTimeCell,
   cellDisplayValue,
 } from "./model/cell-utils";
 import {
@@ -51,14 +50,13 @@ export function createDataGridEditingController(
 ) {
   const [editingCell, setEditingCell] = createSignal<EditingCell>();
 
-  /** Starts editing for built-in cells or a registered rich-cell extension. */
+  /**
+   * Starts editing a cell. A matching editable rich-cell extension wins over
+   * the built-in dropdown and text editors, so owners can replace them.
+   */
   const beginEdit = (col: number, row: number, initialValue?: string) => {
     if (options.props.readOnly) return;
     const cell = options.getCellContent()([col, row]);
-    if (canEditDropdownCell(cell)) {
-      setEditingCell({ col, row, sourceCell: cell, kind: "dropdown" });
-      return;
-    }
     const richCellExtension = editableRichCellExtension(
       options.props.richCellExtensions,
       cell,
@@ -73,7 +71,11 @@ export function createDataGridEditingController(
       });
       return;
     }
-    if (!canEditTextCell(cell) && !canEditTimeCell(cell)) return;
+    if (canEditDropdownCell(cell)) {
+      setEditingCell({ col, row, sourceCell: cell, kind: "dropdown" });
+      return;
+    }
+    if (!canEditCellAsText(cell, options.props)) return;
     const kind =
       cell.kind === GridCellKind.Number
         ? GridCellKind.Number
@@ -131,9 +133,9 @@ export function createDataGridEditingController(
       value: editing.value,
       dirty: editing.dirty,
       commitMode: mode,
-      shouldCommitUnparsedTimeInput:
-        options.props.shouldCommitUnparsedTimeInput,
+      shouldCommitUnparsedInput: options.props.shouldCommitUnparsedInput,
       getCellContent: options.getCellContent(),
+      editors: options.props,
     });
     setEditingCell(undefined);
     options.dispatchSelection({

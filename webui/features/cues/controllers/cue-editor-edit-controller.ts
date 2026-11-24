@@ -11,7 +11,7 @@ import {
   type DataGridCellEdit,
   type DataGridEditCommitContext,
   selectedClipboardCells,
-} from "../../../components/widgets/data-grid";
+} from "../../../components/widgets/nightfall-data-grid";
 import { editGroupedInstructionValue } from "../../../lib/cue-instruction-edit";
 import {
   deleteInstructionAttributeTiming,

@@ -15,7 +15,7 @@ import { Button } from "../components/ui/visual-language/button";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
-} from "../components/widgets/data-grid";
+} from "../components/widgets/nightfall-data-grid";
 import {
   CompactSelection,
   type GridCell,

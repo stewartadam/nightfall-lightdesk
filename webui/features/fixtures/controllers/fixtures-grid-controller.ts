@@ -15,7 +15,7 @@ import {
   openContextMenu,
 } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
-import type { DataGridScrollRequest } from "../../../components/widgets/data-grid";
+import type { DataGridScrollRequest } from "../../../components/widgets/nightfall-data-grid";
 import type {
   CellClickedEventArgs,
   GridSelection,

@@ -10,7 +10,7 @@ import { CaretDoubleDownIcon } from "@squidlab/phosphor-solid/caret-double-down"
 import { CaretDoubleUpIcon } from "@squidlab/phosphor-solid/caret-double-up";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
+import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
 import type { GridColumn } from "../../../lib/data-grid-types";
 
 interface LayerPanelToolbarProps {

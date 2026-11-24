@@ -13,16 +13,16 @@ import type {
 } from "../../../../lib/data-grid-types";
 import { CompactSelection } from "../../../../lib/data-grid-types";
 import {
-  canEditTextCell,
-  canEditTimeCell,
+  canEditCellAsText,
   cellDisplayValue,
+  customCellTextEditor,
   makeEditedCell,
   makePastedCell,
 } from "./cell-utils";
 import type {
   DataGridCellEdit,
+  DataGridCellEditors,
   DataGridEditCommitMode,
-  DataGridRichCellExtension,
 } from "./types";
 
 interface ClipboardBounds {
@@ -39,7 +39,7 @@ interface PasteEditOptions {
   columnCount: number;
   text: string;
   getCellContent: (cell: Item) => GridCell;
-  richCellExtensions?: readonly DataGridRichCellExtension[];
+  editors?: DataGridCellEditors;
 }
 
 interface InlineEditCommitOptions {
@@ -50,8 +50,9 @@ interface InlineEditCommitOptions {
   value: string;
   dirty: boolean;
   commitMode?: DataGridEditCommitMode;
-  shouldCommitUnparsedTimeInput?: (value: string, cell: GridCell) => boolean;
+  shouldCommitUnparsedInput?: (value: string, cell: GridCell) => boolean;
   getCellContent: (cell: Item) => GridCell;
+  editors?: DataGridCellEditors;
 }
 
 interface DiscreteEditCommitOptions {
@@ -243,11 +244,7 @@ export function clipboardEditsForPaste(
     }
 
     const original = options.getCellContent(cell);
-    const newValue = makePastedCell(
-      original,
-      value,
-      options.richCellExtensions,
-    );
+    const newValue = makePastedCell(original, value, options.editors);
     if (!newValue || newValue === original) continue;
     edits.push({ cell, newValue });
   }
@@ -327,13 +324,13 @@ export function inlineEditEditsForSelection(
 
   return targets.flatMap((cell) => {
     const original = options.getCellContent(cell);
-    if (!canEditTextCell(original) && !canEditTimeCell(original)) return [];
+    if (!canEditCellAsText(original, options.editors)) return [];
     if (options.value === cellDisplayValue(original)) return [];
-    const newValue = makeEditedCell(original, options.value);
+    const newValue = makeEditedCell(original, options.value, options.editors);
     if (
       newValue === original &&
-      (!canEditTimeCell(original) ||
-        !options.shouldCommitUnparsedTimeInput?.(options.value, original))
+      (!customCellTextEditor(original, options.editors) ||
+        !options.shouldCommitUnparsedInput?.(options.value, original))
     ) {
       return [];
     }

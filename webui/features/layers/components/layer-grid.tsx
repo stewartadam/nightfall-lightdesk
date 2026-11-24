@@ -9,7 +9,7 @@
 import { Show } from "solid-js";
 import DataGrid, {
   type DataGridProps,
-} from "../../../components/widgets/data-grid";
+} from "../../../components/widgets/nightfall-data-grid";
 import type { GridColumn, GridSelection } from "../../../lib/data-grid-types";
 import { ATTRIBUTE_VALUE_NESTED_COLUMN_GROUPS } from "../../../lib/datagrid";
 import { richColorSwatchCellRenderer } from "../../../lib/datagrid-rich-cells";
@@ -23,7 +23,7 @@ interface LayerGridProps {
   onCellClicked: NonNullable<DataGridProps["onCellClicked"]>;
   onCellContextMenu: NonNullable<DataGridProps["onCellContextMenu"]>;
   panelId: string;
-  performanceProbes: Record<string, unknown>;
+  metricProbes: Record<string, unknown>;
   rows: number;
 }
 
@@ -46,7 +46,7 @@ export function LayerGrid(props: LayerGridProps) {
           height="100%"
           nestedColumnGroups={ATTRIBUTE_VALUE_NESTED_COLUMN_GROUPS}
           performanceScope={`layers.${props.panelId}.${props.layerIndex}`}
-          performanceProbes={props.performanceProbes}
+          metricProbes={props.metricProbes}
         />
       </Show>
     </div>

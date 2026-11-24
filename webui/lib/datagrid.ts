@@ -26,45 +26,6 @@ import {
 import { normalizeAttributeName } from "./utils";
 import type { LayerState } from "./ws/types";
 
-export const dataGridDarkTheme = {
-  accentColor: "#8c96ff",
-  accentLight: "rgba(202, 206, 255, 0.253)",
-
-  textDark: "#ffffff",
-  textMedium: "#b8b8b8",
-  textLight: "#a0a0a0",
-  textBubble: "#ffffff",
-
-  bgIconHeader: "#b8b8b8",
-  fgIconHeader: "#000000",
-  textHeader: "#a1a1a1",
-  textHeaderSelected: "#000000",
-  textGroupHeader: "#a1a1a1",
-
-  bgCell: "#16161b",
-  bgCellMedium: "#202027",
-  bgHeader: "#212121",
-  bgHeaderHasFocus: "#474747",
-  bgHeaderHovered: "#404040",
-
-  bgBubble: "#212121",
-  bgBubbleSelected: "#000000",
-
-  bgSearchResult: "#423c24",
-
-  borderColor: "rgba(225,225,225,0.2)",
-  drilldownBorder: "rgba(225,225,225,0.4)",
-
-  linkColor: "#4F5DFF",
-
-  headerFontStyle: "bold 14px",
-  baseFontStyle: "13px",
-  // Matches --font-sans in styles/theme.css, so canvas-measured column widths fit the DOM text.
-  fontFamily: `Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`,
-  cellHorizontalPadding: 8,
-  checkboxMaxSize: 18,
-};
-
 export const FIXTURE_VALUE_TEXT_COLORS = {
   aggregate: "#FFFFFF",
   blueprint: "#6EE7B7",

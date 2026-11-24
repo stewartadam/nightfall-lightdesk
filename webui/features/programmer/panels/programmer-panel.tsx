@@ -8,12 +8,12 @@
 
 import { createMemo, createSignal, Show } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
+import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
   type DataGridEditCommitContext,
-} from "../../../components/widgets/data-grid";
-import { createDataGridFilterState } from "../../../components/widgets/data-grid/extensions/model/data-grid-filter-state";
+} from "../../../components/widgets/nightfall-data-grid";
 import type {
   GridCell,
   GridColumn,

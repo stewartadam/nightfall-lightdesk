@@ -10,16 +10,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { type GridCell, GridCellKind } from "../../../../lib/data-grid-types";
 import {
-  isRichTimeCell,
-  makeTimeCell,
-} from "../../../../lib/datagrid-rich-cells";
-import {
   canUseCellEditor,
   makeDeletedCell,
   makeEditedCell,
   makePastedCell,
 } from "./cell-utils";
-import type { DataGridRichCellExtension } from "./types";
+import {
+  secondsEditors as editors,
+  secondsCell,
+  secondsCellValue,
+  secondsRenderer,
+} from "./seconds-cell.test-fixture";
+import type { DataGridCellEditors, DataGridRichCellExtension } from "./types";
 
 /** Read-only cells remain immutable even when a provider advertises edit overlays or a rich editor. */
 test("readonly overrides built-in and rich-cell edit capabilities", () => {
@@ -44,11 +46,25 @@ test("readonly overrides built-in and rich-cell edit capabilities", () => {
     },
   ];
   for (const source of cells) {
-    assert.equal(canUseCellEditor(source, [extension]), true);
+    assert.equal(
+      canUseCellEditor(source, { richCellExtensions: [extension] }),
+      true,
+    );
     const cell = { ...source, readonly: true };
-    assert.equal(canUseCellEditor(cell, [extension]), false);
-    assert.equal(makeDeletedCell(cell, [extension]), undefined);
-    assert.equal(makePastedCell(cell, "Replacement", [extension]), undefined);
+    assert.equal(
+      canUseCellEditor(cell, { richCellExtensions: [extension] }),
+      false,
+    );
+    assert.equal(
+      makeDeletedCell(cell, { richCellExtensions: [extension] }),
+      undefined,
+    );
+    assert.equal(
+      makePastedCell(cell, "Replacement", {
+        richCellExtensions: [extension],
+      }),
+      undefined,
+    );
   }
 });
 
@@ -86,82 +102,75 @@ test("makeDeletedCell clears editable text to an empty string", () => {
   });
 });
 
-/** Verifies Delete uses rich time cell clear state when the cell allows clearing. */
-test("makeDeletedCell marks clearable time cells as cleared", () => {
-  const original: GridCell = makeTimeCell({
-    value: { secs: 3, nanos: 0 },
-    clearable: true,
-  });
+/** Verifies custom cells edit through the text editor their renderer provides. */
+test("makeEditedCell parses text through the matching renderer's text editor", () => {
+  const original = secondsCell(3);
 
-  const deleted = makeDeletedCell(original);
+  const edited = makeEditedCell(original, "5s", editors);
 
-  if (
-    !deleted ||
-    deleted.kind !== GridCellKind.Custom ||
-    !isRichTimeCell(deleted)
-  ) {
-    assert.fail("Expected Delete to create a rich time cell");
-  }
-  assert.equal(deleted.data.cleared, true);
-  assert.equal(deleted.copyData, "");
+  assert.notEqual(edited, original);
+  assert.equal(secondsCellValue(edited), 5);
+  assert.equal(edited.copyData, "5s");
 });
 
-/** Verifies zero reciprocal unit edits keep explicit zero timings intact. */
-test("makeEditedCell preserves clearable zero bpm and hertz time cells", () => {
-  const bpmOriginal: GridCell = makeTimeCell({
-    value: { secs: 0, nanos: 0 },
-    clearable: true,
-    displayUnit: "bpm",
-  });
-  const hzOriginal: GridCell = makeTimeCell({
-    value: { secs: 0, nanos: 0 },
-    clearable: true,
-    displayUnit: "hertz",
-  });
+/** Verifies text a custom text editor cannot parse leaves the cell unchanged. */
+test("makeEditedCell keeps custom cells whose text does not parse", () => {
+  const original = secondsCell(3);
 
-  const bpmEdited = makeEditedCell(bpmOriginal, "0bpm");
-  const hzEdited = makeEditedCell(hzOriginal, "0hz");
-
-  if (
-    bpmEdited.kind !== GridCellKind.Custom ||
-    hzEdited.kind !== GridCellKind.Custom ||
-    !isRichTimeCell(bpmEdited) ||
-    !isRichTimeCell(hzEdited)
-  ) {
-    assert.fail("Expected edited cells to remain rich time cells");
-  }
-  assert.equal(bpmEdited.data.cleared, false);
-  assert.equal(bpmEdited.data.value.secs, 0);
-  assert.equal(bpmEdited.copyData, "0bpm");
-  assert.equal(hzEdited.data.cleared, false);
-  assert.equal(hzEdited.data.value.secs, 0);
-  assert.equal(hzEdited.copyData, "0hz");
+  assert.equal(makeEditedCell(original, "soon", editors), original);
 });
 
-/** Verifies invalid non-empty timing edits do not clear existing timing cells. */
-test("makeEditedCell ignores invalid clearable time text", () => {
-  const original: GridCell = makeTimeCell({
-    value: { secs: 3, nanos: 0 },
-    clearable: true,
-  });
+/** Verifies custom cells only become text-editable when a renderer provides a text editor. */
+test("custom cells without a text editor do not open the inline editor", () => {
+  const original = secondsCell(3);
 
-  assert.equal(makeEditedCell(original, "not-a-duration"), original);
+  assert.equal(canUseCellEditor(original), false);
+  assert.equal(canUseCellEditor(original, editors), true);
+  assert.equal(
+    canUseCellEditor({ ...original, readonly: true }, editors),
+    false,
+  );
+  assert.equal(makeEditedCell(original, "5s"), original);
 });
 
-/** Verifies blank timing edits still clear cells that allow clearing. */
-test("makeEditedCell clears blank clearable time text", () => {
-  const original: GridCell = makeTimeCell({
-    value: { secs: 3, nanos: 0 },
-    clearable: true,
-  });
+/** Verifies Delete and paste on custom cells go through the renderer's text editor. */
+test("makeDeletedCell and makePastedCell use the custom text editor", () => {
+  const deleted = makeDeletedCell(secondsCell(3), editors);
+  assert.equal(secondsCellValue(deleted), undefined);
 
-  const edited = makeEditedCell(original, "   ");
+  const pasted = makePastedCell(secondsCell(3), "7s", editors);
+  assert.equal(secondsCellValue(pasted), 7);
 
-  if (edited.kind !== GridCellKind.Custom || !isRichTimeCell(edited)) {
-    assert.fail("Expected edited cell to remain a rich time cell");
-  }
-  assert.equal(edited.data.cleared, true);
-  assert.equal(edited.copyData, "");
+  const withoutDelete: DataGridCellEditors = {
+    customRenderers: [
+      { ...secondsRenderer, textEditor: { makeEditedCell: (cell) => cell } },
+    ],
+  };
+  assert.equal(makeDeletedCell(secondsCell(3), withoutDelete), undefined);
+});
+
+/** Verifies an editable rich-cell extension wins over a renderer's text editor for every edit path. */
+test("rich-cell extensions take precedence over custom text editors", () => {
+  const extension: DataGridRichCellExtension = {
+    id: "seconds-picker",
+    matches: (cell) => cell.kind === GridCellKind.Custom,
+    isEditable: () => true,
+    render: () => "display",
+    renderEditor: () => "editor",
+    makeDeletedCell: (cell) => ({ ...cell, copyData: "rich-deleted" }),
+    makePastedCell: (cell) => ({ ...cell, copyData: "rich-pasted" }),
+  };
+  const both: DataGridCellEditors = {
+    ...editors,
+    richCellExtensions: [extension],
+  };
+
+  assert.equal(makeDeletedCell(secondsCell(3), both)?.copyData, "rich-deleted");
+  assert.equal(
+    makePastedCell(secondsCell(3), "7s", both)?.copyData,
+    "rich-pasted",
+  );
+  assert.equal(makeEditedCell(secondsCell(3), "7s", both).copyData, "3s");
 });
 
 /** Verifies Delete leaves readonly cells untouched. */

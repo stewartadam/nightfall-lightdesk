@@ -393,11 +393,7 @@ export function BodyCell(props: BodyCellProps) {
       data-grid-row-key={
         props.rowKey() === undefined ? undefined : String(props.rowKey())
       }
-      data-editable={
-        canUseCellEditor(gridCell(), props.richCellExtensions)
-          ? "true"
-          : "false"
-      }
+      data-editable={canUseCellEditor(gridCell(), props) ? "true" : "false"}
       data-kind={gridCell().kind}
       aria-selected={isActiveCell() ? "true" : "false"}
       data-selected={isSelectedCellOrRange() ? "true" : "false"}

@@ -8,7 +8,7 @@
 
 import type { Accessor } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
-import type { DataGridCellEdit } from "../../../components/widgets/data-grid";
+import type { DataGridCellEdit } from "../../../components/widgets/nightfall-data-grid";
 import type {
   GridCell,
   GridColumn,

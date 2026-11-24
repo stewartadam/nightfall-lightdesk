@@ -11,7 +11,7 @@ import { Collapsible } from "../../../components/ui/collapsible";
 import { Button } from "../../../components/ui/visual-language/button";
 import DataGrid, {
   createKeyedDataGridCellProvider,
-} from "../../../components/widgets/data-grid";
+} from "../../../components/widgets/nightfall-data-grid";
 import {
   type GridCell,
   GridCellKind,

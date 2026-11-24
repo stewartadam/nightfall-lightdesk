@@ -14,7 +14,7 @@ import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridRichCellExtension,
   type DataGridSelectionMode,
-} from "../components/widgets/data-grid";
+} from "../components/widgets/nightfall-data-grid";
 import {
   CompactSelection,
   type GridCell,

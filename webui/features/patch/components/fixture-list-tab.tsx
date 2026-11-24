@@ -11,15 +11,15 @@ import { createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { usePanelCapabilityRegistry } from "../../../components/providers/panel-capabilities/context-core";
+import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
+import DataGridFilterMenu from "../../../components/widgets/data-grid-extensions/data-grid-filter-menu";
+import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
   type DataGridEditCommitContext,
   type DataGridScrollRequest,
-} from "../../../components/widgets/data-grid";
-import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
-import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
-import { createDataGridFilterState } from "../../../components/widgets/data-grid/extensions/model/data-grid-filter-state";
+} from "../../../components/widgets/nightfall-data-grid";
 import { PROGRAMMER_SELECTION_ID_TEXT_COLOR } from "../../../lib/constants";
 import type {
   CellClickedEventArgs,

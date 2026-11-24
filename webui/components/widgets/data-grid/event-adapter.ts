@@ -15,8 +15,13 @@ export const ARROW_KEY_DELTAS: Record<string, readonly [number, number]> = {
   ArrowRight: [1, 0],
 };
 
-/** Returns whether a key press can seed text editing for the active cell. */
-export function isPrintableEditKey(event: KeyboardEvent): boolean {
+/**
+ * Returns whether a key press is text an editable cell should own: it can seed
+ * editing for the active cell, and an open editor keeps it from grid shortcuts.
+ */
+export function isPrintableEditKey(
+  event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey">,
+): boolean {
   return (
     event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey
   );

@@ -11,7 +11,7 @@ import {
   createKeyedDataGridCellProvider,
   type DataGridCellDecorationCallback,
   drawActiveCuePlayIcon,
-} from "../../../components/widgets/data-grid";
+} from "../../../components/widgets/nightfall-data-grid";
 import type { GridCell, GridColumn } from "../../../lib/data-grid-types";
 import { GridCellKind } from "../../../lib/data-grid-types";
 import {

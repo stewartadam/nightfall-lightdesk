@@ -13,6 +13,7 @@ export { drawActiveCuePlayIcon } from "./canvas-decorations";
 export { DropdownCellAffordance } from "./cells/dropdown-cell-affordance";
 export type { DataGridCellKey } from "./model/cell-provider";
 export { createKeyedDataGridCellProvider } from "./model/cell-provider";
+export { canEditDropdownCell } from "./model/cell-utils";
 export { selectedClipboardCells } from "./model/clipboard";
 export {
   activeGridSelectionRow,
@@ -23,6 +24,7 @@ export type {
   DataGridCellEdit,
   DataGridEditCommitContext,
   DataGridEditCommitMode,
+  DataGridMetricSample,
   DataGridProps,
   DataGridRichCellEditorContext,
   DataGridRichCellExtension,

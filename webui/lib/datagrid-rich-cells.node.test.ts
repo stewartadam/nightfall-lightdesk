@@ -15,7 +15,79 @@ import {
   getActionAtPosition,
   parseDurationInput,
 } from "./datagrid-rich-cell-helpers";
-import { makeTimeCell } from "./datagrid-rich-cells";
+import { makeTimeCell, richTimeCellRenderer } from "./datagrid-rich-cells";
+
+const timeTextEditor = richTimeCellRenderer.textEditor!;
+
+/** Verifies Delete marks clearable time cells as cleared instead of zeroing them. */
+test("time text editor clears clearable time cells on Delete", () => {
+  const deleted = timeTextEditor.makeDeletedCell!(
+    makeTimeCell({ value: { secs: 3, nanos: 0 }, clearable: true }),
+  );
+
+  assert.equal(deleted?.data.cleared, true);
+  assert.equal(deleted?.copyData, "");
+});
+
+/** Verifies Delete leaves time cells that do not allow clearing alone. */
+test("time text editor refuses to clear non-clearable time cells", () => {
+  const deleted = timeTextEditor.makeDeletedCell!(
+    makeTimeCell({ value: { secs: 3, nanos: 0 } }),
+  );
+
+  assert.equal(deleted, undefined);
+});
+
+/** Verifies zero reciprocal unit edits keep explicit zero timings intact. */
+test("time text editor preserves zero bpm and hertz edits", () => {
+  const bpmEdited = timeTextEditor.makeEditedCell(
+    makeTimeCell({
+      value: { secs: 0, nanos: 0 },
+      clearable: true,
+      displayUnit: "bpm",
+    }),
+    "0bpm",
+  );
+  const hzEdited = timeTextEditor.makeEditedCell(
+    makeTimeCell({
+      value: { secs: 0, nanos: 0 },
+      clearable: true,
+      displayUnit: "hertz",
+    }),
+    "0hz",
+  );
+
+  assert.equal(bpmEdited.data.cleared, false);
+  assert.equal(bpmEdited.data.value.secs, 0);
+  assert.equal(bpmEdited.copyData, "0bpm");
+  assert.equal(hzEdited.data.cleared, false);
+  assert.equal(hzEdited.data.value.secs, 0);
+  assert.equal(hzEdited.copyData, "0hz");
+});
+
+/** Verifies invalid non-empty timing edits do not clear existing timing cells. */
+test("time text editor ignores invalid clearable time text", () => {
+  const original = makeTimeCell({
+    value: { secs: 3, nanos: 0 },
+    clearable: true,
+  });
+
+  assert.equal(
+    timeTextEditor.makeEditedCell(original, "not-a-duration"),
+    original,
+  );
+});
+
+/** Verifies blank timing edits still clear cells that allow clearing. */
+test("time text editor clears blank clearable time text", () => {
+  const edited = timeTextEditor.makeEditedCell(
+    makeTimeCell({ value: { secs: 3, nanos: 0 }, clearable: true }),
+    "   ",
+  );
+
+  assert.equal(edited.data.cleared, true);
+  assert.equal(edited.copyData, "");
+});
 
 test("time cells include badges in copy data", () => {
   const cell = makeTimeCell({

@@ -20,13 +20,13 @@ import {
   getActiveTableFilterCount,
   hasActiveTableFilters,
   type TableFilterSettings,
-} from "../../../../lib/datagrid-filtering";
-import { CountBadge } from "../../../ui/badge";
-import { DropdownMenu, DropdownMenuSeparator } from "../../../ui/dropdown-menu";
-import { EmptyState } from "../../../ui/empty-state";
-import { ScrollArea } from "../../../ui/scroll-area";
-import { TOOLBAR_BUTTON_CLASS } from "../../../ui/toolbar-button";
-import { Button } from "../../../ui/visual-language/button";
+} from "../../../lib/datagrid-filtering";
+import { CountBadge } from "../../ui/badge";
+import { DropdownMenu, DropdownMenuSeparator } from "../../ui/dropdown-menu";
+import { EmptyState } from "../../ui/empty-state";
+import { ScrollArea } from "../../ui/scroll-area";
+import { TOOLBAR_BUTTON_CLASS } from "../../ui/toolbar-button";
+import { Button } from "../../ui/visual-language/button";
 
 interface DataGridFilterMenuProps {
   columns: readonly DataGridFilterColumnMeta[];

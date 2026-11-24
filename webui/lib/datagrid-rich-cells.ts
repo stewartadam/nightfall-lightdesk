@@ -14,6 +14,7 @@ import {
 import {
   CELL_PADDING,
   formatDurationInputValue,
+  parseDurationInput,
   type RichActionButtonCellData,
   type RichBadgeTag,
   type RichColorSwatchCellData,
@@ -202,9 +203,52 @@ function clampUnit(value: number): number {
   return Math.min(Math.max(value, 0), 1);
 }
 
+/**
+ * Parses typed or pasted timing text into a time cell. Blank text clears a
+ * clearable cell; text that does not parse leaves the cell unchanged.
+ */
+function makeEditedTimeCell(cell: RichTimeCell, value: string): RichTimeCell {
+  const data = cell.data;
+  const parsed = parseDurationInput(value, {
+    minMs: data.minMs,
+    beats: data.displayUnit === "beats",
+  });
+  if (!parsed) {
+    return data.clearable === true && value.trim() === ""
+      ? { ...cell, copyData: "", data: { ...data, cleared: true } }
+      : cell;
+  }
+  const updatedData = {
+    ...data,
+    value: parsed,
+    cleared: false,
+    displayValue: undefined,
+  };
+  return {
+    ...cell,
+    copyData: formatDurationInputValue(
+      updatedData.value,
+      updatedData.displayUnit,
+      updatedData.precision,
+    ),
+    data: updatedData,
+  };
+}
+
+/** Clears a time cell for Delete when it allows clearing. */
+function makeDeletedTimeCell(cell: RichTimeCell): RichTimeCell | undefined {
+  return cell.data.clearable === true
+    ? { ...cell, copyData: "", data: { ...cell.data, cleared: true } }
+    : undefined;
+}
+
 export const richTimeCellRenderer: CustomRenderer<RichTimeCell> = {
   kind: GridCellKind.Custom,
   isMatch: isRichTimeCell,
+  textEditor: {
+    makeEditedCell: makeEditedTimeCell,
+    makeDeletedCell: makeDeletedTimeCell,
+  },
   draw: (args) => {
     const cell = args.cell;
     const fill = clampUnit(cell.data.backgroundFill ?? 0);

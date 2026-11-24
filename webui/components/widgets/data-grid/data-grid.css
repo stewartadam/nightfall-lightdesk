@@ -1,0 +1,52 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/*
+ * Base grid chrome. Colors come from the host's --panel, --line, --raised,
+ * --muted and --accent tokens when it defines them, with dark fallbacks so the
+ * grid still renders on its own.
+ */
+[role="grid"] {
+  background: var(--panel, #191b1d);
+  font-size: 13px;
+}
+[role="gridcell"] {
+  border-bottom-color: #ffffff0c;
+  border-right-color: var(--data-grid-column-border, transparent);
+}
+[role="columnheader"] {
+  border-color: var(--data-grid-column-border, transparent);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted, #a0a7aa);
+}
+[data-grid-kind] > div > .sticky {
+  background: var(--panel, #191b1d);
+}
+[data-grid-kind] input {
+  accent-color: var(--accent, #8c96ff);
+}
+[data-grid-kind] input:not([type="checkbox"]) {
+  min-height: 0;
+  background: transparent;
+  color: #ebeeed;
+  border: 0;
+}
+[data-grid-kind] .sticky:has(> input[type="checkbox"]) {
+  background: var(--panel, #191b1d);
+  border-color: #ffffff0c;
+}
+[data-grid-dropdown-affordance] {
+  min-height: 24px;
+  height: 26px;
+  margin: 0 6px;
+  border: 1px solid var(--line, #34383b);
+  border-radius: var(--nf-corner-radius, 4px);
+  background: var(--raised, #222527);
+  font-size: 12px;
+}

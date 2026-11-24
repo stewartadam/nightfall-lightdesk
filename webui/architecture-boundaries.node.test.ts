@@ -370,6 +370,76 @@ test("component root contains only the five shared horizontal layers", () => {
   );
 });
 
+/** Directory holding the data grid that becomes a standalone package. */
+const DATA_GRID_ROOT = "webui/components/widgets/data-grid";
+
+/** Grid modules that still live in `webui/lib` but belong to the grid package. */
+const DATA_GRID_LIB_MODULES = [
+  "webui/lib/data-grid-types",
+  "webui/lib/tanstack-dropdown-cell",
+];
+
+/** npm packages the grid may import; they become its package dependencies. */
+const DATA_GRID_PACKAGES = new Set([
+  "@squidlab/phosphor-solid",
+  "@tanstack/solid-table",
+  "@tanstack/solid-virtual",
+  "solid-js",
+]);
+
+/** Returns whether a repository path is one of the data grid's own modules. */
+function isDataGridModule(path: string): boolean {
+  return (
+    path === DATA_GRID_ROOT ||
+    path.startsWith(`${DATA_GRID_ROOT}/`) ||
+    DATA_GRID_LIB_MODULES.includes(path)
+  );
+}
+
+/** Returns the npm package name a bare module specifier refers to. */
+function packageName(specifier: string): string {
+  const parts = specifier.split("/");
+  return specifier.startsWith("@")
+    ? parts.slice(0, 2).join("/")
+    : (parts[0] ?? specifier);
+}
+
+/**
+ * Lists every import that would tie the data grid to the app: relative imports
+ * outside the grid's own modules (other than the Solid compatibility shim) and
+ * npm packages outside its declared dependencies. Node builtins are allowed in
+ * tests only.
+ */
+function dataGridImportViolations(): string[] {
+  const gridFiles = [
+    ...collectSourceFiles(resolve(repoRoot, DATA_GRID_ROOT)),
+    ...DATA_GRID_LIB_MODULES.map((module) => resolve(repoRoot, `${module}.ts`)),
+  ];
+  const violations: string[] = [];
+  for (const sourceFile of gridFiles) {
+    const source = repositoryPath(sourceFile);
+    const isTest = /\.(?:node\.)?test\.[jt]sx?$/.test(source);
+    const imports = importedModuleSpecifiers(
+      sourceFile,
+      readFileSync(sourceFile, "utf8"),
+    );
+    for (const specifier of imports) {
+      const target = resolvedImportTarget(sourceFile, specifier);
+      const allowed = target
+        ? isDataGridModule(target) || target === SOLID_COMPAT_MODULE
+        : DATA_GRID_PACKAGES.has(packageName(specifier)) ||
+          (isTest && specifier.startsWith("node:"));
+      if (!allowed) violations.push(`${source} -> ${target ?? specifier}`);
+    }
+  }
+  return violations.sort();
+}
+
+/** Keeps the data grid free of app imports so it can be published as its own package. */
+test("data grid imports only its own modules and declared packages", () => {
+  assert.deepEqual(dataGridImportViolations(), []);
+});
+
 /** Verifies primitives cannot reach application or feature code. */
 test("UI primitives reject upward dependencies", () => {
   assert.equal(

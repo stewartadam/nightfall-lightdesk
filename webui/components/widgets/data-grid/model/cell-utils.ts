@@ -8,16 +8,11 @@
 
 import type {
   CustomCell,
+  CustomCellTextEditor,
   CustomRenderer,
   GridCell,
 } from "../../../../lib/data-grid-types";
 import { GridCellKind } from "../../../../lib/data-grid-types";
-import {
-  formatDurationInputValue,
-  isTimeCellData,
-  parseDurationInput,
-  type RichTimeCellData,
-} from "../../../../lib/datagrid-rich-cell-helpers";
 import {
   type DropdownGridCell,
   dropdownOptions,
@@ -25,7 +20,7 @@ import {
   makeDropdownEditedCell,
 } from "../../../../lib/tanstack-dropdown-cell";
 import { editableRichCellExtension } from "./rich-cell-extension";
-import type { DataGridRichCellExtension } from "./types";
+import type { DataGridCellEditors } from "./types";
 
 /** Converts supported cell kinds into the text shown or copied by the grid. */
 export function cellDisplayValue(cell: GridCell): string {
@@ -67,15 +62,34 @@ export function canEditDropdownCell(cell: GridCell): cell is DropdownGridCell {
   return isDropdownCell(cell) && cell.allowOverlay === true && !cell.readonly;
 }
 
-/** Returns whether a rich time cell can use the inline text editor. */
-export function canEditTimeCell(
+/**
+ * Returns the text editor a custom renderer provides for an editable custom
+ * cell, or undefined when the cell is readonly, has no overlay or no matching
+ * renderer edits it as text. An editable rich-cell extension takes precedence,
+ * matching the editor that opens when editing starts.
+ */
+export function customCellTextEditor(
   cell: GridCell,
-): cell is CustomCell<RichTimeCellData> {
+  editors?: DataGridCellEditors,
+): CustomCellTextEditor | undefined {
+  if (
+    cell.kind !== GridCellKind.Custom ||
+    cell.allowOverlay !== true ||
+    cell.readonly ||
+    editableRichCellExtension(editors?.richCellExtensions, cell) !== undefined
+  ) {
+    return undefined;
+  }
+  return findCustomRenderer(editors?.customRenderers, cell)?.textEditor;
+}
+
+/** Returns whether a cell opens the inline text editor, either as text or through a custom text editor. */
+export function canEditCellAsText(
+  cell: GridCell,
+  editors?: DataGridCellEditors,
+): boolean {
   return (
-    cell.kind === GridCellKind.Custom &&
-    isTimeCellData(cell.data as Record<string, unknown>) &&
-    cell.allowOverlay === true &&
-    !cell.readonly
+    canEditTextCell(cell) || customCellTextEditor(cell, editors) !== undefined
   );
 }
 
@@ -92,52 +106,28 @@ export function canEditBooleanCell(cell: GridCell): boolean {
 /** Returns whether the grid should expose an editor for the cell. */
 export function canUseCellEditor(
   cell: GridCell,
-  richCellExtensions?: readonly DataGridRichCellExtension[],
+  editors?: DataGridCellEditors,
 ): boolean {
   return (
-    canEditTextCell(cell) ||
+    canEditCellAsText(cell, editors) ||
     canEditBooleanCell(cell) ||
     canEditDropdownCell(cell) ||
-    editableRichCellExtension(richCellExtensions, cell) !== undefined ||
-    canEditTimeCell(cell)
+    editableRichCellExtension(editors?.richCellExtensions, cell) !== undefined
   );
 }
 
-/** Creates an edited text or number cell while preserving unsupported cell kinds. */
-export function makeEditedCell(original: GridCell, value: string): GridCell {
-  if (canEditTimeCell(original)) {
-    const data = original.data;
-    const parsed = parseDurationInput(value, {
-      minMs: data.minMs,
-      beats: data.displayUnit === "beats",
-    });
-    if (!parsed) {
-      return data.clearable === true && value.trim() === ""
-        ? {
-            ...original,
-            copyData: "",
-            data: {
-              ...data,
-              cleared: true,
-            },
-          }
-        : original;
-    }
-    const updatedData = {
-      ...data,
-      value: parsed,
-      cleared: false,
-      displayValue: undefined,
-    };
-    return {
-      ...original,
-      copyData: formatDurationInputValue(
-        updatedData.value,
-        updatedData.displayUnit,
-        updatedData.precision,
-      ),
-      data: updatedData,
-    };
+/**
+ * Creates the cell produced by committing inline-editor text. Custom cells go
+ * through their renderer's text editor; unsupported cells come back unchanged.
+ */
+export function makeEditedCell(
+  original: GridCell,
+  value: string,
+  editors?: DataGridCellEditors,
+): GridCell {
+  const textEditor = customCellTextEditor(original, editors);
+  if (textEditor && original.kind === GridCellKind.Custom) {
+    return textEditor.makeEditedCell(original, value);
   }
 
   if (original.kind === GridCellKind.Number) {
@@ -163,21 +153,21 @@ export function makeEditedCell(original: GridCell, value: string): GridCell {
 /** Creates the empty/default cell value used by Delete for editable cells. */
 export function makeDeletedCell(
   original: GridCell,
-  richCellExtensions?: readonly DataGridRichCellExtension[],
+  editors?: DataGridCellEditors,
 ): GridCell | undefined {
   if (isReadonlyCell(original)) return undefined;
 
-  if (canEditTimeCell(original)) {
-    return original.data.clearable === true
-      ? {
-          ...original,
-          copyData: "",
-          data: {
-            ...original.data,
-            cleared: true,
-          },
-        }
-      : undefined;
+  const richCellExtension = editableRichCellExtension(
+    editors?.richCellExtensions,
+    original,
+  );
+  if (richCellExtension?.makeDeletedCell) {
+    return richCellExtension.makeDeletedCell(original);
+  }
+
+  const textEditor = customCellTextEditor(original, editors);
+  if (textEditor && original.kind === GridCellKind.Custom) {
+    return textEditor.makeDeletedCell?.(original);
   }
 
   if (canEditDropdownCell(original)) {
@@ -189,14 +179,6 @@ export function makeDeletedCell(
         value: undefined,
       },
     };
-  }
-
-  const richCellExtension = editableRichCellExtension(
-    richCellExtensions,
-    original,
-  );
-  if (richCellExtension?.makeDeletedCell) {
-    return richCellExtension.makeDeletedCell(original);
   }
 
   if (original.kind === GridCellKind.Number && canEditTextCell(original)) {
@@ -237,12 +219,20 @@ function parseBooleanClipboardValue(value: string): boolean | undefined {
 export function makePastedCell(
   original: GridCell,
   value: string,
-  richCellExtensions?: readonly DataGridRichCellExtension[],
+  editors?: DataGridCellEditors,
 ): GridCell | undefined {
   if (isReadonlyCell(original)) return undefined;
 
-  if (canEditTextCell(original) || canEditTimeCell(original)) {
-    return makeEditedCell(original, value);
+  const richCellExtension = editableRichCellExtension(
+    editors?.richCellExtensions,
+    original,
+  );
+  if (richCellExtension?.makePastedCell) {
+    return richCellExtension.makePastedCell(original, value);
+  }
+
+  if (canEditCellAsText(original, editors)) {
+    return makeEditedCell(original, value, editors);
   }
 
   if (original.kind === GridCellKind.Boolean) {
@@ -258,14 +248,6 @@ export function makePastedCell(
     return selected
       ? makeDropdownEditedCell(original, selected.key)
       : undefined;
-  }
-
-  const richCellExtension = editableRichCellExtension(
-    richCellExtensions,
-    original,
-  );
-  if (richCellExtension?.makePastedCell) {
-    return richCellExtension.makePastedCell(original, value);
   }
 
   return undefined;

@@ -13,7 +13,7 @@ import {
   loadTableFilters,
   saveTableFilters,
   type TableFilterSettings,
-} from "../../../../../lib/datagrid-filtering";
+} from "../../../../lib/datagrid-filtering";
 
 interface DataGridFilterStateParams<T> {
   scope: string;

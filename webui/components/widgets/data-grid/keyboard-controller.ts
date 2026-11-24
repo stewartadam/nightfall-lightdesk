@@ -26,9 +26,8 @@ import {
 } from "./event-adapter";
 import {
   canEditBooleanCell,
+  canEditCellAsText,
   canEditDropdownCell,
-  canEditTextCell,
-  canEditTimeCell,
   cellDisplayValue,
   makeDeletedCell,
 } from "./model/cell-utils";
@@ -420,7 +419,7 @@ export function createDataGridKeyboardController(
       .map((cell) => {
         const newValue = makeDeletedCell(
           options.getCellContent()(cell),
-          options.props.richCellExtensions,
+          options.props,
         );
         return newValue ? { cell, newValue } : undefined;
       })
@@ -440,7 +439,7 @@ export function createDataGridKeyboardController(
   /** Returns whether a body cell can host the inline text editor. */
   const canEditCellAt = (cell: Item): boolean => {
     const content = options.getCellContent()(cell);
-    return canEditTextCell(content) || canEditTimeCell(content);
+    return canEditCellAsText(content, options.props);
   };
 
   /** Returns the first body cell available for selected-column editing. */
@@ -543,7 +542,7 @@ export function createDataGridKeyboardController(
       }
       if (isPrintableEditKey(event)) {
         const cell = options.getCellContent()(editAnchor.cell);
-        if (canEditTextCell(cell) || canEditTimeCell(cell)) {
+        if (canEditCellAsText(cell, options.props)) {
           event.preventDefault();
           event.stopPropagation();
           beginColumnSelectionEdit(editAnchor, event.key);
@@ -606,7 +605,7 @@ export function createDataGridKeyboardController(
     if (!isPrintableEditKey(event)) return;
 
     const cell = options.getCellContent()(active);
-    if (canEditTextCell(cell) || canEditTimeCell(cell)) {
+    if (canEditCellAsText(cell, options.props)) {
       event.preventDefault();
       event.stopPropagation();
       beginEdit(active[0], active[1], event.key);
@@ -651,7 +650,7 @@ export function createDataGridKeyboardController(
       columnCount: options.columns().length,
       text,
       getCellContent: options.getCellContent(),
-      richCellExtensions: options.props.richCellExtensions,
+      editors: options.props,
     });
     if (edits.length === 0) return;
     event.preventDefault();

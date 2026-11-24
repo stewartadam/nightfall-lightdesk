@@ -11,7 +11,7 @@ import { Collapsible } from "../../../components/ui/collapsible";
 import { Table, TableScroll } from "../../../components/ui/table";
 import DataGrid, {
   createKeyedDataGridCellProvider,
-} from "../../../components/widgets/data-grid";
+} from "../../../components/widgets/nightfall-data-grid";
 import {
   type GridCell,
   GridCellKind,
