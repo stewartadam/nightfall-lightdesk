@@ -7,6 +7,7 @@
  */
 
 import type { ReelDefinition } from "../shared/edit";
+import { gdtfShareReel } from "./gdtf-share/edit";
 
 /** Every promo reel the renderer can cut, one per folder under `reels/`. */
-export const REELS: ReelDefinition[] = [];
+export const REELS: ReelDefinition[] = [gdtfShareReel];
