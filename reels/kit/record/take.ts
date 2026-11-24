@@ -60,6 +60,7 @@ export async function openDemo(page: Page, baseURL: string | undefined) {
   );
   await waitForDockviewApp(page);
   await hideDiagnostics(page);
+  await disableTransitions(page);
 }
 
 /**
@@ -71,6 +72,18 @@ async function hideDiagnostics(page: Page): Promise<void> {
     content: `div:has(> .fps-label),
       [data-testid="status-build-name"],
       [data-testid="status-build-separator"] { display: none !important; }`,
+  });
+}
+
+/**
+ * Turns off CSS transitions, so state changes such as a board button lighting
+ * up land in a single frame. While the page animates a transition alongside
+ * the visualizer's canvas, Chrome's screencast stops delivering frames, so an
+ * 80 ms button fade froze the take for 133 ms after every press.
+ */
+async function disableTransitions(page: Page): Promise<void> {
+  await page.addStyleTag({
+    content: `*, *::before, *::after { transition: none !important; }`,
   });
 }
 
@@ -102,6 +115,7 @@ export async function openDesktop(
   await page.goto(`/?e2e=1&startup:draftRecovery=false${qualityParam()}`);
   await waitForDockviewApp(page);
   await hideDiagnostics(page);
+  await disableTransitions(page);
   await clearShow(page);
 }
 
