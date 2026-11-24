@@ -34,7 +34,7 @@ bumpalo = { version = "3.20.4", features = ["allocator-api2"] }
 bytemuck = { version = "1.25.2", default-features = false, features = ["aarch64_simd", "derive", "extern_crate_alloc", "wasm_simd"] }
 byteorder = { version = "1.5.0" }
 concurrent-queue = { version = "2.5.0" }
-cranelift-bitset = { version = "0.137.2", default-features = false, features = ["enable-serde"] }
+cranelift-bitset = { version = "0.138.0", default-features = false, features = ["enable-serde"] }
 crc32fast = { version = "1.5.5" }
 crossbeam-channel = { version = "0.5.17" }
 crossbeam-utils = { version = "0.8.23" }
@@ -48,7 +48,7 @@ fastrand = { version = "2.5.0" }
 flate2 = { version = "1.1.11", features = ["zlib-rs"] }
 fnv = { version = "1.0.7" }
 foldhash = { version = "0.2.0" }
-form_urlencoded = { version = "1.2.2" }
+form_urlencoded = { version = "1.2.3" }
 futures-core = { version = "0.3.34" }
 futures-sink = { version = "0.3.34" }
 futures-util = { version = "0.3.34", features = ["sink"] }
@@ -64,7 +64,7 @@ once_cell = { version = "1.21.4" }
 percent-encoding = { version = "2.3.2" }
 phf_shared = { version = "0.13.1" }
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
-pulley-interpreter = { version = "50.0.2", default-features = false, features = ["disas", "interp", "std"] }
+pulley-interpreter = { version = "51.0.0", default-features = false, features = ["disas", "interp", "std"] }
 quick-xml = { version = "0.42.0", features = ["overlapped-lists", "serialize"] }
 rand = { version = "0.10.4" }
 regex = { version = "1.13.2" }
@@ -77,7 +77,7 @@ semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1.0.229", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1.0.229", features = ["alloc", "rc"] }
 serde_json = { version = "1.0.154", features = ["preserve_order", "raw_value", "unbounded_depth"] }
-serde_with = { version = "3.24.0", features = ["json"] }
+serde_with = { version = "3.25.0", features = ["json"] }
 simd-adler32 = { version = "0.3.10" }
 slab = { version = "0.4.12" }
 smallvec = { version = "1.16.6", default-features = false, features = ["const_new", "serde", "union"] }
@@ -94,11 +94,11 @@ tracing = { version = "0.1.44", features = ["log"] }
 tracing-core = { version = "0.1.36" }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 typenum = { version = "1.20.1", default-features = false, features = ["const-generics"] }
-url = { version = "2.5.8", features = ["serde"] }
+url = { version = "2.5.9", features = ["serde"] }
 uuid = { version = "1.29.3", features = ["js", "serde", "v4", "v5"] }
-wasm-encoder = { version = "0.261.0", features = ["wasmparser"] }
-wasmparser = { version = "0.261.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
-wasmtime-internal-core = { version = "50.0.2", default-features = false, features = ["backtrace", "serde"] }
+wasm-encoder = { version = "0.263.0", features = ["wasmparser"] }
+wasmparser = { version = "0.263.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
+wasmtime-internal-core = { version = "51.0.0", default-features = false, features = ["backtrace", "serde"] }
 web-time = { version = "1.1.0", default-features = false, features = ["serde"] }
 winnow = { version = "1.0.5" }
 zerocopy = { version = "0.8.63", default-features = false, features = ["derive", "simd"] }
@@ -112,7 +112,7 @@ bevy_reflect_derive = { version = "0.20.1", features = ["auto_register_inventory
 bitflags = { version = "2.13.2", default-features = false, features = ["serde", "std"] }
 bumpalo = { version = "3.20.4", features = ["allocator-api2"] }
 byteorder = { version = "1.5.0" }
-cranelift-bitset = { version = "0.137.2", default-features = false, features = ["enable-serde"] }
+cranelift-bitset = { version = "0.138.0", default-features = false, features = ["enable-serde"] }
 crc32fast = { version = "1.5.5" }
 derive_more = { version = "2.1.1", features = ["add", "add_assign", "as_ref", "deref", "deref_mut", "display", "from", "into", "is_variant"] }
 derive_more-impl = { version = "2.1.1", features = ["add", "add_assign", "as_ref", "deref", "deref_mut", "display", "from", "into", "is_variant"] }
@@ -121,7 +121,7 @@ fastrand = { version = "2.5.0" }
 flate2 = { version = "1.1.11", features = ["zlib-rs"] }
 fnv = { version = "1.0.7" }
 foldhash = { version = "0.2.0" }
-form_urlencoded = { version = "1.2.2" }
+form_urlencoded = { version = "1.2.3" }
 hashbrown = { version = "0.17.1", default-features = false, features = ["default-hasher", "serde"] }
 icu_properties = { version = "2.4.0" }
 indexmap = { version = "2.14.2", features = ["serde"] }
@@ -131,7 +131,7 @@ once_cell = { version = "1.21.4" }
 percent-encoding = { version = "2.3.2" }
 phf_shared = { version = "0.13.1" }
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
-pulley-interpreter = { version = "50.0.2", default-features = false, features = ["disas", "interp", "std"] }
+pulley-interpreter = { version = "51.0.0", default-features = false, features = ["disas", "interp", "std"] }
 quick-xml = { version = "0.42.0", features = ["overlapped-lists", "serialize"] }
 regex = { version = "1.13.2" }
 regex-automata = { version = "0.4.19" }
@@ -142,7 +142,7 @@ semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1.0.229", features = ["alloc", "derive", "rc"] }
 serde_core = { version = "1.0.229", features = ["alloc", "rc"] }
 serde_json = { version = "1.0.154", features = ["preserve_order", "raw_value", "unbounded_depth"] }
-serde_with = { version = "3.24.0", features = ["json"] }
+serde_with = { version = "3.25.0", features = ["json"] }
 simd-adler32 = { version = "0.3.10" }
 smallvec = { version = "1.16.6", default-features = false, features = ["const_new", "serde", "union"] }
 stable_deref_trait = { version = "1.2.1" }
@@ -153,11 +153,11 @@ time = { version = "0.3.55", features = ["formatting", "local-offset", "macros",
 toml_datetime = { version = "1.1.3", features = ["serde"] }
 toml_parser = { version = "1.1.5" }
 typenum = { version = "1.20.1", default-features = false, features = ["const-generics"] }
-url = { version = "2.5.8", features = ["serde"] }
+url = { version = "2.5.9", features = ["serde"] }
 uuid = { version = "1.29.3", features = ["js", "serde", "v4", "v5"] }
-wasm-encoder = { version = "0.261.0", features = ["wasmparser"] }
-wasmparser = { version = "0.261.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
-wasmtime-internal-core = { version = "50.0.2", default-features = false, features = ["backtrace", "serde"] }
+wasm-encoder = { version = "0.263.0", features = ["wasmparser"] }
+wasmparser = { version = "0.263.0", default-features = false, features = ["component-model", "features", "hash-collections", "serde", "simd", "std", "validate"] }
+wasmtime-internal-core = { version = "51.0.0", default-features = false, features = ["backtrace", "serde"] }
 web-time = { version = "1.1.0", default-features = false, features = ["serde"] }
 winnow = { version = "1.0.5" }
 zlib-rs = { version = "0.6.8", default-features = false, features = ["std"] }
@@ -182,7 +182,7 @@ zeroize = { version = "1.9.2", features = ["derive"] }
 
 [target.aarch64-apple-darwin.build-dependencies]
 block2 = { version = "0.6.2" }
-cc = { version = "1.11.2", default-features = false, features = ["parallel"] }
+cc = { version = "1.11.3", default-features = false, features = ["parallel"] }
 dispatch2 = { version = "0.3.1" }
 getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
 libc = { version = "0.2.191", features = ["extra_traits"] }
@@ -203,7 +203,7 @@ windows-sys-d4189bed749088b6 = { package = "windows-sys", version = "0.61.2", fe
 zeroize = { version = "1.9.2", features = ["derive"] }
 
 [target.x86_64-pc-windows-msvc.build-dependencies]
-cc = { version = "1.11.2", default-features = false, features = ["parallel"] }
+cc = { version = "1.11.3", default-features = false, features = ["parallel"] }
 getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
 windows-sys-b21d60becc0929df = { package = "windows-sys", version = "0.52.0", features = ["Win32_Devices_Communication", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Registry", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_Shell"] }
 windows-sys-d4189bed749088b6 = { package = "windows-sys", version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_IO", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Devices_Usb", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Media", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock", "Win32_Security_Authorization", "Win32_Security_Credentials", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_Console", "Win32_System_Diagnostics_Debug", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Time", "Win32_System_WindowsProgramming", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }
@@ -228,7 +228,7 @@ tower = { version = "0.5.3", default-features = false, features = ["log", "make"
 zeroize = { version = "1.9.2", features = ["derive"] }
 
 [target.x86_64-unknown-linux-gnu.build-dependencies]
-cc = { version = "1.11.2", default-features = false, features = ["parallel"] }
+cc = { version = "1.11.3", default-features = false, features = ["parallel"] }
 digest-a6292c17cd707f01 = { package = "digest", version = "0.11.3", features = ["alloc", "mac", "oid"] }
 getrandom = { version = "0.4.3", default-features = false, features = ["std", "sys_rng"] }
 libc = { version = "0.2.191", features = ["extra_traits"] }
