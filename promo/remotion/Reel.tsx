@@ -247,7 +247,8 @@ function Caption({ cue }: { cue: CaptionCue }) {
         alignItems: "center",
         justifyContent: cue.placement === "top" ? "flex-start" : "flex-end",
         paddingTop: 230,
-        paddingBottom: 400,
+        // Low in the frame, below the 3D view and the app's panels, just above the status bar.
+        paddingBottom: 150,
       }}
     >
       <div
