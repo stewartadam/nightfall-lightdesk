@@ -575,15 +575,15 @@ pub struct Fixture {
     pub children: ChildList,
 
     #[serde(rename = "Alignments", default)]
-    alignments: Option<IgnoredAny>,
+    alignments: UnmodelledList,
     #[serde(rename = "CustomCommands", default)]
-    custom_commands: Option<IgnoredAny>,
+    custom_commands: UnmodelledList,
     #[serde(rename = "Overwrites", default)]
-    overwrites: Option<IgnoredAny>,
+    overwrites: UnmodelledList,
     #[serde(rename = "Connections", default)]
-    connections: Option<IgnoredAny>,
+    connections: UnmodelledList,
     #[serde(rename = "Mappings", default)]
-    mappings: Option<IgnoredAny>,
+    mappings: UnmodelledList,
     #[serde(rename = "Gobo", default)]
     gobo: Option<IgnoredAny>,
 }
@@ -611,16 +611,34 @@ impl Fixture {
     /// details of, by node name.
     pub fn unmodelled_features(&self) -> Vec<&'static str> {
         [
-            ("Alignments", self.alignments.is_some()),
-            ("CustomCommands", self.custom_commands.is_some()),
-            ("Overwrites", self.overwrites.is_some()),
-            ("Connections", self.connections.is_some()),
-            ("Mappings", self.mappings.is_some()),
+            ("Alignments", self.alignments.has_entries()),
+            ("CustomCommands", self.custom_commands.has_entries()),
+            ("Overwrites", self.overwrites.has_entries()),
+            ("Connections", self.connections.has_entries()),
+            ("Mappings", self.mappings.has_entries()),
             ("Gobo", self.gobo.is_some()),
         ]
         .into_iter()
         .filter_map(|(name, present)| present.then_some(name))
         .collect()
+    }
+}
+
+/// A fixture list node whose entries the scene model does not keep, such as `Mappings`.
+///
+/// Exporters such as Vectorworks write these lists empty on every fixture, so only a
+/// list holding entries counts as a feature the import leaves out.
+#[derive(Debug, Clone, Default, Deserialize)]
+struct UnmodelledList {
+    /// The list's child nodes, skipped unread.
+    #[serde(rename = "$value", default)]
+    entries: Vec<IgnoredAny>,
+}
+
+impl UnmodelledList {
+    /// Returns whether the file wrote at least one entry in this list.
+    fn has_entries(&self) -> bool {
+        !self.entries.is_empty()
     }
 }
 
