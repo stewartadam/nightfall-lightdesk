@@ -64,6 +64,17 @@ const COLUMNS: GridColumn[] = [
   { id: "library", title: "Library", width: 96, minWidth: 80 },
 ];
 
+/**
+ * How much of a download has arrived, from 0 to 100, or null until the first report gives the
+ * file's size.
+ */
+function downloadPercent(
+  progress: GdtfShareDownloadProgress | undefined,
+): number | null {
+  if (!progress?.total) return null;
+  return (progress.received / progress.total) * 100;
+}
+
 /** The engine's GDTF Share account as the browser knows it. */
 type AccountState =
   | { kind: "loading" }
@@ -339,6 +350,18 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
     }
   };
 
+  /**
+   * The install's progress for the Install button. It never moves backwards: a report whose
+   * size is unknown, such as a download that outgrew the listed size, keeps the last value.
+   */
+  const installPercent = createMemo<number | null>((previous) => {
+    const progress = download();
+    if (!progress) return null;
+    const percent = downloadPercent(progress);
+    if (percent === null) return previous;
+    return Math.max(previous ?? 0, percent);
+  }, null);
+
   /** Shown instead of results when the account is missing or could not be read. */
   const accountPrompt = () => {
     const state = account();
@@ -508,8 +531,8 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
                       installing()
                         ? {
                             label: "GDTF Share download progress",
-                            value: download()?.received,
-                            max: download()?.total,
+                            percent: installPercent(),
+                            pending: "pulse",
                             "data-testid": "gdtf-share-download-progress",
                           }
                         : undefined

@@ -35,8 +35,8 @@ export interface ButtonProps
   /** Layout classes for the tooltip trigger wrapper; see `Tooltip`'s `class`. */
   tooltipClass?: string;
   /**
-   * Turns the button into its own progress bar: the accent color fills it from left to right.
-   * Leave out `max` while the total is unknown to show activity instead of an amount.
+   * Turns the button into its own progress bar: the accent color fills it from left to right
+   * as `percent` goes from 0 to 100.
    */
   progress?: ButtonProgress;
   /**
@@ -50,37 +50,53 @@ export interface ButtonProps
 export interface ButtonProgress {
   /** Accessible name of the progress bar, such as "Download progress". */
   label: string;
-  value?: number;
-  max?: number | null;
+  /** Completion from 0 to 100, or null before the first progress report arrives. */
+  percent: number | null;
+  /**
+   * How the button looks before the first report: "empty" shows no fill, as if at 0%, and
+   * "pulse" pulses the whole button to show the work has started. Defaults to "empty".
+   */
+  pending?: "empty" | "pulse";
   "data-testid"?: string;
 }
 
-/** Fill width as a percentage, or undefined while the total is unknown. */
-function progressPercent(progress: ButtonProgress): number | undefined {
-  if (!progress.max || progress.max <= 0) return undefined;
-  return Math.min(
-    100,
-    Math.max(0, ((progress.value ?? 0) / progress.max) * 100),
-  );
-}
-
-/** The accent fill drawn behind a button's label, exposed as a progress bar. */
+/**
+ * The accent fill drawn behind a button's label, exposed as a progress bar. A pending pulse
+ * and the fill are separate elements, so the fill starts fresh from its first value instead
+ * of animating down from the pulse's full width, and only ever moves forward.
+ */
 function ButtonProgressFill(props: { progress: ButtonProgress }) {
-  const percent = () => progressPercent(props.progress);
+  /** Completion clamped to 0-100, or null while no report has arrived. */
+  const percent = () => {
+    const value = props.progress.percent;
+    return value === null ? null : Math.min(100, Math.max(0, value));
+  };
   return (
-    <span
-      class="nf-button-progress"
-      role="progressbar"
-      aria-label={props.progress.label}
-      aria-valuemin={0}
-      aria-valuemax={percent() === undefined ? undefined : 100}
-      aria-valuenow={
-        percent() === undefined ? undefined : Math.round(percent() as number)
+    <Show
+      when={percent() !== null || props.progress.pending !== "pulse"}
+      fallback={
+        <span
+          class="nf-button-progress"
+          role="progressbar"
+          aria-label={props.progress.label}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          data-pending=""
+          data-testid={props.progress["data-testid"]}
+        />
       }
-      data-indeterminate={percent() === undefined ? "" : undefined}
-      data-testid={props.progress["data-testid"]}
-      style={percent() === undefined ? undefined : { width: `${percent()}%` }}
-    />
+    >
+      <span
+        class="nf-button-progress"
+        role="progressbar"
+        aria-label={props.progress.label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(percent() ?? 0)}
+        data-testid={props.progress["data-testid"]}
+        style={{ width: `${percent() ?? 0}%` }}
+      />
+    </Show>
   );
 }
 
