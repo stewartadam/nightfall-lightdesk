@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectionOutline } from "./selection-outline";
+import { selectionOutline } from "./selection-outline.ts";
 
 /** Creates an empty bounded grid for selection perimeter examples. */
 function emptySelection(): Parameters<typeof selectionOutline>[0] {

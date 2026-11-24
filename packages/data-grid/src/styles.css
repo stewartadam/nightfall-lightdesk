@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+
+/*
+ * Entry for the published stylesheet: the Tailwind theme variables and
+ * utilities the grid's markup uses, then the grid's own rules. Without
+ * preflight, the host page's base styles stay untouched.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "./grid.css";
+@source "./";

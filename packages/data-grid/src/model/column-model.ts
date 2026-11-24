@@ -15,9 +15,9 @@ import type {
   Row,
   Table,
 } from "@tanstack/solid-table";
-import type { GridColumn } from "../data-grid-types";
-import type { DataGridTableFeatures } from "./table-features";
-import type { TableRow } from "./types";
+import type { GridColumn } from "../data-grid-types.ts";
+import type { DataGridTableFeatures } from "./table-features.ts";
+import type { TableRow } from "./types.ts";
 
 export type DataGridColumnDef = ColumnDef<DataGridTableFeatures, TableRow>;
 export type DataGridTable = Table<DataGridTableFeatures, TableRow>;

@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isPrintableEditKey } from "./event-adapter";
+import { isPrintableEditKey } from "./event-adapter.ts";
 
 /** Verifies shifted printable characters still count as text entry. */
 test("printable text entry includes shifted printable keys", () => {

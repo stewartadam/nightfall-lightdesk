@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { CustomCell, GridCell } from "./data-grid-types";
+import type { CustomCell, GridCell } from "./data-grid-types.ts";
 
 type DropdownOption =
   | string

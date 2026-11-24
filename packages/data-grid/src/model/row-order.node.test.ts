@@ -8,8 +8,8 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CompactSelection } from "../data-grid-types";
-import { createDataGridRowMapping } from "./row-order";
+import { CompactSelection } from "../data-grid-types.ts";
+import { createDataGridRowMapping } from "./row-order.ts";
 
 /** Sorting must not expand a selected range to include rows that were never selected. */
 test("row mapping preserves fragmented ranges and the active row after sorting", () => {

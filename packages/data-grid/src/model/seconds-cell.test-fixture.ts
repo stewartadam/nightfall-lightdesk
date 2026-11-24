@@ -10,8 +10,8 @@ import {
   type CustomCell,
   type CustomRenderer,
   GridCellKind,
-} from "../data-grid-types";
-import type { DataGridCellEditors } from "./types";
+} from "../data-grid-types.ts";
+import type { DataGridCellEditors } from "./types.ts";
 
 /** Data of the whole-seconds custom cell tests use to exercise custom text editors. */
 export interface SecondsCellData {

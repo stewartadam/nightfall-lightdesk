@@ -11,16 +11,16 @@ import type {
   CustomCellTextEditor,
   CustomRenderer,
   GridCell,
-} from "../data-grid-types";
-import { GridCellKind } from "../data-grid-types";
+} from "../data-grid-types.ts";
+import { GridCellKind } from "../data-grid-types.ts";
 import {
   type DropdownGridCell,
   dropdownOptions,
   isDropdownCell,
   makeDropdownEditedCell,
-} from "../dropdown-cell";
-import { editableRichCellExtension } from "./rich-cell-extension";
-import type { DataGridCellEditors } from "./types";
+} from "../dropdown-cell.ts";
+import { editableRichCellExtension } from "./rich-cell-extension.ts";
+import type { DataGridCellEditors } from "./types.ts";
 
 /** Converts supported cell kinds into the text shown or copied by the grid. */
 export function cellDisplayValue(cell: GridCell): string {

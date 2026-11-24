@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": null,
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "declaration": true,
+    "rewriteRelativeImportExtensions": true,
+    "outDir": "dist/source",
+    "declarationDir": "dist/types",
+    "rootDir": "src"
+  },
+  "exclude": ["src/**/*.node.test.ts", "src/**/*.test-fixture.ts"]
+}

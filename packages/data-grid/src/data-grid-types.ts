@@ -6,13 +6,22 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { IconProps } from "@squidlab/phosphor-solid";
 import type { Component } from "solid-js";
 
 export type Item = readonly [number, number];
 
-/** Icon component drawn in a cell's prefix badge. */
-export type GridCellIcon = Component<IconProps>;
+/** Props the grid passes to a cell icon component. */
+export interface GridCellIconProps {
+  class?: string;
+  "aria-hidden"?: boolean | "true" | "false";
+}
+
+/**
+ * Icon component drawn in a cell's prefix badge, such as an icon from
+ * `@squidlab/phosphor-solid`. Declared structurally so the grid's public
+ * types do not depend on an icon library's types.
+ */
+export type GridCellIcon = Component<GridCellIconProps>;
 
 export enum GridCellKind {
   Boolean = "boolean",

@@ -8,8 +8,8 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { GridCell, GridSelection, Item } from "../data-grid-types";
-import { CompactSelection, GridCellKind } from "../data-grid-types";
+import type { GridCell, GridSelection, Item } from "../data-grid-types.ts";
+import { CompactSelection, GridCellKind } from "../data-grid-types.ts";
 import {
   clipboardEditsForPaste,
   clipboardTextForSelection,
@@ -17,12 +17,12 @@ import {
   inlineEditEditsForSelection,
   parseClipboardText,
   selectedClipboardCells,
-} from "./clipboard";
+} from "./clipboard.ts";
 import {
   secondsCell,
   secondsCellValue,
   secondsEditors,
-} from "./seconds-cell.test-fixture";
+} from "./seconds-cell.test-fixture.ts";
 
 /** Builds an empty public grid selection for clipboard tests. */
 function emptySelection(): GridSelection {

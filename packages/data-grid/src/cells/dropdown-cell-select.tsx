@@ -13,9 +13,9 @@ import {
   dropdownDisplayValue,
   dropdownOptions,
   dropdownSelectedKey,
-} from "../dropdown-cell";
-import { canEditDropdownCell } from "../model/cell-utils";
-import { DropdownCellAffordance } from "./dropdown-cell-affordance";
+} from "../dropdown-cell.ts";
+import { canEditDropdownCell } from "../model/cell-utils.ts";
+import { DropdownCellAffordance } from "./dropdown-cell-affordance.tsx";
 
 /**
  * Edits a dropdown cell with a native `<select>`, focused as soon as editing

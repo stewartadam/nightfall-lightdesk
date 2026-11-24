@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { GridCell, Item } from "../data-grid-types";
+import type { GridCell, Item } from "../data-grid-types.ts";
 
 export type DataGridCellKey = number | string;
 

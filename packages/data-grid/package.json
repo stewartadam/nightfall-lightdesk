@@ -1,20 +1,60 @@
 {
   "name": "@stewartadam/nightfall-data-grid",
-  "version": "0.0.1",
-  "description": "A virtualized, editable spreadsheet-style data grid for SolidJS.",
+  "version": "0.1.0",
+  "description": "A virtualized, editable, spreadsheet-style data grid for SolidJS.",
   "license": "MPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stewartadam/nightfall-lightdesk.git",
+    "directory": "packages/data-grid"
+  },
+  "keywords": [
+    "solid",
+    "solidjs",
+    "data-grid",
+    "table",
+    "spreadsheet"
+  ],
   "private": true,
   "type": "module",
   "sideEffects": [
     "*.css"
   ],
   "exports": {
-    ".": {
-      "solid": "./src/index.tsx",
-      "default": "./src/index.tsx"
-    },
+    ".": "./src/index.tsx",
     "./types": "./src/data-grid-types.ts",
-    "./dropdown-cell": "./src/dropdown-cell.ts"
+    "./dropdown-cell": "./src/dropdown-cell.ts",
+    "./styles.css": "./src/grid.css"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/types/index.d.ts",
+        "solid": "./dist/source/index.jsx",
+        "default": "./dist/index.js"
+      },
+      "./types": {
+        "types": "./dist/types/data-grid-types.d.ts",
+        "solid": "./dist/source/data-grid-types.js",
+        "default": "./dist/data-grid-types.js"
+      },
+      "./dropdown-cell": {
+        "types": "./dist/types/dropdown-cell.d.ts",
+        "solid": "./dist/source/dropdown-cell.js",
+        "default": "./dist/dropdown-cell.js"
+      },
+      "./styles.css": "./dist/styles.css"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build"
   },
   "dependencies": {
     "@squidlab/phosphor-solid": "^1.1.2",
@@ -25,6 +65,11 @@
     "solid-js": "^1.9.19"
   },
   "devDependencies": {
-    "solid-js": "^1.9.19"
+    "@tailwindcss/vite": "^4.3.5",
+    "solid-js": "^1.9.19",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vite-plugin-solid": "^2.11.17"
   }
 }

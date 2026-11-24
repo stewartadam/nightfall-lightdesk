@@ -7,31 +7,31 @@
  */
 
 import { createSignal } from "solid-js";
-import type { GridCell, Item } from "./data-grid-types";
-import { GridCellKind } from "./data-grid-types";
+import type { GridCell, Item } from "./data-grid-types.ts";
+import { GridCellKind } from "./data-grid-types.ts";
 import {
   canEditCellAsText,
   canEditDropdownCell,
   cellDisplayValue,
-} from "./model/cell-utils";
+} from "./model/cell-utils.ts";
 import {
   discreteEditEditsForSelection,
   inlineEditEditsForSelection,
-} from "./model/clipboard";
-import { editableRichCellExtension } from "./model/rich-cell-extension";
+} from "./model/clipboard.ts";
+import { editableRichCellExtension } from "./model/rich-cell-extension.ts";
 import {
   type DataGridSelectionAction,
   type DataGridSelectionState,
   editCommitSelectionFromState,
-} from "./model/selection-model";
+} from "./model/selection-model.ts";
 import type {
   DataGridCellEditFactory,
   DataGridEditCommitMode,
   DataGridEditCommitOptions,
   DataGridProps,
   EditingCell,
-} from "./model/types";
-import { createEffect } from "./solid-compat";
+} from "./model/types.ts";
+import { createEffect } from "./solid-compat.ts";
 
 interface DataGridEditingControllerOptions {
   props: DataGridProps;

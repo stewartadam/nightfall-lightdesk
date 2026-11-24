@@ -8,13 +8,13 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { GridCell } from "../data-grid-types";
-import { GridCellKind } from "../data-grid-types";
+import type { GridCell } from "../data-grid-types.ts";
+import { GridCellKind } from "../data-grid-types.ts";
 import {
   editableRichCellExtension,
   findRichCellExtension,
-} from "./rich-cell-extension";
-import type { DataGridRichCellExtension } from "./types";
+} from "./rich-cell-extension.ts";
+import type { DataGridRichCellExtension } from "./types.ts";
 
 const cell: GridCell = {
   kind: GridCellKind.Custom,

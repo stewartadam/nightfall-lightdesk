@@ -10,8 +10,8 @@ import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import type { Accessor, JSX, Setter } from "solid-js";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { DropdownCellAffordance } from "./cells/dropdown-cell-affordance";
-import { DropdownCellSelect } from "./cells/dropdown-cell-select";
+import { DropdownCellAffordance } from "./cells/dropdown-cell-affordance.tsx";
+import { DropdownCellSelect } from "./cells/dropdown-cell-select.tsx";
 import type {
   CustomCell,
   CustomRenderer,
@@ -19,8 +19,8 @@ import type {
   GridCellStateIndicator,
   GridSelection,
   Item,
-} from "./data-grid-types";
-import { GridCellKind } from "./data-grid-types";
+} from "./data-grid-types.ts";
+import { GridCellKind } from "./data-grid-types.ts";
 import {
   type DropdownGridCell,
   dropdownDisplaySwatch,
@@ -28,16 +28,16 @@ import {
   dropdownOptions,
   isDropdownCell,
   makeDropdownEditedCellByValue,
-} from "./dropdown-cell";
-import { isPrintableEditKey } from "./event-adapter";
+} from "./dropdown-cell.ts";
+import { isPrintableEditKey } from "./event-adapter.ts";
 import {
   canEditBooleanCell,
   canEditDropdownCell,
   cellDisplayValue,
   findCustomRenderer,
   isReadonlyCell,
-} from "./model/cell-utils";
-import { findRichCellExtension } from "./model/rich-cell-extension";
+} from "./model/cell-utils.ts";
+import { findRichCellExtension } from "./model/rich-cell-extension.ts";
 import type {
   DataGridCellEditFactory,
   DataGridEditCommitContext,
@@ -46,7 +46,7 @@ import type {
   DataGridInlineEditTooltipContext,
   DataGridRichCellExtension,
   EditingCell,
-} from "./model/types";
+} from "./model/types.ts";
 
 export interface CellContentContext {
   cell: GridCell;

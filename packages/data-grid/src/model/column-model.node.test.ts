@@ -10,15 +10,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTable } from "@tanstack/solid-table";
 import { createRoot } from "solid-js";
-import type { GridColumn } from "../data-grid-types";
+import type { GridColumn } from "../data-grid-types.ts";
 import {
   columnWidth,
   groupColumns,
   reuseEquivalentColumns,
   sourceGridColumn,
-} from "./column-model";
-import { dataGridTableFeatures } from "./table-features";
-import type { TableRow } from "./types";
+} from "./column-model.ts";
+import { dataGridTableFeatures } from "./table-features.ts";
+import type { TableRow } from "./types.ts";
 
 type NestedGridColumn = GridColumn & {
   visibilityCategory?: string;

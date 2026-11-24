@@ -12,11 +12,11 @@ import type {
   CustomCell,
   CustomRenderer,
   GridColumn,
-} from "../data-grid-types";
-import { GridCellKind } from "../data-grid-types";
-import { createKeyedDataGridCellProvider } from "./cell-provider";
-import { sizeColumnsToContent } from "./column-sizing";
-import type { DataGridRichCellExtension } from "./types";
+} from "../data-grid-types.ts";
+import { GridCellKind } from "../data-grid-types.ts";
+import { createKeyedDataGridCellProvider } from "./cell-provider.ts";
+import { sizeColumnsToContent } from "./column-sizing.ts";
+import type { DataGridRichCellExtension } from "./types.ts";
 
 /** Builds a deterministic canvas substitute that assigns ten pixels per character. */
 function measurementContext(): CanvasRenderingContext2D {

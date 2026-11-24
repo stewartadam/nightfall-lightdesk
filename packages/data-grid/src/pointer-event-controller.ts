@@ -6,10 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { CellClickedEventArgs, Item } from "./data-grid-types";
-import type { createDataGridEditingController } from "./editing-controller";
-import type { DataGridProps } from "./model/types";
-import type { createDataGridSelectionController } from "./selection-controller";
+import type { CellClickedEventArgs, Item } from "./data-grid-types.ts";
+import type { createDataGridEditingController } from "./editing-controller.ts";
+import type { DataGridProps } from "./model/types.ts";
+import type { createDataGridSelectionController } from "./selection-controller.ts";
 
 type DataGridEditingController = ReturnType<
   typeof createDataGridEditingController

@@ -16,7 +16,7 @@ import {
   isDropdownCell,
   makeDropdownEditedCell,
   makeDropdownEditedCellByValue,
-} from "./dropdown-cell";
+} from "./dropdown-cell.ts";
 
 /**
  * Builds a dropdown grid cell with a configurable selected value.
