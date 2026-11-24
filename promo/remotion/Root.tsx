@@ -34,7 +34,7 @@ export function RemotionRoot() {
           fps={REEL_FPS}
           durationInFrames={REEL_FPS * 20}
           defaultProps={{ manifest: null, edit: null } as ReelProps}
-          calculateMetadata={async () => {
+          calculateMetadata={async ({ props }) => {
             const response = await fetch(
               staticFile(`${reel.id}/recording.json`),
             );
@@ -47,7 +47,7 @@ export function RemotionRoot() {
             const edit = reel.buildEdit(manifest);
             return {
               durationInFrames: Math.round(edit.totalSeconds * REEL_FPS),
-              props: { manifest, edit },
+              props: { ...props, manifest, edit },
             };
           }}
         />

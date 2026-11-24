@@ -10,6 +10,7 @@ import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Locator, Page } from "@playwright/test";
+import { prepareFreshBackendShowfile } from "../../webui/e2e/backend-showfile";
 import { waitForDockviewApp } from "../../webui/e2e/showfile-startup";
 import type { RecordingManifest, RecordingMarker } from "../shared/edit";
 import { installPromoCursor, type PromoCursorApi } from "./cursor-overlay";
@@ -47,6 +48,22 @@ export async function openDemo(page: Page, baseURL: string | undefined) {
   await page.goto(
     "/?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false",
   );
+  await waitForDockviewApp(page);
+}
+
+/**
+ * Opens the app against the desktop backend Playwright started, with a fresh
+ * empty show and the fake cursor installed. For features the browser demo
+ * hides, such as GDTF Share and MVR import. Name such a reel's script
+ * `<reel>.desktop.record.ts` so `scripts/record.mjs` starts that backend.
+ */
+export async function openDesktop(
+  page: Page,
+  backendPort: number,
+): Promise<void> {
+  await prepareFreshBackendShowfile(backendPort);
+  await page.addInitScript(installPromoCursor);
+  await page.goto("/?e2e=1&startup:draftRecovery=false");
   await waitForDockviewApp(page);
 }
 

@@ -31,6 +31,8 @@ import {
 export interface ReelProps extends Record<string, unknown> {
   manifest: RecordingManifest | null;
   edit: ReelEdit | null;
+  /** App version shown after the intro kicker; the render script passes it in. */
+  version?: string;
 }
 
 const FONT = 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
@@ -102,26 +104,21 @@ function Backdrop() {
   );
 }
 
-/** Opening card: logo, kicker, title and subtitle, each springing in a beat apart. */
-function IntroCard({ edit }: { edit: ReelEdit }) {
+/**
+ * Opening card: logo, kicker (with the app version), title and subtitle. It is
+ * fully composed from the first frame, because TikTok and Shorts can only use
+ * a frame of the video as the cover; it drifts gently closer, then lifts away.
+ */
+function IntroCard({ edit, version }: { edit: ReelEdit; version?: string }) {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
-  const rise = (delay: number) =>
-    spring({
-      frame: frame - delay * fps,
-      fps,
-      config: { damping: 16, mass: 0.7 },
-    });
   const leave = interpolate(
     frame,
     [durationInFrames - HANDOFF_SECONDS * fps, durationInFrames],
     [1, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
-  const item = (delay: number) => ({
-    opacity: rise(delay) * leave,
-    transform: `translateY(${(1 - rise(delay)) * 60}px)`,
-  });
+  const drift = interpolate(frame, [0, durationInFrames], [1, 1.04]);
   return (
     <AbsoluteFill>
       <Backdrop />
@@ -129,18 +126,18 @@ function IntroCard({ edit }: { edit: ReelEdit }) {
         style={{
           alignItems: "center",
           justifyContent: "center",
+          padding: "0 70px",
+          textAlign: "center",
           fontFamily: FONT,
           color: BRAND.ink,
           gap: 28,
-          transform: `scale(${1 + (1 - leave) * 0.08})`,
+          opacity: leave,
+          transform: `scale(${drift + (1 - leave) * 0.08})`,
         }}
       >
-        <div style={item(0)}>
-          <Logo size={220} phase={frame / fps} />
-        </div>
+        <Logo size={220} phase={frame / fps} />
         <div
           style={{
-            ...item(0.15),
             color: BRAND.teal,
             fontSize: 44,
             fontWeight: 700,
@@ -148,24 +145,23 @@ function IntroCard({ edit }: { edit: ReelEdit }) {
             textTransform: "uppercase",
           }}
         >
-          {edit.intro.kicker}
+          {version ? `${edit.intro.kicker} ${version}` : edit.intro.kicker}
         </div>
         <div
           style={{
-            ...item(0.3),
-            fontSize: 168,
+            fontSize: 150,
             fontWeight: 800,
             letterSpacing: -4,
+            lineHeight: 1.02,
           }}
         >
           {edit.intro.title}
         </div>
         <div
           style={{
-            ...item(0.45),
             fontSize: 54,
             fontWeight: 500,
-            opacity: 0.85 * rise(0.45) * leave,
+            opacity: 0.85,
           }}
         >
           {edit.intro.subtitle}
@@ -381,7 +377,7 @@ function Soundtrack({
  * Any reel: intro card, the take zoomed and captioned by its edit, outro card,
  * and the take's music when the edit places it.
  */
-export function Reel({ manifest, edit }: ReelProps) {
+export function Reel({ manifest, edit, version }: ReelProps) {
   const { fps } = useVideoConfig();
   if (!manifest || !edit)
     return <AbsoluteFill style={{ background: BRAND.night }} />;
@@ -398,7 +394,7 @@ export function Reel({ manifest, edit }: ReelProps) {
         <Screen edit={edit} manifest={manifest} />
       </Sequence>
       <Sequence durationInFrames={frames(INTRO_SECONDS)} name="Intro">
-        <IntroCard edit={edit} />
+        <IntroCard edit={edit} version={version} />
       </Sequence>
       {edit.captions.map((cue) => (
         <Sequence

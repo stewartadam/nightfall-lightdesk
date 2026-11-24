@@ -18,12 +18,18 @@ Cargo never touch it.
 ```sh
 pnpm --dir promo install
 pnpm --dir promo run record <reel>   # Playwright take -> promo/out/<reel>/
-pnpm --dir promo run render <reel>   # -> promo/out/<reel>.mp4
+pnpm --dir promo run render <reel>   # -> promo/out/<reel>.mp4 and <reel>-cover.png
 pnpm --dir promo run studio          # preview and tweak every reel's edit
 ```
 
 `<reel>` is a folder under `reels/`. Set `PROMO_BROWSER` to a Chrome or headless
 shell binary to skip Remotion's own browser download.
+
+Every reel opens on its title card, with the app version from `Cargo.toml`
+under "New in Nightfall", fully drawn on the first frame. TikTok and Shorts
+pick their thumbnail from a frame, so that frame is the title. Upload
+`<reel>-cover.png` as the cover where a platform takes a custom one, such as
+Instagram.
 
 ## Add a reel
 
@@ -34,7 +40,10 @@ in `reels/index.ts`:
 - `<reel>.record.ts` is a Playwright test that opens the demo with `openDemo`,
   then drives a `Take`: `start()` begins capturing, `glideAndClick()` moves the
   fake cursor and clicks, `mark()` names the moments the edit cuts on (with the
-  element to zoom to), and `finish()` writes the take.
+  element to zoom to), and `finish()` writes the take. A feature the browser
+  demo hides, such as GDTF Share or MVR import, records against the desktop
+  backend instead: name the script `<reel>.desktop.record.ts` and open the app
+  with `openDesktop`, which starts from a fresh empty show.
 - `edit.ts` exports a `ReelDefinition` whose `buildEdit` turns the take's markers
   into intro copy, captions, zooms and optional music, using `editTools` and
   `assembleEdit` from `shared/edit.ts`.
@@ -67,3 +76,7 @@ Takes average about 34 fps in a cloud container without a GPU: the compositor
 only paints changed frames, and software rendering at 1080x1920 is slow. The
 reel's own motion (camera, captions, cards) is always 60 fps. Expect a smoother
 capture on a machine with a GPU.
+
+The 3D visualizer renders seconds behind the rest of the page in software, so
+a reel that shows it (busking, placement, MVR import) needs a take recorded on
+a machine with a GPU.
