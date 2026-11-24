@@ -180,7 +180,7 @@ async function showOffRig(
     y: box.height * 0.55,
   });
   await page.waitForTimeout(300);
-  await take.dragTo({ x: start.x + box.width * 0.4, y: start.y }, 2_400);
+  await take.dragTo({ x: start.x + box.width * 0.2, y: start.y }, 2_000);
   await page.waitForTimeout(400);
   await zoomOutSmoothly(canvas, start, 200, 1_200);
 }
