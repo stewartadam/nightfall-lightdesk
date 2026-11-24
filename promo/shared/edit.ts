@@ -104,6 +104,13 @@ export const STANDARD_OUTRO: OutroCopy = {
   url: "nightfall.live",
 };
 
+/** The call to action for features only the desktop app has, such as GDTF Share and MVR import. */
+export const DESKTOP_OUTRO: OutroCopy = {
+  title: "Download Nightfall",
+  subtitle: "Free and open source",
+  url: "nightfall.live",
+};
+
 /** Everything a renderer needs to lay out a reel. */
 export interface ReelEdit {
   intro: IntroCopy;

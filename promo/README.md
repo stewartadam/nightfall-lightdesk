@@ -77,6 +77,12 @@ only paints changed frames, and software rendering at 1080x1920 is slow. The
 reel's own motion (camera, captions, cards) is always 60 fps. Expect a smoother
 capture on a machine with a GPU.
 
-The 3D visualizer renders seconds behind the rest of the page in software, so
-a reel that shows it (busking, placement, MVR import) needs a take recorded on
-a machine with a GPU.
+Without a GPU, Chromium's SwiftShader fallback draws the 3D visualizer seconds
+behind the rest of the page, so lights react long after the click. For a reel
+that shows it, render with Mesa's llvmpipe instead (see "Playwright" in
+`CONTRIBUTING.md`) and lower the visualizer's quality:
+
+```sh
+NIGHTFALL_PLAYWRIGHT_CHROMIUM_ARGS="--use-angle=gl-egl --ignore-gpu-blocklist" \
+PROMO_VISUALIZER_QUALITY=low pnpm --dir promo run record <reel>
+```

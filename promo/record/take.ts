@@ -46,9 +46,22 @@ export async function openDemo(page: Page, baseURL: string | undefined) {
   });
   await page.addInitScript(installPromoCursor);
   await page.goto(
-    "/?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false",
+    `/?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false${qualityParam()}`,
   );
   await waitForDockviewApp(page);
+}
+
+/**
+ * The visualizer quality override from `PROMO_VISUALIZER_QUALITY` (low,
+ * medium or high) as a URL parameter, or nothing to keep the app's default.
+ * Machines without a GPU record with `low` so the 3D view keeps up with the
+ * rest of the page.
+ */
+function qualityParam(): string {
+  const quality = process.env.PROMO_VISUALIZER_QUALITY;
+  return quality
+    ? `&visualizer:beamQuality=${encodeURIComponent(quality)}`
+    : "";
 }
 
 /**
@@ -63,8 +76,34 @@ export async function openDesktop(
 ): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
   await page.addInitScript(installPromoCursor);
-  await page.goto("/?e2e=1&startup:draftRecovery=false");
+  await page.goto(`/?e2e=1&startup:draftRecovery=false${qualityParam()}`);
   await waitForDockviewApp(page);
+  // Test builds name the git branch in the status bar; a release build shows no such thing.
+  await page.addStyleTag({
+    content:
+      '[data-testid="status-build-name"], [data-testid="status-build-separator"] { display: none !important; }',
+  });
+  await clearFixtures(page);
+}
+
+/**
+ * Deletes every fixture the test backend seeds into its fresh show, so a
+ * desktop reel starts from an empty patch and imports land on free addresses.
+ */
+async function clearFixtures(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const stores = (window as any).appStores;
+    const fixtures = Object.values(stores.fixtures.get()) as any[];
+    for (const fixture of fixtures) {
+      const { outcome } = await stores.sendAndAwait({
+        module: "FixtureCommand",
+        command: { type: "DeleteFixture", data: fixture.identifiers.id },
+      });
+      if (outcome.type !== "Succeeded") {
+        throw new Error(`DeleteFixture failed: ${JSON.stringify(outcome)}`);
+      }
+    }
+  });
 }
 
 /**
