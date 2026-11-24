@@ -710,11 +710,15 @@ fn joint_axes(resolved: &ResolvedMode<'_>, placements: &[Placement]) -> Vec<Vec<
     axes
 }
 
-/// Convert GDTF position matrix to column-major Transform for Three.js.
+/// Converts a GDTF position matrix to a column-major Transform for Three.js.
 ///
-/// This function passes through the GDTF matrix as-is, only converting from
-/// row-major to column-major format for Three.js. Coordinate system conversion
-/// (GDTF Z-up to Three.js Y-up) is handled in the frontend.
+/// GDTF writes `{u1,u2,u3,ox}{v1,v2,v3,oy}{w1,w2,w3,oz}{0,0,0,1}`: the first
+/// three values of each brace are one rotated axis (u, v and w are where X, Y
+/// and Z point), and the fourth is that axis's component of the translation.
+/// The reference library, libMVRgdtf, writes matrices this way. So each brace
+/// becomes a column of the rotation, while the translation column is read down
+/// the braces' fourth values. Coordinate system conversion (GDTF Z-up to
+/// Three.js Y-up) is handled in the frontend.
 fn convert_gdtf_matrix(geom: &gdtf::geometry::Geometry) -> Transform {
     use gdtf::geometry::Geometry;
 
@@ -741,29 +745,25 @@ fn convert_gdtf_matrix(geom: &gdtf::geometry::Geometry) -> Transform {
     };
 
     // GDTF Matrix has private inner data, so we serialize it to extract values.
-    // Format: "{a,b,c,d}{e,f,g,h}{i,j,k,l}{m,n,o,p}" (4 rows of 4 values each)
+    // Format: "{a,b,c,d}{e,f,g,h}{i,j,k,l}{m,n,o,p}" (4 braces of 4 values each)
     let m = parse_gdtf_matrix_string(matrix);
 
-    // GDTF Matrix is row-major with translation in column 3:
-    // m[row][col] where m[i][3] is translation
-    //
-    // Pass through as-is, only converting from row-major to column-major.
-    // Three.js column-major: elements[col*4 + row]
+    // Three.js column-major: elements[col*4 + row]. Brace `i` is axis `i`.
     Transform {
         elements: [
-            // Column 0
+            // Column 0: where X points (u)
             m[0][0] as f32,
-            m[1][0] as f32,
-            m[2][0] as f32,
-            0.0,
-            // Column 1
             m[0][1] as f32,
-            m[1][1] as f32,
-            m[2][1] as f32,
-            0.0,
-            // Column 2
             m[0][2] as f32,
+            0.0,
+            // Column 1: where Y points (v)
+            m[1][0] as f32,
+            m[1][1] as f32,
             m[1][2] as f32,
+            0.0,
+            // Column 2: where Z points (w)
+            m[2][0] as f32,
+            m[2][1] as f32,
             m[2][2] as f32,
             0.0,
             // Column 3 (translation)
