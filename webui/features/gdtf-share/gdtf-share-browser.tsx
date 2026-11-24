@@ -20,7 +20,6 @@ import {
 import { useAppShell } from "../../components/providers/app-shell";
 import { Alert } from "../../components/ui/alert";
 import { EmptyState } from "../../components/ui/empty-state";
-import { ProgressBar } from "../../components/ui/progress-bar";
 import { SearchField } from "../../components/ui/search-field";
 import { Button } from "../../components/ui/visual-language/button";
 import DataGrid, {
@@ -59,8 +58,8 @@ const SEARCH_DELAY_MS = 250;
 const COLUMNS: GridColumn[] = [
   { id: "manufacturer", title: "Make", width: 140, minWidth: 96 },
   { id: "fixture", title: "Model", width: 200, minWidth: 120 },
-  { id: "revision", title: "Revision", width: 150, minWidth: 80 },
   { id: "modes", title: "Modes", width: 72, sizing: "fixed", align: "right" },
+  { id: "revision", title: "Revision", width: 150, minWidth: 80 },
   { id: "rating", title: "Rating", width: 72, sizing: "fixed", align: "right" },
   { id: "library", title: "Library", width: 96, minWidth: 80 },
 ];
@@ -505,6 +504,22 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
                     }
                     disabled={installing()}
                     onClick={install}
+                    progress={
+                      installing()
+                        ? {
+                            label: "GDTF Share download progress",
+                            value: download()?.received,
+                            max: download()?.total,
+                            "data-testid": "gdtf-share-download-progress",
+                          }
+                        : undefined
+                    }
+                    reserveLabels={[
+                      "Installing…",
+                      selectedCopies().length > 0
+                        ? "Install this revision"
+                        : "Install",
+                    ]}
                     data-testid="gdtf-share-install"
                   >
                     {installing()
@@ -515,32 +530,22 @@ export function GdtfShareBrowser(props: GdtfShareBrowserProps) {
                   </Button>
                 </div>
               </div>
-              <div class="text-gray-400">
+              <ul
+                aria-label="Modes"
+                class="max-h-24 overflow-y-auto text-gray-400"
+                data-testid="gdtf-share-modes"
+              >
                 <For each={fixture().modes}>
-                  {(mode, index) => (
-                    <>
-                      {index() > 0 ? ", " : ""}
-                      {mode.name} ({mode.footprint} ch)
-                    </>
+                  {(mode) => (
+                    <li class="flex justify-between gap-3">
+                      <span class="min-w-0 truncate">{mode.name}</span>
+                      <span class="shrink-0 tabular-nums">
+                        {mode.footprint} ch
+                      </span>
+                    </li>
                   )}
                 </For>
-              </div>
-              <Show when={installing()}>
-                <div class="flex items-center gap-2" role="status">
-                  <ProgressBar
-                    label="GDTF Share download progress"
-                    value={download()?.received}
-                    max={download()?.total}
-                    class="flex-1"
-                    data-testid="gdtf-share-download-progress"
-                  />
-                  <span class="shrink-0 text-xs text-gray-400">
-                    {download()
-                      ? `${kilobytes(download()?.received ?? 0)} of ${kilobytes(download()?.total ?? 0)}`
-                      : "Downloading…"}
-                  </span>
-                </div>
-              </Show>
+              </ul>
               <Show when={installNote()}>
                 {(message) => (
                   <Alert

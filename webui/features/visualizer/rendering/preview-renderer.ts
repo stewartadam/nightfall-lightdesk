@@ -24,9 +24,12 @@ import {
   AmbientLight,
   Box3,
   DirectionalLight,
+  MathUtils,
   Mesh,
+  type Object3D,
   PerspectiveCamera,
   Scene,
+  Sphere,
   Vector2,
   Vector3,
   WebGPURenderer,
@@ -64,8 +67,8 @@ export const PREVIEW_QUALITY = resolveQualityProfile("medium");
 /** Fixture UID of the single previewed fixture, used to key its beam apertures. */
 const PREVIEW_FIXTURE_UID = "preview";
 
-/** Default camera distance as multiplier of fixture size */
-const CAMERA_DISTANCE_FACTOR = 2.5;
+/** Room left around the fixture's bounding sphere, as a multiple of its radius. */
+const FRAMING_MARGIN = 1.15;
 
 /** Default camera angles */
 const DEFAULT_AZIMUTH = -Math.PI / 4; // 45 degrees from front-right
@@ -160,6 +163,11 @@ export interface PreviewRendererState {
   drawnMeshSwaps: number;
   /** Whether the camera is framed on a fixture with a real size, which a kept view needs. */
   framed: boolean;
+  /**
+   * Whether the camera still holds the automatic framing. A resize or a mesh that finishes
+   * loading frames the fixture again until the user orbits or zooms.
+   */
+  autoFramed: boolean;
 }
 
 /** A frame running longer than this is presumed lost (such as on a lost GPU device), so drawing resumes. */
@@ -241,8 +249,14 @@ export function initPreviewRenderer(
     renderStartedMs: null,
     drawnMeshSwaps: meshSwapGeneration(),
     framed: false,
+    autoFramed: true,
   };
   controls.addEventListener("change", () => markPreviewChanged(state));
+  /** Hands the view to the user once they orbit or zoom, so resizes stop reframing it. */
+  const releaseAutoFraming = () => {
+    state.autoFramed = false;
+  };
+  controls.addEventListener("start", releaseAutoFraming);
   return state;
 }
 
@@ -307,38 +321,67 @@ export function setPreviewFixture(
 
     // Frame the camera on the new fixture
     if (!(options.keepCamera && replacing && state.framed)) {
+      state.autoFramed = true;
       frameCameraOnFixture(state);
     }
   }
   markPreviewChanged(state);
 }
 
+/** Where the camera sits and looks to frame an object, from {@link previewFraming}. */
+export interface PreviewFraming {
+  position: Vector3;
+  target: Vector3;
+  distance: number;
+}
+
 /**
- * Adjust camera to frame the fixture nicely.
- * Computes bounding box and positions camera to see the full fixture.
+ * Finds the camera position that shows all of `object` from the default angle, as close as the
+ * camera can sit while the object's bounding sphere fits both the canvas's height and its
+ * width. A tall, narrow canvas has a narrow horizontal field of view, so fitting the height
+ * alone would cut the object off at the sides. Returns null for an object with no size, such
+ * as an empty draft.
+ */
+export function previewFraming(
+  object: Object3D,
+  camera: PerspectiveCamera,
+): PreviewFraming | null {
+  const sphere = new Box3()
+    .setFromObject(object)
+    .getBoundingSphere(new Sphere());
+  if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) return null;
+
+  const verticalFov = MathUtils.degToRad(camera.fov);
+  const horizontalFov =
+    2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(camera.aspect, 1e-3));
+  const narrowestFov = Math.min(verticalFov, horizontalFov);
+  const distance =
+    (sphere.radius * FRAMING_MARGIN) / Math.sin(narrowestFov / 2);
+
+  const direction = new Vector3(
+    Math.cos(DEFAULT_ELEVATION) * Math.sin(DEFAULT_AZIMUTH),
+    Math.sin(DEFAULT_ELEVATION),
+    Math.cos(DEFAULT_ELEVATION) * Math.cos(DEFAULT_AZIMUTH),
+  );
+  return {
+    position: sphere.center.clone().addScaledVector(direction, distance),
+    target: sphere.center,
+    distance,
+  };
+}
+
+/**
+ * Moves the camera to {@link previewFraming}'s view of the fixture. A fixture with no size
+ * leaves the camera where it is and marks the preview unframed, so a kept view isn't kept.
  */
 function frameCameraOnFixture(state: PreviewRendererState): void {
   if (!state.fixtureInstance) return;
-
-  // Compute bounding box of the fixture
-  const box = new Box3().setFromObject(state.fixtureInstance.group);
-  const center = box.getCenter(new Vector3());
-  const size = box.getSize(new Vector3());
-
-  // Get the largest dimension for distance calculation
-  const maxDim = Math.max(size.x, size.y, size.z);
-  // A fixture with no size (an empty draft) gives no view worth keeping, so leave the camera.
-  state.framed = Number.isFinite(maxDim) && maxDim > 0;
-  if (!state.framed) return;
-  const distance = maxDim * CAMERA_DISTANCE_FACTOR;
-
-  // Position camera using spherical coordinates
-  const x = center.x + distance * Math.sin(DEFAULT_AZIMUTH);
-  const y = center.y + distance * Math.sin(DEFAULT_ELEVATION);
-  const z = center.z + distance * Math.cos(DEFAULT_AZIMUTH);
-
-  state.camera.position.set(x, y, z);
-  state.controls.target.copy(center);
+  const framing = previewFraming(state.fixtureInstance.group, state.camera);
+  state.framed = framing !== null;
+  if (!framing) return;
+  state.camera.position.copy(framing.position);
+  state.controls.maxDistance = Math.max(20, framing.distance * 2);
+  state.controls.target.copy(framing.target);
   state.controls.update();
 }
 
@@ -354,6 +397,7 @@ export function handlePreviewResize(
   state.camera.aspect = width / height;
   state.camera.updateProjectionMatrix();
   state.renderer.setSize(width, height, false);
+  if (state.autoFramed) frameCameraOnFixture(state);
   markPreviewChanged(state);
 }
 
@@ -380,6 +424,7 @@ export function startPreviewRenderLoop(state: PreviewRendererState): void {
     const swaps = meshSwapGeneration();
     if (swaps !== state.drawnMeshSwaps) {
       state.drawnMeshSwaps = swaps;
+      if (state.autoFramed) frameCameraOnFixture(state);
       markPreviewChanged(state);
     }
     const moving = state.controls.update();

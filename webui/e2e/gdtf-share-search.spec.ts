@@ -283,7 +283,9 @@ test("installs a GDTF Share fixture from the patch wizard", async ({
   const selected = browser.getByTestId("gdtf-share-selected");
   await expect(selected).toContainText("Nightfall Test E2E Wash");
   await expect(selected).toContainText("Uploaded by the manufacturer");
-  await expect(selected).toContainText("Standard (1 ch)");
+  await expect(
+    selected.getByRole("list", { name: "Modes" }).getByRole("listitem"),
+  ).toHaveText(["Standard1 ch"]);
   await page.screenshot({
     path: testInfo.outputPath("02-gdtf-share-results.png"),
   });
@@ -292,7 +294,7 @@ test("installs a GDTF Share fixture from the patch wizard", async ({
   await expect(
     selected.getByTestId("gdtf-share-download-progress"),
   ).toBeVisible();
-  await expect(selected.getByTestId("gdtf-share-install")).toHaveText(
+  await expect(selected.getByTestId("gdtf-share-install")).toHaveAccessibleName(
     "Installing…",
   );
   await page.screenshot({
