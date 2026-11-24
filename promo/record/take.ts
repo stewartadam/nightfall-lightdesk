@@ -49,6 +49,19 @@ export async function openDemo(page: Page, baseURL: string | undefined) {
     `/?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false${qualityParam()}`,
   );
   await waitForDockviewApp(page);
+  await hideDiagnostics(page);
+}
+
+/**
+ * Hides on-screen diagnostics a viewer shouldn't see: the visualizer's frame
+ * rate badge, and the git branch test builds name in the status bar.
+ */
+async function hideDiagnostics(page: Page): Promise<void> {
+  await page.addStyleTag({
+    content: `div:has(> .fps-label),
+      [data-testid="status-build-name"],
+      [data-testid="status-build-separator"] { display: none !important; }`,
+  });
 }
 
 /**
@@ -78,11 +91,7 @@ export async function openDesktop(
   await page.addInitScript(installPromoCursor);
   await page.goto(`/?e2e=1&startup:draftRecovery=false${qualityParam()}`);
   await waitForDockviewApp(page);
-  // Test builds name the git branch in the status bar; a release build shows no such thing.
-  await page.addStyleTag({
-    content:
-      '[data-testid="status-build-name"], [data-testid="status-build-separator"] { display: none !important; }',
-  });
+  await hideDiagnostics(page);
   await clearFixtures(page);
 }
 
@@ -185,12 +194,16 @@ export class Take {
     return point;
   }
 
-  /** Clicks where the cursor is, with the ripple drawn at the same moment. */
+  /**
+   * Clicks where the cursor is, with the ripple drawn at the same moment. The
+   * ripple plays on without holding the script, so clicks can follow each
+   * other faster than it lasts, as taps on a tempo pad do.
+   */
   async click(): Promise<void> {
     await Promise.all([
-      this.page.evaluate(() =>
-        (window as unknown as CursorWindow).__promoCursor.ripple(),
-      ),
+      this.page.evaluate(() => {
+        void (window as unknown as CursorWindow).__promoCursor.ripple();
+      }),
       this.page.mouse.down().then(() => this.page.mouse.up()),
     ]);
   }
