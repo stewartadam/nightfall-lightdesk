@@ -12,9 +12,17 @@ import { fileURLToPath } from "node:url";
 import type { Locator, Page } from "@playwright/test";
 import { prepareFreshBackendShowfile } from "../../../webui/e2e/backend-showfile";
 import { waitForDockviewApp } from "../../../webui/e2e/showfile-startup";
-import type { RecordingManifest, RecordingMarker } from "../shared/edit";
+import type {
+  CursorPoint,
+  RecordingManifest,
+  RecordingMarker,
+} from "../shared/edit";
 import { CAPTURE_SIZE as OUTPUT, CAPTURE_SCALE as SCALE } from "./capture";
-import { installReelCursor, type ReelCursorApi } from "./cursor-overlay";
+import {
+  type CursorSample,
+  installReelCursor,
+  type ReelCursorApi,
+} from "./cursor-overlay";
 import { ScreencastRecorder } from "./screencast";
 
 /** The reels package root, its git-ignored output folder, and the repository root. */
@@ -211,9 +219,9 @@ export class Take {
   }
 
   /**
-   * Clicks where the cursor is, with the ripple drawn at the same moment. The
-   * ripple plays on without holding the script, so clicks can follow each
-   * other faster than it lasts, as taps on a tempo pad do.
+   * Clicks where the cursor is and logs the click so the edit draws a press
+   * and a ripple at that moment. Nothing waits on the ripple, so clicks can
+   * follow each other faster than it lasts, as taps on a tempo pad do.
    */
   async click(): Promise<void> {
     await Promise.all([
@@ -274,6 +282,15 @@ export class Take {
    */
   async finish({ soundtrack }: { soundtrack?: string } = {}): Promise<void> {
     const stoppedAt = await this.recorder.stop();
+    const track = await this.page.evaluate(() =>
+      (window as unknown as CursorWindow).__reelCursor.track(),
+    );
+    /** Converts a page sample to recording seconds and pixels. */
+    const toRecording = ({ epochMs, x, y }: CursorSample): CursorPoint => ({
+      t: epochMs / 1000 - this.origin,
+      x: x * SCALE,
+      y: y * SCALE,
+    });
     this.recorder.encode(join(this.dir, "recording.mp4"), FPS, this.origin);
     const soundtrackPath =
       soundtrack && `${this.reel}/soundtrack${extname(soundtrack)}`;
@@ -285,9 +302,14 @@ export class Take {
       ...(soundtrackPath ? { soundtrack: soundtrackPath } : {}),
       width: OUTPUT.width,
       height: OUTPUT.height,
+      scale: SCALE,
       fps: FPS,
       durationSeconds: stoppedAt - this.origin,
       markers: this.markers,
+      cursor: {
+        points: track.samples.map(toRecording),
+        clicks: track.clicks.map(toRecording),
+      },
     };
     writeFileSync(
       join(this.dir, "recording.json"),

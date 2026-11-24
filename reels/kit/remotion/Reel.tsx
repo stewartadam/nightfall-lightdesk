@@ -22,6 +22,7 @@ import {
   BRAND,
   type CaptionCue,
   cameraAt,
+  cursorAt,
   INTRO_SECONDS,
   type RecordingManifest,
   type ReelEdit,
@@ -172,6 +173,94 @@ function IntroCard({ edit, version }: { edit: ReelEdit; version?: string }) {
   );
 }
 
+/** Seconds the arrow takes to press in and spring back on a click. */
+const PRESS_SECONDS = 0.26;
+/** Seconds a click ripple takes to spread and fade. */
+const RIPPLE_SECONDS = 0.52;
+
+/**
+ * The fake cursor at recording time `t`, in recording pixels: a white arrow
+ * that presses in on each click, over a ripple spreading from the click. The
+ * take only logs the cursor (see `CursorLog`), so this is the only place it
+ * is drawn.
+ */
+function Cursor({ manifest, t }: { manifest: RecordingManifest; t: number }) {
+  const tip = cursorAt(manifest.cursor, t);
+  if (!tip) return null;
+  const px = manifest.scale;
+  const recent = manifest.cursor.clicks.filter(
+    (click) => click.t <= t && t - click.t < RIPPLE_SECONDS,
+  );
+  const lastPress = recent.at(-1);
+  const pressAge = lastPress ? t - lastPress.t : Number.POSITIVE_INFINITY;
+  const press =
+    pressAge < PRESS_SECONDS
+      ? interpolate(
+          pressAge,
+          [0, PRESS_SECONDS * 0.35, PRESS_SECONDS],
+          [1, 0.82, 1],
+          {
+            easing: Easing.out(Easing.ease),
+          },
+        )
+      : 1;
+  return (
+    <>
+      {recent.map((click) => {
+        const amount = Easing.bezier(
+          0.2,
+          0.7,
+          0.3,
+          1,
+        )((t - click.t) / RIPPLE_SECONDS);
+        const size = 44 * px;
+        return (
+          <div
+            key={click.t}
+            style={{
+              position: "absolute",
+              left: click.x - size / 2,
+              top: click.y - size / 2,
+              width: size,
+              height: size,
+              borderRadius: "50%",
+              border: `${3 * px}px solid rgba(255,255,255,.95)`,
+              background: "rgba(120,170,255,.35)",
+              boxShadow: `0 0 ${18 * px}px rgba(120,170,255,.6)`,
+              boxSizing: "border-box",
+              opacity: 1 - amount,
+              transform: `scale(${0.35 + 1.15 * amount})`,
+            }}
+          />
+        );
+      })}
+      <svg
+        width={30 * px}
+        height={30 * px}
+        viewBox="0 0 24 24"
+        style={{
+          position: "absolute",
+          // The arrow tip sits 5 by 3 CSS pixels in from the graphic's corner.
+          left: tip.x - 5 * px,
+          top: tip.y - 3 * px,
+          overflow: "visible",
+          transformOrigin: `${5 * px}px ${3 * px}px`,
+          transform: `scale(${press})`,
+          filter: `drop-shadow(0 ${3 * px}px ${6 * px}px rgba(0,0,0,.45))`,
+        }}
+      >
+        <path
+          d="M4 2.5 L4 19.5 L8.6 15.4 L11.7 22 L14.6 20.7 L11.6 14.3 L17.8 14.3 Z"
+          fill="#fff"
+          stroke="#111"
+          strokeWidth={1.4}
+          strokeLinejoin="round"
+        />
+      </svg>
+    </>
+  );
+}
+
 /**
  * The screen recording, framed by the shared camera. It grows from a rounded
  * card to full bleed as the intro hands over, then follows the zoom cues.
@@ -191,6 +280,11 @@ function Screen({
   const cardScale = 0.82 + 0.18 * enter;
   const radius = (1 - enter) * 48;
   const sx = width / manifest.width;
+  /** First recording frame the screen shows, so the cursor reads the same moment as the video. */
+  const videoFrom = Math.max(
+    0,
+    Math.round((edit.trimStart - HANDOFF_SECONDS) * fps),
+  );
   const sy = height / manifest.height;
   return (
     <AbsoluteFill style={{ alignItems: "center", justifyContent: "center" }}>
@@ -209,19 +303,18 @@ function Screen({
           style={{
             width: manifest.width,
             height: manifest.height,
+            position: "relative",
             transformOrigin: "0 0",
             transform: `scale(${sx}, ${sy}) translate(${manifest.width / 2}px, ${manifest.height / 2}px) scale(${camera.scale}) translate(${-camera.centerX}px, ${-camera.centerY}px)`,
           }}
         >
           <OffthreadVideo
             src={staticFile(manifest.video)}
-            trimBefore={Math.max(
-              0,
-              Math.round((edit.trimStart - HANDOFF_SECONDS) * fps),
-            )}
+            trimBefore={videoFrom}
             muted
             style={{ width: manifest.width, height: manifest.height }}
           />
+          <Cursor manifest={manifest} t={(videoFrom + frame) / fps} />
         </div>
       </div>
     </AbsoluteFill>

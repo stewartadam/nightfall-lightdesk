@@ -49,6 +49,25 @@ export interface RecordingMarker {
   value?: number;
 }
 
+/** Where the fake cursor's tip was at one moment, in recording seconds and pixels. */
+export interface CursorPoint {
+  t: number;
+  x: number;
+  y: number;
+}
+
+/**
+ * The fake cursor's path and clicks during a take. The page never paints the
+ * cursor, since a moving overlay stalls Chrome's paint, so the renderer draws
+ * it from this log.
+ */
+export interface CursorLog {
+  /** Positions in time order, one per animation frame while the cursor moves. */
+  points: CursorPoint[];
+  /** Clicks in time order, where the cursor was when each happened. */
+  clicks: CursorPoint[];
+}
+
 /**
  * Written by a reel's Playwright take as `out/<reel>/recording.json`. Media
  * paths are relative to `out/`, which the renderer serves as its public folder.
@@ -59,9 +78,13 @@ export interface RecordingManifest {
   soundtrack?: string;
   width: number;
   height: number;
+  /** Recording pixels per CSS pixel of the page, for drawing page-sized overlays such as the cursor. */
+  scale: number;
   fps: number;
   durationSeconds: number;
   markers: RecordingMarker[];
+  /** The fake cursor for the renderer to draw over the recording. */
+  cursor: CursorLog;
 }
 
 /** A caption shown over the recording, in seconds of reel time. */
@@ -308,4 +331,30 @@ export function cameraAt(
     centerX: from.centerX + (target.centerX - from.centerX) * amount,
     centerY: from.centerY + (target.centerY - from.centerY) * amount,
   };
+}
+
+/**
+ * Where the cursor's tip is at recording time `t`, interpolated between the
+ * logged positions and held at the first and last ones outside them. Returns
+ * nothing for a take without a cursor.
+ */
+export function cursorAt(
+  log: CursorLog,
+  t: number,
+): { x: number; y: number } | undefined {
+  const { points } = log;
+  if (points.length === 0) return undefined;
+  let low = 0;
+  let high = points.length - 1;
+  if (t <= points[low].t) return points[low];
+  if (t >= points[high].t) return points[high];
+  while (high - low > 1) {
+    const middle = (low + high) >> 1;
+    if (points[middle].t <= t) low = middle;
+    else high = middle;
+  }
+  const a = points[low];
+  const b = points[high];
+  const amount = b.t > a.t ? (t - a.t) / (b.t - a.t) : 1;
+  return { x: a.x + (b.x - a.x) * amount, y: a.y + (b.y - a.y) * amount };
 }

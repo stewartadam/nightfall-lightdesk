@@ -57,8 +57,12 @@ captioned, outro card.
   Playwright wrapper against the embedded demo engine and its bundled sample
   show, so every take starts from the same state. A fake cursor
   (`cursor-overlay.ts`) glides along eased, curved paths with a slight
-  overshoot and ripples on click; the real click fires when it arrives. Frames
-  come from Chrome's screencast (`screencast.ts`) and are resampled to 60 fps.
+  overshoot, and the real click fires when it arrives. The page never paints
+  the cursor: it logs the cursor's path and clicks into the manifest, and the
+  renderer draws the arrow and click ripples from that log. A cursor drawn in
+  the page stalled Chrome's paint for about a quarter second each time it
+  started moving. Frames come from Chrome's screencast (`screencast.ts`) and
+  are resampled to 60 fps.
 - `kit/shared/edit.ts` defines the take's manifest, the edit a reel builds from it,
   and the camera that eases between zooms. It knows nothing about the
   renderer, so edits survive a change of video tool.

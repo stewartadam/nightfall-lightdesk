@@ -22,7 +22,6 @@ A zoom frames an action and then gets out of the way:
 - Cover a run of clicks in one region with a single zoom, instead of zooming in and out for each.
 - Zoom all the way out once a step finishes, such as an import, so the viewer sees the result in the visualizer.
 - Don't zoom where the frame would clip a form, dialog or result the viewer needs to read. When in doubt, stay wide.
-- Keep the cursor visible above modal dialogs.
 
 ## Pacing and content
 
