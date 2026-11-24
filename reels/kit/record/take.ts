@@ -12,9 +12,17 @@ import { fileURLToPath } from "node:url";
 import type { Locator, Page } from "@playwright/test";
 import { prepareFreshBackendShowfile } from "../../../webui/e2e/backend-showfile";
 import { waitForDockviewApp } from "../../../webui/e2e/showfile-startup";
-import type { RecordingManifest, RecordingMarker } from "../shared/edit";
+import type {
+  CursorPoint,
+  RecordingManifest,
+  RecordingMarker,
+} from "../shared/edit";
 import { CAPTURE_SIZE as OUTPUT, CAPTURE_SCALE as SCALE } from "./capture";
-import { installReelCursor, type ReelCursorApi } from "./cursor-overlay";
+import {
+  type CursorSample,
+  installReelCursor,
+  type ReelCursorApi,
+} from "./cursor-overlay";
 import { ScreencastRecorder } from "./screencast";
 
 /** The reels package root, its git-ignored output folder, and the repository root. */
@@ -47,6 +55,7 @@ export async function openDemo(page: Page, baseURL: string | undefined) {
     localStorage.setItem("nightfall.currentShowfileName", "local-show");
   });
   await page.addInitScript(installReelCursor);
+  await page.addInitScript(installDamageJitter);
   await page.goto(
     `/?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false${qualityParam()}`,
   );
@@ -64,6 +73,41 @@ async function hideDiagnostics(page: Page): Promise<void> {
       [data-testid="status-build-name"],
       [data-testid="status-build-separator"] { display: none !important; }`,
   });
+}
+
+/**
+ * Keeps Chrome's screencast from locking onto the visualizer. Once one
+ * rectangle makes up most of the page's damage for a second, Chrome's capture
+ * oracle treats it as animated content and only captures frames whose damage
+ * is exactly that rectangle. Any other change, such as a button's colour fade
+ * or a dialog opening, then froze the take until it ended, or for 0.25 s when
+ * it outlasted the oracle's threshold. Two near-invisible dots in opposite
+ * corners change on alternate frames, so the damage rectangle alternates, no
+ * rectangle wins a majority and every frame is captured.
+ */
+function installDamageJitter(): void {
+  /** Adds the dots once the body exists and starts toggling them. */
+  const start = () => {
+    const dots = ["top: 0; left: 0", "bottom: 0; right: 0"].map((corner) => {
+      const dot = document.createElement("div");
+      dot.style.cssText = `position: fixed; ${corner}; width: 1px; height: 1px; z-index: 2147483647; pointer-events: none; background: rgb(0 0 0 / 0.01)`;
+      document.body.append(dot);
+      return dot;
+    });
+    let frame = 0;
+    /** Changes one dot per animation frame, alternating corners. */
+    const tick = () => {
+      frame++;
+      // Each dot flips every other frame, so every frame changes exactly one.
+      const dot = dots[frame % 2];
+      dot.dataset.on = dot.dataset.on ? "" : "1";
+      dot.style.background = `rgb(0 0 0 / ${dot.dataset.on ? 0.02 : 0.01})`;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+  if (document.body) start();
+  else document.addEventListener("DOMContentLoaded", start, { once: true });
 }
 
 /**
@@ -91,6 +135,7 @@ export async function openDesktop(
 ): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
   await page.addInitScript(installReelCursor);
+  await page.addInitScript(installDamageJitter);
   await page.goto(`/?e2e=1&startup:draftRecovery=false${qualityParam()}`);
   await waitForDockviewApp(page);
   await hideDiagnostics(page);
@@ -211,9 +256,9 @@ export class Take {
   }
 
   /**
-   * Clicks where the cursor is, with the ripple drawn at the same moment. The
-   * ripple plays on without holding the script, so clicks can follow each
-   * other faster than it lasts, as taps on a tempo pad do.
+   * Clicks where the cursor is and logs the click so the edit draws a press
+   * and a ripple at that moment. Nothing waits on the ripple, so clicks can
+   * follow each other faster than it lasts, as taps on a tempo pad do.
    */
   async click(): Promise<void> {
     await Promise.all([
@@ -274,6 +319,15 @@ export class Take {
    */
   async finish({ soundtrack }: { soundtrack?: string } = {}): Promise<void> {
     const stoppedAt = await this.recorder.stop();
+    const track = await this.page.evaluate(() =>
+      (window as unknown as CursorWindow).__reelCursor.track(),
+    );
+    /** Converts a page sample to recording seconds and pixels. */
+    const toRecording = ({ epochMs, x, y }: CursorSample): CursorPoint => ({
+      t: epochMs / 1000 - this.origin,
+      x: x * SCALE,
+      y: y * SCALE,
+    });
     this.recorder.encode(join(this.dir, "recording.mp4"), FPS, this.origin);
     const soundtrackPath =
       soundtrack && `${this.reel}/soundtrack${extname(soundtrack)}`;
@@ -285,9 +339,14 @@ export class Take {
       ...(soundtrackPath ? { soundtrack: soundtrackPath } : {}),
       width: OUTPUT.width,
       height: OUTPUT.height,
+      scale: SCALE,
       fps: FPS,
       durationSeconds: stoppedAt - this.origin,
       markers: this.markers,
+      cursor: {
+        points: track.samples.map(toRecording),
+        clicks: track.clicks.map(toRecording),
+      },
     };
     writeFileSync(
       join(this.dir, "recording.json"),

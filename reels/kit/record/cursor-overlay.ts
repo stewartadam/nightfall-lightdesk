@@ -16,11 +16,29 @@ export interface CursorMoveOptions {
   straight?: boolean;
 }
 
+/** Where the cursor was at one moment, as wall-clock epoch milliseconds and CSS pixels. */
+export interface CursorSample {
+  epochMs: number;
+  x: number;
+  y: number;
+}
+
+/** Everything the cursor did during a take, for the edit to draw. */
+export interface CursorTrack {
+  /** The cursor's position each time it moved, in order. */
+  samples: CursorSample[];
+  /** Each click, at the cursor's position when it happened. */
+  clicks: CursorSample[];
+}
+
 /** Browser-side API the overlay installs on `window.__reelCursor`. */
 export interface ReelCursorApi {
   moveTo(x: number, y: number, options?: CursorMoveOptions): Promise<void>;
+  /** Logs a click at the cursor's position, for the edit to draw a press and a ripple. */
   ripple(): Promise<void>;
   position(): { x: number; y: number };
+  /** The cursor's moves and clicks so far. */
+  track(): CursorTrack;
   /**
    * Adds an element that rides along with the pointer, drawn just under it in
    * the overlay, such as a file being dragged in. Returns a function that
@@ -31,9 +49,16 @@ export interface ReelCursorApi {
 
 /**
  * Installs a fake cursor that glides along curved, eased paths with a slight
- * overshoot and draws a ripple on click. Headless captures never show the
- * system pointer, and real pointer moves teleport, so the recording script
- * animates this overlay first and fires the real input once it arrives.
+ * overshoot and logs each click. Headless captures never show the system
+ * pointer, and real pointer moves teleport, so the recording script animates
+ * this cursor first and fires the real input once it arrives.
+ *
+ * The page never paints the arrow or the click ripple. It only logs where the
+ * cursor was on each animation frame, and the edit draws it from that log,
+ * sharp at any zoom. A cursor drawn in the page also froze the take for a
+ * quarter second per glide (see "Screencast lock-in" in the README).
+ * Elements handed to `carry`, such as a file chip being dragged in, stay
+ * visible and ride along in the page.
  *
  * Runs in the page through `page.addInitScript`, so it must stay
  * self-contained: no imports or closures over module scope.
@@ -43,6 +68,13 @@ export function installReelCursor(): void {
   let current = { ...start };
   let host: HTMLDivElement | undefined;
   let pointer: HTMLDivElement | undefined;
+  /** Every position the cursor took and every click, for the edit to redraw. */
+  const track: CursorTrack = { samples: [], clicks: [] };
+
+  /** The current wall-clock time in epoch milliseconds, at sub-millisecond precision. */
+  function epochMs(): number {
+    return performance.timeOrigin + performance.now();
+  }
   /** Elements riding along with the pointer, with their offset from its tip. */
   const carried: { element: HTMLElement; offset: { x: number; y: number } }[] =
     [];
@@ -54,11 +86,10 @@ export function installReelCursor(): void {
     host.setAttribute("data-reel-cursor", "true");
     host.style.cssText =
       "position:fixed;inset:0;pointer-events:none;z-index:2147483647;overflow:hidden;";
+    // An empty anchor that carried elements stack under; the edit draws the arrow.
     pointer = document.createElement("div");
     pointer.style.cssText =
-      "position:absolute;left:0;top:0;width:30px;height:30px;will-change:transform;filter:drop-shadow(0 3px 6px rgba(0,0,0,.45));";
-    pointer.innerHTML =
-      '<svg width="30" height="30" viewBox="0 0 24 24" style="display:block;transform-origin:5px 3px"><path d="M4 2.5 L4 19.5 L8.6 15.4 L11.7 22 L14.6 20.7 L11.6 14.3 L17.8 14.3 Z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+      "position:absolute;left:0;top:0;width:0;height:0;visibility:hidden;";
     host.append(pointer);
     // A manual popover lives in the browser's top layer, so modal dialogs and
     // their backdrops can't cover or dim the cursor.
@@ -86,11 +117,9 @@ export function installReelCursor(): void {
     host.showPopover();
   }
 
-  /** Moves the pointer graphic so its tip sits on the given point. */
+  /** Logs the cursor's tip at the given point and moves carried elements along with it. */
   function place(point: { x: number; y: number }): void {
-    if (!pointer) return;
-    // The arrow tip sits 4px right and 2.5px down from the SVG origin at 30/24 scale.
-    pointer.style.transform = `translate3d(${point.x - 5}px, ${point.y - 3}px, 0)`;
+    track.samples.push({ epochMs: epochMs(), x: point.x, y: point.y });
     for (const { element, offset } of carried) {
       element.style.transform = `translate3d(${point.x + offset.x}px, ${point.y + offset.y}px, 0)`;
     }
@@ -164,32 +193,14 @@ export function installReelCursor(): void {
       });
     },
     ripple() {
-      const overlay = ensureHost();
-      const ring = document.createElement("div");
-      ring.style.cssText = `position:absolute;left:${current.x - 22}px;top:${current.y - 22}px;width:44px;height:44px;border-radius:50%;border:3px solid rgba(255,255,255,.95);background:rgba(120,170,255,.35);box-shadow:0 0 18px rgba(120,170,255,.6);`;
-      overlay.insertBefore(ring, pointer ?? null);
-      const animation = ring.animate(
-        [
-          { transform: "scale(.35)", opacity: 1 },
-          { transform: "scale(1.5)", opacity: 0 },
-        ],
-        { duration: 520, easing: "cubic-bezier(.2,.7,.3,1)" },
-      );
-      // Press the arrow graphic itself, about its tip. Scaling the positioned
-      // wrapper would also scale its translate and throw the cursor toward
-      // the page origin for the length of the press.
-      pointer?.firstElementChild?.animate(
-        [
-          { transform: "scale(1)" },
-          { transform: "scale(0.82)", offset: 0.35 },
-          { transform: "scale(1)" },
-        ],
-        { duration: 260, easing: "ease-out" },
-      );
-      return animation.finished.then(() => ring.remove());
+      track.clicks.push({ epochMs: epochMs(), ...current });
+      return Promise.resolve();
     },
     position() {
       return { ...current };
+    },
+    track() {
+      return track;
     },
     carry(element, offset) {
       const overlay = ensureHost();
