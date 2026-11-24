@@ -1,0 +1,26 @@
+{
+  "name": "nightfall-reels",
+  "private": true,
+  "type": "module",
+  "license": "MPL-2.0",
+  "packageManager": "pnpm@12.22.0",
+  "//": "Its own pnpm workspace (pnpm-workspace.yaml), kept out of the app's install, build and checks.",
+  "scripts": {
+    "record": "node kit/scripts/record.mjs",
+    "render": "node kit/scripts/render.mjs",
+    "studio": "remotion studio kit/remotion/index.ts --public-dir out",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p kit/record/tsconfig.json"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.540",
+    "@remotion/cli": "4.0.540",
+    "@remotion/renderer": "4.0.540",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "remotion": "4.0.540"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "typescript": "^7.0.2"
+  }
+}
