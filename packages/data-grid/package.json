@@ -1,6 +1,6 @@
 {
   "name": "@stewartadam/nightfall-data-grid",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A virtualized, editable, spreadsheet-style data grid for SolidJS.",
   "license": "MPL-2.0",
   "repository": {
