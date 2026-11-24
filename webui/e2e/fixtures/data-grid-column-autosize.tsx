@@ -10,7 +10,7 @@ import { createMemo, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import DataGrid, {
   createKeyedDataGridCellProvider,
-} from "../../components/widgets/data-grid";
+} from "../../components/widgets/nightfall-data-grid";
 import { GridCellKind, type GridColumn } from "../../lib/data-grid-types";
 import "../../index.css";
 

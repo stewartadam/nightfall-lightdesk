@@ -23,7 +23,6 @@ import {
   Show,
   untrack,
 } from "solid-js";
-import { Dynamic } from "solid-js/web";
 import type {
   GridCell,
   GridColumn,
@@ -33,7 +32,6 @@ import type {
 import { GridCellKind } from "../../../lib/data-grid-types";
 import { BodyCell } from "./body-cell";
 import { createDataGridEditingController } from "./editing-controller";
-import { dataGridEnvironment } from "./environment";
 import { clampIndex, isSpaceKey } from "./event-adapter";
 import { HeaderCell } from "./header-cell";
 import { createDataGridKeyboardController } from "./keyboard-controller";
@@ -76,7 +74,8 @@ import {
 
 const MARKER_WIDTH = 34;
 const HEADER_ROW_HEIGHT = 30;
-const EMPTY_STATE_HEIGHT = 52;
+/** Height reserved below the headers for `placeholder` or `empty` content. */
+const NO_ROWS_CONTENT_HEIGHT = 52;
 const DEFAULT_ROW_HEIGHT = 30;
 const METRIC_FRAGMENT_PATTERN = /[^a-zA-Z0-9_-]/g;
 const sortCollator = new Intl.Collator(undefined, {
@@ -157,41 +156,28 @@ export default function TanStackDataGrid(props: DataGridProps) {
         : 42
       : DEFAULT_ROW_HEIGHT);
 
-  const instrumentationScope = props.performanceScope?.trim();
-  const instrumentationEnabled =
-    instrumentationScope !== undefined && instrumentationScope.length > 0;
-
-  /** Builds the metrics table key for one DataGrid instrumentation sample. */
-  const dataGridMeasureName = (metric: string): string | undefined => {
-    if (!instrumentationEnabled) return undefined;
-    return `${instrumentationScope}.${metric}`;
-  };
+  /** Instrumentation is decided once, when the grid mounts, by whether an `onMetric` handler exists. */
+  const instrumentationEnabled = props.onMetric !== undefined;
 
   /** Sanitizes owner-provided probe names so metric rows stay predictable. */
   const metricFragment = (value: string): string =>
     value.trim().replace(METRIC_FRAGMENT_PATTERN, "-");
 
-  /** Records one numeric DataGrid instrumentation sample. */
+  /** Reports one positive counter sample to the owner's `onMetric` handler. */
   const recordDataGridCount = (metric: string, value: number) => {
     if (value <= 0) return;
-    const name = dataGridMeasureName(metric);
-    if (!name) return;
-    dataGridEnvironment().recordPerformanceMeasure(name, value, "count");
+    props.onMetric?.({ metric, value, unit: "count" });
   };
 
-  /** Records one numeric DataGrid gauge sample, allowing zero as a meaningful value. */
+  /** Reports one gauge sample, allowing zero as a meaningful value. */
   const recordDataGridGauge = (metric: string, value: number) => {
     if (!Number.isFinite(value) || value < 0) return;
-    const name = dataGridMeasureName(metric);
-    if (!name) return;
-    dataGridEnvironment().recordPerformanceMeasure(name, value, "count");
+    props.onMetric?.({ metric, value, unit: "count" });
   };
 
-  /** Records one DataGrid instrumentation timing sample. */
+  /** Reports one timing sample in milliseconds. */
   const recordDataGridTiming = (metric: string, durationMs: number) => {
-    const name = dataGridMeasureName(metric);
-    if (!name) return;
-    dataGridEnvironment().recordPerformanceMeasure(name, durationMs);
+    props.onMetric?.({ metric, value: durationMs, unit: "ms" });
   };
 
   /** Publishes pending grid churn counters once per browser frame. */
@@ -719,6 +705,17 @@ export default function TanStackDataGrid(props: DataGridProps) {
     return rows;
   });
   /**
+   * Returns what to show below the headers when there are no rows: the
+   * `placeholder` while the owner reports `loading`, otherwise `empty`.
+   */
+  const noRowsContent = (): JSX.Element | undefined =>
+    tableRows().length === 0
+      ? props.loading
+        ? props.placeholder
+        : props.empty
+      : undefined;
+
+  /**
    * Resolves the root height. A content-height grid adds up its header rows,
    * virtual row extent (or empty state) and any horizontal scrollbar so it
    * occupies exactly the space a native table would.
@@ -727,8 +724,8 @@ export default function TanStackDataGrid(props: DataGridProps) {
     if (props.height !== "content") return styleSize(props.height, "100%");
     const body =
       tableRows().length === 0
-        ? props.emptyState
-          ? EMPTY_STATE_HEIGHT
+        ? noRowsContent()
+          ? NO_ROWS_CONTENT_HEIGHT
           : 0
         : rowVirtualizer.getTotalSize();
     return `${headerRows().length * HEADER_ROW_HEIGHT + body + horizontalScrollbarHeight()}px`;
@@ -838,7 +835,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
     /** Tracks owner-provided probe identities to attribute invalidation sources. */
     createEffect(
       () => {
-        const probes = props.performanceProbes;
+        const probes = props.metricProbes;
         return probes ? Object.entries(probes) : undefined;
       },
       (entries) => {
@@ -1128,14 +1125,9 @@ export default function TanStackDataGrid(props: DataGridProps) {
           if (!previousVisible && visible) {
             setCellUpdateVersion((version) => version + 1);
           }
-          const panelElement =
-            visibilityRoot.closest<HTMLElement>("[data-panel-kind]");
-          const panelKind = panelElement?.dataset.panelKind ?? "unknown";
-          const panelId = panelElement?.dataset.panelId;
-          const debugScope = props.performanceScope?.trim() || "unspecified";
-          dataGridEnvironment().logger.debug(
-            `Visibility: panel=${panelKind}${panelId ? ` id=${panelId}` : ""}, scope=${debugScope}, computedStyle=${visible} -> ${visible ? "refreshing" : "paused"}`,
-          );
+          if (previousVisible !== visible) {
+            recordDataGridGauge("visible", visible ? 1 : 0);
+          }
         })
       : undefined;
     const mutationRoot = rootRef;
@@ -1330,14 +1322,17 @@ export default function TanStackDataGrid(props: DataGridProps) {
             </For>
           </div>
 
-          <Show when={tableRows().length === 0 && props.emptyState}>
-            <Dynamic
-              component={dataGridEnvironment().EmptyState}
-              class="sticky left-0 w-fit max-w-full px-4"
-              style={{ height: `${EMPTY_STATE_HEIGHT}px` }}
-            >
-              {props.emptyState}
-            </Dynamic>
+          <Show when={noRowsContent()}>
+            {(content) => (
+              <div
+                role="status"
+                class="sticky left-0 w-fit max-w-full px-4"
+                style={{ height: `${NO_ROWS_CONTENT_HEIGHT}px` }}
+                data-grid-no-rows={props.loading ? "placeholder" : "empty"}
+              >
+                {content()}
+              </div>
+            )}
           </Show>
           <div
             class="relative"

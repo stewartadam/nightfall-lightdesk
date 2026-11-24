@@ -23,7 +23,7 @@ import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridScrollRequest,
   singleRowGridSelection,
-} from "../../components/widgets/data-grid";
+} from "../../components/widgets/nightfall-data-grid";
 import {
   changeCrudPanelViewMode,
   loadCrudPanelViewMode,
@@ -281,7 +281,7 @@ export default function TimecodePanel(props: TimecodePanelProps) {
                 cellProvider={provider}
                 sortableColumns={TIMECODE_COLUMNS.map((column) => column.id!)}
                 freezeColumns={2}
-                emptyState="No timecodes"
+                empty="No timecodes"
                 gridSelection={selection()}
                 onGridSelectionChange={(next) => {
                   setReportedSelection(next);

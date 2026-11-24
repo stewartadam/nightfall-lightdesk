@@ -37,10 +37,7 @@ import { showfileTransition } from "./state/showfile-transition";
 import "./index.css";
 import "./components/shell/app/shell.css";
 import "./components/widgets/crud/crud-cards.css";
-import { installDataGridEnvironment } from "./components/widgets/data-grid-environment";
 import { createEffect } from "./lib/solid-compat";
-
-installDataGridEnvironment();
 
 type InteractiveAppModule =
   typeof import("./components/shell/app/interactive-app");

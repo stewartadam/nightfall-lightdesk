@@ -18,7 +18,7 @@ import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridRichCellExtension,
-} from "../../../components/widgets/data-grid";
+} from "../../../components/widgets/nightfall-data-grid";
 import {
   type GridCell,
   GridCellKind,
@@ -345,7 +345,7 @@ export function ActiveInstancesSection(props: ActiveInstancesSectionProps) {
           rowHeight={INSTANCE_ROW_HEIGHT}
           height="content"
           class="max-h-[60vh]"
-          emptyState="No active instances"
+          empty="No active instances"
         />
       </div>
     </section>
@@ -506,7 +506,7 @@ export function TimecodesSection(props: TimecodeSectionProps) {
           rowHeight={TIMECODE_ROW_HEIGHT}
           height="content"
           class="max-h-[40vh]"
-          emptyState="No timecodes"
+          empty="No timecodes"
         />
       </div>
     </section>

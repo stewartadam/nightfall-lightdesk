@@ -9,7 +9,7 @@
 import {
   type DataGridRichCellExtension,
   DropdownCellAffordance,
-} from "../../../../components/widgets/data-grid";
+} from "../../../../components/widgets/nightfall-data-grid";
 import type { GridCell } from "../../../../lib/data-grid-types";
 import { TrackingFlagsCellSelect } from "./editor";
 import { isTrackingFlagsCell, makeTrackingFlagsEditedCell } from "./model";

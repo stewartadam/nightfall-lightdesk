@@ -9,7 +9,7 @@
 import { WarningIcon } from "@squidlab/phosphor-solid/warning";
 import type { Accessor, JSX, Setter } from "solid-js";
 import { createSignal, onCleanup, Show } from "solid-js";
-import { Dynamic, Portal } from "solid-js/web";
+import { Dynamic } from "solid-js/web";
 import type {
   CustomCell,
   CustomRenderer,
@@ -29,7 +29,6 @@ import {
 } from "../../../lib/tanstack-dropdown-cell";
 import { DropdownCellAffordance } from "./cells/dropdown-cell-affordance";
 import { DropdownCellSelect } from "./cells/dropdown-cell-select";
-import { dataGridEnvironment } from "./environment";
 import { isPrintableEditKey } from "./event-adapter";
 import {
   canEditBooleanCell,
@@ -187,6 +186,18 @@ const builtInCellRenderers: readonly DataGridCellRenderer[] = [
   loadingCellRenderer,
 ];
 
+/**
+ * Shows a floating element in the browser's top layer once it mounts, so it
+ * appears above open modal dialogs and clipping ancestors wherever the grid is.
+ */
+function showInTopLayer(element: HTMLElement) {
+  queueMicrotask(() => {
+    if (element.isConnected && !element.matches(":popover-open")) {
+      element.showPopover();
+    }
+  });
+}
+
 /** Resolves the editor or renderer used for a body cell. */
 export function resolveCellContent(
   context: CellContentContext,
@@ -290,13 +301,13 @@ function renderTextInputEditor(context: CellContentContext) {
     if (!rect) return undefined;
     return {
       position: "fixed",
+      inset: "auto",
       top: `${Math.min(rect.bottom + 8, window.innerHeight - 8)}px`,
       left: `${Math.min(
         Math.max(rect.left + rect.width / 2, 8),
         window.innerWidth - 8,
       )}px`,
       transform: "translateX(-50%)",
-      "z-index": 2147483647,
     };
   };
 
@@ -360,15 +371,15 @@ function renderTextInputEditor(context: CellContentContext) {
         {(content) => (
           <Show when={tooltipStyle()}>
             {(style) => (
-              <Portal mount={dataGridEnvironment().overlayMount()}>
-                <div
-                  class="pointer-events-none whitespace-nowrap rounded border border-neutral-600 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 shadow-lg"
-                  data-grid-inline-tooltip="true"
-                  style={style()}
-                >
-                  {content()}
-                </div>
-              </Portal>
+              <div
+                popover="manual"
+                ref={showInTopLayer}
+                class="pointer-events-none m-0 whitespace-nowrap rounded border border-neutral-600 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 shadow-lg"
+                data-grid-inline-tooltip="true"
+                style={style()}
+              >
+                {content()}
+              </div>
             )}
           </Show>
         )}

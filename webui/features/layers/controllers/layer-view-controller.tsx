@@ -19,10 +19,10 @@ import {
   openContextMenu,
 } from "../../../components/providers/context-menu";
 import { Collapsible } from "../../../components/ui/collapsible";
-import { createKeyedDataGridCellProvider } from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid-extensions/data-grid-filter-menu";
 import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
+import { createKeyedDataGridCellProvider } from "../../../components/widgets/nightfall-data-grid";
 import type {
   CellClickedEventArgs,
   GridCell,
@@ -526,7 +526,7 @@ export function LayerViewController(props: LayerViewProps) {
       onCellClicked={handleCellClicked}
       onCellContextMenu={handleCellContextMenu}
       panelId={props.panelId}
-      performanceProbes={{
+      metricProbes={{
         displayRowsData: displayRowsData(),
         visibleRows: displayRows(),
         visibleColumns: visibleColumns(),

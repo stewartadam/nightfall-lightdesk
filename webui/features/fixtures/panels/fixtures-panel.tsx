@@ -13,11 +13,11 @@ import {
 } from "@solid-primitives/scheduled";
 import { createMemo, createSignal } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
+import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridScrollRequest,
-} from "../../../components/widgets/data-grid";
-import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
+} from "../../../components/widgets/nightfall-data-grid";
 import { PROGRAMMER_SELECTION_ID_TEXT_COLOR } from "../../../lib/constants";
 import type {
   GridCell,
@@ -729,7 +729,7 @@ export default function FixturesPanel(props: FixturesPanelProps) {
               height="100%"
               nestedColumnGroups={ATTRIBUTE_VALUE_NESTED_COLUMN_GROUPS}
               performanceScope={`fixtures.${panelId}`}
-              performanceProbes={{
+              metricProbes={{
                 fixtureStructure: fixtureGridStructure(),
                 fixtureValues: fixtureValueSnapshot(),
                 visibleRows: rows(),

@@ -8,7 +8,7 @@
 
 import type { ComponentProps } from "solid-js";
 import Tooltip from "../../../components/ui/tooltip";
-import DataGrid from "../../../components/widgets/data-grid";
+import DataGrid from "../../../components/widgets/nightfall-data-grid";
 import { ATTRIBUTE_VALUE_NESTED_COLUMN_GROUPS } from "../../../lib/datagrid";
 import { richTimeCellRenderer } from "../../../lib/datagrid-rich-cells";
 import { parseTimingFanInput } from "../../../lib/timing-fan";

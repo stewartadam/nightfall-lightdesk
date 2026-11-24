@@ -20,13 +20,13 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 
 import { type Component, createMemo, createSignal } from "solid-js";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import DataGrid, {
-  createKeyedDataGridCellProvider,
-} from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid-extensions/data-grid-filter-menu";
 import DataGridToolbar from "../../../components/widgets/data-grid-extensions/data-grid-toolbar";
 import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
+import DataGrid, {
+  createKeyedDataGridCellProvider,
+} from "../../../components/widgets/nightfall-data-grid";
 import type {
   GridCell,
   GridSelection,

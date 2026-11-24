@@ -27,7 +27,7 @@ import DataGrid, {
   activeGridSelectionRow,
   createKeyedDataGridCellProvider,
   singleRowGridSelection,
-} from "../../components/widgets/data-grid";
+} from "../../components/widgets/nightfall-data-grid";
 import {
   type GridCell,
   GridCellKind,

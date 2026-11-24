@@ -14,7 +14,7 @@ import {
   type ContextMenuEntry,
   openContextMenu,
 } from "../../../components/providers/context-menu";
-import { selectedClipboardCells } from "../../../components/widgets/data-grid";
+import { selectedClipboardCells } from "../../../components/widgets/nightfall-data-grid";
 import type {
   GridSelection,
   GroupHeaderClickedEventArgs,

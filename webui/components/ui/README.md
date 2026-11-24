@@ -110,7 +110,7 @@ Use `EmptyState` from `empty-state` whenever a panel, list, inspector or placeho
 - `loading` swaps the icon for a spinner (stopped under reduced motion), defaults the title to "Loading…" and makes the element a polite `role="status"` region.
 - `density="compact"` uses smaller text and padding for menus, popovers and tables.
 
-`TableEmptyRow` and the read-only `DataGrid`'s `emptyState` render through `EmptyState`. The design lab's Empty states panel shows every variant.
+`TableEmptyRow` and the `DataGrid`'s `empty` and `placeholder` messages render through `EmptyState`. The design lab's Empty states panel shows every variant.
 
 ## Badges
 
@@ -177,7 +177,7 @@ The design lab uses the production read-only `DataGrid` for live timecode source
 
 ### Read-only DataGrid
 
-Import `DataGrid` and `createKeyedDataGridCellProvider` from `components/widgets/data-grid`. Provide unique stable row keys and column IDs. Update the reactive provider when source values change; do not use array positions as identities. The grid owns the TanStack row model, column sizing and virtualization.
+Import `DataGrid` and `createKeyedDataGridCellProvider` from `components/widgets/nightfall-data-grid`, which applies the app's defaults (Preline dropdown cells, inline empty states and the `performanceScope` metrics) on top of the generic grid in `components/widgets/data-grid`. Provide unique stable row keys and column IDs. Update the reactive provider when source values change; do not use array positions as identities. The grid owns the TanStack row model, column sizing and virtualization.
 
 - Set `readOnly` to block text/rich editors, boolean toggles, paste and deletion even when source cells advertise editing. Switching a grid to read-only discards any pending editor. Navigation, selection and copying remain available.
 - Read-only grids use `appearance="table"` by default, matching `Table`: row lines instead of cell boxes, small muted headers, row hover, a whole-row selection tint, and sort arrows only on sorted or hovered headers. The active-cell outline shows only while the grid has focus. Pass `appearance="grid"` to keep spreadsheet chrome.
@@ -186,7 +186,7 @@ Import `DataGrid` and `createKeyedDataGridCellProvider` from `components/widgets
 - Pin the columns that name a row (an ID, label or scope) with `freezeColumns` so they stay visible while wide tables scroll sideways. `CrudListDataGrid` pins its leading marker, ID and Label columns automatically.
 - `selectionMode="row"` makes clicks, drags and arrow keys select whole rows instead of cells, for lists where the row is the record (the fixture picker, Timecodes). The default `"cell"` keeps spreadsheet cell and range selection. `"text"` turns grid selection off so the browser selects and copies cell text like a document table, and `"none"` turns all selection off for presentational tables; both are for read-only grids and hide row markers.
 - For a table that tracks one selected record, derive `gridSelection` with `singleRowGridSelection` from the record's current source row, and read the chosen row back with `activeGridSelectionRow`.
-- Set `ariaLabel` and optionally `emptyState`. Headers remain visible with an empty row projection.
+- Set `ariaLabel` and optionally `empty`, the message shown when loaded data has no rows. While rows are still loading, set `loading` and optionally `placeholder` (defaults to "Loading…"). Headers remain visible with an empty row projection.
 - `density="comfortable"` uses 42px rows and `density="compact"` uses 32px rows. An explicit `rowHeight` overrides either. Editable grids retain their 30px default. `columnGuides` overrides the inherited app setting when supplied.
 - Opt individual headers into sorting with `sortableColumns={["name", "count"]}`. Click, Enter and Space cycle ascending, descending and source order. Numeric and boolean cells sort by raw value; text and rich cells use display/copy text with natural, case-insensitive ordering. Loading cells sort last.
 - Sorting is internal unless `sorting` and `onSortingChange` control it. Generic sorting only applies in read-only mode; editable/domain projections keep their upstream order.

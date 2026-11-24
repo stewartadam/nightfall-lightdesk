@@ -38,13 +38,13 @@ import {
   normalizeGridClickPosition,
 } from "../../../lib/datagrid-rich-cells";
 import { createEffect } from "../../../lib/solid-compat";
+import ColumnVisibilityMenu from "../data-grid-extensions/column-visibility-menu";
+import DataGridFilterMenu from "../data-grid-extensions/data-grid-filter-menu";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellKey,
   type DataGridProps,
-} from "../data-grid";
-import ColumnVisibilityMenu from "../data-grid-extensions/column-visibility-menu";
-import DataGridFilterMenu from "../data-grid-extensions/data-grid-filter-menu";
+} from "../nightfall-data-grid";
 import { frozenLeadingColumnCount } from "./model/crud-frozen-columns";
 
 interface RowClickModifiers {

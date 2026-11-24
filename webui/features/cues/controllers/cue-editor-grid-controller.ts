@@ -7,7 +7,7 @@
  */
 
 import { type Accessor, createMemo, createSignal } from "solid-js";
-import { createKeyedDataGridCellProvider } from "../../../components/widgets/data-grid";
+import { createKeyedDataGridCellProvider } from "../../../components/widgets/nightfall-data-grid";
 import { createAsyncValue } from "../../../lib/async-value";
 import { sortedAttributes } from "../../../lib/attribute-ordering";
 import { isColorPathDrivenAttribute } from "../../../lib/color-path-driven-attributes";

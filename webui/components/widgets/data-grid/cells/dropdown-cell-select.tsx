@@ -6,8 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { Show } from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { For, Show } from "solid-js";
 import {
   type DropdownGridCell,
   dropdownDisplaySwatch,
@@ -15,13 +14,14 @@ import {
   dropdownOptions,
   dropdownSelectedKey,
 } from "../../../../lib/tanstack-dropdown-cell";
-import { dataGridEnvironment } from "../environment";
 import { canEditDropdownCell } from "../model/cell-utils";
 import { DropdownCellAffordance } from "./dropdown-cell-affordance";
 
 /**
- * Shows an editable dropdown cell with the environment's dropdown editor while
- * keeping editor keystrokes and clicks out of the grid's own handlers.
+ * Edits a dropdown cell with a native `<select>`, focused as soon as editing
+ * starts, while keeping editor keystrokes and clicks out of the grid's own
+ * handlers. Escape ends editing without a change. Owners that want a richer
+ * picker register a rich-cell extension for dropdown cells instead.
  */
 export function DropdownCellSelect(props: {
   cell: DropdownGridCell;
@@ -31,20 +31,6 @@ export function DropdownCellSelect(props: {
 }) {
   /** Returns whether the current dropdown cell can be edited. */
   const editable = () => canEditDropdownCell(props.cell);
-
-  /** Returns the editor options derived from dropdown cell metadata. */
-  const selectOptions = () =>
-    dropdownOptions(props.cell).map((option) => ({
-      value: option.key,
-      label: option.label,
-      swatch: option.swatch,
-    }));
-
-  /** Returns the selected option key, or undefined when the cell has no value. */
-  const selectedKey = () => {
-    const key = dropdownSelectedKey(props.cell);
-    return key === "" ? undefined : key;
-  };
 
   return (
     <Show
@@ -66,14 +52,24 @@ export function DropdownCellSelect(props: {
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <Dynamic
-          component={dataGridEnvironment().DropdownSelect}
-          options={selectOptions()}
-          selectedKey={selectedKey()}
-          onSelect={props.onCommit}
-          onClose={props.onCancel}
-          ariaLabel="Choose cell value"
-        />
+        <select
+          class="h-full w-full bg-transparent"
+          aria-label="Choose cell value"
+          value={dropdownSelectedKey(props.cell)}
+          ref={(element) => queueMicrotask(() => element.focus())}
+          onChange={(event) => props.onCommit(event.currentTarget.value)}
+          on:keydown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              props.onCancel();
+            }
+          }}
+        >
+          <option value="" disabled hidden />
+          <For each={dropdownOptions(props.cell)}>
+            {(option) => <option value={option.key}>{option.label}</option>}
+          </For>
+        </select>
       </div>
     </Show>
   );

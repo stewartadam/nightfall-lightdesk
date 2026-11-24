@@ -9,12 +9,12 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import PanelToolbar from "../../../components/ui/panel-toolbar";
 import { Button } from "../../../components/ui/visual-language/button";
-import DataGrid, {
-  createKeyedDataGridCellProvider,
-} from "../../../components/widgets/data-grid";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid-extensions/data-grid-filter-menu";
 import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
+import DataGrid, {
+  createKeyedDataGridCellProvider,
+} from "../../../components/widgets/nightfall-data-grid";
 import type {
   GridCell,
   GridSelection,

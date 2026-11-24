@@ -8,7 +8,7 @@
 
 import type { ComponentProps } from "solid-js";
 import Tooltip from "../../../components/ui/tooltip";
-import DataGrid from "../../../components/widgets/data-grid";
+import DataGrid from "../../../components/widgets/nightfall-data-grid";
 import { richTimeCellRenderer } from "../../../lib/datagrid-rich-cells";
 import { trackingFlagsDataGridExtension } from "../../cue-sequences";
 import type { SequenceConflictTooltipState } from "../model/sequence-editor-model";

@@ -50,14 +50,13 @@ export function createDataGridEditingController(
 ) {
   const [editingCell, setEditingCell] = createSignal<EditingCell>();
 
-  /** Starts editing for built-in cells or a registered rich-cell extension. */
+  /**
+   * Starts editing a cell. A matching editable rich-cell extension wins over
+   * the built-in dropdown and text editors, so owners can replace them.
+   */
   const beginEdit = (col: number, row: number, initialValue?: string) => {
     if (options.props.readOnly) return;
     const cell = options.getCellContent()([col, row]);
-    if (canEditDropdownCell(cell)) {
-      setEditingCell({ col, row, sourceCell: cell, kind: "dropdown" });
-      return;
-    }
     const richCellExtension = editableRichCellExtension(
       options.props.richCellExtensions,
       cell,
@@ -70,6 +69,10 @@ export function createDataGridEditingController(
         kind: "rich",
         extensionId: richCellExtension.id,
       });
+      return;
+    }
+    if (canEditDropdownCell(cell)) {
+      setEditingCell({ col, row, sourceCell: cell, kind: "dropdown" });
       return;
     }
     if (!canEditCellAsText(cell, options.props)) return;

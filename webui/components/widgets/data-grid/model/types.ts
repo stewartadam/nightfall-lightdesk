@@ -49,6 +49,15 @@ export interface DataGridEditCommitContext {
   mode: DataGridEditCommitMode;
 }
 
+/** One instrumentation sample reported through `onMetric`. */
+export interface DataGridMetricSample {
+  /** Metric name, such as `rows`, `visible-cells` or `probe.selection.changes`. */
+  metric: string;
+  value: number;
+  /** `count` for counters and gauges, `ms` for timings. */
+  unit: "count" | "ms";
+}
+
 interface DataGridBaseProps {
   columns: readonly GridColumn[];
   rows: number;
@@ -64,8 +73,12 @@ interface DataGridBaseProps {
   density?: "comfortable" | "compact";
   columnGuides?: boolean;
   ariaLabel?: string;
-  /** Shows a message below the headers when the current row projection is empty. */
-  emptyState?: JSX.Element;
+  /** Whether the owner is still loading rows; while true and there are no rows, `placeholder` shows instead of `empty`. */
+  loading?: boolean;
+  /** Content shown below the headers while `loading` and there are no rows yet, such as a loading message. */
+  placeholder?: JSX.Element;
+  /** Content shown below the headers when loaded data has no rows, including when filters hide them all. */
+  empty?: JSX.Element;
   /** Column IDs whose headers sort the read-only view; source coordinates remain unchanged in callbacks. */
   sortableColumns?: readonly string[];
   sorting?: SortingState;
@@ -136,8 +149,15 @@ interface DataGridBaseProps {
   primaryColumnIndex?: number;
   decorationInvalidateKey?: unknown;
   nestedColumnGroups?: boolean;
-  performanceScope?: string;
-  performanceProbes?: Record<string, unknown>;
+  /**
+   * Receives instrumentation samples: row, column and visible-cell gauges,
+   * cell resolve and DOM mutation counts, `visible` (1 or 0 as a hidden grid
+   * pauses and resumes refreshing) and probe changes. Instrumentation runs only
+   * when a handler is present when the grid mounts.
+   */
+  onMetric?: (sample: DataGridMetricSample) => void;
+  /** Values whose identity changes are counted as `probe.<name>.changes` metrics, to trace re-render sources. */
+  metricProbes?: Record<string, unknown>;
   class?: string;
 }
 

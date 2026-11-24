@@ -14,7 +14,7 @@ import type { ContextMenuEntry } from "../../../components/widgets/context-menu/
 import {
   type HeaderCellView,
   selectedClipboardCells,
-} from "../../../components/widgets/data-grid";
+} from "../../../components/widgets/nightfall-data-grid";
 import { commandAttributeForName } from "../../../lib/attribute-metadata";
 import type {
   GridColumn,

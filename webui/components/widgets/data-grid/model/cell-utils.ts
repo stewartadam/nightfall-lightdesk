@@ -157,6 +157,14 @@ export function makeDeletedCell(
 ): GridCell | undefined {
   if (isReadonlyCell(original)) return undefined;
 
+  const richCellExtension = editableRichCellExtension(
+    editors?.richCellExtensions,
+    original,
+  );
+  if (richCellExtension?.makeDeletedCell) {
+    return richCellExtension.makeDeletedCell(original);
+  }
+
   const textEditor = customCellTextEditor(original, editors);
   if (textEditor && original.kind === GridCellKind.Custom) {
     return textEditor.makeDeletedCell?.(original);
@@ -171,14 +179,6 @@ export function makeDeletedCell(
         value: undefined,
       },
     };
-  }
-
-  const richCellExtension = editableRichCellExtension(
-    editors?.richCellExtensions,
-    original,
-  );
-  if (richCellExtension?.makeDeletedCell) {
-    return richCellExtension.makeDeletedCell(original);
   }
 
   if (original.kind === GridCellKind.Number && canEditTextCell(original)) {
@@ -223,6 +223,14 @@ export function makePastedCell(
 ): GridCell | undefined {
   if (isReadonlyCell(original)) return undefined;
 
+  const richCellExtension = editableRichCellExtension(
+    editors?.richCellExtensions,
+    original,
+  );
+  if (richCellExtension?.makePastedCell) {
+    return richCellExtension.makePastedCell(original, value);
+  }
+
   if (canEditCellAsText(original, editors)) {
     return makeEditedCell(original, value, editors);
   }
@@ -240,14 +248,6 @@ export function makePastedCell(
     return selected
       ? makeDropdownEditedCell(original, selected.key)
       : undefined;
-  }
-
-  const richCellExtension = editableRichCellExtension(
-    editors?.richCellExtensions,
-    original,
-  );
-  if (richCellExtension?.makePastedCell) {
-    return richCellExtension.makePastedCell(original, value);
   }
 
   return undefined;
