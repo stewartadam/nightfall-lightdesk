@@ -54,11 +54,11 @@ export interface ReelCursorApi {
  * this cursor first and fires the real input once it arrives.
  *
  * The page never paints the arrow or the click ripple. It only logs where the
- * cursor was on each animation frame, and the edit draws it from that log.
- * Chrome stalls the page's paint for about a quarter second each time a drawn
- * overlay starts moving over the app, which showed as a freeze before every
- * click. Elements handed to `carry`, such as a file chip being dragged in,
- * stay visible and ride along in the page.
+ * cursor was on each animation frame, and the edit draws it from that log,
+ * sharp at any zoom. A cursor drawn in the page also froze the take for a
+ * quarter second per glide (see "Screencast lock-in" in the README).
+ * Elements handed to `carry`, such as a file chip being dragged in, stay
+ * visible and ride along in the page.
  *
  * Runs in the page through `page.addInitScript`, so it must stay
  * self-contained: no imports or closures over module scope.

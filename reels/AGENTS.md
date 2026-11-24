@@ -40,4 +40,5 @@ Takes need a steady machine and a clean frame:
 - Record any reel that shows the 3D visualizer on a machine with a GPU, with nothing else heavy running, such as `rustc`. Run one capture at a time.
 - Capture at twice the output size, the default, so zoomed shots stay sharp.
 - Hide debug overlays, such as the visualizer's FPS badge.
+- Keep the corner dots `take.ts` adds. They stop Chrome's screencast from locking onto the 3D view and skipping frames (see "Screencast lock-in" in the README).
 - Fix product bugs a take exposes in the app, in their own pull request, instead of working around them in the reel.

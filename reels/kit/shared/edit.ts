@@ -58,7 +58,7 @@ export interface CursorPoint {
 
 /**
  * The fake cursor's path and clicks during a take. The page never paints the
- * cursor, since a moving overlay stalls Chrome's paint, so the renderer draws
+ * cursor, so it stays sharp when the camera zooms, and the renderer draws
  * it from this log.
  */
 export interface CursorLog {

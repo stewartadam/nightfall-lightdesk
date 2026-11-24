@@ -59,10 +59,10 @@ captioned, outro card.
   (`cursor-overlay.ts`) glides along eased, curved paths with a slight
   overshoot, and the real click fires when it arrives. The page never paints
   the cursor: it logs the cursor's path and clicks into the manifest, and the
-  renderer draws the arrow and click ripples from that log. A cursor drawn in
-  the page stalled Chrome's paint for about a quarter second each time it
-  started moving. Frames come from Chrome's screencast (`screencast.ts`) and
-  are resampled to 60 fps.
+  renderer draws the arrow and click ripples from that log, sharp at any zoom
+  and restylable without a new take. Frames come from Chrome's screencast
+  (`screencast.ts`) and are resampled to 60 fps. See "Screencast lock-in"
+  below for the corner dots every take adds.
 - `kit/shared/edit.ts` defines the take's manifest, the edit a reel builds from it,
   and the camera that eases between zooms. It knows nothing about the
   renderer, so edits survive a change of video tool.
@@ -73,6 +73,30 @@ captioned, outro card.
 Remotion is source-available, not open source. It is free for individuals,
 non-profits and companies of up to 3 people; larger for-profit teams need a
 [company licence](https://www.remotion.dev/license).
+
+## Screencast lock-in
+
+Chrome's screencast decides which compositor frames to capture with an
+animated-content sampler
+([`animated_content_sampler.cc`](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/media/capture/content/animated_content_sampler.cc)).
+When one rectangle makes up more than two thirds of the changed pixels for
+about a second, the sampler locks onto it as animated content. After that it
+captures only frames whose changed area is exactly that rectangle. In a reel,
+the 3D view is that rectangle. Any other change on the page, such as a button's
+80 ms colour fade, a dialog opening or a cursor drawn in the page, makes the
+changed area bigger, so Chrome skips those frames. The take freezes until the
+change ends, or for 0.25 s when it outlasts the sampler's "animation ended"
+threshold. The screencast API has no option to turn the sampler off.
+
+To stop the lock-in, `take.ts` adds two 1 px, almost transparent dots in
+opposite corners of the page (`installDamageJitter`). On each animation frame
+one of them changes colour, alternating corners. The changed area then
+alternates between two rectangles, neither one wins two thirds of the pixels,
+and Chrome captures every frame. The dots are too faint to see in the video.
+
+Keep the dots unless the screencast changes. If a take still freezes after a
+click, look for gaps in the frame times, for example with ffmpeg's
+`mpdecimate` filter on `out/<reel>/recording.mp4`.
 
 ## Capture frame rate
 
