@@ -15,7 +15,6 @@
     "table",
     "spreadsheet"
   ],
-  "private": true,
   "type": "module",
   "sideEffects": [
     "*.css"

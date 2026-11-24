@@ -99,6 +99,7 @@ The grid is developed in the [Nightfall repository](https://github.com/stewartad
 
 To publish a release:
 
-1. Before the first release, remove `"private": true` from `package.json`. It guards against publishing by accident until then.
-2. Bump `version` in `package.json`.
-3. Run `pnpm --filter @stewartadam/nightfall-data-grid publish` from the repository root. `prepack` builds `dist/`, and pnpm swaps in the `publishConfig.exports` map that points at the build.
+1. Bump `version` in `package.json` and merge it into `develop`.
+2. Run the **Publish data grid** workflow on `develop` from the repository's Actions tab. It builds the package, packs it, and publishes it to npm with provenance. Check the **dry run** box first to see what would be published.
+
+The workflow publishes through npm's trusted publishing, so no npm token is stored in the repository. `prepack` builds `dist/`, and pnpm swaps in the `publishConfig.exports` map that points at the build.
