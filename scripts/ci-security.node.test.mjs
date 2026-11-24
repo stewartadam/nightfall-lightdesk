@@ -183,8 +183,8 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "publish-data-grid.yml/publish": { "id-token": "write" },
   };
   /**
-   * Privileged jobs that may run npm, only to check its version and publish a tarball an
-   * unprivileged job built. They pass `--ignore-scripts`, so no package code runs.
+   * Privileged jobs that may run npm, only to install an exact npm release and stage a tarball
+   * an unprivileged job built. They pass `--ignore-scripts`, so no package code runs.
    */
   const npmPublishers = new Set(["publish-data-grid.yml/publish"]);
   for (const [file, workflow] of Object.entries(workflows)) {
@@ -218,7 +218,10 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
       for (const step of job.steps ?? []) {
         if (exceptions[key]) {
           const run = npmPublishers.has(key)
-            ? (step.run ?? "").replace(/\bnpm (?:--version\b|publish\s)/g, "")
+            ? (step.run ?? "").replace(
+                /\bnpm (?:install --global --ignore-scripts npm@\d+\.\d+\.\d+\b|stage publish\s)/g,
+                "",
+              )
             : (step.run ?? "");
           assert.doesNotMatch(run, /\b(?:node|npm|npx|pnpm|cargo|rustup)\s/);
         }

@@ -1,9 +1,10 @@
 name: Publish data grid
 
-# Publishes @stewartadam/nightfall-data-grid to npm with trusted publishing: npm trusts this
-# workflow file by name and issues a short-lived token through GitHub's OIDC, so no npm secret
-# is stored. Bump `version` in packages/data-grid/package.json on the default branch, then run
-# this workflow by hand. See packages/data-grid/README.md.
+# Stages a release of @stewartadam/nightfall-data-grid on npm with trusted publishing: npm trusts
+# this workflow file by name and issues a short-lived token through GitHub's OIDC, so no npm
+# secret is stored. The trusted publisher may only stage, so the release goes live once a
+# maintainer approves it on npmjs.com with 2FA. Bump `version` in packages/data-grid/package.json
+# on the default branch, then run this workflow by hand. See packages/data-grid/README.md.
 on:
   workflow_dispatch:
     inputs:
@@ -72,7 +73,7 @@ jobs:
           retention-days: 7
 
   publish:
-    name: Publish to npm
+    name: Stage on npm
     needs: pack
     runs-on: ubuntu-slim
     timeout-minutes: 5
@@ -87,15 +88,10 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - name: Check npm supports trusted publishing
-        run: |
-          set -euo pipefail
-          version="$(npm --version)"
-          if [ "$(printf '%s\n' 11.5.1 "$version" | sort -V | head -n 1)" != 11.5.1 ]; then
-            echo "::error::Trusted publishing needs npm>=11.5.1, but this runner has $version."
-            exit 1
-          fi
-      - name: Publish
+      # Staged publishing needs npm 11.15 or later, newer than the one Node bundles. Bump by hand.
+      - name: Install npm
+        run: npm install --global --ignore-scripts npm@11.21.3 # zizmor: ignore[adhoc-packages] exact npm release, no install scripts
+      - name: Stage the release
         env:
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
@@ -110,4 +106,4 @@ jobs:
           if [ "$DRY_RUN" = true ]; then
             args+=(--dry-run)
           fi
-          npm publish "${tarballs[0]}" "${args[@]}"
+          npm stage publish "${tarballs[0]}" "${args[@]}"
