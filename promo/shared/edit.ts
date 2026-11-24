@@ -136,10 +136,25 @@ export interface ReelDefinition {
   buildEdit(manifest: RecordingManifest): ReelEdit;
 }
 
-/** Scale that fits `rect` into most of the canvas width, capped so text stays crisp. */
-function zoomScaleFor(rect: Rect, width: number): number {
-  return Math.max(1.25, Math.min(2.1, (width * 0.82) / rect.width));
+/** Seconds each camera move takes. */
+const CAMERA_RAMP_SECONDS = 0.6;
+/** Seconds a zoom is settled before the moment it frames, so a click never lands mid-move. */
+const ARRIVE_LEAD_SECONDS = 0.3;
+/** Shortest a zoom may hold, so the camera doesn't dart in and straight back out. */
+const MIN_ZOOM_SECONDS = 1.6;
+/** Shortest wide shot between two zooms; anything shorter pans between them instead. */
+const MIN_WIDE_SECONDS = 1.5;
+
+/** Largest scale at which all of `rect` stays in frame, with a margin around it. */
+function fitScaleFor(rect: Rect, manifest: RecordingManifest): number {
+  return Math.min(
+    (manifest.width * 0.9) / rect.width,
+    (manifest.height * 0.9) / rect.height,
+  );
 }
+
+/** Below this, a zoom barely changes the frame, so it is dropped rather than shown. */
+const MIN_ZOOM_SCALE = 1.15;
 
 /**
  * Helpers for building an edit from a take whose screen segment starts at the
@@ -163,36 +178,69 @@ export function editTools(manifest: RecordingManifest, trimMarker: string) {
     reel,
     trimStart,
     /**
-     * Zoom between two recording times that centers on `rect`, at `scale` or
-     * fitted to its width. Returns no cue when the marker had no element box.
+     * Zoom that centers on `rect`, at `scale` or fitted to its width, and is
+     * fully in by recording time `arrive`, then eases back out from `leave`.
+     * Pass the click's time as `arrive` so the camera settles before the
+     * click rather than moving during it. The scale is capped so all of
+     * `rect` stays in frame. Returns no cue when the marker had no element
+     * box, or when the zoom that fits would barely change the frame.
      */
     focusOn(
-      start: number,
-      end: number,
+      arrive: number,
+      leave: number,
       rect: Rect | undefined,
       scale?: number,
     ): ZoomCue[] {
       if (!rect) return [];
+      const fitted = Math.min(scale ?? 2.1, fitScaleFor(rect, manifest));
+      if (fitted < MIN_ZOOM_SCALE) return [];
       return [
         {
-          start: reel(start),
-          end: reel(end),
+          start: reel(arrive) - CAMERA_RAMP_SECONDS - ARRIVE_LEAD_SECONDS,
+          end: reel(leave),
           focusX: rect.x + rect.width / 2,
           focusY: rect.y + rect.height / 2,
-          scale: scale ?? zoomScaleFor(rect, manifest.width),
+          scale: fitted,
         },
       ];
     },
   };
 }
 
-/** Completes an edit by deriving the segment and total lengths from its trim. */
+/**
+ * Smooths a reel's zooms so the camera never pumps: each zoom holds for at
+ * least {@link MIN_ZOOM_SECONDS}, overlapping zooms hand over in order, and
+ * when the next zoom starts less than {@link MIN_WIDE_SECONDS} after one ends,
+ * the camera pans straight from one to the other instead of pulling out and
+ * pushing back in.
+ */
+export function smoothZooms(zooms: ZoomCue[]): ZoomCue[] {
+  const sorted = [...zooms]
+    .sort((a, b) => a.start - b.start)
+    .map((cue) => ({
+      ...cue,
+      end: Math.max(cue.end, cue.start + MIN_ZOOM_SECONDS),
+    }));
+  return sorted.map((cue, index) => {
+    const next = sorted[index + 1];
+    if (next && next.start - cue.end < MIN_WIDE_SECONDS) {
+      return { ...cue, end: next.start };
+    }
+    return cue;
+  });
+}
+
+/**
+ * Completes an edit: smooths its zooms (see {@link smoothZooms}) and derives
+ * the segment and total lengths from its trim.
+ */
 export function assembleEdit(
   edit: Omit<ReelEdit, "screenSeconds" | "totalSeconds">,
 ): ReelEdit {
   const screenSeconds = edit.trimEnd - edit.trimStart;
   return {
     ...edit,
+    zooms: smoothZooms(edit.zooms),
     screenSeconds,
     totalSeconds: INTRO_SECONDS + screenSeconds + OUTRO_SECONDS,
   };
@@ -204,9 +252,6 @@ export interface Camera {
   centerX: number;
   centerY: number;
 }
-
-/** Seconds each camera move takes. */
-const CAMERA_RAMP_SECONDS = 0.6;
 
 /** Smooth ease-in-out on [0, 1]. */
 function easeInOutCubic(x: number): number {

@@ -195,6 +195,40 @@ export class Take {
     ]);
   }
 
+  /**
+   * Presses where the cursor is and drags in a straight line to `to` (CSS
+   * pixels) over `durationMs`, moving the real pointer in small steps alongside
+   * the fake cursor so the app sees a continuous drag, then releases.
+   */
+  async dragTo(to: { x: number; y: number }, durationMs = 1200): Promise<void> {
+    const from = await this.page.evaluate(() =>
+      (window as unknown as CursorWindow).__promoCursor.position(),
+    );
+    await this.page.mouse.down();
+    const glide = this.page.evaluate(
+      ({ x, y, durationMs }) =>
+        (window as unknown as CursorWindow).__promoCursor.moveTo(x, y, {
+          durationMs,
+          overshoot: 0,
+          straight: true,
+        }),
+      { ...to, durationMs },
+    );
+    const steps = Math.max(8, Math.round(durationMs / 50));
+    for (let step = 1; step <= steps; step++) {
+      const t = step / steps;
+      // Ease in and out, close to the overlay's own easing without overshoot.
+      const eased = t * t * (3 - 2 * t);
+      await this.page.mouse.move(
+        from.x + (to.x - from.x) * eased,
+        from.y + (to.y - from.y) * eased,
+      );
+      await this.page.waitForTimeout(durationMs / steps);
+    }
+    await glide;
+    await this.page.mouse.up();
+  }
+
   /** Glides to `target`, pauses briefly as a person would, and clicks it. */
   async glideAndClick(
     target: Locator,

@@ -12,6 +12,8 @@ export interface CursorMoveOptions {
   durationMs?: number;
   /** Fraction of the travel distance the cursor overshoots before settling. */
   overshoot?: number;
+  /** Travels in a straight line instead of a wrist arc, as a drag does. */
+  straight?: boolean;
 }
 
 /** Browser-side API the overlay installs on `window.__promoCursor`. */
@@ -96,7 +98,7 @@ export function installPromoCursor(): void {
         options.durationMs ?? Math.min(1400, 420 + distance * 0.75);
       const overshoot = options.overshoot ?? 0.04;
       // Bow the path to one side, like a wrist arc, scaled to the distance.
-      const bow = Math.min(120, distance * 0.18);
+      const bow = options.straight ? 0 : Math.min(120, distance * 0.18);
       const control = {
         x: from.x + dx / 2 + (-dy / distance) * bow,
         y: from.y + dy / 2 + (dx / distance) * bow,
