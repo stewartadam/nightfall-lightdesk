@@ -21,6 +21,12 @@ export interface PromoCursorApi {
   moveTo(x: number, y: number, options?: CursorMoveOptions): Promise<void>;
   ripple(): Promise<void>;
   position(): { x: number; y: number };
+  /**
+   * Adds an element that rides along with the pointer, drawn just under it in
+   * the overlay, such as a file being dragged in. Returns a function that
+   * removes it.
+   */
+  carry(element: HTMLElement, offset: { x: number; y: number }): () => void;
 }
 
 /**
@@ -37,6 +43,9 @@ export function installPromoCursor(): void {
   let current = { ...start };
   let host: HTMLDivElement | undefined;
   let pointer: HTMLDivElement | undefined;
+  /** Elements riding along with the pointer, with their offset from its tip. */
+  const carried: { element: HTMLElement; offset: { x: number; y: number } }[] =
+    [];
 
   /** Creates the overlay once the document body exists. */
   function ensureHost(): HTMLDivElement {
@@ -51,9 +60,30 @@ export function installPromoCursor(): void {
     pointer.innerHTML =
       '<svg width="30" height="30" viewBox="0 0 24 24" style="display:block;transform-origin:5px 3px"><path d="M4 2.5 L4 19.5 L8.6 15.4 L11.7 22 L14.6 20.7 L11.6 14.3 L17.8 14.3 Z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>';
     host.append(pointer);
+    // A manual popover lives in the browser's top layer, so modal dialogs and
+    // their backdrops can't cover or dim the cursor.
+    host.popover = "manual";
+    host.style.cssText +=
+      "margin:0;padding:0;border:0;background:transparent;width:100vw;height:100vh;max-width:none;max-height:none;";
     document.documentElement.append(host);
+    host.showPopover();
+    new MutationObserver(raise).observe(document.documentElement, {
+      subtree: true,
+      attributeFilter: ["open"],
+    });
     place(current);
     return host;
+  }
+
+  /**
+   * Moves the overlay back to the top of the top layer. Each modal dialog that
+   * opens stacks above every earlier top-layer element, the overlay included,
+   * so the overlay shows itself again after it.
+   */
+  function raise(): void {
+    if (!host?.isConnected) return;
+    host.hidePopover();
+    host.showPopover();
   }
 
   /** Moves the pointer graphic so its tip sits on the given point. */
@@ -61,6 +91,9 @@ export function installPromoCursor(): void {
     if (!pointer) return;
     // The arrow tip sits 4px right and 2.5px down from the SVG origin at 30/24 scale.
     pointer.style.transform = `translate3d(${point.x - 5}px, ${point.y - 3}px, 0)`;
+    for (const { element, offset } of carried) {
+      element.style.transform = `translate3d(${point.x + offset.x}px, ${point.y + offset.y}px, 0)`;
+    }
   }
 
   /** Smooth ease-in-out whose tail overshoots by `amount` and settles back. */
@@ -157,6 +190,20 @@ export function installPromoCursor(): void {
     },
     position() {
       return { ...current };
+    },
+    carry(element, offset) {
+      const overlay = ensureHost();
+      element.style.position = "absolute";
+      element.style.left = "0";
+      element.style.top = "0";
+      overlay.insertBefore(element, pointer ?? null);
+      const entry = { element, offset };
+      carried.push(entry);
+      place(current);
+      return () => {
+        carried.splice(carried.indexOf(entry), 1);
+        element.remove();
+      };
     },
   };
 
