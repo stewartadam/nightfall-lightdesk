@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.e2e.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../../../node_modules/.tmp/tsconfig.reels-record.tsbuildinfo",
+    "noEmit": true
+  },
+  "include": [
+    "./*.ts",
+    "../../*/**/*.ts",
+    "../../index.ts",
+    "../../../webui/e2e/**/*.ts",
+    "../../../webui/**/*.d.ts",
+    "../../../scripts/playwright-backend-pool.mjs"
+  ],
+  "exclude": ["../remotion", "../../node_modules", "../../out"]
+}

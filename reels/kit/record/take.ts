@@ -10,17 +10,21 @@ import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Locator, Page } from "@playwright/test";
-import { prepareFreshBackendShowfile } from "../../webui/e2e/backend-showfile";
-import { waitForDockviewApp } from "../../webui/e2e/showfile-startup";
+import { prepareFreshBackendShowfile } from "../../../webui/e2e/backend-showfile";
+import { waitForDockviewApp } from "../../../webui/e2e/showfile-startup";
 import type { RecordingManifest, RecordingMarker } from "../shared/edit";
-import { CAPTURE_SCALE as SCALE, CAPTURE_SIZE as OUTPUT } from "./capture";
-import { installPromoCursor, type PromoCursorApi } from "./cursor-overlay";
+import { CAPTURE_SIZE as OUTPUT, CAPTURE_SCALE as SCALE } from "./capture";
+import { installReelCursor, type ReelCursorApi } from "./cursor-overlay";
 import { ScreencastRecorder } from "./screencast";
 
-/** The promo package root, its git-ignored output folder, and the repository root. */
-export const promoDir = join(dirname(fileURLToPath(import.meta.url)), "..");
-export const outDir = join(promoDir, "out");
-export const repoRoot = join(promoDir, "..");
+/** The reels package root, its git-ignored output folder, and the repository root. */
+export const reelsDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
+export const outDir = join(reelsDir, "out");
+export const repoRoot = join(reelsDir, "..");
 
 const FPS = 60;
 
@@ -28,7 +32,7 @@ const FPS = 60;
 type Box = { x: number; y: number; width: number; height: number };
 
 /** The fake cursor's API inside the page. */
-type CursorWindow = { __promoCursor: PromoCursorApi };
+type CursorWindow = { __reelCursor: ReelCursorApi };
 
 /**
  * Opens the embedded demo engine with its bundled sample show and the fake
@@ -42,7 +46,7 @@ export async function openDemo(page: Page, baseURL: string | undefined) {
   await page.addInitScript(() => {
     localStorage.setItem("nightfall.currentShowfileName", "local-show");
   });
-  await page.addInitScript(installPromoCursor);
+  await page.addInitScript(installReelCursor);
   await page.goto(
     `/?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false${qualityParam()}`,
   );
@@ -63,13 +67,13 @@ async function hideDiagnostics(page: Page): Promise<void> {
 }
 
 /**
- * The visualizer quality override from `PROMO_VISUALIZER_QUALITY` (low,
+ * The visualizer quality override from `REELS_VISUALIZER_QUALITY` (low,
  * medium or high) as a URL parameter, or nothing to keep the app's default.
  * Machines without a GPU record with `low` so the 3D view keeps up with the
  * rest of the page.
  */
 function qualityParam(): string {
-  const quality = process.env.PROMO_VISUALIZER_QUALITY;
+  const quality = process.env.REELS_VISUALIZER_QUALITY;
   return quality
     ? `&visualizer:beamQuality=${encodeURIComponent(quality)}`
     : "";
@@ -86,7 +90,7 @@ export async function openDesktop(
   backendPort: number,
 ): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
-  await page.addInitScript(installPromoCursor);
+  await page.addInitScript(installReelCursor);
   await page.goto(`/?e2e=1&startup:draftRecovery=false${qualityParam()}`);
   await waitForDockviewApp(page);
   await hideDiagnostics(page);
@@ -199,7 +203,7 @@ export class Take {
     };
     await this.page.evaluate(
       ({ x, y }) =>
-        (window as unknown as CursorWindow).__promoCursor.moveTo(x, y),
+        (window as unknown as CursorWindow).__reelCursor.moveTo(x, y),
       point,
     );
     await this.page.mouse.move(point.x, point.y);
@@ -214,7 +218,7 @@ export class Take {
   async click(): Promise<void> {
     await Promise.all([
       this.page.evaluate(() => {
-        void (window as unknown as CursorWindow).__promoCursor.ripple();
+        void (window as unknown as CursorWindow).__reelCursor.ripple();
       }),
       this.page.mouse.down().then(() => this.page.mouse.up()),
     ]);
@@ -227,12 +231,12 @@ export class Take {
    */
   async dragTo(to: { x: number; y: number }, durationMs = 1200): Promise<void> {
     const from = await this.page.evaluate(() =>
-      (window as unknown as CursorWindow).__promoCursor.position(),
+      (window as unknown as CursorWindow).__reelCursor.position(),
     );
     await this.page.mouse.down();
     const glide = this.page.evaluate(
       ({ x, y, durationMs }) =>
-        (window as unknown as CursorWindow).__promoCursor.moveTo(x, y, {
+        (window as unknown as CursorWindow).__reelCursor.moveTo(x, y, {
           durationMs,
           overshoot: 0,
           straight: true,
@@ -290,7 +294,7 @@ export class Take {
       `${JSON.stringify(manifest, null, 2)}\n`,
     );
     console.log(
-      `promo: captured ${this.recorder.averageFps().toFixed(1)} fps on average over ${manifest.durationSeconds.toFixed(1)} s`,
+      `reels: captured ${this.recorder.averageFps().toFixed(1)} fps on average over ${manifest.durationSeconds.toFixed(1)} s`,
     );
   }
 }

@@ -9,7 +9,7 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { promoDir, reelArgument } from "./common.mjs";
+import { reelArgument, reelsDir } from "./common.mjs";
 
 /**
  * Records a fresh take of the named reel through the repository's Playwright
@@ -19,7 +19,7 @@ import { promoDir, reelArgument } from "./common.mjs";
  * `--headed`) pass through to Playwright.
  */
 const reel = reelArgument();
-const desktop = readdirSync(join(promoDir, "reels", reel)).some((file) =>
+const desktop = readdirSync(join(reelsDir, reel)).some((file) =>
   file.endsWith(".desktop.record.ts"),
 );
 const result = spawnSync(
@@ -32,10 +32,10 @@ const result = spawnSync(
     "--vite-mode",
     "e2e",
     "--config",
-    "promo/record/playwright.config.ts",
-    `promo/reels/${reel}/`,
+    "reels/kit/record/playwright.config.ts",
+    `reels/${reel}/`,
     ...process.argv.slice(3),
   ],
-  { cwd: join(promoDir, ".."), stdio: "inherit" },
+  { cwd: join(reelsDir, ".."), stdio: "inherit" },
 );
 process.exit(result.status ?? 1);

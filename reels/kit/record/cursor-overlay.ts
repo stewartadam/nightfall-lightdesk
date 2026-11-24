@@ -16,8 +16,8 @@ export interface CursorMoveOptions {
   straight?: boolean;
 }
 
-/** Browser-side API the overlay installs on `window.__promoCursor`. */
-export interface PromoCursorApi {
+/** Browser-side API the overlay installs on `window.__reelCursor`. */
+export interface ReelCursorApi {
   moveTo(x: number, y: number, options?: CursorMoveOptions): Promise<void>;
   ripple(): Promise<void>;
   position(): { x: number; y: number };
@@ -38,7 +38,7 @@ export interface PromoCursorApi {
  * Runs in the page through `page.addInitScript`, so it must stay
  * self-contained: no imports or closures over module scope.
  */
-export function installPromoCursor(): void {
+export function installReelCursor(): void {
   const start = { x: window.innerWidth * 0.62, y: window.innerHeight * 0.78 };
   let current = { ...start };
   let host: HTMLDivElement | undefined;
@@ -51,7 +51,7 @@ export function installPromoCursor(): void {
   function ensureHost(): HTMLDivElement {
     if (host?.isConnected) return host;
     host = document.createElement("div");
-    host.setAttribute("data-promo-cursor", "true");
+    host.setAttribute("data-reel-cursor", "true");
     host.style.cssText =
       "position:fixed;inset:0;pointer-events:none;z-index:2147483647;overflow:hidden;";
     pointer = document.createElement("div");
@@ -118,7 +118,7 @@ export function installPromoCursor(): void {
     };
   }
 
-  const api: PromoCursorApi = {
+  const api: ReelCursorApi = {
     moveTo(x, y, options = {}) {
       ensureHost();
       const from = { ...current };
@@ -207,7 +207,7 @@ export function installPromoCursor(): void {
     },
   };
 
-  (window as unknown as { __promoCursor: PromoCursorApi }).__promoCursor = api;
+  (window as unknown as { __reelCursor: ReelCursorApi }).__reelCursor = api;
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => ensureHost(), {
       once: true,

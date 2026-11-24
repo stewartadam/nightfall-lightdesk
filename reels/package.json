@@ -1,15 +1,15 @@
 {
-  "name": "nightfall-promo",
+  "name": "nightfall-reels",
   "private": true,
   "type": "module",
   "license": "MPL-2.0",
   "packageManager": "pnpm@12.22.0",
   "//": "Its own pnpm workspace (pnpm-workspace.yaml), kept out of the app's install, build and checks.",
   "scripts": {
-    "record": "node scripts/record.mjs",
-    "render": "node scripts/render.mjs",
-    "studio": "remotion studio remotion/index.ts --public-dir out",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p record/tsconfig.json"
+    "record": "node kit/scripts/record.mjs",
+    "render": "node kit/scripts/render.mjs",
+    "studio": "remotion studio kit/remotion/index.ts --public-dir out",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p kit/record/tsconfig.json"
   },
   "dependencies": {
     "@remotion/bundler": "4.0.540",

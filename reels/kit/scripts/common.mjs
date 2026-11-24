@@ -11,23 +11,33 @@ import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The promo package root and its git-ignored output folder. */
-export const promoDir = join(dirname(fileURLToPath(import.meta.url)), "..");
-export const outDir = join(promoDir, "out");
+/** The reels package root and its git-ignored output folder. */
+export const reelsDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
+export const outDir = join(reelsDir, "out");
 
 /**
  * The reel named by the script's first argument, which must match a folder
- * under `reels/`. Exits with the available names otherwise.
+ * of `reels/` holding a `*.record.ts` take script. Exits with the available
+ * names otherwise.
  */
 export function reelArgument() {
   const reel = process.argv[2];
-  const reelsDir = join(promoDir, "reels");
   const available = readdirSync(reelsDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        readdirSync(join(reelsDir, entry.name)).some((file) =>
+          file.endsWith(".record.ts"),
+        ),
+    )
     .map((entry) => entry.name);
   if (!reel || !available.includes(reel)) {
     console.error(
-      `Name a reel: ${available.length ? available.join(", ") : "(none yet; add one under promo/reels/)"}`,
+      `Name a reel: ${available.length ? available.join(", ") : "(none yet; add one as reels/<reel>/)"}`,
     );
     process.exit(1);
   }
@@ -52,11 +62,11 @@ export function requireRecording(reel) {
 }
 
 /**
- * Chrome for rendering. `PROMO_BROWSER` wins; otherwise Remotion fetches its
+ * Chrome for rendering. `REELS_BROWSER` wins; otherwise Remotion fetches its
  * own headless Chrome on first use.
  */
 export function browserExecutable() {
-  return process.env.PROMO_BROWSER || undefined;
+  return process.env.REELS_BROWSER || undefined;
 }
 
 /** Parallel browser tabs to render with, leaving a core for the encoder. */

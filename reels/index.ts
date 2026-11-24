@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { ReelDefinition } from "../shared/edit";
+import type { ReelDefinition } from "./kit/shared/edit";
 
-/** Every promo reel the renderer can cut, one per folder under `reels/`. */
+/** Every reel the renderer can cut, one per folder beside `kit/`. */
 export const REELS: ReelDefinition[] = [];

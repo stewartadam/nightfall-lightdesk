@@ -17,15 +17,15 @@ import {
 import {
   browserExecutable,
   outDir,
-  promoDir,
   reelArgument,
+  reelsDir,
   renderWorkers,
   requireRecording,
 } from "./common.mjs";
 
 /** The app version from the workspace manifest, shown on every title card. */
 function appVersion() {
-  const manifest = readFileSync(join(promoDir, "..", "Cargo.toml"), "utf8");
+  const manifest = readFileSync(join(reelsDir, "..", "Cargo.toml"), "utf8");
   const version = manifest.match(
     /\[workspace\.package\][^[]*?^version\s*=\s*"([^"]+)"/m,
   )?.[1];
@@ -45,7 +45,7 @@ async function main() {
   requireRecording(reel);
   const started = performance.now();
   const serveUrl = await bundle({
-    entryPoint: join(promoDir, "remotion", "index.ts"),
+    entryPoint: join(reelsDir, "kit", "remotion", "index.ts"),
     publicDir: outDir,
   });
   const inputProps = { version: appVersion() };
