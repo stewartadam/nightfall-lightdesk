@@ -88,3 +88,50 @@
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
+
+/* A button standing in for a progress bar: the accent fill sits behind the label. */
+.nf-button[data-progress] {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.nf-button-progress {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: -1;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: width 150ms linear;
+}
+.nf-button-progress[data-indeterminate] {
+  width: 35%;
+  animation: nf-button-progress-sweep 1.2s ease-in-out infinite;
+}
+@keyframes nf-button-progress-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nf-button-progress[data-indeterminate] {
+    width: 100%;
+    animation: none;
+    opacity: 0.5;
+  }
+}
+.nf-button[data-progress]:disabled {
+  color: inherit;
+}
+/* Overlaid copies of every label the button may show; the visible one sits on top. */
+.nf-button-label-stack {
+  display: inline-grid;
+  justify-items: center;
+}
+.nf-button-label-stack > * {
+  grid-area: 1 / 1;
+}
+.nf-button-label-stack > [aria-hidden="true"] {
+  visibility: hidden;
+}
