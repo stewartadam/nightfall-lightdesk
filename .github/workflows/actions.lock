@@ -60,6 +60,12 @@ workflows:
         - 'github/command@v2.0.3'
     '.github/workflows/promote.yml':
         - 'actions/create-github-app-token@v3.3.0'
+    '.github/workflows/publish-data-grid.yml':
+        - 'actions/checkout@v5.1.0'
+        - 'actions/download-artifact@v8.0.1'
+        - 'actions/setup-node@v5.0.0'
+        - 'actions/upload-artifact@v7.0.1'
+        - 'pnpm/action-setup@v6.1.0'
     '.github/workflows/release-notes.yml':
         - 'actions/checkout@v5.1.0'
         - 'actions/download-artifact@v8.0.1'

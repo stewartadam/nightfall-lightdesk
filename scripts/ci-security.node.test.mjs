@@ -179,7 +179,14 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
     "desktop-updates.yml/sign": { contents: "read" },
     "desktop-updates.yml/publish": { contents: "write" },
     "promote.yml/check": { contents: "read", checks: "read" },
+    "publish-data-grid.yml/source": { contents: "read" },
+    "publish-data-grid.yml/publish": { "id-token": "write" },
   };
+  /**
+   * Privileged jobs that may run npm, only to check its version and publish a tarball an
+   * unprivileged job built. They pass `--ignore-scripts`, so no package code runs.
+   */
+  const npmPublishers = new Set(["publish-data-grid.yml/publish"]);
   for (const [file, workflow] of Object.entries(workflows)) {
     assert.deepEqual(workflow.permissions, {}, file);
     for (const [id, job] of Object.entries(workflow.jobs)) {
@@ -205,12 +212,15 @@ test("builds and tests have no GitHub permissions or release secrets", () => {
           assert.doesNotMatch(JSON.stringify(job), /github\.token/);
         }
       }
+      if (npmPublishers.has(key)) {
+        assert.match(JSON.stringify(job), /--ignore-scripts/, key);
+      }
       for (const step of job.steps ?? []) {
         if (exceptions[key]) {
-          assert.doesNotMatch(
-            step.run ?? "",
-            /\b(?:node|npm|npx|pnpm|cargo|rustup)\s/,
-          );
+          const run = npmPublishers.has(key)
+            ? (step.run ?? "").replace(/\bnpm (?:--version\b|publish\s)/g, "")
+            : (step.run ?? "");
+          assert.doesNotMatch(run, /\b(?:node|npm|npx|pnpm|cargo|rustup)\s/);
         }
         // Same-repository actions use `$/`, which loads them from the workflow's own commit
         // rather than from whatever the job restored into its workspace.

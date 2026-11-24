@@ -1,0 +1,113 @@
+name: Publish data grid
+
+# Publishes @stewartadam/nightfall-data-grid to npm with trusted publishing: npm trusts this
+# workflow file by name and issues a short-lived token through GitHub's OIDC, so no npm secret
+# is stored. Bump `version` in packages/data-grid/package.json on the default branch, then run
+# this workflow by hand. See packages/data-grid/README.md.
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Pack and check the package without publishing it
+        required: false
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: publish-data-grid
+  cancel-in-progress: false
+
+# Follows docs/ci-security.md: one job checks out the source without running it, one builds the
+# tarball with no permissions, and a fresh runner that runs no repository code publishes it.
+jobs:
+  source:
+    name: Acquire source
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5.1.0
+        with:
+          persist-credentials: false
+      - name: Archive the source
+        run: tar --exclude=.git -cf "$RUNNER_TEMP/source.tar" .
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: data-grid-source-${{ github.sha }}
+          path: ${{ runner.temp }}/source.tar
+          retention-days: 1
+
+  pack:
+    name: Build and pack
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: data-grid-source-${{ github.sha }}
+          path: .ci-source
+      - name: Restore source
+        run: tar -xf .ci-source/source.tar && rm -rf .ci-source
+      - uses: pnpm/action-setup@v6.1.0
+      # No dependency cache: this job feeds a published package.
+      - uses: actions/setup-node@v5.0.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - name: Check the package builds as published
+        run: node --test scripts/data-grid-package.node.test.mjs
+      - name: Pack the package
+        run: pnpm --filter @stewartadam/nightfall-data-grid pack --pack-destination "$RUNNER_TEMP/package"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: data-grid-package-${{ github.sha }}
+          path: ${{ runner.temp }}/package/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish to npm
+    needs: pack
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: data-grid-package-${{ github.sha }}
+          path: package
+      - uses: actions/setup-node@v5.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Check npm supports trusted publishing
+        run: |
+          set -euo pipefail
+          version="$(npm --version)"
+          if [ "$(printf '%s\n' 11.5.1 "$version" | sort -V | head -n 1)" != 11.5.1 ]; then
+            echo "::error::Trusted publishing needs npm>=11.5.1, but this runner has $version."
+            exit 1
+          fi
+      - name: Publish
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+          tarballs=(package/*.tgz)
+          if [ "${#tarballs[@]}" -ne 1 ]; then
+            echo "::error::Expected one package tarball, found ${#tarballs[@]}."
+            exit 1
+          fi
+          # The tarball was built by the pack job; nothing from it runs here.
+          args=(--access public --provenance --ignore-scripts)
+          if [ "$DRY_RUN" = true ]; then
+            args+=(--dry-run)
+          fi
+          npm publish "${tarballs[0]}" "${args[@]}"
