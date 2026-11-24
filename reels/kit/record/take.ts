@@ -55,12 +55,12 @@ export async function openDemo(page: Page, baseURL: string | undefined) {
     localStorage.setItem("nightfall.currentShowfileName", "local-show");
   });
   await page.addInitScript(installReelCursor);
+  await page.addInitScript(installDamageJitter);
   await page.goto(
     `/?engine=embedded-demo&startup:draftRecovery=false&e2e=1&visualizer:defaultPanel=false${qualityParam()}`,
   );
   await waitForDockviewApp(page);
   await hideDiagnostics(page);
-  await disableTransitions(page);
 }
 
 /**
@@ -76,15 +76,38 @@ async function hideDiagnostics(page: Page): Promise<void> {
 }
 
 /**
- * Turns off CSS transitions, so state changes such as a board button lighting
- * up land in a single frame. While the page animates a transition alongside
- * the visualizer's canvas, Chrome's screencast stops delivering frames, so an
- * 80 ms button fade froze the take for 133 ms after every press.
+ * Keeps Chrome's screencast from locking onto the visualizer. Once one
+ * rectangle makes up most of the page's damage for a second, Chrome's capture
+ * oracle treats it as animated content and only captures frames whose damage
+ * is exactly that rectangle. Any other change, such as a button's colour fade
+ * or a dialog opening, then froze the take until it ended, or for 0.25 s when
+ * it outlasted the oracle's threshold. Two near-invisible dots in opposite
+ * corners change on alternate frames, so the damage rectangle alternates, no
+ * rectangle wins a majority and every frame is captured.
  */
-async function disableTransitions(page: Page): Promise<void> {
-  await page.addStyleTag({
-    content: `*, *::before, *::after { transition: none !important; }`,
-  });
+function installDamageJitter(): void {
+  /** Adds the dots once the body exists and starts toggling them. */
+  const start = () => {
+    const dots = ["top: 0; left: 0", "bottom: 0; right: 0"].map((corner) => {
+      const dot = document.createElement("div");
+      dot.style.cssText = `position: fixed; ${corner}; width: 1px; height: 1px; z-index: 2147483647; pointer-events: none; background: rgb(0 0 0 / 0.01)`;
+      document.body.append(dot);
+      return dot;
+    });
+    let frame = 0;
+    /** Changes one dot per animation frame, alternating corners. */
+    const tick = () => {
+      frame++;
+      // Each dot flips every other frame, so every frame changes exactly one.
+      const dot = dots[frame % 2];
+      dot.dataset.on = dot.dataset.on ? "" : "1";
+      dot.style.background = `rgb(0 0 0 / ${dot.dataset.on ? 0.02 : 0.01})`;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+  if (document.body) start();
+  else document.addEventListener("DOMContentLoaded", start, { once: true });
 }
 
 /**
@@ -112,10 +135,10 @@ export async function openDesktop(
 ): Promise<void> {
   await prepareFreshBackendShowfile(backendPort);
   await page.addInitScript(installReelCursor);
+  await page.addInitScript(installDamageJitter);
   await page.goto(`/?e2e=1&startup:draftRecovery=false${qualityParam()}`);
   await waitForDockviewApp(page);
   await hideDiagnostics(page);
-  await disableTransitions(page);
   await clearShow(page);
 }
 
