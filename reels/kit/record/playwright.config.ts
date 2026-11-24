@@ -21,7 +21,7 @@ import { CAPTURE_SCALE, VIEWPORT } from "./capture";
  */
 export default defineConfig({
   ...base,
-  testDir: "../reels",
+  testDir: "../..",
   testMatch: "**/*.record.ts",
   timeout: 180_000,
   retries: 0,
