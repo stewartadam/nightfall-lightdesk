@@ -26,6 +26,7 @@ import {
   DirectionalLight,
   MathUtils,
   Mesh,
+  type Object3D,
   PerspectiveCamera,
   Scene,
   Sphere,
@@ -251,9 +252,11 @@ export function initPreviewRenderer(
     autoFramed: true,
   };
   controls.addEventListener("change", () => markPreviewChanged(state));
-  controls.addEventListener("start", () => {
+  /** Hands the view to the user once they orbit or zoom, so resizes stop reframing it. */
+  const releaseAutoFraming = () => {
     state.autoFramed = false;
-  });
+  };
+  controls.addEventListener("start", releaseAutoFraming);
   return state;
 }
 
@@ -325,22 +328,29 @@ export function setPreviewFixture(
   markPreviewChanged(state);
 }
 
+/** Where the camera sits and looks to frame an object, from {@link previewFraming}. */
+export interface PreviewFraming {
+  position: Vector3;
+  target: Vector3;
+  distance: number;
+}
+
 /**
- * Points the camera at the fixture from the default angle, as close as it can sit while the
- * fixture's bounding sphere fits both the canvas's height and its width. A tall, narrow canvas
- * has a narrow horizontal field of view, so fitting the height alone would cut the fixture off
- * at the sides.
+ * Finds the camera position that shows all of `object` from the default angle, as close as the
+ * camera can sit while the object's bounding sphere fits both the canvas's height and its
+ * width. A tall, narrow canvas has a narrow horizontal field of view, so fitting the height
+ * alone would cut the object off at the sides. Returns null for an object with no size, such
+ * as an empty draft.
  */
-function frameCameraOnFixture(state: PreviewRendererState): void {
-  if (!state.fixtureInstance) return;
+export function previewFraming(
+  object: Object3D,
+  camera: PerspectiveCamera,
+): PreviewFraming | null {
+  const sphere = new Box3()
+    .setFromObject(object)
+    .getBoundingSphere(new Sphere());
+  if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) return null;
 
-  const box = new Box3().setFromObject(state.fixtureInstance.group);
-  const sphere = box.getBoundingSphere(new Sphere());
-  // A fixture with no size (an empty draft) gives no view worth keeping, so leave the camera.
-  state.framed = Number.isFinite(sphere.radius) && sphere.radius > 0;
-  if (!state.framed) return;
-
-  const { camera } = state;
   const verticalFov = MathUtils.degToRad(camera.fov);
   const horizontalFov =
     2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(camera.aspect, 1e-3));
@@ -353,9 +363,25 @@ function frameCameraOnFixture(state: PreviewRendererState): void {
     Math.sin(DEFAULT_ELEVATION),
     Math.cos(DEFAULT_ELEVATION) * Math.cos(DEFAULT_AZIMUTH),
   );
-  camera.position.copy(sphere.center).addScaledVector(direction, distance);
-  state.controls.maxDistance = Math.max(20, distance * 2);
-  state.controls.target.copy(sphere.center);
+  return {
+    position: sphere.center.clone().addScaledVector(direction, distance),
+    target: sphere.center,
+    distance,
+  };
+}
+
+/**
+ * Moves the camera to {@link previewFraming}'s view of the fixture. A fixture with no size
+ * leaves the camera where it is and marks the preview unframed, so a kept view isn't kept.
+ */
+function frameCameraOnFixture(state: PreviewRendererState): void {
+  if (!state.fixtureInstance) return;
+  const framing = previewFraming(state.fixtureInstance.group, state.camera);
+  state.framed = framing !== null;
+  if (!framing) return;
+  state.camera.position.copy(framing.position);
+  state.controls.maxDistance = Math.max(20, framing.distance * 2);
+  state.controls.target.copy(framing.target);
   state.controls.update();
 }
 
