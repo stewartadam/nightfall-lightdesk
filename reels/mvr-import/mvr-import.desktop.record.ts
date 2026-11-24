@@ -182,7 +182,8 @@ async function showOffRig(
   await page.waitForTimeout(300);
   await Promise.all([
     take.dragTo({ x: start.x + box.width * 0.2, y: start.y }, 2_000),
-    fadeBlindersUp(page, 50, 3),
+    // A quarter is enough haze to see the beams while the band still reads.
+    fadeBlindersUp(page, 25, 3),
   ]);
   await page.waitForTimeout(400);
   await zoomOutSmoothly(canvas, start, 200, 1_200);
