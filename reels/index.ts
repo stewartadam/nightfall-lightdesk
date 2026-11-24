@@ -6,7 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import { gdtfShareReel } from "./gdtf-share/edit";
 import type { ReelDefinition } from "./kit/shared/edit";
 
 /** Every reel the renderer can cut, one per folder beside `kit/`. */
-export const REELS: ReelDefinition[] = [];
+export const REELS: ReelDefinition[] = [gdtfShareReel];
