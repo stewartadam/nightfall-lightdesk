@@ -96,7 +96,8 @@ jobs:
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
           set -euo pipefail
-          tarballs=(package/*.tgz)
+          # The leading ./ keeps npm from reading `package/<file>` as a GitHub owner/repo.
+          tarballs=(./package/*.tgz)
           if [ "${#tarballs[@]}" -ne 1 ]; then
             echo "::error::Expected one package tarball, found ${#tarballs[@]}."
             exit 1
