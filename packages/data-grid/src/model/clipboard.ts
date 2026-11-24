@@ -6,20 +6,20 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { GridCell, GridSelection, Item } from "../data-grid-types";
-import { CompactSelection } from "../data-grid-types";
+import type { GridCell, GridSelection, Item } from "../data-grid-types.ts";
+import { CompactSelection } from "../data-grid-types.ts";
 import {
   canEditCellAsText,
   cellDisplayValue,
   customCellTextEditor,
   makeEditedCell,
   makePastedCell,
-} from "./cell-utils";
+} from "./cell-utils.ts";
 import type {
   DataGridCellEdit,
   DataGridCellEditors,
   DataGridEditCommitMode,
-} from "./types";
+} from "./types.ts";
 
 interface ClipboardBounds {
   minCol: number;

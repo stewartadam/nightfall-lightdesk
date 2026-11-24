@@ -7,8 +7,8 @@
  */
 
 import { type Accessor, createMemo, type Setter, Show } from "solid-js";
-import { CellDecorationCanvas, CustomCellCanvas } from "./canvas-cells";
-import { resolveCellContent } from "./cell-renderer-registry";
+import { CellDecorationCanvas, CustomCellCanvas } from "./canvas-cells.tsx";
+import { resolveCellContent } from "./cell-renderer-registry.tsx";
 import type {
   CellClickedEventArgs,
   CustomCell,
@@ -16,17 +16,17 @@ import type {
   GridCell,
   GridSelection,
   Item,
-} from "./data-grid-types";
-import { GridCellKind } from "./data-grid-types";
-import type { DataGridCellKey } from "./model/cell-provider";
-import { canUseCellEditor } from "./model/cell-utils";
+} from "./data-grid-types.ts";
+import { GridCellKind } from "./data-grid-types.ts";
+import type { DataGridCellKey } from "./model/cell-provider.ts";
+import { canUseCellEditor } from "./model/cell-utils.ts";
 import {
   COORDINATE_AXIS_ACCENT_WIDTH,
   type CoordinateAxis,
   coordinateAxisForColumn,
   type DataGridTableColumn,
-} from "./model/column-model";
-import { selectionOutline } from "./model/selection-outline";
+} from "./model/column-model.ts";
+import { selectionOutline } from "./model/selection-outline.ts";
 import type {
   DataGridCellDecorationCallback,
   DataGridCellEditFactory,
@@ -36,16 +36,16 @@ import type {
   DataGridInlineEditTooltipContext,
   DataGridRichCellExtension,
   EditingCell,
-} from "./model/types";
+} from "./model/types.ts";
 
 const COORDINATE_AXIS_COLORS: Record<CoordinateAxis, string> = {
   x: "rgba(239, 68, 68, 0.55)",
   y: "rgba(34, 197, 94, 0.55)",
   z: "rgba(59, 130, 246, 0.55)",
 };
-const GRID_CELL_BACKGROUND = "var(--data-grid-bg, #16161b)";
+const GRID_CELL_BACKGROUND = "var(--data-grid-bg, var(--panel, #191b1d))";
 const SELECTED_CELL_BACKGROUND =
-  "var(--data-grid-selected-bg, rgba(23, 37, 84, 0.4))";
+  "var(--data-grid-selected-bg, color-mix(in srgb, var(--accent, #8c96ff) 20%, var(--panel, #191b1d)))";
 const PAUSED_GRID_CELL: GridCell = { kind: GridCellKind.Loading };
 
 const objectHasOwnProperty = Object.prototype.hasOwnProperty;
@@ -267,7 +267,7 @@ export function BodyCell(props: BodyCellProps) {
     const base = isSticky()
       ? opaqueStickyBackground(cellBackground)
       : cellBackground;
-    const color = "var(--data-grid-selection-ring, #60a5fa)";
+    const color = "var(--data-grid-selection-ring, var(--accent, #8c96ff))";
     const edges: string[] = [];
     if (outline().top)
       edges.push(
@@ -290,7 +290,8 @@ export function BodyCell(props: BodyCellProps) {
 
   /** Resolves the cell foreground color. */
   const color = () =>
-    gridCell().themeOverride?.textDark ?? "var(--data-grid-text, #ffffff)";
+    gridCell().themeOverride?.textDark ??
+    "var(--data-grid-text, var(--text, #ebeeed))";
 
   /** Keeps coordinate axis accents visible in every selection and edit state. */
   const cellRings = () => {

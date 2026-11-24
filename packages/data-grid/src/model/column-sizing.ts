@@ -11,15 +11,15 @@ import type {
   CustomRenderer,
   GridCell,
   GridColumn,
-} from "../data-grid-types";
-import { GridCellKind } from "../data-grid-types";
-import { dropdownDisplayValue, isDropdownCell } from "../dropdown-cell";
-import { dataGridDarkTheme } from "../theme";
+} from "../data-grid-types.ts";
+import { GridCellKind } from "../data-grid-types.ts";
+import { dropdownDisplayValue, isDropdownCell } from "../dropdown-cell.ts";
+import { dataGridDarkTheme } from "../theme.ts";
 import {
   type KeyedDataGridCellProvider,
   keyedDataGridCellContent,
-} from "./cell-provider";
-import { cellDisplayValue, findCustomRenderer } from "./cell-utils";
+} from "./cell-provider.ts";
+import { cellDisplayValue, findCustomRenderer } from "./cell-utils.ts";
 import {
   COORDINATE_AXIS_ACCENT_WIDTH,
   columnId,
@@ -27,9 +27,9 @@ import {
   coordinateAxisForColumn,
   type DataGridColumnDef,
   groupColumns,
-} from "./column-model";
-import { findRichCellExtension } from "./rich-cell-extension";
-import type { DataGridRichCellExtension } from "./types";
+} from "./column-model.ts";
+import { findRichCellExtension } from "./rich-cell-extension.ts";
+import type { DataGridRichCellExtension } from "./types.ts";
 
 const DEFAULT_MIN_COLUMN_WIDTH = 36;
 const DEFAULT_MAX_COLUMN_WIDTH = 400;

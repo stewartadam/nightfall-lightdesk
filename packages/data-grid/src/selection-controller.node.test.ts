@@ -9,10 +9,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRoot } from "solid-js";
-import { type GridCell, GridCellKind } from "./data-grid-types";
-import { initialDataGridSelectionState } from "./model/selection-model";
-import type { DataGridSelectionMode } from "./model/types";
-import { createDataGridSelectionController } from "./selection-controller";
+import { type GridCell, GridCellKind } from "./data-grid-types.ts";
+import { initialDataGridSelectionState } from "./model/selection-model.ts";
+import type { DataGridSelectionMode } from "./model/types.ts";
+import { createDataGridSelectionController } from "./selection-controller.ts";
 
 /** Builds a controller in one selection mode and counts the selections it publishes. */
 function controllerFor(mode: DataGridSelectionMode) {

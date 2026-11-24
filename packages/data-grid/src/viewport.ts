@@ -8,13 +8,13 @@
 
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { createMemo } from "solid-js";
-import type { Item } from "./data-grid-types";
-import { clampIndex } from "./event-adapter";
+import type { Item } from "./data-grid-types.ts";
+import { clampIndex } from "./event-adapter.ts";
 import type {
   DataGridTableColumn,
   DataGridTableRow,
-} from "./model/column-model";
-import { createEffect } from "./solid-compat";
+} from "./model/column-model.ts";
+import { createEffect } from "./solid-compat.ts";
 
 interface DataGridViewportControllerOptions {
   rows: () => readonly DataGridTableRow[];

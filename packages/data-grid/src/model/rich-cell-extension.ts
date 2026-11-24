@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { GridCell } from "../data-grid-types";
-import type { DataGridRichCellExtension } from "./types";
+import type { GridCell } from "../data-grid-types.ts";
+import type { DataGridRichCellExtension } from "./types.ts";
 
 /** Finds the first registered rich-cell extension that accepts a cell. */
 export function findRichCellExtension(

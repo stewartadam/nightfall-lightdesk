@@ -16,7 +16,7 @@ import {
   tableFeatures,
 } from "@tanstack/solid-table";
 import type { JSX } from "solid-js";
-import type { GridColumn } from "../data-grid-types";
+import type { GridColumn } from "../data-grid-types.ts";
 
 /** Carries renderer-specific grid metadata on TanStack column definitions. */
 export interface DataGridColumnMeta {

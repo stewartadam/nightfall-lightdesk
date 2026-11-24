@@ -12,9 +12,9 @@ import type {
   GridCell,
   GridSelection,
   Item,
-} from "./data-grid-types";
-import { CompactSelection, GridCellKind } from "./data-grid-types";
-import type { createDataGridEditingController } from "./editing-controller";
+} from "./data-grid-types.ts";
+import { CompactSelection, GridCellKind } from "./data-grid-types.ts";
+import type { createDataGridEditingController } from "./editing-controller.ts";
 import {
   ARROW_KEY_DELTAS,
   clampIndex,
@@ -23,30 +23,30 @@ import {
   isInteractivePointerTarget,
   isPrintableEditKey,
   isSpaceKey,
-} from "./event-adapter";
+} from "./event-adapter.ts";
 import {
   canEditBooleanCell,
   canEditCellAsText,
   canEditDropdownCell,
   cellDisplayValue,
   makeDeletedCell,
-} from "./model/cell-utils";
+} from "./model/cell-utils.ts";
 import {
   clipboardEditsForPaste,
   clipboardTextForSelection,
   selectedClipboardCells,
-} from "./model/clipboard";
-import { editableRichCellExtension } from "./model/rich-cell-extension";
+} from "./model/clipboard.ts";
+import { editableRichCellExtension } from "./model/rich-cell-extension.ts";
 import {
   type DataGridSelectionState,
   deleteSelectionFromState,
   effectiveSelectedColumns,
   selectionFromState,
   selectionModeUsesGridSelection,
-} from "./model/selection-model";
-import type { DataGridProps } from "./model/types";
-import type { createDataGridSelectionController } from "./selection-controller";
-import type { createDataGridViewportController } from "./viewport";
+} from "./model/selection-model.ts";
+import type { DataGridProps } from "./model/types.ts";
+import type { createDataGridSelectionController } from "./selection-controller.ts";
+import type { createDataGridViewportController } from "./viewport.ts";
 
 type DataGridEditingController = ReturnType<
   typeof createDataGridEditingController

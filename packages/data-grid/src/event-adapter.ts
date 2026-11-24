@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { Item } from "./data-grid-types";
+import type { Item } from "./data-grid-types.ts";
 
 export const ARROW_KEY_DELTAS: Record<string, readonly [number, number]> = {
   ArrowUp: [0, -1],

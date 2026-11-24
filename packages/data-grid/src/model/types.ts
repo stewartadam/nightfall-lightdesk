@@ -17,8 +17,8 @@ import type {
   GridSelection,
   GroupHeaderClickedEventArgs,
   Item,
-} from "../data-grid-types";
-import type { KeyedDataGridCellProvider } from "./cell-provider";
+} from "../data-grid-types.ts";
+import type { KeyedDataGridCellProvider } from "./cell-provider.ts";
 
 interface DataGridEditRequest {
   cell: Item;

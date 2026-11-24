@@ -9,10 +9,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRoot } from "solid-js";
-import { type GridCell, GridCellKind } from "./data-grid-types";
-import { createDataGridEditingController } from "./editing-controller";
-import { initialDataGridSelectionState } from "./model/selection-model";
-import type { DataGridProps } from "./model/types";
+import { type GridCell, GridCellKind } from "./data-grid-types.ts";
+import { createDataGridEditingController } from "./editing-controller.ts";
+import { initialDataGridSelectionState } from "./model/selection-model.ts";
+import type { DataGridProps } from "./model/types.ts";
 
 /** A read-only transition must discard a pending edit before either single or batch callbacks run. */
 test("read-only policy blocks new editors and pending commits", () => {

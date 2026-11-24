@@ -7,10 +7,14 @@
  */
 
 import { type Accessor, createSignal, onCleanup, onMount } from "solid-js";
-import type { CustomCell, CustomRenderer, GridCell } from "./data-grid-types";
-import type { DataGridCellDecorationCallback } from "./model/types";
-import { createTrackedEffect } from "./solid-compat";
-import { dataGridDarkTheme } from "./theme";
+import type {
+  CustomCell,
+  CustomRenderer,
+  GridCell,
+} from "./data-grid-types.ts";
+import type { DataGridCellDecorationCallback } from "./model/types.ts";
+import { createTrackedEffect } from "./solid-compat.ts";
+import { dataGridDarkTheme } from "./theme.ts";
 
 /** CSS pixel size of a cell canvas. */
 interface CanvasSize {

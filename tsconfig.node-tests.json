@@ -9,7 +9,8 @@
     "rootDir": ".",
     "strict": true,
     "skipLibCheck": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "rewriteRelativeImportExtensions": true
   },
   "include": [
     "webui/**/*.node.test.ts",

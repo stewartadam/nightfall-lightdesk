@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { CompactSelection, type GridSelection } from "../data-grid-types";
+import { CompactSelection, type GridSelection } from "../data-grid-types.ts";
 
 /**
  * Builds a controlled grid selection whose active cell sits in the first column

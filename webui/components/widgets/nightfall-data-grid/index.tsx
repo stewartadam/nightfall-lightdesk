@@ -11,6 +11,7 @@ import DataGrid, {
   type DataGridProps,
   type DataGridRichCellExtension,
 } from "@stewartadam/nightfall-data-grid";
+import "@stewartadam/nightfall-data-grid/styles.css";
 import { createMemo, type JSX, splitProps } from "solid-js";
 import { recordExternalPerformanceMeasure } from "../../../lib/performance-measure-collector";
 import { EmptyState } from "../../ui/empty-state";

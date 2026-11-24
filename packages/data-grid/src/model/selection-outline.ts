@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { GridSelection, Item } from "../data-grid-types";
-import { isSelectedCell } from "./selection-model";
+import type { GridSelection, Item } from "../data-grid-types.ts";
+import { isSelectedCell } from "./selection-model.ts";
 
 interface SelectionOutlineInput {
   current: GridSelection["current"] | undefined;

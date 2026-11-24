@@ -11,9 +11,9 @@ import {
   type GridSelection,
   type Item,
   type Rectangle,
-} from "../data-grid-types";
-import type { DataGridCellKey } from "./cell-provider";
-import type { DataGridSelectionState } from "./selection-model";
+} from "../data-grid-types.ts";
+import type { DataGridCellKey } from "./cell-provider.ts";
+import type { DataGridSelectionState } from "./selection-model.ts";
 
 /** Maps positions between row orders using the provider's stable row identities. */
 export function createDataGridRowMapping(

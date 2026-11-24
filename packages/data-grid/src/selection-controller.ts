@@ -12,13 +12,13 @@ import type {
   GridCell,
   GridSelection,
   Item,
-} from "./data-grid-types";
+} from "./data-grid-types.ts";
 import {
   cellFromPoint,
   isExpandablePrimaryCellText,
   isInteractivePointerTarget,
-} from "./event-adapter";
-import { cellDisplayValue } from "./model/cell-utils";
+} from "./event-adapter.ts";
+import { cellDisplayValue } from "./model/cell-utils.ts";
 import {
   type DataGridSelectionAction,
   type DataGridSelectionState,
@@ -32,8 +32,8 @@ import {
   selectionFromState,
   selectionIncludesCell,
   selectionModeUsesGridSelection,
-} from "./model/selection-model";
-import type { DataGridSelectionMode, EditingCell } from "./model/types";
+} from "./model/selection-model.ts";
+import type { DataGridSelectionMode, EditingCell } from "./model/types.ts";
 
 const DRAG_SELECTION_START_THRESHOLD_PX = 5;
 

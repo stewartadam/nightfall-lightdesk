@@ -8,13 +8,13 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { GridCell } from "../data-grid-types";
-import { GridCellKind } from "../data-grid-types";
+import type { GridCell } from "../data-grid-types.ts";
+import { GridCellKind } from "../data-grid-types.ts";
 import {
   createKeyedDataGridCellProvider,
   keyedDataGridCellContent,
   keyedDataGridCellContentFn,
-} from "./cell-provider";
+} from "./cell-provider.ts";
 
 interface TestRow {
   id: string;

@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CompactSelection } from "../data-grid-types";
+import { CompactSelection } from "../data-grid-types.ts";
 import {
   deleteSelectionFromState,
   editCommitSelectionFromState,
@@ -19,7 +19,7 @@ import {
   rowSelectionState,
   selectionFromState,
   selectionIncludesCell,
-} from "./selection-model";
+} from "./selection-model.ts";
 
 /**
  * Creates an empty selection state so selection-model tests start from a known baseline.

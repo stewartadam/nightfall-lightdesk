@@ -6,9 +6,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { GridSelection, Item, Rectangle } from "../data-grid-types";
-import { CompactSelection } from "../data-grid-types";
-import type { DataGridSelectionMode } from "./types";
+import type { GridSelection, Item, Rectangle } from "../data-grid-types.ts";
+import { CompactSelection } from "../data-grid-types.ts";
+import type { DataGridSelectionMode } from "./types.ts";
 
 type SelectionRange = NonNullable<GridSelection["current"]>["range"];
 type SelectionCurrent = GridSelection["current"];

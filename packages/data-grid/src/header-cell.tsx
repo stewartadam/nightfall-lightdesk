@@ -7,16 +7,16 @@
  */
 
 import { type JSX, Show } from "solid-js";
-import type { GroupHeaderClickedEventArgs } from "./data-grid-types";
+import type { GroupHeaderClickedEventArgs } from "./data-grid-types.ts";
 import {
   type DataGridTableHeader,
   sourceGridColumn,
-} from "./model/column-model";
-import type { HeaderCellView } from "./model/types";
+} from "./model/column-model.ts";
+import type { HeaderCellView } from "./model/types.ts";
 
-const HEADER_BACKGROUND = "var(--data-grid-header-bg, #212121)";
+const HEADER_BACKGROUND = "var(--data-grid-header-bg, var(--panel, #191b1d))";
 const SELECTED_HEADER_BACKGROUND =
-  "var(--data-grid-selected-header-bg, rgba(23, 37, 84, 0.75))";
+  "var(--data-grid-selected-header-bg, color-mix(in srgb, var(--accent, #8c96ff) 20%, var(--panel, #191b1d)))";
 
 /** Layers a header color over the base header color for opaque sticky rendering. */
 function opaqueStickyHeaderBackground(headerBackground: string): string {

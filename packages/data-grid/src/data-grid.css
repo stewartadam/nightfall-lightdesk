@@ -7,19 +7,20 @@
  */
 
 /*
- * Base grid chrome. Colors come from the host's --panel, --line, --raised,
- * --muted and --accent tokens when it defines them, with dark fallbacks so the
- * grid still renders on its own.
+ * Base grid chrome, scoped to the grid's own elements so other ARIA grids on
+ * the page keep their styles. Colors come from the host's --data-grid-* tokens,
+ * then its --panel, --line, --raised, --muted and --accent tokens, with dark
+ * fallbacks so the grid still renders on its own.
  */
-[role="grid"] {
-  background: var(--panel, #191b1d);
+[role="grid"][data-grid-appearance] {
+  background: var(--data-grid-bg, var(--panel, #191b1d));
   font-size: 13px;
 }
-[role="gridcell"] {
+[data-grid-appearance] [role="gridcell"] {
   border-bottom-color: #ffffff0c;
   border-right-color: var(--data-grid-column-border, transparent);
 }
-[role="columnheader"] {
+[data-grid-appearance] [role="columnheader"] {
   border-color: var(--data-grid-column-border, transparent);
   font-size: 11px;
   font-weight: 500;

@@ -8,20 +8,23 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type GridCell, GridCellKind } from "../data-grid-types";
+import { type GridCell, GridCellKind } from "../data-grid-types.ts";
 import {
   canUseCellEditor,
   makeDeletedCell,
   makeEditedCell,
   makePastedCell,
-} from "./cell-utils";
+} from "./cell-utils.ts";
 import {
   secondsEditors as editors,
   secondsCell,
   secondsCellValue,
   secondsRenderer,
-} from "./seconds-cell.test-fixture";
-import type { DataGridCellEditors, DataGridRichCellExtension } from "./types";
+} from "./seconds-cell.test-fixture.ts";
+import type {
+  DataGridCellEditors,
+  DataGridRichCellExtension,
+} from "./types.ts";
 
 /** Read-only cells remain immutable even when a provider advertises edit overlays or a rich editor. */
 test("readonly overrides built-in and rich-cell edit capabilities", () => {

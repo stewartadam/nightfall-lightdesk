@@ -23,23 +23,23 @@ import {
   Show,
   untrack,
 } from "solid-js";
-import { BodyCell } from "./body-cell";
+import { BodyCell } from "./body-cell.tsx";
 import type {
   GridCell,
   GridColumn,
   GridSelection,
   Item,
-} from "./data-grid-types";
-import { GridCellKind } from "./data-grid-types";
-import { createDataGridEditingController } from "./editing-controller";
-import { clampIndex, isSpaceKey } from "./event-adapter";
-import { HeaderCell } from "./header-cell";
-import { createDataGridKeyboardController } from "./keyboard-controller";
+} from "./data-grid-types.ts";
+import { GridCellKind } from "./data-grid-types.ts";
+import { createDataGridEditingController } from "./editing-controller.ts";
+import { clampIndex, isSpaceKey } from "./event-adapter.ts";
+import { HeaderCell } from "./header-cell.tsx";
+import { createDataGridKeyboardController } from "./keyboard-controller.ts";
 import {
   keyedDataGridCellContent,
   keyedDataGridCellContentFn,
-} from "./model/cell-provider";
-import { cellDisplayValue } from "./model/cell-utils";
+} from "./model/cell-provider.ts";
+import { cellDisplayValue } from "./model/cell-utils.ts";
 import {
   columnId,
   columnWidth,
@@ -48,29 +48,27 @@ import {
   groupColumns,
   reuseEquivalentColumns,
   sourceGridColumn,
-} from "./model/column-model";
+} from "./model/column-model.ts";
 import {
   createColumnMeasurementContext,
   sizeColumnsToContent,
-} from "./model/column-sizing";
-import { createDataGridRowMapping } from "./model/row-order";
+} from "./model/column-sizing.ts";
+import { createDataGridRowMapping } from "./model/row-order.ts";
 import {
   initialDataGridSelectionState,
   selectionFromState,
   selectionModeUsesGridSelection,
-} from "./model/selection-model";
-import { dataGridTableFeatures } from "./model/table-features";
-import type { DataGridProps, HeaderCellView, TableRow } from "./model/types";
-import { createDataGridPointerEventController } from "./pointer-event-controller";
-import "./data-grid.css";
-import "./table-appearance.css";
-import { createDataGridSelectionController } from "./selection-controller";
-import { createEffect } from "./solid-compat";
+} from "./model/selection-model.ts";
+import { dataGridTableFeatures } from "./model/table-features.ts";
+import type { DataGridProps, HeaderCellView, TableRow } from "./model/types.ts";
+import { createDataGridPointerEventController } from "./pointer-event-controller.ts";
+import { createDataGridSelectionController } from "./selection-controller.ts";
+import { createEffect } from "./solid-compat.ts";
 import {
   createDataGridViewportController,
   observeComputedStyleVisibility,
   styleSize,
-} from "./viewport";
+} from "./viewport.ts";
 
 const MARKER_WIDTH = 34;
 const HEADER_ROW_HEIGHT = 30;
@@ -1249,7 +1247,9 @@ export default function TanStackDataGrid(props: DataGridProps) {
           <div
             data-grid-header-rows
             class="sticky top-0 z-30 select-none"
-            style={{ background: "var(--data-grid-header-bg, #212121)" }}
+            style={{
+              background: "var(--data-grid-header-bg, var(--panel, #191b1d))",
+            }}
           >
             <For each={headerRows()}>
               {(headerRow) => {
