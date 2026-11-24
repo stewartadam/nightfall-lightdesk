@@ -182,7 +182,7 @@ async function showOffRig(
   await page.waitForTimeout(300);
   await Promise.all([
     take.dragTo({ x: start.x + box.width * 0.2, y: start.y }, 2_000),
-    fadeBlindersUp(page, 50, 2_400),
+    fadeBlindersUp(page, 50, 3),
   ]);
   await page.waitForTimeout(400);
   await zoomOutSmoothly(canvas, start, 200, 1_200);
@@ -193,34 +193,27 @@ const BLINDERS = "fixture 601>612 .1";
 
 /**
  * Fades the blinders' master dimmer (each blinder's first element) from dark
- * up to `percent` over `durationMs`, in small programmer steps sent off
- * camera, so their beams swell while the camera orbits.
+ * up to `percent` over `seconds`, as one engine fade sent off camera, so their
+ * beams swell while the camera orbits. A single fade runs in the engine
+ * without a command per step, which would hitch the 3D view.
  */
 async function fadeBlindersUp(
   page: Page,
   percent: number,
-  durationMs: number,
+  seconds: number,
 ): Promise<void> {
-  const steps = Math.round(durationMs / 80);
-  const begin = Date.now();
-  for (let step = 1; step <= steps; step++) {
-    const level = ((percent * step) / steps).toFixed(1);
-    const outcome = await page.evaluate(
-      async (statement) =>
-        (
-          await (window as any).appStores.sendAndAwait({
-            module: "EngineCommand",
-            command: { type: "Eval", data: statement },
-          })
-        ).outcome,
-      `${BLINDERS} @ ${level}`,
-    );
-    if (outcome.type !== "Succeeded") {
-      throw new Error(`Blinder fade failed: ${JSON.stringify(outcome)}`);
-    }
-    await page.waitForTimeout(
-      Math.max(0, begin + (durationMs * step) / steps - Date.now()),
-    );
+  const outcome = await page.evaluate(
+    async (statement) =>
+      (
+        await (window as any).appStores.sendAndAwait({
+          module: "EngineCommand",
+          command: { type: "Eval", data: statement },
+        })
+      ).outcome,
+    `${BLINDERS} @ ${percent} fade ${seconds}`,
+  );
+  if (outcome.type !== "Succeeded") {
+    throw new Error(`Blinder fade failed: ${JSON.stringify(outcome)}`);
   }
 }
 
