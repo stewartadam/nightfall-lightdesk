@@ -27,7 +27,7 @@ tokio.workspace = true
 tracing.workspace = true
 typeshare.workspace = true
 uuid.workspace = true
-zip = { version = "9.7", default-features = false, features = ["deflate"] }
+zip = { version = "9.8", default-features = false, features = ["deflate"] }
 nightfall-fixture-model = { path = "../fixture-model" }
 
 [features]
