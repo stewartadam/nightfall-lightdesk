@@ -6,9 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type {
+  GridCell,
+  GridCellStateIndicator,
+} from "@stewartadam/nightfall-data-grid/types";
 import type * as types from "../types";
 import { commandAttributeForName } from "./attribute-metadata";
-import type { GridCell, GridCellStateIndicator } from "./data-grid-types";
 import { resolvedSpatialSelection } from "./resolved-selection";
 import { normalizeAttributeName } from "./utils";
 

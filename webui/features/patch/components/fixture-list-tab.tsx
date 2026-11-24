@@ -7,6 +7,17 @@
  */
 
 import { FileTextIcon } from "@squidlab/phosphor-solid/file-text";
+import type {
+  CellClickedEventArgs,
+  GridCell,
+  GridSelection,
+  GroupHeaderClickedEventArgs,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
+import {
+  CompactSelection,
+  GridCellKind,
+} from "@stewartadam/nightfall-data-grid/types";
 import { createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import { openContextMenu } from "../../../components/providers/context-menu";
@@ -21,14 +32,6 @@ import DataGrid, {
   type DataGridScrollRequest,
 } from "../../../components/widgets/nightfall-data-grid";
 import { PROGRAMMER_SELECTION_ID_TEXT_COLOR } from "../../../lib/constants";
-import type {
-  CellClickedEventArgs,
-  GridCell,
-  GridSelection,
-  GroupHeaderClickedEventArgs,
-  Item,
-} from "../../../lib/data-grid-types";
-import { CompactSelection, GridCellKind } from "../../../lib/data-grid-types";
 import {
   emptyGridSelection,
   getEditTargetRowIndices,

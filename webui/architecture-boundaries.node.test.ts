@@ -370,30 +370,59 @@ test("component root contains only the five shared horizontal layers", () => {
   );
 });
 
-/** Directory holding the data grid that becomes a standalone package. */
-const DATA_GRID_ROOT = "webui/components/widgets/data-grid";
+/** Directory of the data grid workspace package. */
+const DATA_GRID_PACKAGE_ROOT = "packages/data-grid";
 
-/** Grid modules that still live in `webui/lib` but belong to the grid package. */
-const DATA_GRID_LIB_MODULES = [
-  "webui/lib/data-grid-types",
-  "webui/lib/tanstack-dropdown-cell",
-];
+/** Source directory of the data grid package. */
+const DATA_GRID_SOURCE_ROOT = `${DATA_GRID_PACKAGE_ROOT}/src`;
 
-/** npm packages the grid may import; they become its package dependencies. */
-const DATA_GRID_PACKAGES = new Set([
-  "@squidlab/phosphor-solid",
-  "@tanstack/solid-table",
-  "@tanstack/solid-virtual",
-  "solid-js",
-]);
+/** The dependency fields of a package manifest. */
+interface PackageManifest {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+}
 
-/** Returns whether a repository path is one of the data grid's own modules. */
-function isDataGridModule(path: string): boolean {
-  return (
-    path === DATA_GRID_ROOT ||
-    path.startsWith(`${DATA_GRID_ROOT}/`) ||
-    DATA_GRID_LIB_MODULES.includes(path)
-  );
+/** Reads a package manifest relative to the repository root. */
+function readManifest(path: string): PackageManifest {
+  return JSON.parse(
+    readFileSync(resolve(repoRoot, path), "utf8"),
+  ) as PackageManifest;
+}
+
+/** Returns the npm packages the data grid declares as dependencies or peers. */
+function declaredDataGridPackages(): Set<string> {
+  const manifest = readManifest(`${DATA_GRID_PACKAGE_ROOT}/package.json`);
+  return new Set([
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.peerDependencies ?? {}),
+  ]);
+}
+
+/**
+ * Lists the npm packages the data grid and the web UI both depend on with
+ * different version ranges. Matching ranges keep a single copy installed,
+ * which matters most for `solid-js`: a second copy gives the grid its own
+ * reactive runtime that never sees the app's signals.
+ */
+function mismatchedSharedRanges(): string[] {
+  const root = readManifest("package.json");
+  const rootRanges = { ...root.devDependencies, ...root.dependencies };
+  const grid = readManifest(`${DATA_GRID_PACKAGE_ROOT}/package.json`);
+  const mismatches: string[] = [];
+  for (const field of [
+    "dependencies",
+    "devDependencies",
+    "peerDependencies",
+  ] as const) {
+    for (const [name, range] of Object.entries(grid[field] ?? {})) {
+      const rootRange = rootRanges[name];
+      if (rootRange !== undefined && rootRange !== range) {
+        mismatches.push(`${field} ${name}: ${range} (web UI: ${rootRange})`);
+      }
+    }
+  }
+  return mismatches.sort();
 }
 
 /** Returns the npm package name a bare module specifier refers to. */
@@ -405,18 +434,17 @@ function packageName(specifier: string): string {
 }
 
 /**
- * Lists every import that would tie the data grid to the app: relative imports
- * outside the grid's own modules (other than the Solid compatibility shim) and
- * npm packages outside its declared dependencies. Node builtins are allowed in
- * tests only.
+ * Lists every import that would tie the data grid package to anything it does
+ * not declare: relative imports that leave its source directory and npm
+ * packages missing from its dependencies and peers. Node builtins are allowed
+ * in tests only.
  */
 function dataGridImportViolations(): string[] {
-  const gridFiles = [
-    ...collectSourceFiles(resolve(repoRoot, DATA_GRID_ROOT)),
-    ...DATA_GRID_LIB_MODULES.map((module) => resolve(repoRoot, `${module}.ts`)),
-  ];
+  const declared = declaredDataGridPackages();
   const violations: string[] = [];
-  for (const sourceFile of gridFiles) {
+  for (const sourceFile of collectSourceFiles(
+    resolve(repoRoot, DATA_GRID_SOURCE_ROOT),
+  )) {
     const source = repositoryPath(sourceFile);
     const isTest = /\.(?:node\.)?test\.[jt]sx?$/.test(source);
     const imports = importedModuleSpecifiers(
@@ -426,8 +454,8 @@ function dataGridImportViolations(): string[] {
     for (const specifier of imports) {
       const target = resolvedImportTarget(sourceFile, specifier);
       const allowed = target
-        ? isDataGridModule(target) || target === SOLID_COMPAT_MODULE
-        : DATA_GRID_PACKAGES.has(packageName(specifier)) ||
+        ? target.startsWith(`${DATA_GRID_SOURCE_ROOT}/`)
+        : declared.has(packageName(specifier)) ||
           (isTest && specifier.startsWith("node:"));
       if (!allowed) violations.push(`${source} -> ${target ?? specifier}`);
     }
@@ -435,9 +463,40 @@ function dataGridImportViolations(): string[] {
   return violations.sort();
 }
 
-/** Keeps the data grid free of app imports so it can be published as its own package. */
+/** Lists web UI imports that reach into a workspace package by relative path instead of its package name. */
+function relativePackageImports(): string[] {
+  const violations: string[] = [];
+  const sourceFiles = collectSourceFiles(webuiRoot).filter(
+    (file) => !repositoryPath(file).startsWith("webui/assets/"),
+  );
+  for (const sourceFile of sourceFiles) {
+    const imports = importedModuleSpecifiers(
+      sourceFile,
+      readFileSync(sourceFile, "utf8"),
+    );
+    for (const specifier of imports) {
+      const target = resolvedImportTarget(sourceFile, specifier);
+      if (target?.startsWith("packages/")) {
+        violations.push(`${repositoryPath(sourceFile)} -> ${target}`);
+      }
+    }
+  }
+  return violations.sort();
+}
+
+/** Keeps the data grid package free of app imports and undeclared dependencies so it can be published on its own. */
 test("data grid imports only its own modules and declared packages", () => {
   assert.deepEqual(dataGridImportViolations(), []);
+});
+
+/** Keeps the data grid on the same versions of shared packages, such as `solid-js`, as the web UI. */
+test("data grid shares the web UI's dependency ranges", () => {
+  assert.deepEqual(mismatchedSharedRanges(), []);
+});
+
+/** Keeps the web UI consuming workspace packages through their exports, as it would once they are published. */
+test("web UI imports workspace packages by package name", () => {
+  assert.deepEqual(relativePackageImports(), []);
 });
 
 /** Verifies primitives cannot reach application or feature code. */

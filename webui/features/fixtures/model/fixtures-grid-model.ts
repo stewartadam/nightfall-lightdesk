@@ -7,8 +7,11 @@
  */
 
 import { FunctionIcon } from "@squidlab/phosphor-solid/function";
-import type { GridCell, GridColumn } from "../../../lib/data-grid-types";
-import { GridCellKind } from "../../../lib/data-grid-types";
+import type {
+  GridCell,
+  GridColumn,
+} from "@stewartadam/nightfall-data-grid/types";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
 import {
   type AttributeValues,
   attributeValueColumnWidth,

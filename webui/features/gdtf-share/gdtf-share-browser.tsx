@@ -9,6 +9,12 @@
 import { ArrowClockwiseIcon } from "@squidlab/phosphor-solid/arrow-clockwise";
 import { CloudArrowDownIcon } from "@squidlab/phosphor-solid/cloud-arrow-down";
 import {
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+  type GridSelection,
+} from "@stewartadam/nightfall-data-grid/types";
+import {
   children,
   createMemo,
   createSignal,
@@ -27,12 +33,6 @@ import DataGrid, {
   createKeyedDataGridCellProvider,
   singleRowGridSelection,
 } from "../../components/widgets/nightfall-data-grid";
-import {
-  type GridCell,
-  GridCellKind,
-  type GridColumn,
-  type GridSelection,
-} from "../../lib/data-grid-types";
 import { getLogger } from "../../lib/logger";
 import { createEffect } from "../../lib/solid-compat";
 import { useStore } from "../../lib/use-nanostore";

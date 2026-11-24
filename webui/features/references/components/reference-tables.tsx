@@ -6,17 +6,17 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import {
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+} from "@stewartadam/nightfall-data-grid/types";
 import { createMemo } from "solid-js";
 import { Badge } from "../../../components/ui/badge";
 import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridRichCellExtension,
 } from "../../../components/widgets/nightfall-data-grid";
-import {
-  type GridCell,
-  GridCellKind,
-  type GridColumn,
-} from "../../../lib/data-grid-types";
 import {
   type ReferenceEntry,
   type ReferenceIssue,

@@ -1,3 +1,6 @@
+# Libraries the web UI consumes as workspace packages.
+packages:
+  - packages/*
 # wasm-pack's install script downloads its prebuilt binary.
 allowBuilds:
   wasm-pack: true

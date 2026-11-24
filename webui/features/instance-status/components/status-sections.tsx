@@ -11,6 +11,11 @@ import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { QueueIcon } from "@squidlab/phosphor-solid/queue";
 import { SparkleIcon } from "@squidlab/phosphor-solid/sparkle";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
+import {
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+} from "@stewartadam/nightfall-data-grid/types";
 import { createMemo, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { AppIcon } from "../../../components/ui/icon";
@@ -19,11 +24,6 @@ import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridRichCellExtension,
 } from "../../../components/widgets/nightfall-data-grid";
-import {
-  type GridCell,
-  GridCellKind,
-  type GridColumn,
-} from "../../../lib/data-grid-types";
 import { durationToMs, formatSMPTETime } from "../../../lib/time-format";
 import {
   InstanceKind,

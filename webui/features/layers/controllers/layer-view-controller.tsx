@@ -7,6 +7,14 @@
  */
 
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
+import type {
+  CellClickedEventArgs,
+  GridCell,
+  GridColumn,
+  GridSelection,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
+import { CompactSelection } from "@stewartadam/nightfall-data-grid/types";
 import {
   type Accessor,
   createMemo,
@@ -23,14 +31,6 @@ import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensio
 import DataGridFilterMenu from "../../../components/widgets/data-grid-extensions/data-grid-filter-menu";
 import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
 import { createKeyedDataGridCellProvider } from "../../../components/widgets/nightfall-data-grid";
-import type {
-  CellClickedEventArgs,
-  GridCell,
-  GridColumn,
-  GridSelection,
-  Item,
-} from "../../../lib/data-grid-types";
-import { CompactSelection } from "../../../lib/data-grid-types";
 import {
   applyAggregateConflictStyling,
   applyElementBackground,

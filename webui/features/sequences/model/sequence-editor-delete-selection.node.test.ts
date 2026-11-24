@@ -11,7 +11,7 @@ import test from "node:test";
 import {
   CompactSelection,
   type GridSelection,
-} from "../../../lib/data-grid-types";
+} from "@stewartadam/nightfall-data-grid/types";
 import * as types from "../../../types";
 import {
   canApplySequenceEditorDeleteTargets,

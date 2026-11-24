@@ -26,6 +26,9 @@
 /* The application uses dark controls independently of the OS setting. */
 @custom-variant dark (&:where(:root, :root *));
 
+/* Workspace packages styled with the app's Tailwind build */
+@source "../packages/data-grid/src";
+
 /* Preline UI */
 @source "../node_modules/preline/dist/*.js";
 @import "../node_modules/preline/variants.css";

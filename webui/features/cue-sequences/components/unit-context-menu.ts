@@ -6,12 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { ContextMenuEntry } from "../../../components/providers/context-menu";
 import type {
   GridColumn,
   GridSelection,
   Item,
-} from "../../../lib/data-grid-types";
+} from "@stewartadam/nightfall-data-grid/types";
+import type { ContextMenuEntry } from "../../../components/providers/context-menu";
 import type { RichTimeDisplayUnit } from "../../../lib/datagrid-rich-cell-helpers";
 import {
   TIME_DISPLAY_UNIT_LABELS,

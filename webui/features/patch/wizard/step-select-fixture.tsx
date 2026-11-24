@@ -6,6 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import {
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+  type GridSelection,
+} from "@stewartadam/nightfall-data-grid/types";
 import { createMemo, createSignal, Show } from "solid-js";
 import { SearchField } from "../../../components/ui/search-field";
 import {
@@ -22,12 +28,6 @@ import DataGrid, {
   createKeyedDataGridCellProvider,
   singleRowGridSelection,
 } from "../../../components/widgets/nightfall-data-grid";
-import {
-  type GridCell,
-  GridCellKind,
-  type GridColumn,
-  type GridSelection,
-} from "../../../lib/data-grid-types";
 import { libraryDefinitionId } from "../../../lib/fixture-service";
 import {
   libraryRevisionDate,

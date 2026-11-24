@@ -21,7 +21,6 @@ import {
 } from "../../../components/ui/segmented-control";
 import { Toolbar } from "../../../components/ui/toolbar";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
-import { isEditableKeyboardTarget } from "../../../components/widgets/data-grid/event-adapter";
 import { commandClient } from "../../../lib/engine-commands";
 import type { BasePanelComponentProps } from "../../../lib/panel-registry";
 import { useStore } from "../../../lib/use-nanostore";
@@ -44,6 +43,15 @@ import {
 } from "../model";
 import "../components/tempo.css";
 
+/** Returns whether a key event comes from a form field, something inside one, or editable content. */
+function isInsideEditableField(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.closest("input,textarea,select") !== null ||
+      target.isContentEditable)
+  );
+}
+
 /**
  * Returns whether a key press inside the panel should tap: a printable key or Space,
  * pressed without Ctrl, Cmd or Alt and without auto-repeat, outside the tempo fields and
@@ -57,7 +65,7 @@ function isTapKeyEvent(event: KeyboardEvent): boolean {
     !event.metaKey &&
     !event.altKey &&
     event.key.length === 1 &&
-    !isEditableKeyboardTarget(event.target) &&
+    !isInsideEditableField(event.target) &&
     !(event.target instanceof HTMLButtonElement)
   );
 }

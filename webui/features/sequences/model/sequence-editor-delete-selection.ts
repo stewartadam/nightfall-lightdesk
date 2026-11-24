@@ -9,7 +9,7 @@
 import {
   CompactSelection,
   type GridSelection,
-} from "../../../lib/data-grid-types";
+} from "@stewartadam/nightfall-data-grid/types";
 import { getEditTargetRowIndices } from "../../../lib/datagrid";
 import type * as types from "../../../types";
 

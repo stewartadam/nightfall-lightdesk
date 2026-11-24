@@ -6,6 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type {
+  GridCell,
+  GridColumn,
+} from "@stewartadam/nightfall-data-grid/types";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
 import { sortedAttributes } from "../../../lib/attribute-ordering";
 import {
   ensureInstructionForFixtureRef,
@@ -26,8 +31,6 @@ import {
   upsertInstructionFixtureAttributeTiming,
 } from "../../../lib/cue-timing-values";
 import { projectCueInstructionValuesForFixtureRef } from "../../../lib/cue-value-projection";
-import type { GridCell, GridColumn } from "../../../lib/data-grid-types";
-import { GridCellKind } from "../../../lib/data-grid-types";
 import {
   createAttributeValueCell,
   type ElementRowExtension,

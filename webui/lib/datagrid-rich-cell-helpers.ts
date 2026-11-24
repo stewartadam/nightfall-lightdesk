@@ -6,8 +6,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { Rectangle } from "@stewartadam/nightfall-data-grid/types";
 import type * as types from "../types";
-import type { Rectangle } from "./data-grid-types";
 import { durationToMs, msToDuration } from "./duration";
 
 export type RichCellTone =

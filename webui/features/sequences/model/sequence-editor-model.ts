@@ -9,8 +9,8 @@
 import type {
   GridCell,
   GridCellStateIndicator,
-} from "../../../lib/data-grid-types";
-import { GridCellKind } from "../../../lib/data-grid-types";
+} from "@stewartadam/nightfall-data-grid/types";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
 import {
   isRichTimeCell,
   type RichTimeCell,

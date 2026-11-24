@@ -6,6 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type {
+  GridCell,
+  GridColumn,
+  GridSelection,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
 import type { Accessor } from "solid-js";
 import {
   type DataGridCellEdit,
@@ -20,13 +27,6 @@ import {
   transitionForFixtureAttribute,
   upsertInstructionFixtureAttributeTiming,
 } from "../../../lib/cue-timing-values";
-import type {
-  GridCell,
-  GridColumn,
-  GridSelection,
-  Item,
-} from "../../../lib/data-grid-types";
-import { GridCellKind } from "../../../lib/data-grid-types";
 import { getRowsToEdit } from "../../../lib/datagrid";
 import { fixtureRefKey } from "../../../lib/selection-resolution";
 import {

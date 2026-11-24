@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { GridColumn } from "../../../lib/data-grid-types";
+import type { GridColumn } from "@stewartadam/nightfall-data-grid/types";
 import {
   createAttrValueColumns,
   type ElementRowExtension,

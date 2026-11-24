@@ -60,7 +60,7 @@
                   "createResource",
                   "createEffect"
                 ],
-                "message": "Solid 2.0 removes or reshapes this API. Use the two-function createEffect, createTrackedEffect or createProjection from webui/lib/solid-compat, or createAsyncValue from webui/lib/async-value."
+                "message": "Solid 2.0 removes or reshapes this API. Use the two-function createEffect, createTrackedEffect or createProjection from webui/lib/solid-compat (a workspace package uses its own src/solid-compat), or createAsyncValue from webui/lib/async-value."
               }
             }
           }
@@ -80,7 +80,10 @@
   "overrides": [
     {
       // The compat module implements the Solid 2.0 shapes with the 1.x APIs they replace.
-      "includes": ["webui/lib/solid-compat.ts"],
+      "includes": [
+        "webui/lib/solid-compat.ts",
+        "packages/data-grid/src/solid-compat.ts"
+      ],
       "linter": {
         "rules": {
           "style": {

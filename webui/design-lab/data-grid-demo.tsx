@@ -7,6 +7,14 @@
  */
 
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
+import { isDropdownCell } from "@stewartadam/nightfall-data-grid/dropdown-cell";
+import {
+  CompactSelection,
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+  type GridSelection,
+} from "@stewartadam/nightfall-data-grid/types";
 import { createMemo, createSignal, createUniqueId } from "solid-js";
 import { openContextMenu } from "../components/providers/context-menu";
 import { SegmentedTabs } from "../components/ui/segmented-tabs";
@@ -16,14 +24,6 @@ import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridCellEdit,
 } from "../components/widgets/nightfall-data-grid";
-import {
-  CompactSelection,
-  type GridCell,
-  GridCellKind,
-  type GridColumn,
-  type GridSelection,
-} from "../lib/data-grid-types";
-import { isDropdownCell } from "../lib/tanstack-dropdown-cell";
 import { ProgressTableDemo } from "./progress-table-demo";
 import { ReadOnlyTableDemo } from "./read-only-table-demo";
 import "./data-grid-demo.css";

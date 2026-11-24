@@ -6,6 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import {
+  CompactSelection,
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+  type GridSelection,
+} from "@stewartadam/nightfall-data-grid/types";
 import { createMemo, createSignal, For } from "solid-js";
 import { NativeSelect } from "../components/ui/form-controls";
 import { Table, TableScroll } from "../components/ui/table";
@@ -15,13 +22,6 @@ import DataGrid, {
   type DataGridRichCellExtension,
   type DataGridSelectionMode,
 } from "../components/widgets/nightfall-data-grid";
-import {
-  CompactSelection,
-  type GridCell,
-  GridCellKind,
-  type GridColumn,
-  type GridSelection,
-} from "../lib/data-grid-types";
 import { createEffect } from "../lib/solid-compat";
 import { formatSMPTETime } from "../lib/time-format";
 import { TimecodeRate } from "../types";

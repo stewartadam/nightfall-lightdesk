@@ -10,7 +10,7 @@ import {
   type CustomCell,
   type CustomRenderer,
   GridCellKind,
-} from "./data-grid-types";
+} from "@stewartadam/nightfall-data-grid/types";
 import {
   CELL_PADDING,
   formatDurationInputValue,

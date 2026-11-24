@@ -9,6 +9,12 @@
 import { LayoutIcon } from "@squidlab/phosphor-solid/layout";
 import { LockIcon } from "@squidlab/phosphor-solid/lock";
 import { LockOpenIcon } from "@squidlab/phosphor-solid/lock-open";
+import type {
+  CellClickedEventArgs,
+  GridSelection,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
+import { CompactSelection } from "@stewartadam/nightfall-data-grid/types";
 import type { Setter } from "solid-js";
 import {
   type ContextMenuEntry,
@@ -16,12 +22,6 @@ import {
 } from "../../../components/providers/context-menu";
 import { useRevealObjectCapability } from "../../../components/providers/panel-capabilities/context-core";
 import type { DataGridScrollRequest } from "../../../components/widgets/nightfall-data-grid";
-import type {
-  CellClickedEventArgs,
-  GridSelection,
-  Item,
-} from "../../../lib/data-grid-types";
-import { CompactSelection } from "../../../lib/data-grid-types";
 import { emptyGridSelection } from "../../../lib/datagrid";
 import { EMPTY_TABLE_FILTERS } from "../../../lib/datagrid-filtering";
 import { commandClient } from "../../../lib/engine-commands";

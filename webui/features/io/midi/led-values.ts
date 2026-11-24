@@ -6,11 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type GridCell, GridCellKind } from "../../../lib/data-grid-types";
 import {
   type DropdownGridCell,
   isDropdownCell,
-} from "../../../lib/tanstack-dropdown-cell";
+} from "@stewartadam/nightfall-data-grid/dropdown-cell";
+import {
+  type GridCell,
+  GridCellKind,
+} from "@stewartadam/nightfall-data-grid/types";
 import type { MidiDeviceProfile, MidiLedValues } from "../../../types";
 
 /** Which of a mapping's LED values a cell edits. */

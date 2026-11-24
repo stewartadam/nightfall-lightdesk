@@ -6,6 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type {
+  CellClickedEventArgs,
+  GridSelection,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
 import {
   createMemo,
   createSignal,
@@ -16,11 +21,6 @@ import {
   Switch,
 } from "solid-js";
 import { EmptyState } from "../../../components/ui/empty-state";
-import type {
-  CellClickedEventArgs,
-  GridSelection,
-  Item,
-} from "../../../lib/data-grid-types";
 import type { RichTimeDisplayUnit } from "../../../lib/datagrid-rich-cells";
 import {
   registerComponentFocus,

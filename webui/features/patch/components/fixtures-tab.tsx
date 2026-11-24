@@ -7,6 +7,12 @@
  */
 
 import { ArrowsClockwiseIcon } from "@squidlab/phosphor-solid/arrows-clockwise";
+import type {
+  CellClickedEventArgs,
+  GridCell,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
 import { createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import {
   type ContextMenuEntry,
@@ -20,12 +26,6 @@ import { createDataGridFilterState } from "../../../components/widgets/data-grid
 import DataGrid, {
   createKeyedDataGridCellProvider,
 } from "../../../components/widgets/nightfall-data-grid";
-import type {
-  CellClickedEventArgs,
-  GridCell,
-  Item,
-} from "../../../lib/data-grid-types";
-import { GridCellKind } from "../../../lib/data-grid-types";
 import {
   applyElementBackground,
   CONFLICT_VALUE_TEXT_COLOR,

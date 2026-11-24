@@ -6,6 +6,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type {
+  GridColumn,
+  GridSelection,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
 import type { DockviewPanelApi } from "dockview";
 import {
   createMemo,
@@ -18,11 +23,6 @@ import {
 import { openContextMenu } from "../../../components/providers/context-menu";
 import { EmptyState } from "../../../components/ui/empty-state";
 import { createAsyncValue } from "../../../lib/async-value";
-import type {
-  GridColumn,
-  GridSelection,
-  Item,
-} from "../../../lib/data-grid-types";
 import type { RichTimeDisplayUnit } from "../../../lib/datagrid-rich-cells";
 import {
   registerComponentFocus,

@@ -6,11 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { type GridCell, GridCellKind } from "../../../lib/data-grid-types";
 import {
   type DropdownGridCell,
   isDropdownCell,
-} from "../../../lib/tanstack-dropdown-cell";
+} from "@stewartadam/nightfall-data-grid/dropdown-cell";
+import {
+  type GridCell,
+  GridCellKind,
+} from "@stewartadam/nightfall-data-grid/types";
 import * as types from "../../../types";
 
 /** Returns the name a MIDI device is shown under, given its ID. */

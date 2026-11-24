@@ -6,17 +6,17 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createMemo, type JSX, splitProps } from "solid-js";
-import { recordExternalPerformanceMeasure } from "../../../lib/performance-measure-collector";
-import { EmptyState } from "../../ui/empty-state";
 import DataGrid, {
   type DataGridMetricSample,
   type DataGridProps,
   type DataGridRichCellExtension,
-} from "../data-grid";
+} from "@stewartadam/nightfall-data-grid";
+import { createMemo, type JSX, splitProps } from "solid-js";
+import { recordExternalPerformanceMeasure } from "../../../lib/performance-measure-collector";
+import { EmptyState } from "../../ui/empty-state";
 import { prelineDropdownCellExtension } from "./preline-dropdown-cell";
 
-export * from "../data-grid";
+export * from "@stewartadam/nightfall-data-grid";
 
 /** Prefix of the metrics table rows Nightfall grids report into. */
 const METRIC_PREFIX = "nightfall:data-grid.";

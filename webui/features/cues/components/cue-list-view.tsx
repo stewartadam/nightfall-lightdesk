@@ -9,6 +9,7 @@
 import { PencilSimpleLineIcon } from "@squidlab/phosphor-solid/pencil-simple-line";
 import { SelectionIcon } from "@squidlab/phosphor-solid/selection";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
 import { For, Show } from "solid-js";
 import { Collapsible } from "../../../components/ui/collapsible";
 import { EmptyState } from "../../../components/ui/empty-state";
@@ -29,7 +30,6 @@ import {
 import CrudScrollArea from "../../../components/widgets/crud/crud-scroll-area";
 import CrudViewModeToggle from "../../../components/widgets/crud/crud-view-mode-toggle";
 import DeleteConfirmModal from "../../../components/widgets/delete-confirm-dialog";
-import { GridCellKind } from "../../../lib/data-grid-types";
 import type { Cue } from "../../../types";
 import type { CueListController } from "../controllers/cue-list-controller";
 import type { CueListDisplayRow } from "../model/cue-list-model";
