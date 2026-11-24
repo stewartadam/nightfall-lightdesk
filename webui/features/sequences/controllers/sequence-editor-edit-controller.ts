@@ -6,18 +6,18 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { Accessor } from "solid-js";
-import { v4 as uuidv4 } from "uuid";
-import type { DataGridCellEdit } from "../../../components/widgets/nightfall-data-grid";
+import { isDropdownCell } from "@stewartadam/nightfall-data-grid/dropdown-cell";
 import type {
   GridCell,
   GridColumn,
   GridSelection,
   Item,
-} from "../../../lib/data-grid-types";
-import { GridCellKind } from "../../../lib/data-grid-types";
+} from "@stewartadam/nightfall-data-grid/types";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
+import type { Accessor } from "solid-js";
+import { v4 as uuidv4 } from "uuid";
+import type { DataGridCellEdit } from "../../../components/widgets/nightfall-data-grid";
 import { getRowsToEdit } from "../../../lib/datagrid";
-import { isDropdownCell } from "../../../lib/tanstack-dropdown-cell";
 import type * as types from "../../../types";
 import { isTrackingFlagsCell, trackingFlagsFromIds } from "../../cue-sequences";
 import type { SequenceEditorContextType } from "../context/sequence-editor-context";

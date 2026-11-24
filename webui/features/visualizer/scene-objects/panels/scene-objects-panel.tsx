@@ -9,6 +9,15 @@
 import { FolderOpenIcon } from "@squidlab/phosphor-solid/folder-open";
 import { PlusIcon } from "@squidlab/phosphor-solid/plus";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
+import type {
+  GridCell,
+  GridSelection,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
+import {
+  CompactSelection,
+  GridCellKind,
+} from "@stewartadam/nightfall-data-grid/types";
 import { createMemo, createSignal, onCleanup } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import PanelToolbar, {
@@ -37,15 +46,6 @@ import {
   commandSucceeded,
 } from "../../../../lib/command-result";
 import { PROGRAMMER_SELECTION_ID_TEXT_COLOR } from "../../../../lib/constants";
-import type {
-  GridCell,
-  GridSelection,
-  Item,
-} from "../../../../lib/data-grid-types";
-import {
-  CompactSelection,
-  GridCellKind,
-} from "../../../../lib/data-grid-types";
 import {
   emptyGridSelection,
   getEditTargetRowIndices,

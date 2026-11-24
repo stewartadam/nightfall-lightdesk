@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { GridCell } from "../../../lib/data-grid-types";
+import type { GridCell } from "@stewartadam/nightfall-data-grid/types";
 import {
   applyFixtureValueSourceStyling,
   createAttributeValueCell,

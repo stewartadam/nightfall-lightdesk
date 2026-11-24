@@ -6,7 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import {
   CompactSelection,
   type CustomRenderer,
@@ -15,7 +14,8 @@ import {
   type GridColumn,
   type GridSelection,
   type Item,
-} from "../../../lib/data-grid-types";
+} from "@stewartadam/nightfall-data-grid/types";
+import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { makeSafeTextCell } from "../../../lib/datagrid";
 import {
   alwaysVisibleColumnMeta,

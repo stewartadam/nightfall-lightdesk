@@ -6,9 +6,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type {
+  GridColumn,
+  GridSelection,
+} from "@stewartadam/nightfall-data-grid/types";
+import { CompactSelection } from "@stewartadam/nightfall-data-grid/types";
 import { type Accessor, createMemo, createSignal, untrack } from "solid-js";
-import type { GridColumn, GridSelection } from "../../../lib/data-grid-types";
-import { CompactSelection } from "../../../lib/data-grid-types";
 import { getSelectedRowIndices } from "../../../lib/datagrid";
 import { focusOrAddPanel } from "../../../lib/panel-open-command";
 import { createEffect } from "../../../lib/solid-compat";

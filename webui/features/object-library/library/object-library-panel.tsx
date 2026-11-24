@@ -18,6 +18,11 @@ import { PlusIcon } from "@squidlab/phosphor-solid/plus";
  * - View detailed information in properties panel
  */
 
+import type {
+  GridCell,
+  GridSelection,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
 import { type Component, createMemo, createSignal } from "solid-js";
 import { ToolbarButton } from "../../../components/ui/toolbar-button";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
@@ -27,11 +32,6 @@ import { createDataGridFilterState } from "../../../components/widgets/data-grid
 import DataGrid, {
   createKeyedDataGridCellProvider,
 } from "../../../components/widgets/nightfall-data-grid";
-import type {
-  GridCell,
-  GridSelection,
-  Item,
-} from "../../../lib/data-grid-types";
 import {
   createRowSelectionHelpers,
   emptyGridSelection,

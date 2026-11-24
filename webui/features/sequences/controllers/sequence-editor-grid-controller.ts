@@ -6,14 +6,17 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { DropdownGridCell } from "@stewartadam/nightfall-data-grid/dropdown-cell";
+import type {
+  GridCell,
+  GridColumn,
+} from "@stewartadam/nightfall-data-grid/types";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
 import { type Accessor, createMemo, createSignal } from "solid-js";
 import {
   createKeyedDataGridCellProvider,
   type DataGridCellDecorationCallback,
-  drawActiveCuePlayIcon,
 } from "../../../components/widgets/nightfall-data-grid";
-import type { GridCell, GridColumn } from "../../../lib/data-grid-types";
-import { GridCellKind } from "../../../lib/data-grid-types";
 import {
   applyElementBackground,
   conflictWarningIndicators,
@@ -24,7 +27,6 @@ import {
 } from "../../../lib/datagrid-rich-cells";
 import { msToDuration } from "../../../lib/duration";
 import { createEffect } from "../../../lib/solid-compat";
-import type { DropdownGridCell } from "../../../lib/tanstack-dropdown-cell";
 import { useShallowStore } from "../../../lib/use-shallow-store";
 import { useWorkspaceActivity } from "../../../lib/workspace-activity";
 import { activeInstances, layerStack } from "../../../state/appStores";
@@ -61,6 +63,7 @@ import {
   sequenceGridRowKey,
   timingColumnValue,
 } from "../model/sequence-editor-model";
+import { drawActiveCuePlayIcon } from "./active-cue-play-icon";
 
 interface SequenceEditorGridControllerOptions {
   context: SequenceEditorContextType;

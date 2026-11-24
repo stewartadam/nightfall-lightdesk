@@ -6,6 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type {
+  GridCell,
+  GridColumn,
+  GridSelection,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
 import { createMemo, createSignal, Show } from "solid-js";
 import { v4 as uuidv4 } from "uuid";
 import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
@@ -14,13 +21,6 @@ import DataGrid, {
   type DataGridCellEdit,
   type DataGridEditCommitContext,
 } from "../../../components/widgets/nightfall-data-grid";
-import type {
-  GridCell,
-  GridColumn,
-  GridSelection,
-  Item,
-} from "../../../lib/data-grid-types";
-import { GridCellKind } from "../../../lib/data-grid-types";
 import {
   ATTRIBUTE_VALUE_NESTED_COLUMN_GROUPS,
   type AttributeValues,

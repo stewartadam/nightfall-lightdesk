@@ -14,9 +14,9 @@ import {
   setPersistentEngine,
   useTestStorageEngine,
 } from "@nanostores/persistent";
+import type { GridColumn } from "@stewartadam/nightfall-data-grid/types";
 import { AttributeCategory } from "../types";
 import { setAttributeMetadata } from "./attribute-metadata";
-import type { GridColumn } from "./data-grid-types";
 import {
   attributeColumnVisibilityMeta,
   filterVisibleColumns,

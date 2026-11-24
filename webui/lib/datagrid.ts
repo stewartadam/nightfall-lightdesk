@@ -6,10 +6,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { Accessor, Setter } from "solid-js";
-import type * as types from "../types";
-import { sortedAttributes } from "./attribute-ordering";
-import { DATA_GRID_NOT_APPLICABLE_BG } from "./constants";
 import {
   CompactSelection,
   type GridCell,
@@ -17,7 +13,11 @@ import {
   type GridCellStateIndicator,
   type GridColumn,
   type GridSelection,
-} from "./data-grid-types";
+} from "@stewartadam/nightfall-data-grid/types";
+import type { Accessor, Setter } from "solid-js";
+import type * as types from "../types";
+import { sortedAttributes } from "./attribute-ordering";
+import { DATA_GRID_NOT_APPLICABLE_BG } from "./constants";
 import { attributeColumnVisibilityMeta } from "./datagrid-column-visibility";
 import {
   type FixtureValueSourceState,

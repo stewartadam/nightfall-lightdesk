@@ -9,6 +9,12 @@
 import { PauseIcon } from "@squidlab/phosphor-solid/pause";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
+import {
+  type GridCell,
+  GridCellKind,
+  type GridColumn,
+  type GridSelection,
+} from "@stewartadam/nightfall-data-grid/types";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { useRevealObjectCapability } from "../../components/providers/panel-capabilities/context-core";
 import PanelToolbar from "../../components/ui/panel-toolbar";
@@ -28,12 +34,6 @@ import {
   changeCrudPanelViewMode,
   loadCrudPanelViewMode,
 } from "../../lib/crud-panel-view-mode";
-import {
-  type GridCell,
-  GridCellKind,
-  type GridColumn,
-  type GridSelection,
-} from "../../lib/data-grid-types";
 import { commandClient } from "../../lib/engine-commands";
 import type { BasePanelComponentProps } from "../../lib/panel-registry";
 import { durationToMs, formatSMPTETime } from "../../lib/time-format";

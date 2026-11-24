@@ -9,6 +9,11 @@
 import { EraserIcon } from "@squidlab/phosphor-solid/eraser";
 import { LockIcon } from "@squidlab/phosphor-solid/lock";
 import { LockOpenIcon } from "@squidlab/phosphor-solid/lock-open";
+import type {
+  GridColumn,
+  GridSelection,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
 import { openContextMenu } from "../../../components/providers/context-menu";
 import type { ContextMenuEntry } from "../../../components/widgets/context-menu/contract";
 import {
@@ -16,11 +21,6 @@ import {
   selectedClipboardCells,
 } from "../../../components/widgets/nightfall-data-grid";
 import { commandAttributeForName } from "../../../lib/attribute-metadata";
-import type {
-  GridColumn,
-  GridSelection,
-  Item,
-} from "../../../lib/data-grid-types";
 import { commandClient } from "../../../lib/engine-commands";
 import {
   type ParkedParameterLookup,

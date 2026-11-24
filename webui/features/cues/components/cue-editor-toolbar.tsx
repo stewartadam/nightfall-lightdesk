@@ -11,6 +11,7 @@ import { EyeSlashIcon } from "@squidlab/phosphor-solid/eye-slash";
 import { FastForwardIcon } from "@squidlab/phosphor-solid/fast-forward";
 import { PlayIcon } from "@squidlab/phosphor-solid/play";
 import { StopIcon } from "@squidlab/phosphor-solid/stop";
+import type { GridColumn } from "@stewartadam/nightfall-data-grid/types";
 import { Dynamic } from "solid-js/web";
 import PanelToolbar, {
   ToolbarSeparator,
@@ -18,7 +19,6 @@ import PanelToolbar, {
 import { SegmentedControl } from "../../../components/ui/segmented-control";
 import { ToggleToolbarButton } from "../../../components/ui/toolbar-button";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
-import type { GridColumn } from "../../../lib/data-grid-types";
 import type { DisplayMode } from "../model/cue-editor-model";
 
 interface CueEditorToolbarProps {

@@ -13,6 +13,7 @@
   },
   "include": [
     "webui/**/*.node.test.ts",
+    "packages/*/src/**/*.ts",
     "webui/global.d.ts",
     "webui/solid-flow.d.ts"
   ]

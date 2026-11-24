@@ -6,13 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { GridColumn } from "@stewartadam/nightfall-data-grid/types";
 import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
 import DataGridFilterMenu from "../../../components/widgets/data-grid-extensions/data-grid-filter-menu";
-import type { GridColumn } from "../../../lib/data-grid-types";
 import type {
   DataGridFilterColumn,
   TableFilterSettings,

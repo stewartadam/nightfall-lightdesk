@@ -8,9 +8,9 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
 import * as types from "../types";
 import { setAttributeMetadata } from "./attribute-metadata";
-import { GridCellKind } from "./data-grid-types";
 import {
   applyParkedIndicator,
   buildParkedParameterLookup,

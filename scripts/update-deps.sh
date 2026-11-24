@@ -58,33 +58,40 @@ update_dependencies() {
 # Print, one per line, the npm packages that must stay on their current
 # version: every package with a pnpm patch (patches are keyed to an exact
 # version, so moving it makes pnpm abort with ERR_PNPM_UNUSED_PATCH) and every
-# direct dependency that package.json pins to an exact version on purpose.
+# direct dependency that a package.json pins to an exact version on purpose.
 held_js_packages() {
   local patched
   patched="$(pnpm config get patchedDependencies --json)"
   PATCHED_JSON="$patched" node --input-type=module -e '
-    import { readFileSync } from "node:fs";
+    import { readdirSync, readFileSync } from "node:fs";
     const patched = JSON.parse(process.env.PATCHED_JSON || "null") ?? {};
-    const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+    const manifests = [
+      "package.json",
+      ...readdirSync("packages").map((name) => `packages/${name}/package.json`),
+    ].map((path) => JSON.parse(readFileSync(path, "utf8")));
     const held = new Set(
       Object.keys(patched).map((key) => key.slice(0, key.lastIndexOf("@"))),
     );
-    for (const deps of [manifest.dependencies, manifest.devDependencies]) {
-      for (const [name, version] of Object.entries(deps ?? {})) {
-        if (/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) held.add(name);
+    for (const manifest of manifests) {
+      for (const deps of [manifest.dependencies, manifest.devDependencies]) {
+        for (const [name, version] of Object.entries(deps ?? {})) {
+          if (/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) held.add(name);
+        }
       }
     }
     console.log([...held].sort().join("\n"));
   '
 }
 
-# Update web UI dependencies to their latest releases, including major
-# versions, rewriting the ranges in package.json and the lockfile. Patched and
+# Update web UI and workspace package dependencies to their latest releases,
+# including major versions, rewriting the ranges in every package.json and the
+# lockfile. A workspace package's peer ranges are not rewritten; the
+# architecture node test fails until they match the web UI's again. Patched and
 # exactly pinned packages are excluded so the update never invalidates a patch.
 update_js_dependencies() {
   echo "*** Updating pnpm dependencies"
   local held name
-  local args=(update --latest)
+  local args=(update --latest --recursive --include-workspace-root)
   held="$(held_js_packages)"
   while IFS= read -r name; do
     [ -n "$name" ] && args+=("!$name")

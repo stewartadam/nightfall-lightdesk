@@ -6,7 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { GridCell } from "../../../lib/data-grid-types";
+import {
+  canEditDropdownCell,
+  type DataGridRichCellEditorContext,
+  type DataGridRichCellExtension,
+  type DataGridRichCellRenderContext,
+  DropdownCellAffordance,
+} from "@stewartadam/nightfall-data-grid";
 import {
   type DropdownGridCell,
   dropdownDisplaySwatch,
@@ -16,15 +22,9 @@ import {
   isDropdownCell,
   makeDropdownEditedCell,
   makeDropdownEditedCellByValue,
-} from "../../../lib/tanstack-dropdown-cell";
+} from "@stewartadam/nightfall-data-grid/dropdown-cell";
+import type { GridCell } from "@stewartadam/nightfall-data-grid/types";
 import { PrelineAdvancedSelect } from "../advanced-select/preline-advanced-select";
-import {
-  canEditDropdownCell,
-  type DataGridRichCellEditorContext,
-  type DataGridRichCellExtension,
-  type DataGridRichCellRenderContext,
-  DropdownCellAffordance,
-} from "../data-grid";
 import "./preline-dropdown-cell.css";
 
 /** Shows a dropdown cell's value: an affordance when editable, plain right-aligned text otherwise. */

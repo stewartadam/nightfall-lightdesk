@@ -6,11 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type {
+  GridColumn,
+  GridSelection,
+} from "@stewartadam/nightfall-data-grid/types";
 import { Show } from "solid-js";
 import DataGrid, {
   type DataGridProps,
 } from "../../../components/widgets/nightfall-data-grid";
-import type { GridColumn, GridSelection } from "../../../lib/data-grid-types";
 import { ATTRIBUTE_VALUE_NESTED_COLUMN_GROUPS } from "../../../lib/datagrid";
 import { richColorSwatchCellRenderer } from "../../../lib/datagrid-rich-cells";
 

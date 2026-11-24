@@ -8,9 +8,12 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { GridSelection } from "@stewartadam/nightfall-data-grid/types";
+import {
+  CompactSelection,
+  GridCellKind,
+} from "@stewartadam/nightfall-data-grid/types";
 import { AttributeCategory } from "../types";
-import type { GridSelection } from "./data-grid-types";
-import { CompactSelection, GridCellKind } from "./data-grid-types";
 import {
   type AttributeValues,
   applyAggregateConflictStyling,

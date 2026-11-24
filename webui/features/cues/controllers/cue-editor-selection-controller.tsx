@@ -9,18 +9,18 @@
 import { ArrowUUpLeftIcon } from "@squidlab/phosphor-solid/arrow-u-up-left";
 import { EraserIcon } from "@squidlab/phosphor-solid/eraser";
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
+import type {
+  GridSelection,
+  GroupHeaderClickedEventArgs,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
+import { CompactSelection } from "@stewartadam/nightfall-data-grid/types";
 import type { Accessor } from "solid-js";
 import {
   type ContextMenuEntry,
   openContextMenu,
 } from "../../../components/providers/context-menu";
 import { selectedClipboardCells } from "../../../components/widgets/nightfall-data-grid";
-import type {
-  GridSelection,
-  GroupHeaderClickedEventArgs,
-  Item,
-} from "../../../lib/data-grid-types";
-import { CompactSelection } from "../../../lib/data-grid-types";
 import { getSelectedRowIndices } from "../../../lib/datagrid";
 import type { RichTimeDisplayUnit } from "../../../lib/datagrid-rich-cells";
 import { fixtureRefKey } from "../../../lib/selection-resolution";

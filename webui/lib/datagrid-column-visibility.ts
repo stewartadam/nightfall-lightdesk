@@ -6,10 +6,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { GridColumn } from "@stewartadam/nightfall-data-grid/types";
 import { createSignal } from "solid-js";
 import { getAttributeMetadata } from "./attribute-metadata";
 import { bestEffortPersistentAtom } from "./best-effort-persistent-atom";
-import type { GridColumn } from "./data-grid-types";
 import { normalizeAttributeName } from "./utils";
 
 const STORAGE_PREFIX = "columns-config";

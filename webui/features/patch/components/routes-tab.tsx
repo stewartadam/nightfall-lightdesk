@@ -6,6 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type {
+  GridCell,
+  GridSelection,
+  Item,
+} from "@stewartadam/nightfall-data-grid/types";
+import {
+  CompactSelection,
+  GridCellKind,
+} from "@stewartadam/nightfall-data-grid/types";
 import { createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import Tooltip from "../../../components/ui/tooltip";
 import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
@@ -14,12 +23,6 @@ import { createDataGridFilterState } from "../../../components/widgets/data-grid
 import DataGrid, {
   createKeyedDataGridCellProvider,
 } from "../../../components/widgets/nightfall-data-grid";
-import type {
-  GridCell,
-  GridSelection,
-  Item,
-} from "../../../lib/data-grid-types";
-import { CompactSelection, GridCellKind } from "../../../lib/data-grid-types";
 import {
   CONFLICT_VALUE_TEXT_COLOR,
   conflictWarningIndicators,

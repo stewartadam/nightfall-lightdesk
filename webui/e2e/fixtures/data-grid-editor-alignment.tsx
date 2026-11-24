@@ -6,12 +6,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import {
+  type GridCell,
+  GridCellKind,
+} from "@stewartadam/nightfall-data-grid/types";
 import { createMemo, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import DataGrid, {
   createKeyedDataGridCellProvider,
 } from "../../components/widgets/nightfall-data-grid";
-import { type GridCell, GridCellKind } from "../../lib/data-grid-types";
 import "../../index.css";
 
 /** Mounts editable cells with every supported alignment for browser regression coverage. */

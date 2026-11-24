@@ -1,29 +1,37 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
   "tags": ["-lintignore"],
-  "entry": [
-    "webui/main.tsx",
-    "webui/worktree-dashboard.tsx",
-    "webui/design-lab/main.tsx",
-    "webui/e2e/harness/entry.ts",
-    "webui/lib/engine-runtime-{worker,demo-worker,embedded}.ts",
-    "webui/public/*.js",
-    "playwright/*.config.ts",
-    "webui/**/*.node.test.ts",
-    "webui/e2e/**/*.spec.ts",
-    "playwright/tests/**/*.spec.ts",
-    "scripts/*.mjs",
-    "vite.config.ts"
-  ],
-  "project": [
-    "webui/**/*.{css,js,ts,tsx}",
-    "scripts/**/*.mjs",
-    "playwright/**/*.ts",
-    "*.config.ts",
-    "!webui/types/*.ts"
-  ],
-  "paths": {
-    "/lib/*": ["webui/lib/*"]
+  "workspaces": {
+    ".": {
+      "entry": [
+        "webui/main.tsx",
+        "webui/worktree-dashboard.tsx",
+        "webui/design-lab/main.tsx",
+        "webui/e2e/harness/entry.ts",
+        "webui/lib/engine-runtime-{worker,demo-worker,embedded}.ts",
+        "webui/public/*.js",
+        "playwright/*.config.ts",
+        "webui/**/*.node.test.ts",
+        "webui/e2e/**/*.spec.ts",
+        "playwright/tests/**/*.spec.ts",
+        "scripts/*.mjs",
+        "vite.config.ts"
+      ],
+      "project": [
+        "webui/**/*.{css,js,ts,tsx}",
+        "scripts/**/*.mjs",
+        "playwright/**/*.ts",
+        "*.config.ts",
+        "!webui/types/*.ts"
+      ],
+      "paths": {
+        "/lib/*": ["webui/lib/*"]
+      }
+    },
+    "packages/data-grid": {
+      "entry": ["src/**/*.node.test.ts"],
+      "project": ["src/**/*.{ts,tsx}"]
+    }
   },
   "ignoreFiles": ["webui/*.d.ts", "webui/assets/wasm/*.d.ts"],
   "ignoreBinaries": ["typeshare"],

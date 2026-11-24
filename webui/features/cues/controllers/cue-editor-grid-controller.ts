@@ -6,14 +6,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+import type { GridCell } from "@stewartadam/nightfall-data-grid/types";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
 import { type Accessor, createMemo, createSignal } from "solid-js";
 import { createKeyedDataGridCellProvider } from "../../../components/widgets/nightfall-data-grid";
 import { createAsyncValue } from "../../../lib/async-value";
 import { sortedAttributes } from "../../../lib/attribute-ordering";
 import { isColorPathDrivenAttribute } from "../../../lib/color-path-driven-attributes";
 import { TIMING_COLUMNS } from "../../../lib/cue-timing-values";
-import type { GridCell } from "../../../lib/data-grid-types";
-import { GridCellKind } from "../../../lib/data-grid-types";
 import {
   applyAggregateConflictStyling,
   applyElementBackground,

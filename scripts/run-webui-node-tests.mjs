@@ -66,7 +66,9 @@ try {
     },
   );
 
-  const testFiles = collectNodeTestFiles(join(outDir, "webui")).sort();
+  const testFiles = ["webui", "packages"]
+    .flatMap((directory) => collectNodeTestFiles(join(outDir, directory)))
+    .sort();
   if (testFiles.length === 0) {
     throw new Error("No compiled .node.test.js files found");
   }

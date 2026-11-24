@@ -8,13 +8,13 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GridCellKind } from "../../../lib/data-grid-types";
 import {
   dropdownDisplaySwatch,
   dropdownDisplayValue,
   isDropdownCell,
   makeDropdownEditedCellByValue,
-} from "../../../lib/tanstack-dropdown-cell";
+} from "@stewartadam/nightfall-data-grid/dropdown-cell";
+import { GridCellKind } from "@stewartadam/nightfall-data-grid/types";
 import type { MidiDeviceProfile } from "../../../types";
 import { editedLedValue, ledValueCell } from "./led-values";
 
