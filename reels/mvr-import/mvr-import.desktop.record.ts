@@ -166,7 +166,7 @@ async function menuArea(
 /**
  * Shows the imported rig from more than one angle: the cursor drags across the
  * 3D view to the right, which orbits the camera around to the left, then
- * scrolls the wheel in small ticks to pull the camera back a little.
+ * scrolls the wheel to pull the camera back a little.
  */
 async function showOffRig(
   take: Take,
@@ -182,10 +182,49 @@ async function showOffRig(
   await page.waitForTimeout(300);
   await take.dragTo({ x: start.x + box.width * 0.4, y: start.y }, 2_400);
   await page.waitForTimeout(400);
-  for (let tick = 0; tick < 24; tick++) {
-    await page.mouse.wheel(0, 40);
-    await page.waitForTimeout(50);
-  }
+  await zoomOutSmoothly(canvas, start, 200, 1_200);
+}
+
+/**
+ * Pulls the 3D camera back by `totalDeltaY` worth of wheel scrolling, spread
+ * over `durationMs` as one small wheel event per animation frame inside the
+ * page. Playwright's own wheel waits a round trip per tick, which steps the
+ * camera back in visible jumps.
+ */
+async function zoomOutSmoothly(
+  canvas: Locator,
+  at: { x: number; y: number },
+  totalDeltaY: number,
+  durationMs: number,
+): Promise<void> {
+  await canvas.evaluate(
+    (element, { at, totalDeltaY, durationMs }) =>
+      new Promise<void>((resolve) => {
+        const begin = performance.now();
+        let sent = 0;
+        /** Sends the share of the scroll that is due by this frame, eased in and out. */
+        const step = (now: number) => {
+          const t = Math.min(1, (now - begin) / durationMs);
+          const due = totalDeltaY * t * t * (3 - 2 * t);
+          if (due > sent) {
+            element.dispatchEvent(
+              new WheelEvent("wheel", {
+                deltaY: due - sent,
+                clientX: at.x,
+                clientY: at.y,
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+            sent = due;
+          }
+          if (t < 1) requestAnimationFrame(step);
+          else resolve();
+        };
+        requestAnimationFrame(step);
+      }),
+    { at, totalDeltaY, durationMs },
+  );
 }
 
 /** Docks a single 3D visualizer filling the portrait frame. */
