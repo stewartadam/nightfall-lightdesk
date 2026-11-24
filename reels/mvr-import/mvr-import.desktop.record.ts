@@ -163,6 +163,31 @@ async function menuArea(
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
+/**
+ * Shows the imported rig from more than one angle: the cursor drags across the
+ * 3D view to the right, which orbits the camera around to the left, then
+ * scrolls the wheel in small ticks to pull the camera back a little.
+ */
+async function showOffRig(
+  take: Take,
+  page: Page,
+  canvas: Locator,
+): Promise<void> {
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("3D view is not visible");
+  const start = await take.glideTo(canvas, {
+    x: box.width * 0.3,
+    y: box.height * 0.55,
+  });
+  await page.waitForTimeout(300);
+  await take.dragTo({ x: start.x + box.width * 0.4, y: start.y }, 2_400);
+  await page.waitForTimeout(400);
+  for (let tick = 0; tick < 24; tick++) {
+    await page.mouse.wheel(0, 40);
+    await page.waitForTimeout(50);
+  }
+}
+
 /** Docks a single 3D visualizer filling the portrait frame. */
 async function stageVisualizer(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -243,8 +268,10 @@ test("record the MVR import reel", async ({ page, backendSlot }) => {
   await take.click();
   await expect(dialog).toBeHidden({ timeout: 120_000 });
   await take.mark("rig");
-  // The rig is too heavy to orbit smoothly without a GPU, so the edit's camera moves instead.
-  await page.waitForTimeout(6_000);
+  await page.waitForTimeout(1_500);
+  await showOffRig(take, page, page.locator("canvas").first());
+  // The final view holds still for a second before the reel ends.
+  await page.waitForTimeout(1_000);
   await take.mark("finish");
   await page.waitForTimeout(500);
   await take.finish();
