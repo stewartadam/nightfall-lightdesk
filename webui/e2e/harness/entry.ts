@@ -11,7 +11,10 @@
  * and, when the URL names a `fixture`, mounts that fixture right away.
  */
 
+import { installDataGridEnvironment } from "../../components/widgets/data-grid-environment";
 import { type HarnessName, loadHarness } from "./registry";
+
+installDataGridEnvironment();
 
 window.__nightfallHarness = { load: loadHarness };
 

@@ -17,7 +17,7 @@ import DataGrid, {
   createKeyedDataGridCellProvider,
   type DataGridScrollRequest,
 } from "../../../components/widgets/data-grid";
-import { createDataGridFilterState } from "../../../components/widgets/data-grid/extensions/model/data-grid-filter-state";
+import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
 import { PROGRAMMER_SELECTION_ID_TEXT_COLOR } from "../../../lib/constants";
 import type {
   GridCell,

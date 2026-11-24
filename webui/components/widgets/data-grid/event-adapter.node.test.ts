@@ -8,12 +8,12 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isPrintableTextEntryEvent } from "./keyboardShortcutEvents";
+import { isPrintableEditKey } from "./event-adapter";
 
 /** Verifies shifted printable characters still count as text entry. */
 test("printable text entry includes shifted printable keys", () => {
   assert.equal(
-    isPrintableTextEntryEvent({
+    isPrintableEditKey({
       altKey: false,
       ctrlKey: false,
       key: "~",
@@ -26,7 +26,7 @@ test("printable text entry includes shifted printable keys", () => {
 /** Verifies command-modified keys remain available to shortcuts. */
 test("printable text entry excludes command-modified keys", () => {
   assert.equal(
-    isPrintableTextEntryEvent({
+    isPrintableEditKey({
       altKey: false,
       ctrlKey: false,
       key: "f",

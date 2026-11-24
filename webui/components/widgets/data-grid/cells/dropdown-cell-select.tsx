@@ -7,6 +7,7 @@
  */
 
 import { Show } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import {
   type DropdownGridCell,
   dropdownDisplaySwatch,
@@ -14,21 +15,24 @@ import {
   dropdownOptions,
   dropdownSelectedKey,
 } from "../../../../lib/tanstack-dropdown-cell";
-import { PrelineAdvancedSelect } from "../../advanced-select/preline-advanced-select";
+import { dataGridEnvironment } from "../environment";
 import { canEditDropdownCell } from "../model/cell-utils";
 import { DropdownCellAffordance } from "./dropdown-cell-affordance";
-import "./dropdown-cell-select.css";
 
-/** Shows an editable dropdown cell as a Preline select while preserving grid keyboard flow. */
+/**
+ * Shows an editable dropdown cell with the environment's dropdown editor while
+ * keeping editor keystrokes and clicks out of the grid's own handlers.
+ */
 export function DropdownCellSelect(props: {
   cell: DropdownGridCell;
   onCommit: (selectedKey: string) => void;
+  onCancel: () => void;
   onFocus: () => void;
 }) {
   /** Returns whether the current dropdown cell can be edited. */
   const editable = () => canEditDropdownCell(props.cell);
 
-  /** Returns the Preline options derived from dropdown cell metadata. */
+  /** Returns the editor options derived from dropdown cell metadata. */
   const selectOptions = () =>
     dropdownOptions(props.cell).map((option) => ({
       value: option.key,
@@ -36,10 +40,10 @@ export function DropdownCellSelect(props: {
       swatch: option.swatch,
     }));
 
-  /** Returns the selected Preline option key for the dropdown cell. */
-  const selectedValues = () => {
-    const selectedKey = dropdownSelectedKey(props.cell);
-    return selectedKey === "" ? [] : [selectedKey];
+  /** Returns the selected option key, or undefined when the cell has no value. */
+  const selectedKey = () => {
+    const key = dropdownSelectedKey(props.cell);
+    return key === "" ? undefined : key;
   };
 
   return (
@@ -62,19 +66,13 @@ export function DropdownCellSelect(props: {
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <PrelineAdvancedSelect
+        <Dynamic
+          component={dataGridEnvironment().DropdownSelect}
           options={selectOptions()}
-          selectedValues={selectedValues()}
-          onSelectedValuesChange={(selectedKeys) => {
-            const selectedKey = selectedKeys[0];
-            if (selectedKey === undefined) return;
-            props.onCommit(selectedKey);
-          }}
+          selectedKey={selectedKey()}
+          onSelect={props.onCommit}
+          onClose={props.onCancel}
           ariaLabel="Choose cell value"
-          containerClass="h-full w-full"
-          selectIdPrefix="dropdown-cell-select"
-          variant="grid"
-          openOnMount
         />
       </div>
     </Show>

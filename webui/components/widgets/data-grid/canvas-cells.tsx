@@ -12,9 +12,9 @@ import type {
   CustomRenderer,
   GridCell,
 } from "../../../lib/data-grid-types";
-import { dataGridDarkTheme } from "../../../lib/datagrid";
 import { createTrackedEffect } from "../../../lib/solid-compat";
 import type { DataGridCellDecorationCallback } from "./model/types";
+import { dataGridDarkTheme } from "./theme";
 
 /** CSS pixel size of a cell canvas. */
 interface CanvasSize {

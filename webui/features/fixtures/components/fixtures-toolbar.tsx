@@ -10,8 +10,8 @@ import PanelToolbar, {
   ToolbarSeparator,
 } from "../../../components/ui/panel-toolbar";
 import { ToggleSwitch } from "../../../components/ui/toggle-switch";
-import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
-import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
+import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
+import DataGridFilterMenu from "../../../components/widgets/data-grid-extensions/data-grid-filter-menu";
 import type { GridColumn } from "../../../lib/data-grid-types";
 import type {
   DataGridFilterColumn,

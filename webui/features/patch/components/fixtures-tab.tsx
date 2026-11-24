@@ -17,9 +17,9 @@ import Tooltip from "../../../components/ui/tooltip";
 import DataGrid, {
   createKeyedDataGridCellProvider,
 } from "../../../components/widgets/data-grid";
-import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
-import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
-import { createDataGridFilterState } from "../../../components/widgets/data-grid/extensions/model/data-grid-filter-state";
+import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
+import DataGridFilterMenu from "../../../components/widgets/data-grid-extensions/data-grid-filter-menu";
+import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
 import type {
   CellClickedEventArgs,
   GridCell,

@@ -43,8 +43,8 @@ import DataGrid, {
   type DataGridCellKey,
   type DataGridProps,
 } from "../data-grid";
-import ColumnVisibilityMenu from "../data-grid/extensions/column-visibility-menu";
-import DataGridFilterMenu from "../data-grid/extensions/data-grid-filter-menu";
+import ColumnVisibilityMenu from "../data-grid-extensions/column-visibility-menu";
+import DataGridFilterMenu from "../data-grid-extensions/data-grid-filter-menu";
 import { frozenLeadingColumnCount } from "./model/crud-frozen-columns";
 
 interface RowClickModifiers {

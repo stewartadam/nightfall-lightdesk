@@ -15,12 +15,12 @@ import {
   setColumnVisibility,
   type VisibilityCheckState,
   type VisibilityGridColumn,
-} from "../../../../lib/datagrid-column-visibility";
-import { createEffect } from "../../../../lib/solid-compat";
-import { DropdownMenu, DropdownMenuSeparator } from "../../../ui/dropdown-menu";
-import { ScrollArea } from "../../../ui/scroll-area";
-import { TOOLBAR_BUTTON_CLASS } from "../../../ui/toolbar-button";
-import { Button } from "../../../ui/visual-language/button";
+} from "../../../lib/datagrid-column-visibility";
+import { createEffect } from "../../../lib/solid-compat";
+import { DropdownMenu, DropdownMenuSeparator } from "../../ui/dropdown-menu";
+import { ScrollArea } from "../../ui/scroll-area";
+import { TOOLBAR_BUTTON_CLASS } from "../../ui/toolbar-button";
+import { Button } from "../../ui/visual-language/button";
 
 interface ColumnVisibilityMenuProps {
   scope: string;

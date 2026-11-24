@@ -18,10 +18,6 @@ import {
   GridCellKind,
 } from "../../../../lib/data-grid-types";
 import {
-  isRichTimeCell,
-  makeTimeCell,
-} from "../../../../lib/datagrid-rich-cells";
-import {
   clipboardEditsForPaste,
   clipboardTextForSelection,
   discreteEditEditsForSelection,
@@ -29,6 +25,11 @@ import {
   parseClipboardText,
   selectedClipboardCells,
 } from "./clipboard";
+import {
+  secondsCell,
+  secondsCellValue,
+  secondsEditors,
+} from "./seconds-cell.test-fixture";
 
 /** Builds an empty public grid selection for clipboard tests. */
 function emptySelection(): GridSelection {
@@ -62,14 +63,6 @@ function numberCell(value: number): GridCell {
 function numberCellData(cell: GridCell): number {
   assert.equal(cell.kind, GridCellKind.Number);
   return cell.data;
-}
-
-/** Builds a clearable timing cell used by inline edit tests. */
-function timeCell(seconds: number): GridCell {
-  return makeTimeCell({
-    value: { secs: seconds, nanos: 0 },
-    clearable: true,
-  });
 }
 
 test("selectedClipboardCells expands rectangular ranges in row-major order", () => {
@@ -202,8 +195,8 @@ test("clipboardEditsForPaste fills selected cells with a single pasted value", (
   );
 });
 
-/** Verifies pasted invalid timing text does not commit the existing time value. */
-test("clipboardEditsForPaste ignores invalid time text", () => {
+/** Verifies pasted text a custom text editor cannot parse does not commit the existing value. */
+test("clipboardEditsForPaste ignores unparsed custom cell text", () => {
   const selection: GridSelection = {
     ...emptySelection(),
     current: {
@@ -218,10 +211,35 @@ test("clipboardEditsForPaste ignores invalid time text", () => {
     rowCount: 1,
     columnCount: 1,
     text: "not-a-duration",
-    getCellContent: () => timeCell(3),
+    getCellContent: () => secondsCell(3),
+    editors: secondsEditors,
   });
 
   assert.equal(edits.length, 0);
+});
+
+/** Verifies pasted text reaches custom cells through their renderer's text editor. */
+test("clipboardEditsForPaste parses custom cell text", () => {
+  const selection: GridSelection = {
+    ...emptySelection(),
+    current: {
+      cell: [0, 0],
+      range: { x: 0, y: 0, width: 1, height: 1 },
+      rangeStack: [],
+    },
+  };
+
+  const edits = clipboardEditsForPaste({
+    selection,
+    rowCount: 1,
+    columnCount: 1,
+    text: "9s",
+    getCellContent: () => secondsCell(3),
+    editors: secondsEditors,
+  });
+
+  assert.equal(edits.length, 1);
+  assert.equal(secondsCellValue(edits[0]!.newValue), 9);
 });
 
 /** Verifies typed inline edits fill every cell in a multi-column range selection. */
@@ -490,8 +508,8 @@ test("inlineEditEditsForSelection skips unchanged display text", () => {
   assert.deepEqual(changedEdits[0]?.cell, [0, 0]);
 });
 
-/** Verifies invalid timing text does not fan out a destructive clear edit. */
-test("inlineEditEditsForSelection ignores invalid time text", () => {
+/** Verifies unparsed custom cell text does not fan out a destructive clear edit. */
+test("inlineEditEditsForSelection ignores unparsed custom cell text", () => {
   const selection: GridSelection = {
     ...emptySelection(),
     current: {
@@ -508,14 +526,15 @@ test("inlineEditEditsForSelection ignores invalid time text", () => {
     columnCount: 1,
     value: "not-a-duration",
     dirty: true,
-    getCellContent: () => timeCell(3),
+    getCellContent: () => secondsCell(3),
+    editors: secondsEditors,
   });
 
   assert.equal(edits.length, 0);
 });
 
-/** Verifies panels can opt in to raw unparsed timing text for custom syntax. */
-test("inlineEditEditsForSelection preserves opted-in unparsed time text", () => {
+/** Verifies panels can opt in to raw unparsed custom cell text for custom syntax. */
+test("inlineEditEditsForSelection preserves opted-in unparsed custom cell text", () => {
   const selection: GridSelection = {
     ...emptySelection(),
     current: {
@@ -524,7 +543,7 @@ test("inlineEditEditsForSelection preserves opted-in unparsed time text", () => 
       rangeStack: [],
     },
   };
-  const original = timeCell(3);
+  const original = secondsCell(3);
 
   const edits = inlineEditEditsForSelection({
     selection,
@@ -533,8 +552,9 @@ test("inlineEditEditsForSelection preserves opted-in unparsed time text", () => 
     columnCount: 1,
     value: "0>5s",
     dirty: true,
-    shouldCommitUnparsedTimeInput: (value) => value.includes(">"),
+    shouldCommitUnparsedInput: (value) => value.includes(">"),
     getCellContent: () => original,
+    editors: secondsEditors,
   });
 
   assert.equal(edits.length, 1);
@@ -542,8 +562,8 @@ test("inlineEditEditsForSelection preserves opted-in unparsed time text", () => 
   assert.equal(edits[0]!.inputValue, "0>5s");
 });
 
-/** Verifies blank timing text still creates a clear edit. */
-test("inlineEditEditsForSelection clears blank time text", () => {
+/** Verifies blank text on a clearable custom cell still creates a clear edit. */
+test("inlineEditEditsForSelection clears blank custom cell text", () => {
   const selection: GridSelection = {
     ...emptySelection(),
     current: {
@@ -560,13 +580,10 @@ test("inlineEditEditsForSelection clears blank time text", () => {
     columnCount: 1,
     value: "",
     dirty: true,
-    getCellContent: () => timeCell(3),
+    getCellContent: () => secondsCell(3),
+    editors: secondsEditors,
   });
 
   assert.equal(edits.length, 1);
-  const edited = edits[0]!.newValue;
-  if (edited.kind !== GridCellKind.Custom || !isRichTimeCell(edited)) {
-    assert.fail("Expected blank timing edit to produce a rich time cell");
-  }
-  assert.equal(edited.data.cleared, true);
+  assert.equal(secondsCellValue(edits[0]!.newValue), undefined);
 });

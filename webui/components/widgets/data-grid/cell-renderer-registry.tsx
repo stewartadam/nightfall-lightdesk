@@ -19,7 +19,6 @@ import type {
   Item,
 } from "../../../lib/data-grid-types";
 import { GridCellKind } from "../../../lib/data-grid-types";
-import { isPrintableTextEntryEvent } from "../../../lib/keyboardShortcutEvents";
 import {
   type DropdownGridCell,
   dropdownDisplaySwatch,
@@ -28,9 +27,10 @@ import {
   isDropdownCell,
   makeDropdownEditedCellByValue,
 } from "../../../lib/tanstack-dropdown-cell";
-import { overlayHost } from "../../ui/modal/dialog-stack";
 import { DropdownCellAffordance } from "./cells/dropdown-cell-affordance";
 import { DropdownCellSelect } from "./cells/dropdown-cell-select";
+import { dataGridEnvironment } from "./environment";
+import { isPrintableEditKey } from "./event-adapter";
 import {
   canEditBooleanCell,
   canEditDropdownCell,
@@ -346,7 +346,7 @@ function renderTextInputEditor(context: CellContentContext) {
             event.preventDefault();
             event.stopPropagation();
             context.cancelEdit();
-          } else if (isPrintableTextEntryEvent(event)) {
+          } else if (isPrintableEditKey(event)) {
             event.stopPropagation();
           }
         }}
@@ -360,7 +360,7 @@ function renderTextInputEditor(context: CellContentContext) {
         {(content) => (
           <Show when={tooltipStyle()}>
             {(style) => (
-              <Portal mount={overlayHost()}>
+              <Portal mount={dataGridEnvironment().overlayMount()}>
                 <div
                   class="pointer-events-none whitespace-nowrap rounded border border-neutral-600 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 shadow-lg"
                   data-grid-inline-tooltip="true"
@@ -617,6 +617,7 @@ function renderDropdownSelect(context: CellContentContext) {
     <DropdownCellSelect
       cell={context.cell as DropdownGridCell}
       onFocus={() => context.setActiveCell([context.col, context.row])}
+      onCancel={context.cancelEdit}
       onCommit={(selectedKey) => {
         const sourceCell = context.cell;
         if (!canEditDropdownCell(sourceCell)) return;

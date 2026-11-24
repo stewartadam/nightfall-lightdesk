@@ -6,9 +6,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import type { AppIcon } from "../components/ui/icon";
+import type { IconProps } from "@squidlab/phosphor-solid";
+import type { Component } from "solid-js";
 
 export type Item = readonly [number, number];
+
+/** Icon component drawn in a cell's prefix badge. */
+export type GridCellIcon = Component<IconProps>;
 
 export enum GridCellKind {
   Boolean = "boolean",
@@ -70,7 +74,7 @@ interface BaseGridCell {
   copyData?: string;
   cursor?: string;
   prefixBadge?: string;
-  prefixBadgeIcon?: AppIcon;
+  prefixBadgeIcon?: GridCellIcon;
   prefixBadgeLabel?: string;
   stateIndicators?: GridCellStateIndicator[];
   stateIndicatorPlacement?: "inline" | "floating-end";
@@ -207,4 +211,17 @@ export interface CustomRenderer<TCell extends CustomCell = CustomCell> {
     theme: DataGridTheme,
   ) => number;
   onClick?: (args: { preventDefault: () => void }) => unknown;
+  /**
+   * Lets the grid's inline text editor edit matching cells that allow an
+   * overlay, so typing, Delete and paste work like they do on text cells.
+   */
+  textEditor?: CustomCellTextEditor<TCell>;
+}
+
+/** Converts between a custom cell and the text typed or pasted into it. */
+export interface CustomCellTextEditor<TCell extends CustomCell = CustomCell> {
+  /** Parses typed or pasted text into an updated cell, returning the original cell when the text does not parse. */
+  makeEditedCell: (cell: TCell, value: string) => TCell;
+  /** Returns the cleared cell for Delete, or undefined when the cell cannot be cleared. */
+  makeDeletedCell?: (cell: TCell) => TCell | undefined;
 }

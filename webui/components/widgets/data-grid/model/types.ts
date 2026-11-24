@@ -83,7 +83,11 @@ interface DataGridBaseProps {
     selection?: GridSelection,
     context?: DataGridEditCommitContext,
   ) => void;
-  shouldCommitUnparsedTimeInput?: (value: string, cell: GridCell) => boolean;
+  /**
+   * Decides whether text a custom cell's text editor could not parse is still
+   * committed, so the owner can interpret custom syntax from `inputValue`.
+   */
+  shouldCommitUnparsedInput?: (value: string, cell: GridCell) => boolean;
   inlineEditTooltip?: (
     context: DataGridInlineEditTooltipContext,
   ) => string | undefined;
@@ -136,6 +140,12 @@ interface DataGridBaseProps {
   performanceProbes?: Record<string, unknown>;
   class?: string;
 }
+
+/** Owner-registered editors: rich-cell extensions and custom renderers that provide text editors. */
+export type DataGridCellEditors = Pick<
+  DataGridBaseProps,
+  "customRenderers" | "richCellExtensions"
+>;
 
 export interface DataGridProps extends DataGridBaseProps {
   cellProvider: () => KeyedDataGridCellProvider<any, any, any, any>;

@@ -61,6 +61,7 @@ import {
 import { Button } from "../components/ui/visual-language/button";
 import type { TabAlignment } from "../components/ui/visual-language/tab-alignment-select";
 import { PrelineAdvancedSelect } from "../components/widgets/advanced-select";
+import { installDataGridEnvironment } from "../components/widgets/data-grid-environment";
 import { ObjectTile } from "../components/widgets/object-tile";
 import { getLogger } from "../lib/logger";
 import { initializePrelineRuntime } from "../lib/preline-runtime";
@@ -94,6 +95,8 @@ import { PopoutPreview, PopupDemo } from "./popup-demo";
 import { TabMenuDemo } from "./tab-menu-demo";
 import { ToastDemo } from "./toast-demo";
 import { ToolbarDemo } from "./toolbar-demo";
+
+installDataGridEnvironment();
 
 const log = getLogger(import.meta.url);
 const SESSION_LAYOUT_KEY = "nightfall.design-lab.layout";

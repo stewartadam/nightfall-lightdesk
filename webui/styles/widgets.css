@@ -279,15 +279,6 @@ a:focus-visible {
 .nf-dock-panel-root > div {
   height: 100%;
 }
-[data-grid-dropdown-affordance] {
-  min-height: 24px;
-  height: 26px;
-  margin: 0 6px;
-  border: 1px solid var(--line);
-  border-radius: var(--nf-corner-radius, 4px);
-  background: var(--raised);
-  font-size: 12px;
-}
 .tile-tags,
 .nf-tile-badges {
   display: flex;
@@ -383,36 +374,6 @@ a:focus-visible {
   width: 22px;
   height: 22px;
   color: inherit;
-}
-[role="grid"] {
-  background: var(--panel);
-  font-size: 13px;
-}
-[role="gridcell"] {
-  border-bottom-color: #ffffff0c;
-  border-right-color: var(--data-grid-column-border);
-}
-[role="columnheader"] {
-  border-color: var(--data-grid-column-border);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--muted);
-}
-[data-grid-kind] > div > .sticky {
-  background: var(--panel);
-}
-[data-grid-kind] input {
-  accent-color: var(--accent);
-}
-[data-grid-kind] input:not([type="checkbox"]) {
-  min-height: 0;
-  background: transparent;
-  color: #ebeeed;
-  border: 0;
-}
-[data-grid-kind] .sticky:has(> input[type="checkbox"]) {
-  background: var(--panel);
-  border-color: #ffffff0c;
 }
 /* Momentary press feedback is independent of persistent toggle/selection state. */
 :is(.toast-action, .nightfall-modal-surface button:not(.nf-button)) {

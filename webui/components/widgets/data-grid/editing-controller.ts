@@ -11,9 +11,8 @@ import type { GridCell, Item } from "../../../lib/data-grid-types";
 import { GridCellKind } from "../../../lib/data-grid-types";
 import { createEffect } from "../../../lib/solid-compat";
 import {
+  canEditCellAsText,
   canEditDropdownCell,
-  canEditTextCell,
-  canEditTimeCell,
   cellDisplayValue,
 } from "./model/cell-utils";
 import {
@@ -73,7 +72,7 @@ export function createDataGridEditingController(
       });
       return;
     }
-    if (!canEditTextCell(cell) && !canEditTimeCell(cell)) return;
+    if (!canEditCellAsText(cell, options.props)) return;
     const kind =
       cell.kind === GridCellKind.Number
         ? GridCellKind.Number
@@ -131,9 +130,9 @@ export function createDataGridEditingController(
       value: editing.value,
       dirty: editing.dirty,
       commitMode: mode,
-      shouldCommitUnparsedTimeInput:
-        options.props.shouldCommitUnparsedTimeInput,
+      shouldCommitUnparsedInput: options.props.shouldCommitUnparsedInput,
       getCellContent: options.getCellContent(),
+      editors: options.props,
     });
     setEditingCell(undefined);
     options.dispatchSelection({

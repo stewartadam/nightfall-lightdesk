@@ -17,9 +17,9 @@ import DataGrid, {
   type DataGridEditCommitContext,
   type DataGridScrollRequest,
 } from "../../../components/widgets/data-grid";
-import ColumnVisibilityMenu from "../../../components/widgets/data-grid/extensions/column-visibility-menu";
-import DataGridFilterMenu from "../../../components/widgets/data-grid/extensions/data-grid-filter-menu";
-import { createDataGridFilterState } from "../../../components/widgets/data-grid/extensions/model/data-grid-filter-state";
+import ColumnVisibilityMenu from "../../../components/widgets/data-grid-extensions/column-visibility-menu";
+import DataGridFilterMenu from "../../../components/widgets/data-grid-extensions/data-grid-filter-menu";
+import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
 import { PROGRAMMER_SELECTION_ID_TEXT_COLOR } from "../../../lib/constants";
 import type {
   CellClickedEventArgs,

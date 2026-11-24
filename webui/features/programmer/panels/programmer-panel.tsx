@@ -13,7 +13,7 @@ import DataGrid, {
   type DataGridCellEdit,
   type DataGridEditCommitContext,
 } from "../../../components/widgets/data-grid";
-import { createDataGridFilterState } from "../../../components/widgets/data-grid/extensions/model/data-grid-filter-state";
+import { createDataGridFilterState } from "../../../components/widgets/data-grid-extensions/model/data-grid-filter-state";
 import type {
   GridCell,
   GridColumn,

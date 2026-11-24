@@ -46,7 +46,7 @@ export function CueEditorGrid(props: CueEditorGridProps) {
         customRenderers={[richTimeCellRenderer]}
         onCellEdited={props.onCellEdited}
         onCellsEdited={props.onCellsEdited}
-        shouldCommitUnparsedTimeInput={(value) =>
+        shouldCommitUnparsedInput={(value) =>
           parseTimingFanInput(value) !== null
         }
         inlineEditTooltip={props.inlineEditTooltip}

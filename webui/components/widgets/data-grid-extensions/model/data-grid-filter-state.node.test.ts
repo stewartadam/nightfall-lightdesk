@@ -13,7 +13,7 @@ import {
   type DataGridFilterColumn,
   EMPTY_TABLE_FILTERS,
   type TableFilterSettings,
-} from "../../../../../lib/datagrid-filtering";
+} from "../../../../lib/datagrid-filtering";
 import { createDataGridFilterState } from "./data-grid-filter-state";
 
 interface TestRow {

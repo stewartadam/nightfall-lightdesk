@@ -23,6 +23,7 @@ import {
   Show,
   untrack,
 } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import type {
   GridCell,
   GridColumn,
@@ -30,11 +31,9 @@ import type {
   Item,
 } from "../../../lib/data-grid-types";
 import { GridCellKind } from "../../../lib/data-grid-types";
-import { getLogger } from "../../../lib/logger";
-import { recordExternalPerformanceMeasure } from "../../../lib/performance-measure-collector";
-import { EmptyState } from "../../ui/empty-state";
 import { BodyCell } from "./body-cell";
 import { createDataGridEditingController } from "./editing-controller";
+import { dataGridEnvironment } from "./environment";
 import { clampIndex, isSpaceKey } from "./event-adapter";
 import { HeaderCell } from "./header-cell";
 import { createDataGridKeyboardController } from "./keyboard-controller";
@@ -65,6 +64,7 @@ import {
 import { dataGridTableFeatures } from "./model/table-features";
 import type { DataGridProps, HeaderCellView, TableRow } from "./model/types";
 import { createDataGridPointerEventController } from "./pointer-event-controller";
+import "./data-grid.css";
 import "./table-appearance.css";
 import { createEffect } from "../../../lib/solid-compat";
 import { createDataGridSelectionController } from "./selection-controller";
@@ -78,9 +78,7 @@ const MARKER_WIDTH = 34;
 const HEADER_ROW_HEIGHT = 30;
 const EMPTY_STATE_HEIGHT = 52;
 const DEFAULT_ROW_HEIGHT = 30;
-const DATA_GRID_MEASURE_PREFIX = "nightfall:data-grid.";
 const METRIC_FRAGMENT_PATTERN = /[^a-zA-Z0-9_-]/g;
-const log = getLogger(import.meta.url);
 const sortCollator = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: "base",
@@ -166,7 +164,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
   /** Builds the metrics table key for one DataGrid instrumentation sample. */
   const dataGridMeasureName = (metric: string): string | undefined => {
     if (!instrumentationEnabled) return undefined;
-    return `${DATA_GRID_MEASURE_PREFIX}${instrumentationScope}.${metric}`;
+    return `${instrumentationScope}.${metric}`;
   };
 
   /** Sanitizes owner-provided probe names so metric rows stay predictable. */
@@ -178,7 +176,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
     if (value <= 0) return;
     const name = dataGridMeasureName(metric);
     if (!name) return;
-    recordExternalPerformanceMeasure(name, value, "count");
+    dataGridEnvironment().recordPerformanceMeasure(name, value, "count");
   };
 
   /** Records one numeric DataGrid gauge sample, allowing zero as a meaningful value. */
@@ -186,14 +184,14 @@ export default function TanStackDataGrid(props: DataGridProps) {
     if (!Number.isFinite(value) || value < 0) return;
     const name = dataGridMeasureName(metric);
     if (!name) return;
-    recordExternalPerformanceMeasure(name, value, "count");
+    dataGridEnvironment().recordPerformanceMeasure(name, value, "count");
   };
 
   /** Records one DataGrid instrumentation timing sample. */
   const recordDataGridTiming = (metric: string, durationMs: number) => {
     const name = dataGridMeasureName(metric);
     if (!name) return;
-    recordExternalPerformanceMeasure(name, durationMs);
+    dataGridEnvironment().recordPerformanceMeasure(name, durationMs);
   };
 
   /** Publishes pending grid churn counters once per browser frame. */
@@ -1135,7 +1133,7 @@ export default function TanStackDataGrid(props: DataGridProps) {
           const panelKind = panelElement?.dataset.panelKind ?? "unknown";
           const panelId = panelElement?.dataset.panelId;
           const debugScope = props.performanceScope?.trim() || "unspecified";
-          log.debug(
+          dataGridEnvironment().logger.debug(
             `Visibility: panel=${panelKind}${panelId ? ` id=${panelId}` : ""}, scope=${debugScope}, computedStyle=${visible} -> ${visible ? "refreshing" : "paused"}`,
           );
         })
@@ -1333,13 +1331,13 @@ export default function TanStackDataGrid(props: DataGridProps) {
           </div>
 
           <Show when={tableRows().length === 0 && props.emptyState}>
-            <EmptyState
-              variant="inline"
-              role="status"
+            <Dynamic
+              component={dataGridEnvironment().EmptyState}
               class="sticky left-0 w-fit max-w-full px-4"
               style={{ height: `${EMPTY_STATE_HEIGHT}px` }}
-              title={props.emptyState}
-            />
+            >
+              {props.emptyState}
+            </Dynamic>
           </Show>
           <div
             class="relative"

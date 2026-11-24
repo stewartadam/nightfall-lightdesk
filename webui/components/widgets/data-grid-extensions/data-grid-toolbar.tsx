@@ -8,8 +8,8 @@
 
 import { TrashIcon } from "@squidlab/phosphor-solid/trash";
 import { type JSX, Show } from "solid-js";
-import PanelToolbar from "../../../ui/panel-toolbar";
-import { ToolbarButton } from "../../../ui/toolbar-button";
+import PanelToolbar from "../../ui/panel-toolbar";
+import { ToolbarButton } from "../../ui/toolbar-button";
 
 export interface DataGridToolbarProps {
   /** Number of selected rows (shows delete button when > 0) */
