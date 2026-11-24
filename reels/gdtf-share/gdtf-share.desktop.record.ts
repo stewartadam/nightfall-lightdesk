@@ -7,8 +7,8 @@
  */
 
 import type { Locator, Page } from "@playwright/test";
-import { expect, test } from "../../../webui/e2e/playwright-fixtures";
-import { openDesktop, Take } from "../../record/take";
+import { expect, test } from "../../webui/e2e/playwright-fixtures";
+import { openDesktop, Take } from "../kit/record/take";
 
 /** What the reel types into the library filter and GDTF Share's search. */
 const QUERY = "spiider";

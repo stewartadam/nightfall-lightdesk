@@ -7,7 +7,7 @@
  */
 
 import { defineConfig } from "@playwright/test";
-import base from "../../playwright.config";
+import base from "../../../playwright.config";
 import { CAPTURE_SCALE, VIEWPORT } from "./capture";
 
 /**
@@ -17,7 +17,7 @@ import { CAPTURE_SCALE, VIEWPORT } from "./capture";
  * layout (it switches to the phone shell below 640 CSS pixels). Run through the repository wrapper so the embedded demo
  * engine and dev server are built and served the usual way:
  *
- *   pnpm --dir promo run record <reel>
+ *   pnpm --dir reels run record <reel>
  */
 export default defineConfig({
   ...base,
@@ -28,7 +28,7 @@ export default defineConfig({
   workers: 1,
   fullyParallel: false,
   reporter: [["list"]],
-  outputDir: "../../test-results/promo",
+  outputDir: "../../../test-results/reels",
   use: {
     ...base.use,
     viewport: VIEWPORT,

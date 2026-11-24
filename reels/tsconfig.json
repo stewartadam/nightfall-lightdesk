@@ -9,6 +9,6 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["shared", "remotion", "reels"],
-  "exclude": ["reels/**/*.record.ts"]
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["**/*.record.ts", "kit/record", "node_modules", "out"]
 }

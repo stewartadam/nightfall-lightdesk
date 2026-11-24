@@ -13,7 +13,7 @@ import {
   editTools,
   type ReelDefinition,
   type ZoomCue,
-} from "../../shared/edit";
+} from "../kit/shared/edit";
 
 /** Longest the search caption stays up, so it clears while the results are read. */
 const SEARCH_CAPTION_SECONDS = 5;

@@ -7,7 +7,7 @@
  */
 
 import { Composition, staticFile } from "remotion";
-import { REELS } from "../reels";
+import { REELS } from "../../index";
 import {
   REEL_FPS,
   REEL_HEIGHT,
@@ -18,7 +18,7 @@ import { Reel, type ReelProps } from "./Reel";
 
 /**
  * Registers one composition per reel. Each reads its latest take from the
- * public dir (`promo/out/<reel>/recording.json`) and sizes itself to the
+ * public dir (`reels/out/<reel>/recording.json`) and sizes itself to the
  * edit, so a new take re-times the reel without code changes.
  */
 export function RemotionRoot() {
@@ -40,7 +40,7 @@ export function RemotionRoot() {
             );
             if (!response.ok) {
               throw new Error(
-                `No take of "${reel.id}" yet. Run \`pnpm --dir promo run record ${reel.id}\` first.`,
+                `No take of "${reel.id}" yet. Run \`pnpm --dir reels run record ${reel.id}\` first.`,
               );
             }
             const manifest = (await response.json()) as RecordingManifest;
