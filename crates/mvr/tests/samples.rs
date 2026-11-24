@@ -230,10 +230,7 @@ fn reads_vectorworks_basic_fixture() {
             .collect::<Vec<_>>(),
         [(0, None), (1, None), (2, None), (3, None)]
     );
-    assert_eq!(
-        fixture.unmodelled_features(),
-        ["CustomCommands", "Mappings"]
-    );
+    assert_eq!(fixture.unmodelled_features(), ["CustomCommands"]);
     assert_eq!(fixtures[0].world.origin, [5000.0, 5000.0, 5000.0]);
 
     assert_resources_resolve(&mut archive);

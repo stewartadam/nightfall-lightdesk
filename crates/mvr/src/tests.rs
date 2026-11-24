@@ -196,7 +196,10 @@ fn treats_empty_values_as_missing() {
             }),
         ]
     );
-    assert_eq!(fixture.unmodelled_features(), vec!["Mappings"]);
+    assert!(
+        fixture.unmodelled_features().is_empty(),
+        "an empty Mappings list holds nothing left out"
+    );
     assert_point_eq(placed[0].world.origin, [0.0, 0.0, 0.0]);
 }
 
