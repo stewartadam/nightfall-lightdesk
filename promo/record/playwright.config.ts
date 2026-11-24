@@ -8,12 +8,13 @@
 
 import { defineConfig } from "@playwright/test";
 import base from "../../playwright.config";
+import { CAPTURE_SCALE, VIEWPORT } from "./capture";
 
 /**
  * Playwright setup for promo recordings: the repository's settings with a
- * portrait 720x1280 viewport at 1.5x, which captures at 1080x1920 while the
- * app keeps its docked desktop layout (it switches to the phone shell below
- * 640 CSS pixels). Run through the repository wrapper so the embedded demo
+ * portrait 720x1280 viewport at the capture scale (see capture.ts), which
+ * captures at 2160x3840 by default while the app keeps its docked desktop
+ * layout (it switches to the phone shell below 640 CSS pixels). Run through the repository wrapper so the embedded demo
  * engine and dev server are built and served the usual way:
  *
  *   pnpm --dir promo run record <reel>
@@ -30,8 +31,8 @@ export default defineConfig({
   outputDir: "../../test-results/promo",
   use: {
     ...base.use,
-    viewport: { width: 720, height: 1280 },
-    deviceScaleFactor: 1.5,
+    viewport: VIEWPORT,
+    deviceScaleFactor: CAPTURE_SCALE,
     video: "off",
     trace: "off",
     screenshot: "off",

@@ -13,6 +13,7 @@ import type { Locator, Page } from "@playwright/test";
 import { prepareFreshBackendShowfile } from "../../webui/e2e/backend-showfile";
 import { waitForDockviewApp } from "../../webui/e2e/showfile-startup";
 import type { RecordingManifest, RecordingMarker } from "../shared/edit";
+import { CAPTURE_SCALE as SCALE, CAPTURE_SIZE as OUTPUT } from "./capture";
 import { installPromoCursor, type PromoCursorApi } from "./cursor-overlay";
 import { ScreencastRecorder } from "./screencast";
 
@@ -21,9 +22,6 @@ export const promoDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const outDir = join(promoDir, "out");
 export const repoRoot = join(promoDir, "..");
 
-/** Device pixels per CSS pixel; the 720x1280 viewport (see playwright.config.ts) records at 1080x1920. */
-const SCALE = 1.5;
-const OUTPUT = { width: 720 * SCALE, height: 1280 * SCALE };
 const FPS = 60;
 
 /** Element box in CSS pixels, as Playwright reports it. */
@@ -92,14 +90,15 @@ export async function openDesktop(
   await page.goto(`/?e2e=1&startup:draftRecovery=false${qualityParam()}`);
   await waitForDockviewApp(page);
   await hideDiagnostics(page);
-  await clearFixtures(page);
+  await clearShow(page);
 }
 
 /**
- * Deletes every fixture the test backend seeds into its fresh show, so a
- * desktop reel starts from an empty patch and imports land on free addresses.
+ * Deletes every fixture and scene object the test backend seeds into its
+ * fresh show, such as its sample truss, so a desktop reel starts from an
+ * empty patch and stage and imports land on free addresses.
  */
-async function clearFixtures(page: Page): Promise<void> {
+async function clearShow(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const stores = (window as any).appStores;
     const fixtures = Object.values(stores.fixtures.get()) as any[];
@@ -110,6 +109,19 @@ async function clearFixtures(page: Page): Promise<void> {
       });
       if (outcome.type !== "Succeeded") {
         throw new Error(`DeleteFixture failed: ${JSON.stringify(outcome)}`);
+      }
+    }
+    const sceneObjects = Object.values(stores.sceneObjects.get()) as any[];
+    for (const sceneObject of sceneObjects) {
+      const { outcome } = await stores.sendAndAwait({
+        module: "SceneObjectCommand",
+        command: {
+          type: "DeleteSceneObject",
+          data: sceneObject.identifiers.id,
+        },
+      });
+      if (outcome.type !== "Succeeded") {
+        throw new Error(`DeleteSceneObject failed: ${JSON.stringify(outcome)}`);
       }
     }
   });
