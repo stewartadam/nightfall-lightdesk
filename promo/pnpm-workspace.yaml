@@ -1,0 +1,6 @@
+# The promo reels are their own workspace so the app's install, build and
+# checks never pull in Remotion or its browser.
+minimumReleaseAge: 4320
+shellEmulator: true
+allowBuilds:
+  esbuild: true
