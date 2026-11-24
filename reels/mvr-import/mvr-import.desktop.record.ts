@@ -163,6 +163,103 @@ async function menuArea(
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
+/**
+ * Shows the imported rig from more than one angle: the cursor drags across the
+ * 3D view to the right, which orbits the camera around to the left, then
+ * scrolls the wheel to pull the camera back a little.
+ */
+async function showOffRig(
+  take: Take,
+  page: Page,
+  canvas: Locator,
+): Promise<void> {
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("3D view is not visible");
+  const start = await take.glideTo(canvas, {
+    x: box.width * 0.3,
+    y: box.height * 0.55,
+  });
+  await page.waitForTimeout(300);
+  await Promise.all([
+    take.dragTo({ x: start.x + box.width * 0.2, y: start.y }, 2_000),
+    // A quarter is enough haze to see the beams while the band still reads.
+    fadeBlindersUp(page, 25, 3),
+  ]);
+  await page.waitForTimeout(400);
+  await zoomOutSmoothly(canvas, start, 200, 1_200);
+}
+
+/** The rig's ROXX blinders on the trusses, by their fixture IDs in the file. */
+const BLINDERS = "fixture 601>612 .1";
+
+/**
+ * Fades the blinders' master dimmer (each blinder's first element) from dark
+ * up to `percent` over `seconds`, as one engine fade sent off camera, so their
+ * beams swell while the camera orbits. A single fade runs in the engine
+ * without a command per step, which would hitch the 3D view.
+ */
+async function fadeBlindersUp(
+  page: Page,
+  percent: number,
+  seconds: number,
+): Promise<void> {
+  const outcome = await page.evaluate(
+    async (statement) =>
+      (
+        await (window as any).appStores.sendAndAwait({
+          module: "EngineCommand",
+          command: { type: "Eval", data: statement },
+        })
+      ).outcome,
+    `${BLINDERS} @ ${percent} fade ${seconds}`,
+  );
+  if (outcome.type !== "Succeeded") {
+    throw new Error(`Blinder fade failed: ${JSON.stringify(outcome)}`);
+  }
+}
+
+/**
+ * Pulls the 3D camera back by `totalDeltaY` worth of wheel scrolling, spread
+ * over `durationMs` as one small wheel event per animation frame inside the
+ * page. Playwright's own wheel waits a round trip per tick, which steps the
+ * camera back in visible jumps.
+ */
+async function zoomOutSmoothly(
+  canvas: Locator,
+  at: { x: number; y: number },
+  totalDeltaY: number,
+  durationMs: number,
+): Promise<void> {
+  await canvas.evaluate(
+    (element, { at, totalDeltaY, durationMs }) =>
+      new Promise<void>((resolve) => {
+        const begin = performance.now();
+        let sent = 0;
+        /** Sends the share of the scroll that is due by this frame, eased in and out. */
+        const step = (now: number) => {
+          const t = Math.min(1, (now - begin) / durationMs);
+          const due = totalDeltaY * t * t * (3 - 2 * t);
+          if (due > sent) {
+            element.dispatchEvent(
+              new WheelEvent("wheel", {
+                deltaY: due - sent,
+                clientX: at.x,
+                clientY: at.y,
+                bubbles: true,
+                cancelable: true,
+              }),
+            );
+            sent = due;
+          }
+          if (t < 1) requestAnimationFrame(step);
+          else resolve();
+        };
+        requestAnimationFrame(step);
+      }),
+    { at, totalDeltaY, durationMs },
+  );
+}
+
 /** Docks a single 3D visualizer filling the portrait frame. */
 async function stageVisualizer(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -243,8 +340,10 @@ test("record the MVR import reel", async ({ page, backendSlot }) => {
   await take.click();
   await expect(dialog).toBeHidden({ timeout: 120_000 });
   await take.mark("rig");
-  // The rig is too heavy to orbit smoothly without a GPU, so the edit's camera moves instead.
-  await page.waitForTimeout(6_000);
+  await page.waitForTimeout(1_500);
+  await showOffRig(take, page, page.locator("canvas").first());
+  // The final view holds still for a second before the reel ends.
+  await page.waitForTimeout(1_000);
   await take.mark("finish");
   await page.waitForTimeout(500);
   await take.finish();
