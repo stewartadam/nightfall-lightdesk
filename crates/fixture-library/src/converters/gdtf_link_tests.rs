@@ -435,3 +435,157 @@ fn virtual_dimmers_mastering_nothing_keep_master_response() {
     let (fixture, _) = convert(&builder);
     assert!(parameter(&fixture, "Beam", &Attribute::Intensity).use_grandmaster);
 }
+
+/// Builds a two-lens blinder like the ROXX CLUSTER B2-FC: a master dimmer on
+/// the body and, on each lens below it, a dimmer and red channel of its own,
+/// with no relation between them in the profile.
+fn nested_dimmer_blinder() -> GdtfBuilder {
+    GdtfBuilder::new("Test", "Blinder")
+        .geometry(
+            GeometrySpec::generic("Body")
+                .child(GeometrySpec::beam("Lens 1"))
+                .child(GeometrySpec::beam("Lens 2")),
+        )
+        .mode(
+            ModeSpec::new("Mode", "Body")
+                .channel(ChannelSpec::new("Body", "Dimmer", &[1]))
+                .channel(ChannelSpec::new("Lens 1", "Dimmer", &[2]))
+                .channel(ChannelSpec::new("Lens 1", "ColorAdd_R", &[3]))
+                .channel(ChannelSpec::new("Lens 2", "Dimmer", &[4]))
+                .channel(ChannelSpec::new("Lens 2", "ColorAdd_R", &[5])),
+        )
+}
+
+/// Returns the model's inputs with the body master at `master` and every lens
+/// channel at full, in the model's parameter order.
+fn blinder_inputs(fixture: &Fixture, master: f32) -> Vec<Option<f32>> {
+    fixture
+        .elements
+        .iter()
+        .flat_map(|element| {
+            let level = if element.label == "Body" {
+                master
+            } else {
+                255.0
+            };
+            element.parameters.iter().map(move |_| Some(level))
+        })
+        .collect()
+}
+
+/// Builds the linked evaluation model of a converted fixture.
+fn linked_model(fixture: &Fixture) -> FixtureModel {
+    FixtureModel::new(
+        fixture
+            .elements
+            .iter()
+            .map(|element| element.parameters.clone()),
+        true,
+    )
+}
+
+/// Verifies a master dimmer on a body scales cell dimmers below it, as on a
+/// multi-cell blinder whose profile states no relation: each cell dimmer
+/// follows the master, so a closed master darkens cells left at full and a
+/// half-open master halves them.
+#[test]
+fn nested_physical_dimmers_follow_the_dimmer_above_them() {
+    let (fixture, diagnostics) = convert(&nested_dimmer_blinder());
+    assert_eq!(diagnostics, vec![]);
+    let body = fixture
+        .elements
+        .iter()
+        .position(|element| element.label == "Body")
+        .unwrap() as u32;
+    for lens in ["Lens 1", "Lens 2"] {
+        assert_eq!(
+            parameter(&fixture, lens, &Attribute::Intensity).functions[0].relations,
+            vec![FunctionRelation {
+                master: ElementParameterRef {
+                    element: body,
+                    attribute: Attribute::Intensity,
+                },
+                kind: RelationKind::Multiply,
+            }],
+            "{lens}"
+        );
+    }
+    assert!(
+        parameter(&fixture, "Body", &Attribute::Intensity).functions[0]
+            .relations
+            .is_empty()
+    );
+
+    let model = linked_model(&fixture);
+    let dimmers: Vec<usize> = (0..model.len())
+        .filter(|&index| model.parameters()[index].attribute == Attribute::Intensity)
+        .collect();
+    let mut evaluator = FixtureEvaluator::new(model);
+    /// Returns the level of every dimmer with the master at `master`.
+    fn dimmer_levels(
+        evaluator: &mut FixtureEvaluator,
+        dimmers: &[usize],
+        inputs: &[Option<f32>],
+    ) -> Vec<f32> {
+        let readings = evaluator.read(inputs);
+        dimmers
+            .iter()
+            .map(|&index| readings[index].unwrap().level)
+            .collect()
+    }
+
+    let closed = dimmer_levels(&mut evaluator, &dimmers, &blinder_inputs(&fixture, 0.0));
+    assert_eq!(
+        closed,
+        vec![0.0, 0.0, 0.0],
+        "a closed master darkens every lens"
+    );
+    assert_eq!(evaluator.fixture_dimmer_level(), Some(0.0));
+
+    let half = dimmer_levels(&mut evaluator, &dimmers, &blinder_inputs(&fixture, 127.5));
+    for level in half {
+        assert!(
+            (level - 0.5).abs() < 0.01,
+            "master and lenses at half: {level}"
+        );
+    }
+}
+
+/// Verifies the relations added between nested real dimmers leave the DMX the
+/// console sends untouched: the fixture applies them itself, so the console
+/// passes every value through as programmed, closed master and all.
+#[test]
+fn nested_dimmer_relations_leave_console_output_unchanged() {
+    let (fixture, _) = convert(&nested_dimmer_blinder());
+    let model = linked_model(&fixture);
+    assert!(!model.has_relations(RelationScope::Console));
+    assert!(model.has_relations(RelationScope::Fixture));
+    let mut evaluator = FixtureEvaluator::new(model);
+    for master in [0.0, 128.0, 255.0] {
+        let inputs = blinder_inputs(&fixture, master);
+        assert_eq!(
+            evaluator.resolve(RelationScope::Console, &inputs),
+            inputs.as_slice(),
+            "master at {master}"
+        );
+    }
+}
+
+/// Verifies a cell dimmer whose profile names its own relation keeps only
+/// that relation instead of also following the dimmer above it.
+#[test]
+fn declared_dimmer_relations_are_not_doubled() {
+    let builder = GdtfBuilder::new("Test", "Declared")
+        .geometry(GeometrySpec::generic("Body").child(GeometrySpec::beam("Lens")))
+        .mode(
+            ModeSpec::new("Mode", "Body")
+                .channel(ChannelSpec::new("Body", "Dimmer", &[1]))
+                .channel(ChannelSpec::virtual_channel("Body", "Control1"))
+                .channel(ChannelSpec::new("Lens", "Dimmer", &[2]))
+                .relation("Body_Control1", "Lens_Dimmer.Dimmer.Dimmer", "Override"),
+        );
+    let (fixture, _) = convert(&builder);
+    let relations = &parameter(&fixture, "Lens", &Attribute::Intensity).functions[0].relations;
+    assert_eq!(relations.len(), 1);
+    assert_eq!(relations[0].kind, RelationKind::Override);
+}

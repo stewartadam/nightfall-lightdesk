@@ -90,7 +90,67 @@ pub(super) fn link_functions(
             target.relations = relations;
         }
     }
+    link_nested_dimmers(resolved, elements, targets.placements);
     set_virtual_dimmer_master_response(resolved, elements, targets);
+}
+
+/// Makes each physical dimmer follow the nearest physical dimmer on a geometry
+/// above it, as a `Multiply` relation, unless the profile already gives it a
+/// relation.
+///
+/// A GDTF attribute acts on its geometry and everything below it, so a master
+/// dimmer on a body scales the cells below it even when each cell has a dimmer
+/// of its own. Profiles rarely state this as a relation. Both channels are
+/// real, so the fixture applies the scaling and only the visualizer simulates it.
+fn link_nested_dimmers(
+    resolved: &ResolvedMode<'_>,
+    elements: &mut [FixtureElement],
+    placements: &[Placement],
+) {
+    let physical_dimmer = |index: usize| {
+        placements[index].filter(|(element, parameter)| {
+            let parameter = &elements[*element].parameters[*parameter];
+            parameter.attribute == Attribute::Intensity && parameter.dmx_slots != DmxSlots::Virtual
+        })
+    };
+    let dimmer_on = |instance: usize| {
+        (0..placements.len())
+            .filter(|index| resolved.channels[*index].instance == instance)
+            .find_map(physical_dimmer)
+    };
+    let mut links = Vec::new();
+    for index in 0..placements.len() {
+        let Some((element, parameter)) = physical_dimmer(index) else {
+            continue;
+        };
+        let instance = resolved.channels[index].instance;
+        let master = std::iter::successors(resolved.instances[instance].parent, |current| {
+            resolved.instances[*current].parent
+        })
+        .find_map(dimmer_on);
+        if let Some((master_element, _)) = master {
+            links.push((element, parameter, master_element));
+        }
+    }
+    for (element, parameter, master_element) in links {
+        let functions = &mut elements[element].parameters[parameter].functions;
+        if functions
+            .iter()
+            .any(|function| !function.relations.is_empty())
+        {
+            continue;
+        }
+        let relation = FunctionRelation {
+            master: ElementParameterRef {
+                element: master_element as u32,
+                attribute: Attribute::Intensity,
+            },
+            kind: RelationKind::Multiply,
+        };
+        for function in functions {
+            function.relations.push(relation.clone());
+        }
+    }
 }
 
 /// Returns the relations whose follower is `function` of resolved channel `index`.
