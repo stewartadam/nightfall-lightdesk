@@ -45,6 +45,7 @@ const HANDOFF_SECONDS = 0.5;
  * logo feels alive on the cards without a separate animation asset.
  */
 function Logo({ size, phase }: { size: number; phase: number }) {
+  /** A knob's vertical position: its resting `base` swayed by a sine of `phase`, shifted by `offset` so the three knobs move out of step. */
   const knob = (base: number, offset: number) =>
     base + Math.sin(phase * 2.2 + offset) * 2.2;
   return (
@@ -283,6 +284,7 @@ function OutroCard({ edit }: { edit: ReelEdit }) {
     extrapolateRight: "clamp",
     easing: Easing.out(Easing.cubic),
   });
+  /** Spring from 0 to 1 that starts `delay` seconds into the card, so each line of text rises in turn. */
   const rise = (delay: number) =>
     spring({
       frame: frame - delay * fps,
@@ -351,6 +353,7 @@ function Soundtrack({
   totalSeconds: number;
 }) {
   const { fps } = useVideoConfig();
+  /** Converts seconds to the nearest whole frame at the composition's frame rate. */
   const frames = (seconds: number) => Math.round(seconds * fps);
   const length = frames(totalSeconds - music.start);
   // Too short to fade; interpolate needs strictly increasing frames.
@@ -382,6 +385,7 @@ export function Reel({ manifest, edit, version }: ReelProps) {
   const { fps } = useVideoConfig();
   if (!manifest || !edit)
     return <AbsoluteFill style={{ background: BRAND.night }} />;
+  /** Converts seconds to the nearest whole frame at the composition's frame rate. */
   const frames = (seconds: number) => Math.round(seconds * fps);
   const screenFrom = frames(INTRO_SECONDS - HANDOFF_SECONDS);
   const outroFrom = frames(INTRO_SECONDS + edit.screenSeconds);
