@@ -336,3 +336,34 @@ fn beams_inherit_nearest_optical_parameters() {
         [gobo("Head"), prism("Head")]
     );
 }
+
+/// Verifies each brace of a GDTF position matrix is read as one rotated axis, as libMVRgdtf
+/// writes them: a beam turned a quarter turn about X with `{1,0,0}{0,0,-1}{0,1,0}` shines
+/// out of the fixture's front (-Y), not its back, and the braces' fourth values still give
+/// the translation.
+#[test]
+fn position_braces_are_rotated_axes() {
+    let turned = [
+        [1.0, 0.0, 0.0, 0.1],
+        [0.0, 0.0, -1.0, 0.2],
+        [0.0, 1.0, 0.0, 0.3],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let builder = GdtfBuilder::new("Test", "Blinder")
+        .geometry(GeometrySpec::generic("Body").child(GeometrySpec::beam("Lamp").at(turned)))
+        .mode(ModeSpec::new("Mode", "Body").channel(ChannelSpec::new("Lamp", "Dimmer", &[1])));
+    let (_, geometry) = convert(&builder);
+    let lamp = geometry
+        .nodes
+        .iter()
+        .find(|node| node.name == "Lamp")
+        .expect("lamp node");
+    let e = lamp.transform.elements;
+    // Columns are where X, Y and Z point, then the translation.
+    assert_eq!(&e[0..3], &[1.0, 0.0, 0.0]);
+    assert_eq!(&e[4..7], &[0.0, 0.0, -1.0]);
+    assert_eq!(&e[8..11], &[0.0, 1.0, 0.0]);
+    assert_eq!(&e[12..15], &[0.1, 0.2, 0.3]);
+    // A beam shines along its -Z, which now points along -Y.
+    assert_eq!([-e[8], -e[9], -e[10]], [0.0, -1.0, 0.0]);
+}
