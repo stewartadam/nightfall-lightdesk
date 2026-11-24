@@ -100,6 +100,7 @@ The grid is developed in the [Nightfall repository](https://github.com/stewartad
 To publish a release:
 
 1. Bump `version` in `package.json` and merge it into `develop`.
-2. Run the **Publish data grid** workflow on `develop` from the repository's Actions tab. It builds the package, packs it, and publishes it to npm with provenance. Check the **dry run** box first to see what would be published.
+2. Run the **Publish data grid** workflow on `develop` from the repository's Actions tab. It builds the package, packs it, and stages it on npm with provenance. Check the **dry run** box first to see what would be staged.
+3. On npmjs.com, open the package's **Staged Packages** tab and approve the release with 2FA. It goes live then.
 
-The workflow publishes through npm's trusted publishing, so no npm token is stored in the repository. `prepack` builds `dist/`, and pnpm swaps in the `publishConfig.exports` map that points at the build.
+The workflow stages through npm's trusted publishing, so no npm token is stored in the repository, and its trusted publisher may only stage. `prepack` builds `dist/`, and pnpm swaps in the `publishConfig.exports` map that points at the build.

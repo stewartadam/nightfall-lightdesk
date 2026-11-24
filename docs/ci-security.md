@@ -126,9 +126,10 @@ Publication (fresh runner; contents: write; no Apple credentials)
 - **Data grid package:** `publish-data-grid.yml` runs only by hand from the default branch.
   A read-only job archives the source, a permissionless job builds and packs
   `@stewartadam/nightfall-data-grid`, and a fresh runner downloads the tarball as data and
-  publishes it with `npm publish --ignore-scripts`. That runner holds only `id-token: write`,
-  which npm's trusted publishing exchanges for a short-lived publish token; no npm secret is
-  stored.
+  stages it with `npm stage publish --ignore-scripts`. That runner holds only `id-token: write`,
+  which npm's trusted publishing exchanges for a short-lived token; no npm secret is stored.
+  The trusted publisher may only stage, so a release goes live only after a maintainer
+  approves it on npmjs.com with 2FA.
 - **Debug symbols:** on version tags, a fresh runner downloads this run's debug
   symbol artifacts as data and uploads them to the error service so crash stack
   traces resolve to functions and lines. It holds only `GLITCHTIP_AUTH_TOKEN`,
