@@ -15,6 +15,9 @@ import {
   type ZoomCue,
 } from "../../shared/edit";
 
+/** Longest the search caption stays up, so it clears while the results are read. */
+const SEARCH_CAPTION_SECONDS = 5;
+
 /**
  * The GDTF Share reel: the patch wizard finds no Spiider in the library,
  * searches GDTF Share for it, installs the manufacturer's file, and patches
@@ -47,7 +50,10 @@ export const gdtfShareReel: ReelDefinition = {
       },
       {
         start: reel(noMatch.t + 0.4),
-        end: reel(install.t - 0.4),
+        end: Math.min(
+          reel(noMatch.t + 0.4) + SEARCH_CAPTION_SECONDS,
+          reel(install.t - 0.4),
+        ),
         text: "Search for fixtures in GDTF Share",
         placement: "bottom",
       },
@@ -74,7 +80,7 @@ export const gdtfShareReel: ReelDefinition = {
     return assembleEdit({
       intro: {
         kicker: "New in Nightfall",
-        title: "Download from GDTF Share",
+        title: "GDTF Share support",
         subtitle: "Patch fixtures that aren't in your library yet",
       },
       outro: DESKTOP_OUTRO,
