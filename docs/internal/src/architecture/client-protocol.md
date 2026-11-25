@@ -49,10 +49,13 @@ The server answers these routes:
 |------|-------|-------------|
 | `/ws` | `websocket` crate | The websocket endpoint. All commands, updates, and state frames use it. |
 | `/api/pairing` and `/api/pairing/pin` | `websocket` crate | Pairing status, PIN entry, and PIN management for devices on the network. |
-| `/api/showfiles/...` | `app-runtime` | Showfile listing, name validation, export, drafts, and files inside the current showfile. |
+| `/api/showfiles/...` | `app-runtime` | Showfile listing, name validation, export, drafts, board button image uploads, and files inside the current showfile. |
 | `/api/showfiles/current/timeline-audio/{timeline_uid}` | `timeline` | Audio for a timeline. |
 | `/api/mesh/...` and `/api/gdtf-wheel/...` | `fixture-library` | 3D meshes and wheel images from fixture profiles. |
 | `/api/object-model/{object_path}` | `object-library` | 3D models for scene objects. |
+| `/api/mvr-import` | `mvr-import` | Upload of an MVR file to import. |
+| `/api/gdtf-share/...` | `gdtf-share` | GDTF Share sign-in, fixture search, installs, and updates. |
+| `/api/backup/...` and `/api/public/backup/...` | `app-runtime` | Primary and backup pairing, live state, forwarded commands, host status, and step-down and leave requests. |
 | `/api/diagnostics/export`, `/api/telemetry/client-error`, `/api/beat-detection/model...` | `app-runtime` | Diagnostics, client error reports, and the beat detection model. |
 | Any other path | Host | The built web UI, when the host supplies it. Release desktop builds do, so a phone can load the UI from the backend port. |
 
@@ -113,6 +116,15 @@ Use one rule to choose: if the message describes the show or the engine, send it
 - `ReferenceList` and `ReferenceListUpdate`, for clients that watch the reference list with a `ReferenceWatch` update.
 
 The browser demo has one client, so it delivers every frame whatever its audience.
+
+### Clients that choose their message types
+
+A client can list the message types it handles in a `types` query parameter on the websocket URL, such as `/ws?types=CommandResult,WorldReplaced`. The host then queues only frames of those types for that client, after the audience check. A frame whose `type` it can't read always goes through, and a client without the parameter, or with an empty list, receives every type. The host reads each frame's type once when it fans the frame out, the same type the outbox uses to coalesce snapshots. `ServerVersion` goes straight to the new socket, so a filtered client receives it too.
+
+The web UI uses this for windows that show only part of the engine's state. The fixture editor window connects with an `EngineSessionScope` that names its message types: command results and notices, draft updates, the fixture library listing, `WorldReplaced`, and log commands. A scoped connection never sends `ResyncState`. When it connects, and after a `WorldReplaced`, it requests its own state with commands instead, so `ResyncComplete` never arrives. Don't render code that waits for a resync in a scoped window. The browser demo has no filter, so a scope there only replaces the full resync.
+
+> [!WARNING]
+> When a scoped window starts handling a new message type, add the type to its list. The engine never sends it a type the list leaves out, and nothing reports the missing messages.
 
 ## The parameter stream
 
@@ -325,7 +337,7 @@ During the fade, the programmer keeps intensity at 50%, so the intensity slot's 
 Two checks run before any route, including `/ws`:
 
 - The **origin check** turns away browser pages from other sites. A request that carries an `Origin` header is admitted only from the desktop shell's own origins, or from a page served by the same host name the browser used to reach the backend, on any port. That host name must be a local name, such as `localhost`, an IP address, a single-label name, or a name under `.local`, `.localhost`, `.lan`, `.home.arpa`, or `.internal`. A request without `Origin` must also address the backend by a local name. Without this check, any website open in a browser on the operator's computer could open the websocket and drive the show.
-- **PIN pairing** protects the backend from other devices on the network. A client counts as local only when it connects from a loopback address and addressed the backend by a loopback name. Every other client, including a phone relayed through the Vite dev server, must pair before it may use `/ws` or any `/api` route other than `/api/pairing`. The web UI files stay public so a new device can load the page that asks for the PIN.
+- **PIN pairing** protects the backend from other devices on the network. A client counts as local only when it connects from a loopback address and addressed the backend by a loopback name. Every other client, including a phone relayed through the Vite dev server, must pair before it may use `/ws` or any `/api` route other than `/api/pairing` and the routes under `/api/public/`. Other Nightfall hosts use those without pairing, such as a backup checking its primary's status. The routes that change a host, such as asking a primary to step down, accept only the remembered backup with the key the two hosts share. The web UI files stay public so a new device can load the page that asks for the PIN.
 
 The engine picks a six-digit PIN when it starts and keeps it for the whole app session. A correct PIN earns the browser a random token in an `HttpOnly`, `SameSite=Strict` cookie named after the backend port, and the browser sends it with every request and websocket upgrade. Tokens live only in memory, so restarting the app signs every device out. Regenerating the PIN on the operator's computer also signs every device out and closes their websocket sessions. After five wrong PINs from one address, the address must wait before each further attempt, starting at one second and doubling up to five minutes.
 
@@ -341,6 +353,8 @@ The UI is served over plain HTTP, so anyone watching the network can read the PI
 | Client feeds: `ClientFeed`, `ResourceFeed`, and `add_client_feed` | `crates/engine/src/client_feed.rs` |
 | Command and update ingress dispatch | `crates/engine/src/client_ingress.rs` |
 | Socket lifecycle, sender tagging, heartbeats, fan-out, router | `crates/websocket/src/websocket.rs` |
+| Message type filter from the `types` query parameter | `MessageTypeFilter` in `crates/websocket/src/websocket.rs` |
+| Scoped connections and the fixture editor's message types | `EngineSessionScope` in `webui/lib/engine-runtime.ts`, `webui/features/fixture-editor/services/editor-session.ts` |
 | Per-client outbox and lagging disconnects | `crates/websocket/src/outbox.rs` |
 | HTTP route registration | `crates/websocket/src/routes.rs` |
 | Origin policy | `crates/websocket/src/origin.rs` |
