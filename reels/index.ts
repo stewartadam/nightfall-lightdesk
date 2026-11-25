@@ -10,10 +10,12 @@ import { buskingReel } from "./busking/edit";
 import { gdtfShareReel } from "./gdtf-share/edit";
 import type { ReelDefinition } from "./kit/shared/edit";
 import { mvrImportReel } from "./mvr-import/edit";
+import { timelineReel } from "./timeline/edit";
 
 /** Every reel the renderer can cut, one per folder beside `kit/`. */
 export const REELS: ReelDefinition[] = [
   buskingReel,
   gdtfShareReel,
   mvrImportReel,
+  timelineReel,
 ];
