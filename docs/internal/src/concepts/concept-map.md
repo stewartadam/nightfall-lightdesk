@@ -11,7 +11,7 @@ The rig describes the lights and their DMX addresses. The following entity relat
 ```mermaid
 erDiagram
   accTitle: The rig
-  accDescr: A fixture profile defines one or more modes. Each fixture uses one mode and has one or more elements, each with one or more parameters. Each parameter controls one attribute. Fixtures patch into console universes, and patch bindings route console universes to output transports.
+  accDescr: A fixture profile defines one or more modes. Each fixture uses one mode and has one or more elements, each with one or more parameters. Each parameter controls one attribute. Fixtures patch into console universes, and DMX routes send console universes to output transports.
   profile["Fixture profile"]
   mode["Mode"]
   fixture["Fixture"]
@@ -26,7 +26,7 @@ erDiagram
   element ||--|{ parameter : has
   parameter }o--|| attribute : controls
   fixture }o--o{ console : "patched to"
-  console }o--o{ transport : "patch binding"
+  console }o--o{ transport : "DMX route"
 ```
 
 A fixture has one or more elements, such as the cells of an LED bar. Each element has parameters, and each parameter controls one attribute, such as intensity or red. Commands and cues address attributes, and the engine stores values per parameter.
@@ -94,6 +94,7 @@ The following table lists the main terms. "Owning crate" is the crate under `cra
 | Console universe | `fixtures` | Nightfall's internal 512-channel DMX address space. Fixtures patch into it. |
 | Cue | `cues` | Stored instructions, with timing, that a sequence plays. |
 | Cue part | `cues` | A subset of a cue's instructions with its own timing. |
+| DMX route | `fixtures` | A route between console channels, fixtures, and input or output transports. |
 | Element | `fixtures` | An independently controlled part of a fixture, such as one cell of an LED bar. |
 | Fader | `controls` | A numbered strip with a level and a button that drives a clip or master. |
 | Fixture | `fixtures` | A patched light, using one mode of a fixture profile. |
@@ -107,7 +108,6 @@ The following table lists the main terms. "Owning crate" is the crate under `cra
 | Master | `controls` | A control that scales intensity of targeted fixtures or the rate of targeted playbacks. |
 | Output transport | `io` | A connection that sends DMX to hardware: an Art-Net or sACN network gateway, or a USB DMX interface. |
 | Parameter | `fixtures` | One attribute on one fixture element. The engine stores values per parameter. |
-| Patch binding | `fixtures` | A route between console channels, fixtures, and input or output transports. |
 | Playback (instance) | `instances` | A running clip or programmer, with its own clock and level. |
 | Priority | `common` | A number from -128 to 127 that orders layers. See [priorities and merging](priorities-and-merging.md). |
 | Programmer | `programmer` | The live working values and selection used to build looks. |

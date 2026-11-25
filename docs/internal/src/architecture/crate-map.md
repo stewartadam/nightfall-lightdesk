@@ -2,7 +2,7 @@
 
 {{#include ../includes/human-review-disclaimer.md}}
 
-The Rust side of Nightfall is a Cargo workspace of 60 crates under `crates/`, plus the Tauri desktop shell in `desktop/app-tauri`.
+The Rust side of Nightfall is a Cargo workspace of 62 crates under `crates/`, plus the Tauri desktop shell in `desktop/app-tauri`.
 
 For how the crates combine into running programs, see [how the pieces fit together](system-overview.md).
 
@@ -20,14 +20,14 @@ flowchart TB
   accTitle: Crate layers, their crates, and allowed dependencies
   accDescr: Five layers from hosts down to base, each listing its crates. Each layer may depend on any layer below it. Plugin crates may not depend on other plugin crates.
   hosts["<b>Hosts</b><br/>app-runtime · app-tauri · browser-runtime · cli · composition"]
-  crossPlugin["<b>Cross-plugin</b><br/>boards · macros · mvr-import · references · showfile · wasm-bridge"]
-  plugins["<b>Plugins</b><br/>audio · controls · cues · fixture-library · flow · fx · fx-module · object-library · programming <br/> scene-objects · timeline · input-artnet · input-ltc · input-midi · input-osc <br /> input-sacn · output-artnet · output-sacn · output-usb"]
+  crossPlugin["<b>Cross-plugin</b><br/>boards · macros · mvr-import · park · references · showfile · wasm-bridge"]
+  plugins["<b>Plugins</b><br/>audio · backup · controls · cues · fixture-library · flow · fx · fx-module · gdtf-share · object-library <br/> programming · scene-objects · timeline · input-artnet · input-ltc · input-midi · input-osc <br /> input-sacn · output-artnet · output-sacn · output-usb"]
   engineCore["<b>Engine core</b><br/>actions · clips · compositor · engine · fixtures · framepace · io · lookahead <br /> selection-runtime · service-host · tempo · timecode · undo · websocket"]
   base["<b>Base</b><br/>nightfall · open-fixture-library · beat-detection · cmd-parse · config <br /> coremidi-hotplug · dmx · engine-derive · fixture-model · instances <br /> lookahead-projection · mvr · playback-planner · selection · waveform · workspace-hack"]
   hosts --> crossPlugin --> plugins --> engineCore --> base
 ```
 
-Every crate belongs to one of these architectural layers, manually assigned in `config/architecture/crate-layers.json`. The `check:crate-boundaries` script reads that file and fails when a crate depends on crates in layers above them. A new crate without a role also fails the check.
+Every crate belongs to one of these architectural layers, manually assigned in `config/architecture/crate-layers.json`. The `check:crate-boundaries` script reads that file and fails when a crate depends on crates in layers above them. A new crate without a layer also fails the check.
 
 `config/architecture/crate-boundary-exceptions.json` lists the edges that break a rule on purpose, each with a reason. Today they are:
 
@@ -82,7 +82,7 @@ Engine core crates build the engine's runtime that every plugin plugs into.
 | `actions` | Demo | Registry of bindable actions and how each one turns into a command or an update, plus the eval action that runs a line of the command language. |
 | `clips` | Demo | Clip model, clip commands, lookups by identifier, and clip playback: routing clip starts and stops to the plugin registered for each clip source, launch quantize, the lifecycle and clocks of running playbacks, the running playbacks feed, and the bindable clip actions. |
 | `compositor` | Demo | Layer compositing pipeline: builds the layer stack and merges layers by priority and merge rule. |
-| `fixtures` | Demo | Fixtures, parameters, universes, patch bindings and their validation mode, the fixture and patch commands, DMX input and the release of stale input values, virtual dimmers and virtual relations, the composition of output DMX frames, lookahead assertions, and the layer stack feed. |
+| `fixtures` | Demo | Fixtures, parameters, universes, DMX routes and their validation mode, the fixture and patch commands, DMX input and the release of stale input values, virtual dimmers and virtual relations, the composition of output DMX frames, lookahead assertions, and the layer stack feed. |
 | `framepace` | Demo | Frame limiter that starts engine frames just before each DMX send time on the shared schedule, adapted from `bevy_framepace`. The browser demo uses only its `fps` command handling. |
 | `io` | Bridge and demo | IO transport settings with their `io` settings section and command, named output targets, IO constants, the host's network interfaces with their client feed and the alerts shown when the interface the transports bind to disappears or returns, and IO failure toasts. The plugin sits behind the default `plugin` feature, which the WASM bridge turns off. |
 | `lookahead` | Demo | Runtime lookahead contracts shared by the playback domains. |
@@ -107,7 +107,9 @@ Plugin crates each own one area of the show. They add themselves to the engine a
 | `timeline` | Demo | Timelines: tracks, planning, seeking, recording, and audio and beat grid integration. The demo build leaves out native audio and the HTTP routes. |
 | `scene-objects` | Demo | Non-fixture 3D objects for the visualizer, such as trusses and stage elements. |
 | `fixture-library` | No | Finds GDTF and OFL files in the data directory, converts them to fixture profiles, and watches for changes. |
+| `gdtf-share` | No | GDTF Share integration: signs in with the user's account, kept in the operating system's keychain, and finds and downloads fixture profiles and their newer revisions. It registers HTTP routes rather than a Bevy plugin. |
 | `object-library` | No | Finds `.robj` object bundles in the data directory and watches for changes. |
+| `backup` | No | Backup servers: a second Nightfall that follows a primary, keeps a copy of its live show, sends sACN one priority step below the primary and mutes Art-Net and USB DMX while it follows, and can take over its output. See [ADR 4](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/adr/0004-failover-primary-and-backup.md). |
 | `audio` | No | Audio playback service for timeline audio, the list of audio outputs, and moving timeline audio when the chosen output appears or disappears. |
 
 ## Plugins: IO transports
@@ -123,7 +125,7 @@ The IO crates are plugin crates too. Each one runs a process-lifetime service on
 | `input_osc` | No | OSC input over UDP and mappings from OSC addresses to actions. |
 | `output_artnet` | No | Art-Net DMX output. |
 | `output_sacn` | No | sACN DMX output. |
-| `output_usb` | No | DMX output through uDMX USB interfaces and the list of connected uDMX devices. |
+| `output_usb` | No | DMX output through uDMX, Enttec DMX USB Pro, and FTDI Open DMX USB interfaces, and the list of connected USB DMX devices. |
 
 ## Cross-plugin: crates that coordinate plugins
 
@@ -134,6 +136,7 @@ Cross-plugin crates combine several plugins, which plugin crates can't do themse
 | `boards` | Demo | Boards: grids of buttons, button presses, and button status. |
 | `macros` | Demo | Macros: numbered command-line scripts, the backend runner that executes them line by line, and the `macro.start`, `macro.release`, and `macro.stop` actions. |
 | `mvr-import` | No | Imports a rig from an MVR file: the upload route, a preview of fixture types, IDs, patch and placement, and the commit that adds the fixtures as one undo step. |
+| `park` | Demo | Park: holds fixture parameters at fixed values over every other source of output, applied after masters and virtual dimmers. Saved with the show, and untouched by `release` and `clear`. |
 | `references` | Demo | Show-wide report of which objects use which, for the **References** panel and delete guards. |
 | `showfile` | Demo | The versioned showfile JSON format, migrations, applying a showfile to an engine world, snapshots of a world, and the requests to create, save, load, import, and delete shows. |
 | `wasm-bridge` | Bridge | Functions the web UI calls in WASM. See [what the WASM bridge exports](#what-the-wasm-bridge-exports). |

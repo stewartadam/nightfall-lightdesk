@@ -23,7 +23,7 @@ The backup follows the primary in three layers:
 
 1. **Show copy.** The backup polls the primary's show revision, a hash of its live show, and downloads the show as an archive when the revision changes. The archive carries the audio, fixture profiles and FX modules the show uses. The backup loads it with a world swap.
 2. **Forwarded commands.** The primary records each accepted command, including those from controllers, timecode and flows, in a journal that the backup long-polls on `/api/backup/commands`. The backup replays them in order, so fades and cues run on both computers at the same time.
-3. **Live state checkpoints.** About once a second, the backup asks for a checkpoint of the primary's live state on `/api/backup/live-state`. Each crate registers how to capture and restore its own part. A checkpoint carries the sequence of the last forwarded command it reflects, so the backup never applies a checkpoint older than the commands it already replayed, and corrects any drift.
+3. **Live state checkpoints.** About twice a second, the backup asks for a checkpoint of the primary's live state on `/api/backup/live-state`. Each crate registers how to capture and restore its own part. A checkpoint carries the sequence of the last forwarded command it reflects, so the backup never applies a checkpoint older than the commands it already replayed, and corrects any drift.
 
 The copied show lives in a `failover` folder in the app data folder, apart from the backup's own showfiles and drafts. Its draft, autosaves and saves stay there while that computer runs it, including after a takeover. Saving it under a new name makes it one of that computer's own showfiles.
 
