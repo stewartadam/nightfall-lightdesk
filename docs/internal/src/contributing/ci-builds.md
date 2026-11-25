@@ -15,6 +15,17 @@ execution and release authority in separate jobs, not just separate steps. See
 the repository's [CI trust-boundary design](https://github.com/stewartadam/nightfall-lightdesk/blob/main/docs/ci-security.md)
 for the threat model, source handoff, and artifact validation rules.
 
+Two manual workflows follow the same split. `promote.yml` fast-forwards `main`
+to a `develop` commit whose `CI gate` check passed, so `main` gets `develop`'s
+exact commits. Its first job only checks the commit through the GitHub API, and
+its second job moves the ref without checking out source. Run it from
+`develop` after the promotion pull request's checks finish. See
+[desktop releases](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/desktop-releases.md)
+for the release flow. `publish-data-grid.yml` packs `packages/data-grid` in a
+job with no permissions, and a fresh runner stages the tarball on npm through
+trusted publishing, with no stored npm secret. The release goes live once a
+maintainer approves it on npm with two-factor authentication.
+
 `pnpm run demo:build` builds WASM before packaging for local use.
 `pnpm run demo:bundle` requires both generated WASM packages in
 `webui/assets`; CI uses it after downloading the same-run artifact. Development

@@ -106,7 +106,7 @@ Plugin crates each own one area of the show. They add themselves to the engine a
 | `flow` | Demo | Flow node graphs: definitions, built-in nodes, and the runtime. The demo build leaves out FX module nodes. |
 | `timeline` | Demo | Timelines: tracks, planning, seeking, recording, and audio and beat grid integration. The demo build leaves out native audio and the HTTP routes. |
 | `scene-objects` | Demo | Non-fixture 3D objects for the visualizer, such as trusses and stage elements. |
-| `fixture-library` | No | Finds GDTF and OFL files in the data directory, converts them to fixture profiles, and watches for changes. |
+| `fixture-library` | No | Finds GDTF and OFL files in the data directory, converts them to fixture profiles, and watches for changes. Also holds the fixture editor's drafts of GDTF fixture types, which every client shares and which save into the user's fixture library. |
 | `gdtf-share` | No | GDTF Share integration: signs in with the user's account, kept in the operating system's keychain, and finds and downloads fixture profiles and their newer revisions. It registers HTTP routes rather than a Bevy plugin. |
 | `object-library` | No | Finds `.robj` object bundles in the data directory and watches for changes. |
 | `backup` | No | Backup servers: a second Nightfall that follows a primary, keeps a copy of its live show, sends sACN one priority step below the primary and mutes Art-Net and USB DMX while it follows, and can take over its output. See [ADR 4](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/docs/adr/0004-failover-primary-and-backup.md). |
@@ -120,12 +120,12 @@ The IO crates are plugin crates too. Each one runs a process-lifetime service on
 |-------|------|-------------|
 | `input_artnet` | No | Art-Net DMX and timecode input. Also builds the `send-artnet`, `send-artnet-timecode`, `listen-artnet`, and `listen-scan` test tools. |
 | `input_sacn` | No | sACN DMX input. Also builds the `send-sacn` test tool. |
-| `input_midi` | No | MIDI device discovery, MIDI input, mappings from MIDI messages to actions, controller LED feedback with bundled controller profiles, and MIDI timecode (MTC) input. |
+| `input_midi` | No | MIDI device discovery, the show's saved MIDI devices, which tell identical controllers apart by USB serial or port, MIDI input, mappings from MIDI messages to actions, controller LED feedback with bundled controller profiles, and MIDI timecode (MTC) input. |
 | `input_ltc` | No | SMPTE linear timecode (LTC) decoded from a channel of an audio input device. |
 | `input_osc` | No | OSC input over UDP and mappings from OSC addresses to actions. |
 | `output_artnet` | No | Art-Net DMX output. |
 | `output_sacn` | No | sACN DMX output. |
-| `output_usb` | No | DMX output through uDMX, Enttec DMX USB Pro, and FTDI Open DMX USB interfaces, and the list of connected USB DMX devices. |
+| `output_usb` | No | DMX output through uDMX, Enttec DMX USB Pro, and FTDI Open DMX USB interfaces, the list of connected USB DMX devices, and matching each saved output to an attached adapter, by USB port when adapters share a serial number. |
 
 ## Cross-plugin: crates that coordinate plugins
 
@@ -204,6 +204,7 @@ The rest of the repository holds the web UI, the desktop shell, and the tooling 
 | `docs/` | The user manual in `docs/src/`, this guide in `docs/internal/`, decision records in `docs/adr/`, and notes on CI security and desktop releases. |
 | `config/` | Architecture rules for crates and the web UI, license header templates, third-party notices, project links, and the beat detection model manifest. |
 | `test-fixtures/` | Instructions and data for repeatable performance workloads. |
+| `reels/` | Short feature videos for social media, recorded from the running app with Playwright and rendered with Remotion. It is its own pnpm workspace, so the app's install, builds, and checks never touch it. |
 | `worktree-dashboard/` | The local dashboard and its Model Context Protocol (MCP) server, which start and stop development services for each worktree. |
 
 ## In the code

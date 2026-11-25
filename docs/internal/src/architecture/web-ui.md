@@ -41,7 +41,7 @@ The following table lists the top-level folders under `webui/`:
 | Folder | Layer | Contents |
 |--------|-------|----------|
 | `components/ui` | UI primitives | Buttons, menus, popovers, dialogs, tables, segmented controls, and the visual language. Primitives know nothing about Nightfall's domain. |
-| `components/widgets` | Widgets | Reusable composite components such as the data grid, color picker, CRUD panel helpers, and the context-menu widget. Widgets render data passed to them and don't read app state. |
+| `components/widgets` | Widgets | Reusable composite components such as the app's wrapper around the data grid package, color picker, CRUD panel helpers, and the context-menu widget. Widgets render data passed to them and don't read app state. |
 | `components/providers` | Providers | App-wide Solid context providers without their own presentation, such as keyboard shortcuts, the command registry, context menus, and the panel capability registry. |
 | `components/shell` | Shell | The app frame: startup, header, status bar, command palette, Dockview docking, layouts, and the compact (phone-width) shell. |
 | `components/overlays` | Overlays | App-wide floating presentation: the connection overlay, the global context-menu host, the shortcuts popup, and pairing. |
@@ -52,6 +52,8 @@ The following table lists the top-level folders under `webui/`:
 | `styles`, `assets` | Not classified | Theme CSS, form defaults, and generated assets such as the WASM packages. |
 | `design-lab` | Not classified | A development-only page that demonstrates the shared components with sample data. |
 | `e2e` | Not classified | Playwright specs. |
+
+The data grid itself lives outside `webui/`, in `packages/data-grid`, as the pnpm workspace package `@stewartadam/nightfall-data-grid`. Panels render it through the `nightfall-data-grid` widget, which re-exports the package and applies the app's defaults: performance metrics, empty and loading states, and the app's dropdown editor. The package can be published on its own, so it imports nothing from the app and keeps its own copy of the Solid 2.0 shims in `src/solid-compat.ts`.
 
 The layers stack from top to bottom. The following diagram shows the stack, where an arrow means "may import from":
 
@@ -96,6 +98,8 @@ Node tests scan the source tree and fail when code breaks a layer rule or bypass
 | Native tables stay in `Table` | `shared-tables.node.test.ts` | Only the shared `Table` component renders a native `<table>`. |
 | Capability hooks stay in non-JSX modules | `components/providers/panel-capabilities/context-boundary.node.test.ts` | Panel capability hooks come from `context-core.ts`, not from the provider's `.tsx` file, so hot reload can't create a second context. |
 | Injected contexts aren't looked up again | `features/sequences/controllers/sequence-editor-context-boundary.node.test.ts` | The **Sequence Editor** controller uses the context passed to it as a prop, for the same hot-reload reason. |
+| Data grid stays standalone | `architecture-boundaries.node.test.ts` | Files in `packages/data-grid/src` import only each other and the npm packages the package declares, and declare the same version ranges as the web UI for packages both use, such as `solid-js`. |
+| Packages are imported by name | `architecture-boundaries.node.test.ts` | Web UI files import a workspace package by its package name, never by a relative path into `packages/`. |
 
 The boundaries test compares the violations it finds with the list in `config/architecture/webui-boundary-exceptions.json`. That list is empty today, and the test also fails on stale entries, so an exception must be removed once the code is fixed. Each exception needs a kebab-case ID and a reason.
 
@@ -103,10 +107,17 @@ The other tests keep their allowed files in an exact list inside the test. The l
 
 Be aware of what the tests don't see:
 
-- The boundaries test checks relative imports in `components/` and `features/` only. Package imports and files in `lib/` and `state/` are never checked.
+- The layer rules check relative imports in `components/` and `features/` only. Package imports and files in `lib/` and `state/` are never checked against them.
 - The `shared-*` tests scan `.tsx` and `.jsx` files only. A role assigned in a plain `.ts` file isn't caught.
 
-`lib/solid-compat.ts` provides Solid 2.0 style APIs, such as the two-function `createEffect(compute, effect)`, built on Solid 1.x. Write new effects in that form so the 2.0 upgrade only swaps the import. Biome rejects APIs that 2.0 removes, such as `on()`.
+`lib/solid-compat.ts` provides Solid 2.0 style APIs built on Solid 1.x, so the 2.0 upgrade only swaps the import. Biome rejects importing `createEffect`, `createComputed`, `createResource`, and `on` from `solid-js`. Use these instead:
+
+- The two-function `createEffect(compute, effect)` from `lib/solid-compat.ts`. `compute` is tracked and returns what the effect needs. `effect` runs untracked and may return a cleanup.
+- `createTrackedEffect`, only where the reads can't be separated from the side effect.
+- `createProjection`, instead of an effect that copies derived data into a store.
+- `createAsyncValue` from `lib/async-value.ts`, instead of `createResource`.
+
+`effect` runs only when `compute` returns a different value, compared with `===`. A value from `useStore` keeps its identity across updates, because each update is reconciled into it, so a `compute` that returns the store object never runs the effect again. Read the fields the effect needs inside `compute`, or return a shallow copy.
 
 The [shared UI components README](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/webui/components/ui/README.md) explains how to use each shared component that these rules point you to, and the [dialog presentation README](https://github.com/stewartadam/nightfall-lightdesk/blob/develop/webui/components/ui/dialog/README.md) explains dialog kinds and close behavior.
 
@@ -198,6 +209,10 @@ Renderers register only while their panel's workspace is active, so a hidden lay
 
 A layout is a saved arrangement of panels. Named layouts are stored in the showfile and shared by every device that opens it, and changing one sends a settings command to the engine. Each device also keeps its own working arrangement in browser storage, so moving panels on a tablet doesn't rearrange the desktop.
 
+## The fixture editor window
+
+The fixture editor isn't a panel. It opens in a window of its own: a native window in the desktop app, and a browser window or tab on the web. Both load the same web UI build with `?window=fixture-editor`, and `main.tsx` then renders `FixtureEditorApp` instead of the workspace shell, so the window has no Dockview, layouts, or startup prompts. The window connects to the engine as a separate client, limited to the message types it handles, and loads its drafts and the fixture library with its own commands instead of a full resync. [Clients that choose their message types](client-protocol.md#clients-that-choose-their-message-types) describes that connection. Drafts live in the engine, so every open window sees the same drafts change.
+
 ## Where state lives
 
 State lives in one of three places, depending on who owns it and who reads it. The following table compares them:
@@ -217,7 +232,7 @@ The global stores are [Nanostores](https://github.com/nanostores/nanostores) ato
 Follow this rule when you choose:
 
 - Use `useSharedStore` for a large collection store that several mounted components read, such as `fixtures`, `groups`, `fx`, or `sceneObjects`.
-- Use `useStore` for everything else. It is the default, and it accepts reconcile options, such as a custom key, that `useSharedStore` doesn't.
+- Use `useStore` for everything else. It is the default.
 
 In development builds, end-to-end test builds, and the browser demo opened with `?e2e=1`, the stores are also available in the browser console as `window.appStores`. Other shipped builds don't expose them.
 
@@ -345,7 +360,10 @@ The following steps add a panel to a feature. For a small working example, compa
 | Properties panel | `webui/features/property-inspector/` |
 | App-wide providers | `webui/components/shell/app/app-providers.tsx` |
 | Layouts | `webui/lib/layout-management.ts`, `webui/lib/layoutStorage.ts` |
-| Global stores | `webui/state/appStores.ts`, `webui/lib/use-shared-store.ts` |
+| Global stores | `webui/state/appStores.ts`, `webui/lib/use-nanostore.ts`, `webui/lib/use-shared-store.ts` |
+| Solid 2.0 style effects | `webui/lib/solid-compat.ts`, `webui/lib/async-value.ts`, `biome.jsonc` |
+| Data grid package and its app wrapper | `packages/data-grid/`, `webui/components/widgets/nightfall-data-grid/index.tsx` |
+| Fixture editor window | `webui/components/shell/app/fixture-editor-app.tsx`, `webui/features/fixture-editor/services/editor-window.ts` |
 | Transport worker | `webui/lib/engine-runtime-worker-core.ts` |
 | Main-thread runtime and command sending | `webui/lib/engine-runtime.ts`, `webui/lib/command-client.ts` |
 | Message handlers | `webui/lib/ws/message-registry.ts`, `webui/lib/ws/main-thread-handlers.ts`, `webui/lib/ws/<domain>-handlers.ts` |
