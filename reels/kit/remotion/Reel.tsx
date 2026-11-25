@@ -327,7 +327,8 @@ function Screen({
  * account row and post caption cover roughly the last 340 px, and the like,
  * comment, share and save buttons run down the right edge, about 160 px wide.
  * The header covers roughly the top 250 px. TikTok and Shorts reserve similar
- * zones, so captions stay inside this box on all three.
+ * zones, so captions stay inside this box on all three. See "Safe area" in
+ * the README for how these were measured.
  */
 const SAFE_AREA = { top: 270, bottom: 400, side: 170 };
 

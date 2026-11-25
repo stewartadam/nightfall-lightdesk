@@ -68,6 +68,24 @@ captioned, outro card.
   renderer, so edits survive a change of video tool.
 - `kit/remotion/` lays any edit out as React components, one composition per reel.
 
+## Safe area
+
+Instagram, TikTok and Shorts draw their own buttons and text over a reel, so
+captions stay inside a safe area. `SAFE_AREA` in `kit/remotion/Reel.tsx` holds
+the margins, in pixels of the 1080x1920 frame. They were measured from the
+timeline reel playing in the Instagram iOS app (November 2026):
+
+| Zone | What covers it | Margin kept clear |
+| --- | --- | --- |
+| Top | The Reels header, back button and camera button, about 250 px | 270 px |
+| Bottom | The account row, audio and post caption, about 340 px | 400 px |
+| Right | The like, comment, share and save buttons, about 160 px wide from about 1100 px down | 170 px |
+| Left and right | Tall phones fill the screen and crop about 50 px off each side | 170 px on both sides, so captions stay centered |
+
+Captions use 44 px text so a sentence of about 30 characters still fits on two
+lines in the 740 px left between the side margins. The 3D view and app panels
+can run edge to edge, since the platform's buttons only cover part of them.
+
 ## Licence
 
 Remotion is source-available, not open source. It is free for individuals,
