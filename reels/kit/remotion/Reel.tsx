@@ -321,7 +321,20 @@ function Screen({
   );
 }
 
-/** One caption pill near the top safe area: pops in with a spring and fades out. */
+/**
+ * Instagram Reels safe area, in pixels of the 1080x1920 frame. Taller phones
+ * fill the screen and crop about 50 px off each side. At the bottom, the
+ * account row and post caption cover roughly the last 340 px, and the like,
+ * comment, share and save buttons run down the right edge, about 160 px wide.
+ * The header covers roughly the top 250 px. TikTok and Shorts reserve similar
+ * zones, so captions stay inside this box on all three.
+ */
+const SAFE_AREA = { top: 270, bottom: 400, side: 170 };
+
+/**
+ * One caption pill inside the Reels safe area (`SAFE_AREA`), on the edge its
+ * cue asks for: pops in with a spring and fades out.
+ */
 function Caption({ cue }: { cue: CaptionCue }) {
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
@@ -340,27 +353,29 @@ function Caption({ cue }: { cue: CaptionCue }) {
       style={{
         alignItems: "center",
         justifyContent: cue.placement === "top" ? "flex-start" : "flex-end",
-        paddingTop: 230,
-        // Low in the frame, below the 3D view and the app's panels, just above the status bar.
-        paddingBottom: 150,
+        paddingTop: SAFE_AREA.top,
+        paddingBottom: SAFE_AREA.bottom,
+        // Equal on both sides so the pill stays centered and clears the right-hand buttons.
+        paddingLeft: SAFE_AREA.side,
+        paddingRight: SAFE_AREA.side,
       }}
     >
       <div
         style={{
-          maxWidth: 900,
-          padding: "26px 44px",
-          borderRadius: 36,
+          padding: "20px 34px",
+          borderRadius: 28,
           background: "rgba(11,16,32,.86)",
           border: `3px solid ${BRAND.violet}`,
-          boxShadow: `0 18px 60px rgba(0,0,0,.5), 0 0 40px ${BRAND.violet}55`,
+          boxShadow: `0 14px 48px rgba(0,0,0,.5), 0 0 32px ${BRAND.violet}55`,
           color: BRAND.ink,
           fontFamily: FONT,
-          fontSize: 58,
+          fontSize: 44,
           fontWeight: 750,
-          lineHeight: 1.15,
+          lineHeight: 1.18,
           textAlign: "center",
+          textWrap: "balance",
           opacity: pop * out,
-          transform: `translateY(${(1 - pop) * (cue.placement === "top" ? -40 : 40)}px) scale(${0.9 + 0.1 * pop})`,
+          transform: `translateY(${(1 - pop) * (cue.placement === "top" ? -32 : 32)}px) scale(${0.9 + 0.1 * pop})`,
         }}
       >
         {cue.text}
