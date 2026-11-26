@@ -36,15 +36,15 @@ minicbor = "2.3"
 minicbor-serde = { version = "0.7", features = ["alloc"] }
 mime_guess = { version = "2.0.5", default-features = false }
 moonshine-kind = "0.6"
-netdev = "0.47"
+netdev = "0.48"
 netwatcher = "0.8"
-notify = "8.2"
+notify = "9.0"
 orx-parallel = "4.1.1"
 percent-encoding = "2.3.2"
 partially = { version = "0.2.1", features = ["derive"] }
 rosc = "0.11.4"
 rustc-hash = "2.1.3"
-sacn = "0.11.1"
+sacn = "0.12.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_with = { version = "3.25.0", features = ["json"] }
@@ -117,6 +117,3 @@ collapsible_if = { level = "allow", priority = 0 }
 # zip 9, since crates.io gdtf requires zip ^8.6, which has security advisories
 # fixed only in zip 9 (GHSA-m665-v7pm-7grj and others).
 gdtf = { git = "https://github.com/stewartadam/gdtf-rs", rev = "c3259e4fde83c3c92f51a0b2aaed0f8cfd1570b1" }
-# Fork of sacn 0.11.1 that sends sync packets without registering the sync
-# universe, so a sync-only universe isn't listed in universe discovery.
-sacn = { git = "https://github.com/stewartadam/sacn", rev = "421e3f74dfca6cbfa0ebaf5d6d383bbf4304eb45" }

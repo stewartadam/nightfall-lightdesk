@@ -22,7 +22,7 @@ unused_dependencies = "allow"
 [dependencies]
 aho-corasick = { version = "1.1.5" }
 allocator-api2 = { version = "0.2.21", default-features = false, features = ["alloc"] }
-anyhow = { version = "1.0.104" }
+anyhow = { version = "1.0.105" }
 arrayvec = { version = "0.7.8" }
 axum = { version = "0.8.9", features = ["multipart", "ws"] }
 bevy_ecs = { version = "0.20.1", features = ["debug"] }
@@ -53,7 +53,7 @@ futures-core = { version = "0.3.34" }
 futures-sink = { version = "0.3.34" }
 futures-util = { version = "0.3.34", features = ["sink"] }
 glam = { version = "0.33.12", default-features = false, features = ["bytemuck", "float-types", "integer-types", "nostd-libm", "serde", "std"] }
-hashbrown = { version = "0.17.1", default-features = false, features = ["default-hasher", "serde"] }
+hashbrown = { version = "0.17.2", default-features = false, features = ["default-hasher", "serde"] }
 icu_properties = { version = "2.4.0" }
 indexmap = { version = "2.14.2", features = ["serde"] }
 log = { version = "0.4.35", default-features = false, features = ["kv", "std"] }
@@ -107,7 +107,7 @@ zlib-rs = { version = "0.6.8", default-features = false, features = ["std"] }
 [build-dependencies]
 aho-corasick = { version = "1.1.5" }
 allocator-api2 = { version = "0.2.21", default-features = false, features = ["alloc"] }
-anyhow = { version = "1.0.104" }
+anyhow = { version = "1.0.105" }
 bevy_reflect_derive = { version = "0.20.1", features = ["auto_register_inventory"] }
 bitflags = { version = "2.13.2", default-features = false, features = ["serde", "std"] }
 bumpalo = { version = "3.20.4", features = ["allocator-api2"] }
@@ -122,7 +122,7 @@ flate2 = { version = "1.1.11", features = ["zlib-rs"] }
 fnv = { version = "1.0.7" }
 foldhash = { version = "0.2.0" }
 form_urlencoded = { version = "1.2.3" }
-hashbrown = { version = "0.17.1", default-features = false, features = ["default-hasher", "serde"] }
+hashbrown = { version = "0.17.2", default-features = false, features = ["default-hasher", "serde"] }
 icu_properties = { version = "2.4.0" }
 indexmap = { version = "2.14.2", features = ["serde"] }
 log = { version = "0.4.35", default-features = false, features = ["kv", "std"] }

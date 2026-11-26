@@ -58,7 +58,7 @@
   "dependencies": {
     "@squidlab/phosphor-solid": "^1.1.2",
     "@tanstack/solid-table": "^9.3.1",
-    "@tanstack/solid-virtual": "^3.13.53"
+    "@tanstack/solid-virtual": "^3.13.55"
   },
   "peerDependencies": {
     "solid-js": "^1.9.19"
