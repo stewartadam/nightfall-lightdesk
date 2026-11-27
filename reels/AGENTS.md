@@ -7,7 +7,7 @@ Follow these rules when you write or change a reel. [README.md](README.md) cover
 Captions and titles follow the repository's [writing style guide](../docs/internal/src/contributing/writing-style.md), plus these rules for short video:
 
 - Write each caption as a plain sentence that says what is happening on screen. Avoid slogan patterns, such as "Your A, B", "count X, count Y", "From A to B", groups of three, and leaning on "every".
-- Keep captions low in the frame, so they don't cover the 3D view or the part of the app being shown.
+- Keep captions low in the frame, so they don't cover the 3D view or the part of the app being shown, but inside the Instagram Reels safe area (`SAFE_AREA` in `kit/remotion/Reel.tsx`), clear of the app's bottom caption, account row and right-hand buttons.
 - End each caption after about 5 seconds, so it doesn't linger over later actions.
 - Drop captions that only narrate a click, such as "Click Import".
 - Use a literal, searchable title that names the feature, such as "GDTF Share support".
